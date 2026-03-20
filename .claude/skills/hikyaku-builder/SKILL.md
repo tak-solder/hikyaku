@@ -22,6 +22,7 @@ argument-hint: "{path/to/project} {buildID|next}"
 Hikyakuは PLAN → ARCHITECT → BUILD の3フェーズで構成されるAIエージェント協働開発ワークフロー。
 
 - 各フェーズは **別セッション（＝別のAI）** が担当する
+   - フェーズごとに1セッション（20万トークン）が目安
 - BUILDセッションは設計ドキュメント（architecture/）と、先行タスクの申し送り（handoff.md）を読んでコンテキストを復元する
 - 1タスク＝1セッションで完結させる
 - セッション間の情報引き継ぎはファイル（planning/, architecture/, handoff.md）で行う
