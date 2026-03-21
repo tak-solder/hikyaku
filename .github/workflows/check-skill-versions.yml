@@ -1,0 +1,82 @@
+name: Check Skill Versions
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  check-versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: current
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+
+      - name: Check skill versions are unified
+        run: |
+          versions=()
+          for skill_file in current/skills/*/SKILL.md; do
+            version=$(yq --front-matter=extract '.metadata.version' "$skill_file")
+            skill_name=$(basename "$(dirname "$skill_file")")
+            echo "$skill_name: $version"
+            versions+=("$version")
+          done
+
+          first="${versions[0]}"
+          for v in "${versions[@]}"; do
+            if [ "$v" != "$first" ]; then
+              echo "::error::Skill versions are not unified. All skills must have the same version."
+              exit 1
+            fi
+          done
+          echo "All skill versions are unified: $first"
+
+      - name: Check version bump if skills changed
+        run: |
+          # Check if current/skills/ has changes compared to base
+          changed=$(diff -rq current/skills/ base/skills/ 2>/dev/null || true)
+          if [ -z "$changed" ]; then
+            echo "No changes in skills/ — skipping version bump check."
+            exit 0
+          fi
+
+          echo "Changed files in skills/:"
+          echo "$changed"
+
+          # Extract current version from any skill (already verified they're unified)
+          current=$(yq --front-matter=extract '.metadata.version' current/skills/hikyaku-planner/SKILL.md)
+          base=$(yq --front-matter=extract '.metadata.version' base/skills/hikyaku-planner/SKILL.md)
+
+          echo "Base version: $base"
+          echo "Current version: $current"
+
+          if [ "$current" = "$base" ]; then
+            echo "::error::skills/ has changes but version was not bumped. Please update the version in all SKILL.md files."
+            exit 1
+          fi
+
+          # Verify semver is actually higher
+          IFS='.' read -r cur_major cur_minor cur_patch <<< "$current"
+          IFS='.' read -r base_major base_minor base_patch <<< "$base"
+
+          is_higher=false
+          if [ "$cur_major" -gt "$base_major" ]; then
+            is_higher=true
+          elif [ "$cur_major" -eq "$base_major" ] && [ "$cur_minor" -gt "$base_minor" ]; then
+            is_higher=true
+          elif [ "$cur_major" -eq "$base_major" ] && [ "$cur_minor" -eq "$base_minor" ] && [ "$cur_patch" -gt "$base_patch" ]; then
+            is_higher=true
+          fi
+
+          if [ "$is_higher" = false ]; then
+            echo "::error::Version $current is not higher than base version $base. Please bump the version following semver."
+            exit 1
+          fi
+
+          echo "Version correctly bumped: $base -> $current"
