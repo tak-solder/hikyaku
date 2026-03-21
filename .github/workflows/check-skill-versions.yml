@@ -10,16 +10,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: current
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ github.event.pull_request.base.sha }}
-          path: .base-ref
+          path: base
 
       - name: Check skill versions are unified
         run: |
           versions=()
-          for skill_file in skills/*/SKILL.md; do
+          for skill_file in current/skills/*/SKILL.md; do
             version=$(yq --front-matter=extract '.metadata.version' "$skill_file")
             skill_name=$(basename "$(dirname "$skill_file")")
             echo "$skill_name: $version"
@@ -37,8 +39,8 @@ jobs:
 
       - name: Check version bump if skills changed
         run: |
-          # Check if skills/ has changes compared to base
-          changed=$(diff -rq skills/ .base-ref/skills/ 2>/dev/null || true)
+          # Check if current/skills/ has changes compared to base
+          changed=$(diff -rq current/skills/ base/skills/ 2>/dev/null || true)
           if [ -z "$changed" ]; then
             echo "No changes in skills/ — skipping version bump check."
             exit 0
@@ -48,8 +50,8 @@ jobs:
           echo "$changed"
 
           # Extract current version from any skill (already verified they're unified)
-          current=$(yq --front-matter=extract '.metadata.version' skills/hikyaku-planner/SKILL.md)
-          base=$(yq --front-matter=extract '.metadata.version' .base-ref/skills/hikyaku-planner/SKILL.md)
+          current=$(yq --front-matter=extract '.metadata.version' current/skills/hikyaku-planner/SKILL.md)
+          base=$(yq --front-matter=extract '.metadata.version' base/skills/hikyaku-planner/SKILL.md)
 
           echo "Base version: $base"
           echo "Current version: $current"
