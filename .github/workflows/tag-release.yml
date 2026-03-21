@@ -1,0 +1,30 @@
+name: Tag Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'skills/**'
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create version tag
+        run: |
+          version=$(yq --front-matter=extract '.metadata.version' skills/hikyaku-planner/SKILL.md)
+          tag="v${version}"
+
+          if git ls-remote --tags origin "$tag" | grep -q "$tag"; then
+            echo "Tag $tag already exists — skipping."
+            exit 0
+          fi
+
+          git tag "$tag"
+          git push origin "$tag"
+          echo "Created tag: $tag"
