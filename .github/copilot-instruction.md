@@ -1,6 +1,6 @@
 ## About Hikyaku
 
-@README.md
+@../README.md
 
 ## 用語集
 

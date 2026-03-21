@@ -5,7 +5,7 @@ Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUI
 
 ## 特徴
 
-- **スタンドアロン** — `skills/` を配置するだけで既存プロジェクトに導入可能
+- **スタンドアロン** — Agent Skillのみで動作。ワークフローで使用するファイルを保存するディレクトリも指定可能
 - **セッション分離** — 各フェーズは別の AI セッションが担当し、コンテキストウィンドウを効率的に使う
 - **ファイルベースの引き継ぎ** — セッション間の情報は `planning/`, `architecture/`, `handoff.md` 等のドキュメントで受け渡す
 - **ユーザー承認ゲート** — 各フェーズで必ずユーザーの承認を取り、誤りの波及を防ぐ
@@ -13,15 +13,20 @@ Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUI
 
 ## ワークフロー
 
+### スキル変数
+- **DOC_ROOT**: ワークフローのドキュメント（企画・設計・ビルド定義など）を保存するディレクトリ。リポジトリ内の任意のパスを指定できます。
+
 ```
-/hikyaku-planner {path}        → planning/ を生成
+/hikyaku-planner {DOC_ROOT}              → {DOC_ROOT}/planning/ を生成
       ↓ ユーザー承認
-/hikyaku-architect {path}      → architecture/ + tasklist.md + issue.md を生成
+/hikyaku-architect {DOC_ROOT}            → {DOC_ROOT}/architecture/ + {DOC_ROOT}/tasklist.md + {DOC_ROOT}/build-{NN}/issue.md を生成
       ↓ ユーザー承認
-/hikyaku-builder {path} next   → build-01/ 実装 → handoff.md → PR
-/hikyaku-builder {path} next   → build-02/ 実装 → handoff.md → PR
-  ...（タスク数分、各回別セッションで繰り返し）
+/hikyaku-builder {DOC_ROOT}              → {DOC_ROOT}/build-01/ を生成し、実装 → PR
+/hikyaku-builder {DOC_ROOT}              → {DOC_ROOT}/build-02/ を生成し、実装 → PR
+  ...（ビルド数分、各回別セッションで繰り返し）
 ```
+
+`/hikyaku-builder` は buildID を指定して特定ビルドを実行することもできます（例: `/hikyaku-builder {DOC_ROOT} 3`）。省略時は次のビルドを自動選択します。
 
 ### Phase 1: `/hikyaku-planner` — 企画
 
@@ -33,37 +38,37 @@ Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUI
 
 ### Phase 2: `/hikyaku-architect` — 設計
 
-企画成果物と既存コードベースを入力に、技術設計とタスク分割を行う。
+企画成果物と既存コードベースを入力に、技術設計とビルド分割を行う。
 
 - 既存コードを Agent で調査し `codebase-survey.md` を作成
 - 設計ドキュメント（tech-stack, db-schema, interfaces, conventions）を必要に応じて作成
-- SP 見積もり付きでタスク分割（1タスク = 1セッションで完結する粒度）
+- BP 見積もり付きでビルド分割（1ビルド = 1セッションで完結する粒度）
 - **成果物**: `architecture/`, `tasklist.md`, `build-{NN}/issue.md`
 
 ### Phase 3: `/hikyaku-builder` — 実装
 
-1タスク = 1セッションでコード実装から PR 作成までを完結させる。
+1ビルド = 1セッションでコード実装から PR 作成までを完結させる。
 
-- 設計ドキュメントと先行タスクの `handoff.md` でコンテキストを復元
+- 設計ドキュメントと先行ビルドの `handoff.md` でコンテキストを復元
 - 実装計画 → テストシナリオ → コード生成 → ローカル検証 → PR
-- **成果物**: 実装コード, `plan.md`, `test-spec.md`, `questions.md`(必要時), `handoff.md`, PR
+- **成果物**: 実装コード, `plan.md`, `test-spec.md`, `handoff.md`, PR
 
 ## インストラクションの優先順位
 
 Hikyaku は以下の優先順位でインストラクションを適用します:
 
 1. **リポジトリ全体のインストラクション**（AGENTS.md, CLAUDE.md 等）
-2. **プロジェクトインストラクション**（`{path}/instruction.md`）
+2. **ワークフロー用インストラクション**（`{DOC_ROOT}/instruction.md`）
 3. **スキルの説明**（各 SKILL.md）
 
-`instruction.md` はプロジェクト固有のルールや制約を記述するためのファイルです。大きなリポジトリやモノレポの一部で Hikyaku を使う場合に、リポジトリ全体の規約とは別にプロジェクト固有の指示を定義できます。このファイルは任意で、存在しなければスキップされます。
+`{DOC_ROOT}/instruction.md` はワークフロー固有のルールや制約を記述するためのファイルです。大きなリポジトリやモノレポの一部で Hikyaku を使う場合に、リポジトリ全体の規約とは別にワークフロー固有の指示を定義できます。このファイルは任意で、存在しなければスキップされます。
 
 ## ワークフローディレクトリ構造
 
 ```
-{path}/
-├── instruction.md             # プロジェクト固有のインストラクション（任意）
-├── tasklist.md               # タスク一覧（ARCHITECT で作成、BUILD で更新）
+{DOC_ROOT}/
+├── instruction.md             # ワークフロー固有のインストラクション（任意）
+├── tasklist.md               # ビルド一覧（ARCHITECT で作成、BUILD で更新）
 ├── planning/                  # 企画ドキュメント
 │   ├── questions.md
 │   ├── user-stories.md
@@ -77,7 +82,7 @@ Hikyaku は以下の優先順位でインストラクションを適用します
 │   ├── conventions.md         # 必要時のみ
 │   └── retrospective.md
 ├── build-01/
-│   ├── issue.md               # タスク定義（ARCHITECT で作成）
+│   ├── issue.md               # ビルド定義（ARCHITECT で作成）
 │   ├── plan.md                # 実装計画（BUILD で作成）
 │   ├── test-spec.md           # テストシナリオ（BUILD で作成）
 │   ├── questions.md           # 実装時の質問と回答（BUILD で作成、必要時のみ）
