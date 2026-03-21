@@ -14,7 +14,7 @@ Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUI
 ## ワークフロー
 
 ### スキル変数
-- **DOC_ROOT**: ワークフローのドキュメント（企画・設計・タスク定義など）を保存するディレクトリ。リポジトリ内の任意のパスを指定できます。
+- **DOC_ROOT**: ワークフローのドキュメント（企画・設計・ビルド定義など）を保存するディレクトリ。リポジトリ内の任意のパスを指定できます。
 
 ```
 /hikyaku-planner {DOC_ROOT}              → {DOC_ROOT}/planning/ を生成
@@ -23,10 +23,10 @@ Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUI
       ↓ ユーザー承認
 /hikyaku-builder {DOC_ROOT}              → {DOC_ROOT}/build-01/ を生成し、実装 → PR
 /hikyaku-builder {DOC_ROOT}              → {DOC_ROOT}/build-02/ を生成し、実装 → PR
-  ...（タスク数分、各回別セッションで繰り返し）
+  ...（ビルド数分、各回別セッションで繰り返し）
 ```
 
-`/hikyaku-builder` は buildID を指定して特定タスクを実行することもできます（例: `/hikyaku-builder {DOC_ROOT} 3`）。省略時は次のタスクを自動選択します。
+`/hikyaku-builder` は buildID を指定して特定ビルドを実行することもできます（例: `/hikyaku-builder {DOC_ROOT} 3`）。省略時は次のビルドを自動選択します。
 
 ### Phase 1: `/hikyaku-planner` — 企画
 
@@ -38,18 +38,18 @@ Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUI
 
 ### Phase 2: `/hikyaku-architect` — 設計
 
-企画成果物と既存コードベースを入力に、技術設計とタスク分割を行う。
+企画成果物と既存コードベースを入力に、技術設計とビルド分割を行う。
 
 - 既存コードを Agent で調査し `codebase-survey.md` を作成
 - 設計ドキュメント（tech-stack, db-schema, interfaces, conventions）を必要に応じて作成
-- BP 見積もり付きでタスク分割（1タスク = 1セッションで完結する粒度）
+- BP 見積もり付きでビルド分割（1ビルド = 1セッションで完結する粒度）
 - **成果物**: `architecture/`, `tasklist.md`, `build-{NN}/issue.md`
 
 ### Phase 3: `/hikyaku-builder` — 実装
 
-1タスク = 1セッションでコード実装から PR 作成までを完結させる。
+1ビルド = 1セッションでコード実装から PR 作成までを完結させる。
 
-- 設計ドキュメントと先行タスクの `handoff.md` でコンテキストを復元
+- 設計ドキュメントと先行ビルドの `handoff.md` でコンテキストを復元
 - 実装計画 → テストシナリオ → コード生成 → ローカル検証 → PR
 - **成果物**: 実装コード, `plan.md`, `test-spec.md`, `handoff.md`, PR
 
@@ -68,7 +68,7 @@ Hikyaku は以下の優先順位でインストラクションを適用します
 ```
 {DOC_ROOT}/
 ├── instruction.md             # ワークフロー固有のインストラクション（任意）
-├── tasklist.md               # タスク一覧（ARCHITECT で作成、BUILD で更新）
+├── tasklist.md               # ビルド一覧（ARCHITECT で作成、BUILD で更新）
 ├── planning/                  # 企画ドキュメント
 │   ├── questions.md
 │   ├── user-stories.md
@@ -82,7 +82,7 @@ Hikyaku は以下の優先順位でインストラクションを適用します
 │   ├── conventions.md         # 必要時のみ
 │   └── retrospective.md
 ├── build-01/
-│   ├── issue.md               # タスク定義（ARCHITECT で作成）
+│   ├── issue.md               # ビルド定義（ARCHITECT で作成）
 │   ├── plan.md                # 実装計画（BUILD で作成）
 │   ├── test-spec.md           # テストシナリオ（BUILD で作成）
 │   ├── questions.md           # 実装時の質問と回答（BUILD で作成、必要時のみ）
