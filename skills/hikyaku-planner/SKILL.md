@@ -1,12 +1,12 @@
 ---
 name: hikyaku-planner
-description: "Hikyaku 企画フェーズ: 既存の企画ドキュメントを読み込み、設計フェーズに渡せる形にユーザーストーリーとして構造化する。新しい機能開発の企画を整理したいときに使う。"
+description: "Hikyaku 企画フェーズ: 既存の企画ドキュメントを読み込み、にユーザーストーリーとして構造化したドキュメントを出力する"
 user-invocable: true
 disable-model-invocation: true
 argument-hint: "{DOC_ROOT}"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.1.1"
+  version: "0.1.2"
 ---
 
 # Hikyaku Planner
