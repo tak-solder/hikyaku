@@ -10,8 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          fetch-depth: 0
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -39,8 +37,8 @@ jobs:
 
       - name: Check version bump if skills changed
         run: |
-          # Get list of changed files in skills/
-          changed=$(git diff --name-only "${{ github.event.pull_request.base.sha }}" HEAD -- 'skills/')
+          # Check if skills/ has changes compared to base
+          changed=$(diff -rq skills/ base/skills/ 2>/dev/null || true)
           if [ -z "$changed" ]; then
             echo "No changes in skills/ — skipping version bump check."
             exit 0
