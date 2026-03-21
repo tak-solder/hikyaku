@@ -5,7 +5,7 @@ Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUI
 
 ## 特徴
 
-- **スタンドアロン** — `skills/` を配置するだけで既存プロジェクトに導入可能
+- **スタンドアロン** — Agent Skillのみで動作。ワークフローで使用するファイルを保存するディレクトリも指定可能
 - **セッション分離** — 各フェーズは別の AI セッションが担当し、コンテキストウィンドウを効率的に使う
 - **ファイルベースの引き継ぎ** — セッション間の情報は `planning/`, `architecture/`, `handoff.md` 等のドキュメントで受け渡す
 - **ユーザー承認ゲート** — 各フェーズで必ずユーザーの承認を取り、誤りの波及を防ぐ
@@ -13,13 +13,16 @@ Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUI
 
 ## ワークフロー
 
+### スキル変数
+**DOC_ROOT**: ワークフローのドキュメント（企画・設計・タスク定義など）を保存するディレクトリ。リポジトリ内の任意のパスを指定できます。
+
 ```
-/hikyaku-planner {path}        → planning/ を生成
+/hikyaku-planner {DOC_ROOT}        → {DOC_ROOT}/planning/ を生成
       ↓ ユーザー承認
-/hikyaku-architect {path}      → architecture/ + tasklist.md + issue.md を生成
+/hikyaku-architect {DOC_ROOT}      → {DOC_ROOT}/architecture/ + {DOC_ROOT}/tasklist.md + {DOC_ROOT}/issue.md を生成
       ↓ ユーザー承認
-/hikyaku-builder {path} next   → build-01/ 実装 → handoff.md → PR
-/hikyaku-builder {path} next   → build-02/ 実装 → handoff.md → PR
+/hikyaku-builder {DOC_ROOT} next   → {DOC_ROOT}/build-01/ を生成し、実装 → PR
+/hikyaku-builder {DOC_ROOT} next   → {DOC_ROOT}/build-02/ を生成し、実装 → PR
   ...（タスク数分、各回別セッションで繰り返し）
 ```
 
@@ -46,23 +49,23 @@ Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUI
 
 - 設計ドキュメントと先行タスクの `handoff.md` でコンテキストを復元
 - 実装計画 → テストシナリオ → コード生成 → ローカル検証 → PR
-- **成果物**: 実装コード, `plan.md`, `test-spec.md`, `questions.md`(必要時), `handoff.md`, PR
+- **成果物**: 実装コード, `plan.md`, `test-spec.md`, `handoff.md`, PR
 
 ## インストラクションの優先順位
 
 Hikyaku は以下の優先順位でインストラクションを適用します:
 
 1. **リポジトリ全体のインストラクション**（AGENTS.md, CLAUDE.md 等）
-2. **プロジェクトインストラクション**（`{path}/instruction.md`）
+2. **ワークフロー用インストラクション**（`{DOC_ROOT}/instruction.md`）
 3. **スキルの説明**（各 SKILL.md）
 
-`instruction.md` はプロジェクト固有のルールや制約を記述するためのファイルです。大きなリポジトリやモノレポの一部で Hikyaku を使う場合に、リポジトリ全体の規約とは別にプロジェクト固有の指示を定義できます。このファイルは任意で、存在しなければスキップされます。
+`{DOC_ROOT}/instruction.md` はワークフロー固有のルールや制約を記述するためのファイルです。大きなリポジトリやモノレポの一部で Hikyaku を使う場合に、リポジトリ全体の規約とは別にワークフロー固有の指示を定義できます。このファイルは任意で、存在しなければスキップされます。
 
 ## ワークフローディレクトリ構造
 
 ```
-{path}/
-├── instruction.md             # プロジェクト固有のインストラクション（任意）
+{DOC_ROOT}/
+├── instruction.md             # ワークフロー固有のインストラクション（任意）
 ├── tasklist.md               # タスク一覧（ARCHITECT で作成、BUILD で更新）
 ├── planning/                  # 企画ドキュメント
 │   ├── questions.md
