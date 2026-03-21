@@ -19,7 +19,7 @@ Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUI
 ```
 /hikyaku-planner {DOC_ROOT}              → {DOC_ROOT}/planning/ を生成
       ↓ ユーザー承認
-/hikyaku-architect {DOC_ROOT}            → {DOC_ROOT}/architecture/ + {DOC_ROOT}/tasklist.md + {DOC_ROOT}/issue.md を生成
+/hikyaku-architect {DOC_ROOT}            → {DOC_ROOT}/architecture/ + {DOC_ROOT}/tasklist.md + {DOC_ROOT}/build-{NN}/issue.md を生成
       ↓ ユーザー承認
 /hikyaku-builder {DOC_ROOT}              → {DOC_ROOT}/build-01/ を生成し、実装 → PR
 /hikyaku-builder {DOC_ROOT}              → {DOC_ROOT}/build-02/ を生成し、実装 → PR
