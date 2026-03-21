@@ -1,12 +1,11 @@
-# 飛脚 (Hikyaku)
+# Hikyaku (飛脚)
 
-Hikyaku は **PLAN → ARCHITECT → BUILD** の3フェーズで構成される、AI エージェント協働開発ワークフローです。
+Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUILD の3フェーズ**で構成される、AIエージェント協働開発ワークフローです。   
 
-Claude Code のスキル（Slash Commands）だけで動作し、どのプロジェクトにも導入できます。
 
 ## 特徴
 
-- **スタンドアロン** — `.claude/skills/` を配置するだけで既存プロジェクトに導入可能
+- **スタンドアロン** — `skills/` を配置するだけで既存プロジェクトに導入可能
 - **セッション分離** — 各フェーズは別の AI セッションが担当し、コンテキストウィンドウを効率的に使う
 - **ファイルベースの引き継ぎ** — セッション間の情報は `planning/`, `architecture/`, `handoff.md` 等のドキュメントで受け渡す
 - **ユーザー承認ゲート** — 各フェーズで必ずユーザーの承認を取り、誤りの波及を防ぐ
@@ -47,7 +46,7 @@ Claude Code のスキル（Slash Commands）だけで動作し、どのプロジ
 
 - 設計ドキュメントと先行タスクの `handoff.md` でコンテキストを復元
 - 実装計画 → テストシナリオ → コード生成 → ローカル検証 → PR
-- **成果物**: 実装コード, `plan.md`, `test-spec.md`, `handoff.md`, PR
+- **成果物**: 実装コード, `plan.md`, `test-spec.md`, `questions.md`(必要時), `handoff.md`, PR
 
 ## インストラクションの優先順位
 
@@ -59,7 +58,7 @@ Hikyaku は以下の優先順位でインストラクションを適用します
 
 `instruction.md` はプロジェクト固有のルールや制約を記述するためのファイルです。大きなリポジトリやモノレポの一部で Hikyaku を使う場合に、リポジトリ全体の規約とは別にプロジェクト固有の指示を定義できます。このファイルは任意で、存在しなければスキップされます。
 
-## プロジェクトディレクトリ構造
+## ワークフローディレクトリ構造
 
 ```
 {path}/
@@ -81,6 +80,7 @@ Hikyaku は以下の優先順位でインストラクションを適用します
 │   ├── issue.md               # タスク定義（ARCHITECT で作成）
 │   ├── plan.md                # 実装計画（BUILD で作成）
 │   ├── test-spec.md           # テストシナリオ（BUILD で作成）
+│   ├── questions.md           # 実装時の質問と回答（BUILD で作成、必要時のみ）
 │   ├── handoff.md             # 申し送り（BUILD で作成）
 │   └── retrospective.md
 ├── build-02/
