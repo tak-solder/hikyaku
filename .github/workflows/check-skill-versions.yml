@@ -14,7 +14,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ github.event.pull_request.base.sha }}
-          path: base
+          path: ${{ runner.temp }}/base
 
       - name: Check skill versions are unified
         run: |
@@ -38,7 +38,7 @@ jobs:
       - name: Check version bump if skills changed
         run: |
           # Check if skills/ has changes compared to base
-          changed=$(diff -rq skills/ base/skills/ 2>/dev/null || true)
+          changed=$(diff -rq skills/ ${{ runner.temp }}/base/skills/ 2>/dev/null || true)
           if [ -z "$changed" ]; then
             echo "No changes in skills/ — skipping version bump check."
             exit 0
@@ -49,7 +49,7 @@ jobs:
 
           # Extract current version from any skill (already verified they're unified)
           current=$(yq --front-matter=extract '.metadata.version' skills/hikyaku-planner/SKILL.md)
-          base=$(yq --front-matter=extract '.metadata.version' base/skills/hikyaku-planner/SKILL.md)
+          base=$(yq --front-matter=extract '.metadata.version' ${{ runner.temp }}/base/skills/hikyaku-planner/SKILL.md)
 
           echo "Base version: $base"
           echo "Current version: $current"
