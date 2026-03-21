@@ -14,17 +14,19 @@ Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUI
 ## ワークフロー
 
 ### スキル変数
-**DOC_ROOT**: ワークフローのドキュメント（企画・設計・タスク定義など）を保存するディレクトリ。リポジトリ内の任意のパスを指定できます。
+- **DOC_ROOT**: ワークフローのドキュメント（企画・設計・タスク定義など）を保存するディレクトリ。リポジトリ内の任意のパスを指定できます。
 
 ```
-/hikyaku-planner {DOC_ROOT}        → {DOC_ROOT}/planning/ を生成
+/hikyaku-planner {DOC_ROOT}              → {DOC_ROOT}/planning/ を生成
       ↓ ユーザー承認
-/hikyaku-architect {DOC_ROOT}      → {DOC_ROOT}/architecture/ + {DOC_ROOT}/tasklist.md + {DOC_ROOT}/issue.md を生成
+/hikyaku-architect {DOC_ROOT}            → {DOC_ROOT}/architecture/ + {DOC_ROOT}/tasklist.md + {DOC_ROOT}/issue.md を生成
       ↓ ユーザー承認
-/hikyaku-builder {DOC_ROOT} next   → {DOC_ROOT}/build-01/ を生成し、実装 → PR
-/hikyaku-builder {DOC_ROOT} next   → {DOC_ROOT}/build-02/ を生成し、実装 → PR
+/hikyaku-builder {DOC_ROOT}              → {DOC_ROOT}/build-01/ を生成し、実装 → PR
+/hikyaku-builder {DOC_ROOT}              → {DOC_ROOT}/build-02/ を生成し、実装 → PR
   ...（タスク数分、各回別セッションで繰り返し）
 ```
+
+`/hikyaku-builder` は buildID を指定して特定タスクを実行することもできます（例: `/hikyaku-builder {DOC_ROOT} 3`）。省略時は次のタスクを自動選択します。
 
 ### Phase 1: `/hikyaku-planner` — 企画
 

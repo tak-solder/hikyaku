@@ -259,5 +259,5 @@ issue.md には以下を記載する:
 設計フェーズが完了しました。
 
 BUILDフェーズを開始するには、新しいセッションで以下を実行してください:
-/hikyaku-builder $ARGUMENTS next
+/hikyaku-builder $ARGUMENTS
 ```
