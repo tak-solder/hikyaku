@@ -118,7 +118,7 @@
 ```markdown
 # タスク一覧
 
-| buildID | title | SP | dependencies | PR |
+| buildID | title | BP | dependencies | PR |
 |---------|-------|----|--------------|----|
 | 1 | DB + 共通基盤 | 3 | | |
 | 2 | 認証API | 3 | 1 | |
@@ -139,7 +139,7 @@ Prisma導入、DBマイグレーション、共通ユーティリティの整備
 **カラム説明:**
 - **buildID**: タスクの一意識別子（ゼロ埋め2桁: 01, 02, ...）
 - **title**: タスク名
-- **SP**: ストーリーポイント（sp-guide.md 参照）
+- **BP**: ビルドポイント（bp-guide.md 参照）
 - **dependencies**: 依存タスクID（カンマ区切り）
 - **PR**: PR番号またはURL（BUILDフェーズ完了後に記入）
 

@@ -37,7 +37,7 @@ Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUI
 
 - 既存コードを Agent で調査し `codebase-survey.md` を作成
 - 設計ドキュメント（tech-stack, db-schema, interfaces, conventions）を必要に応じて作成
-- SP 見積もり付きでタスク分割（1タスク = 1セッションで完結する粒度）
+- BP 見積もり付きでタスク分割（1タスク = 1セッションで完結する粒度）
 - **成果物**: `architecture/`, `tasklist.md`, `build-{NN}/issue.md`
 
 ### Phase 3: `/hikyaku-builder` — 実装
