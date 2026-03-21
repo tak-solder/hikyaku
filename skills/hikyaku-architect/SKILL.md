@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "{DOC_ROOT}"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # Hikyaku Architect
