@@ -1,6 +1,6 @@
 ---
 name: hikyaku-builder
-description: "Hikyaku 実装フェーズ: ビルドの実装計画・コード生成・検証・PR作成を実行する。設計(architecture/)が完了し、ビルド単位でコード実装からPR作成まで行うときに使う。"
+description: "Hikyaku 実装フェーズ: 設計フェーズや依存する実装フェーズの成果物を入力として、実装計画・コード生成・検証・PR作成を出力する。"
 compatibility: "Requires git and gh CLI."
 user-invocable: true
 disable-model-invocation: true

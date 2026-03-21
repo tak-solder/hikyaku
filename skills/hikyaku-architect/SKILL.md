@@ -1,6 +1,6 @@
 ---
 name: hikyaku-architect
-description: "Hikyaku 設計フェーズ: 企画フェーズの成果物を入力とし、技術設計・ビルド分割・ビルド定義を実行する。企画(planning/)が完了し、技術設計とビルド分割を行いたいときに使う。"
+description: "Hikyaku 設計フェーズ: 企画フェーズの成果物を入力として、技術設計・ビルド分割・ビルド定義を出力する"
 user-invocable: true
 disable-model-invocation: true
 argument-hint: "{DOC_ROOT}"
