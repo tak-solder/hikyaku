@@ -7,7 +7,7 @@ disable-model-invocation: true
 argument-hint: "{DOC_ROOT} [buildID|next]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.2.0"
+  version: "0.2.1"
 ---
 
 # Hikyaku Builder
@@ -137,6 +137,8 @@ flowchart TD
 
 - `$ARGUMENTS[1]` が数値の場合: 該当する buildID のビルドを対象とする
 - `$ARGUMENTS[1]` が省略または `next` の場合: PR列が空かつ、依存ビルド（dependencies列）のPR列がすべて埋まっているビルドの中から、最小のbuildIDを選択する
+
+**注意:** buildID の数値順は実行順序と一致しない場合がある（ビルド分割により後から追加されたビルドが、数値上は大きいが依存グラフ上は先に実行すべきケースがある）。必ず dependencies 列に基づいて判断すること。
 
 対象ビルドが見つからない場合は、ユーザーに状況を報告して終了する。
 
