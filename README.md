@@ -20,10 +20,11 @@ Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUI
 /hikyaku-planner {DOC_ROOT}              → {DOC_ROOT}/planning/ を生成
       ↓ ユーザー承認
 /hikyaku-architect {DOC_ROOT}            → {DOC_ROOT}/architecture/ + {DOC_ROOT}/tasklist.md + {DOC_ROOT}/build-{NN}/issue.md を生成
-      ↓ ユーザー承認
+      ↓ ユーザー承認                        （build-manager でビルド管理）
 /hikyaku-builder {DOC_ROOT}              → {DOC_ROOT}/build-01/ を生成し、実装 → PR
 /hikyaku-builder {DOC_ROOT}              → {DOC_ROOT}/build-02/ を生成し、実装 → PR
   ...（ビルド数分、各回別セッションで繰り返し）
+      　                                    （必要に応じて build-manager でビルド追加・分割）
 ```
 
 `/hikyaku-builder` は buildID を指定して特定ビルドを実行することもできます（例: `/hikyaku-builder {DOC_ROOT} 3`）。省略時は次のビルドを自動選択します。
@@ -42,7 +43,7 @@ Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUI
 
 - 既存コードを Agent で調査し `codebase-survey.md` を作成
 - 設計ドキュメント（tech-stack, db-schema, interfaces, conventions）を必要に応じて作成
-- BP 見積もり付きでビルド分割（1ビルド = 1セッションで完結する粒度）
+- `hikyaku-build-manager` を使い、BP 見積もり付きでビルド分割（1ビルド = 1セッションで完結する粒度）
 - **成果物**: `architecture/`, `tasklist.md`, `build-{NN}/issue.md`
 
 ### Phase 3: `/hikyaku-builder` — 実装
@@ -51,7 +52,16 @@ Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUI
 
 - 設計ドキュメントと先行ビルドの `handoff.md` でコンテキストを復元
 - 実装計画 → テストシナリオ → コード生成 → ローカル検証 → PR
+- 実装中にスコープ超過や追加タスクが判明した場合、`hikyaku-build-manager` でビルドの追加・分割が可能
 - **成果物**: 実装コード, `plan.md`, `test-spec.md`, `handoff.md`, PR
+
+### 内部スキル: `hikyaku-build-manager` — ビルド管理
+
+architect と builder から呼び出される内部スキル。ビルドの追加・更新・分割と依存グラフ管理を一元的に行う。
+
+- BP見積もり、tasklist.md の管理、issue.md の作成・更新
+- 変更時はユーザー承認を必須とする
+- **ユーザーが直接呼び出すスキルではない**（architect / builder が必要に応じて自動的に呼び出す）
 
 ## インストラクションの優先順位
 
