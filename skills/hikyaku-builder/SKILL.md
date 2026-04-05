@@ -125,7 +125,7 @@ flowchart TD
     S8b --> S8
     S8a -- Yes --> S9["Step 9: 申し送り作成（handoff.md）"]
     S9 --> S10["Step 10: Push + PR作成"]
-    S10 --> S11["Step 11: 振り返り（retrospective.md）"]
+    S10 --> S11["Step 11: 振り返り"]
     S11 --> Done["完了 → 次のビルドへ"]
 ```
 
@@ -234,15 +234,9 @@ plan.md の実装ステップに沿って実装する。
 
 ### Step 11: 振り返り
 
-セッション全体を振り返り、`$ARGUMENTS[0]/build-{NN}/retrospective.md` を作成する。
-フォーマットは [templates.md](references/templates.md) を参照。
+`/hikyaku-retrospective $ARGUMENTS[0] build-{NN}` を呼び出して振り返りを実施する。
 
-会話履歴とPRレビューコメントを見直し、以下を洗い出す:
-- スキルの手順に含まれていないが、ユーザーから受けた指示・修正・補足
-- スキルの手順通りに進めたが、うまくいかなかった点
-- PRレビューで指摘された設計・実装上の見落とし（スキルの手順で防げた可能性があるもの）
-
-振り返りをユーザーに提示した上で、以下を案内する:
+振り返り完了後（またはスキップ後）、以下を案内する:
 
 ```
 Build {NN} が完了しました。
@@ -287,4 +281,4 @@ PRレビューで指摘を受けた場合、同じセッションまたは新し
    - `$ARGUMENTS[0]/architecture/` 配下 — interfaces.md, db-schema.md 等の設計ドキュメント
    - `$ARGUMENTS[0]/planning/` 配下 — 企画レベルの変更があった場合（稀）
 6. Pushする
-7. 振り返り — `$ARGUMENTS[0]/build-{NN}/retrospective.md` に追記する。レビュー指摘は「設計・実装時に見落とした観点」の証拠であり、スキル改善の重要なインプットになる。既に retrospective.md が存在する場合は末尾に `## PRレビュー対応の振り返り` セクションを追加する
+7. 振り返り — `/hikyaku-retrospective $ARGUMENTS[0] build-{NN}` を呼び出す。既に retrospective.md が存在する場合は追記モードで動作する
