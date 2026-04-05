@@ -120,7 +120,7 @@ flowchart TD
     S6a -- No --> S6b{"フィードバックの種類"}
     S6b -- "設計ドキュメント" --> S3
     S6b -- "ビルド" --> S5
-    S6a -- Yes --> S7["Step 7: 振り返り（retrospective.md）"]
+    S6a -- Yes --> S7["Step 7: 振り返り"]
     S7 --> Done["完了 → /hikyaku-builder へ"]
 ```
 
@@ -229,14 +229,9 @@ build-manager がBP見積もり、tasklist.md の作成、各 issue.md の作成
 
 ### Step 7: 振り返り
 
-セッション全体を振り返り、`$ARGUMENTS/architecture/retrospective.md` を作成する。
-フォーマットは [templates.md](references/templates.md) を参照。
+`/hikyaku-retrospective $ARGUMENTS architecture` を呼び出して振り返りを実施する。
 
-会話履歴を見直し、以下を洗い出す:
-- スキルの手順に含まれていないが、ユーザーから受けた指示・修正・補足
-- スキルの手順通りに進めたが、うまくいかなかった点
-
-振り返りをユーザーに提示した上で、以下を案内する:
+振り返り完了後（またはスキップ後）、以下を案内する:
 
 ```
 設計フェーズが完了しました。
