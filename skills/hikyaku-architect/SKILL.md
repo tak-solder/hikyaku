@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "{DOC_ROOT}"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.2.1"
+  version: "0.3.0"
 ---
 
 # Hikyaku Architect
@@ -114,14 +114,14 @@ flowchart TD
     end
 
     Q5 -- Yes --> S4["Step 4: 設計ドキュメント作成"]
-    S4 --> S5["Step 5: ビルド分割 → tasklist.md"]
-    S5 --> S6["Step 6: ビルド定義 → issue.md"]
-    S6 --> S7["Step 7: ユーザー承認"]
-    S7 --> S7a{"承認?"}
-    S7a -- No --> S7b["フィードバックを反映"]
-    S7b --> S3
-    S7a -- Yes --> S8["Step 8: 振り返り（retrospective.md）"]
-    S8 --> Done["完了 → /hikyaku-builder へ"]
+    S4 --> S5["Step 5: build-manager でビルド作成"]
+    S5 --> S6["Step 6: ユーザー承認（設計全体）"]
+    S6 --> S6a{"承認?"}
+    S6a -- No --> S6b{"フィードバックの種類"}
+    S6b -- "設計ドキュメント" --> S3
+    S6b -- "ビルド" --> S5
+    S6a -- Yes --> S7["Step 7: 振り返り"]
+    S7 --> Done["完了 → /hikyaku-builder へ"]
 ```
 
 ## 手順
@@ -198,73 +198,40 @@ flowchart TD
 
 各ドキュメントのフォーマットは [templates.md](references/templates.md) を参照。
 
-### Step 5: ビルド分割
+### Step 5: ビルド作成
 
-BP見積もりガイド（[bp-guide.md](references/bp-guide.md)）に基づいてビルドを定義する。
+設計ドキュメントに基づいてビルドの論理的な単位を特定し、`/hikyaku-build-manager $ARGUMENTS` を呼び出してビルドの作成を委任する。
 
-**BP見積もり手順（ビルドごとに実施）:**
-1. 主要指標（新規ファイル数、実装行数、API操作数、画面数、DBテーブル数）を見積もり、最大値をベースBPとする
-2. 加算要素を **必ず** チェックし、該当するものを加算する:
-   - [ ] 基盤セットアップを含むか（+1）
-   - [ ] 外部API連携を含むか（+1）
-   - [ ] 既存コードの大規模リファクタを含むか（+1）
-   - [ ] 複数パッケージにまたがるか（+ワークスペース数）
-3. 合計BPが5を超える場合は分割を検討する
+build-manager に伝える情報:
+- 各ビルドのタイトル、スコープ（やること / やらないこと / 受け入れ基準）
+- ビルド間の依存関係
+- 設計ドキュメント（architecture/）の参照先
 
-**BP 8 の許容基準:** 分割すると以下のいずれかに該当する場合のみ BP 8 を許容する:
-- 分割したビルド間で同一ファイルの同一箇所を編集する必要があり、マージコンフリクトが避けられない
-- 分割の一方が BP 1 未満になり、ビルドとして成立しない
+build-manager がBP見積もり、tasklist.md の作成、各 issue.md の作成、ユーザー承認までを行う。
 
-「両方を同時に実装した方が効率的」は許容理由にならない。handoff.md による引き継ぎで十分な場合は分割する。
+### Step 6: ユーザー承認（設計全体）
 
-`$ARGUMENTS/tasklist.md` にビルド一覧を記録する（フォーマットは [templates.md](references/templates.md) を参照）
-
-**buildID のルール:**
-- buildID は作成順の連番とし、実行順序は dependencies 列（依存グラフ）で表現する
-- buildID の数値順 ≠ 実行順序。実行順序は依存グラフから決定される
-
-### Step 6: ビルド定義
-
-tasklist.md の各ビルドについて、`$ARGUMENTS/build-{NN}/issue.md` を作成する（フォーマットは [templates.md](references/templates.md) を参照）。
-NNは buildID をゼロ埋め2桁にしたもの（例: buildID 3 → build-03）。
-
-issue.md には以下を記載する:
-- **やること**: ビルドのスコープ
-- **やらないこと**: 明示的なスコープ外
-- **受け入れ基準**: 完了条件のチェックリスト
-
-### Step 7: ユーザー承認
-
-設計ドキュメントの全内容と tasklist.md をユーザーに提示し、承認を得る。
+設計ドキュメント（architecture/）の全内容をユーザーに提示し、最終承認を得る。
+ビルドの承認は Step 5 で build-manager が取得済みのため、ここでは設計ドキュメントに集中する。
 
 **承認の観点:**
 - 技術選定は妥当か
 - 設計方針に問題はないか
-- ビルド分割の粒度は適切か
-- 各ビルドの受け入れ基準は明確か
 
 **承認の原則**: 設計フェーズの決定は全ビルドに波及するため、承認は **必須**。
 技術選択やアプリ設計の判断ミスは数十万トークンの無駄につながる。
 
-**ビルド分割のフィードバックを受けた場合:**
-- 既存ビルドのリナンバリングは **行わない**
-- 分割で新たに生まれたビルドは **次の空き buildID** を割り当て、tasklist.md の末尾に追加する
-- 分割元ビルドの issue.md を更新し、新ビルドの issue.md を作成する
-- 影響を受けるビルドの dependencies 列を更新する
-- 依存グラフ（Mermaid）を更新する
+**フィードバック対応:**
+- 設計ドキュメントへのフィードバック → Step 3 に戻る
+- ビルドへのフィードバック → `/hikyaku-build-manager $ARGUMENTS` を再度呼び出す
 
-承認が得られたら、Step 8 に進む。
+承認が得られたら、Step 7 に進む。
 
-### Step 8: 振り返り
+### Step 7: 振り返り
 
-セッション全体を振り返り、`$ARGUMENTS/architecture/retrospective.md` を作成する。
-フォーマットは [templates.md](references/templates.md) を参照。
+`/hikyaku-retrospective $ARGUMENTS architecture` を呼び出して振り返りを実施する。
 
-会話履歴を見直し、以下を洗い出す:
-- スキルの手順に含まれていないが、ユーザーから受けた指示・修正・補足
-- スキルの手順通りに進めたが、うまくいかなかった点
-
-振り返りをユーザーに提示した上で、以下を案内する:
+振り返り完了後（またはスキップ後）、以下を案内する:
 
 ```
 設計フェーズが完了しました。

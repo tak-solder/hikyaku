@@ -20,10 +20,11 @@ Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUI
 /hikyaku-planner {DOC_ROOT}              → {DOC_ROOT}/planning/ を生成
       ↓ ユーザー承認
 /hikyaku-architect {DOC_ROOT}            → {DOC_ROOT}/architecture/ + {DOC_ROOT}/tasklist.md + {DOC_ROOT}/build-{NN}/issue.md を生成
-      ↓ ユーザー承認
+      ↓ ユーザー承認                        （build-manager でビルド管理）
 /hikyaku-builder {DOC_ROOT}              → {DOC_ROOT}/build-01/ を生成し、実装 → PR
 /hikyaku-builder {DOC_ROOT}              → {DOC_ROOT}/build-02/ を生成し、実装 → PR
   ...（ビルド数分、各回別セッションで繰り返し）
+      　                                    （必要に応じて build-manager でビルド追加・分割）
 ```
 
 `/hikyaku-builder` は buildID を指定して特定ビルドを実行することもできます（例: `/hikyaku-builder {DOC_ROOT} 3`）。省略時は次のビルドを自動選択します。
@@ -42,7 +43,7 @@ Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUI
 
 - 既存コードを Agent で調査し `codebase-survey.md` を作成
 - 設計ドキュメント（tech-stack, db-schema, interfaces, conventions）を必要に応じて作成
-- BP 見積もり付きでビルド分割（1ビルド = 1セッションで完結する粒度）
+- `hikyaku-build-manager` を使い、BP 見積もり付きでビルド分割（1ビルド = 1セッションで完結する粒度）
 - **成果物**: `architecture/`, `tasklist.md`, `build-{NN}/issue.md`
 
 ### Phase 3: `/hikyaku-builder` — 実装
@@ -51,17 +52,8 @@ Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUI
 
 - 設計ドキュメントと先行ビルドの `handoff.md` でコンテキストを復元
 - 実装計画 → テストシナリオ → コード生成 → ローカル検証 → PR
+- 実装中にスコープ超過や追加タスクが判明した場合、`hikyaku-build-manager` でビルドの追加・分割が可能
 - **成果物**: 実装コード, `plan.md`, `test-spec.md`, `handoff.md`, PR
-
-## インストラクションの優先順位
-
-Hikyaku は以下の優先順位でインストラクションを適用します:
-
-1. **リポジトリ全体のインストラクション**（AGENTS.md, CLAUDE.md 等）
-2. **ワークフロー用インストラクション**（`{DOC_ROOT}/instruction.md`）
-3. **スキルの説明**（各 SKILL.md）
-
-`{DOC_ROOT}/instruction.md` はワークフロー固有のルールや制約を記述するためのファイルです。大きなリポジトリやモノレポの一部で Hikyaku を使う場合に、リポジトリ全体の規約とは別にワークフロー固有の指示を定義できます。このファイルは任意で、存在しなければスキップされます。
 
 ## ワークフローディレクトリ構造
 
@@ -87,8 +79,54 @@ Hikyaku は以下の優先順位でインストラクションを適用します
 │   ├── test-spec.md           # テストシナリオ（BUILD で作成）
 │   ├── questions.md           # 実装時の質問と回答（BUILD で作成、必要時のみ）
 │   ├── handoff.md             # 申し送り（BUILD で作成）
-│   └── retrospective.md
+│   └── retrospective.md      # 振り返り（BUILD で作成）
 ├── build-02/
 │   └── ...
 └── ...
 ```
+
+## 内部スキル
+
+以下のスキルはユーザーが直接呼び出すものではなく、各フェーズのスキルが必要に応じて自動的に呼び出します。
+
+### `hikyaku-build-manager` — ビルド管理
+
+architect と builder から呼び出される内部スキル。ビルドの追加・更新・分割と依存グラフ管理を一元的に行う。
+
+- BP見積もり、tasklist.md の管理、issue.md の作成・更新
+- 変更時はユーザー承認を必須とする
+
+### `hikyaku-retrospective` — 振り返り
+
+各フェーズから呼び出される内部スキル。セッション中のスキル外指示を分析し、改善提案を分類・記録する。
+
+- 振り返り実施前にユーザーに確認し、不要ならスキップ可能
+- 改善提案の対象を判断フローに基づいて分類（`skill:` / `repo:` / `workflow:` / `記録のみ`）
+- PRレビュー対応後の追記モードにも対応
+
+## インストラクションの優先順位
+
+Hikyaku は以下の優先順位でインストラクションを適用します:
+
+1. **リポジトリ全体のインストラクション**（AGENTS.md, CLAUDE.md 等）
+2. **ワークフロー用インストラクション**（`{DOC_ROOT}/instruction.md`）
+3. **スキルの説明**（各 SKILL.md）
+
+`{DOC_ROOT}/instruction.md` はワークフロー固有のルールや制約を記述するためのファイルです。大きなリポジトリやモノレポの一部で Hikyaku を使う場合に、リポジトリ全体の規約とは別にワークフロー固有の指示を定義できます。このファイルは任意で、存在しなければスキップされます。
+
+## ビルドポイント（BP）
+
+ビルドポイント（BP）は、AIエージェントとの1セッション（20万トークン目安）で実装が完了するかどうかを判断するための定量指標です。ARCHITECT フェーズでビルド分割する際の基準として使用します。
+
+| BP | 判定 |
+|----|------|
+| 1〜5 | 1セッションで完結見込み |
+| 8 | 分割推奨（分割コストが大きい場合のみ許容） |
+| 13〜 | 分割必須 |
+
+BP は以下の指標から算出します:
+
+- **ベースBP** — 新規ファイル数・実装行数・API操作数・画面数・DBテーブル数のうち最大値
+- **加算BP** — 基盤セットアップ、外部API連携、大規模リファクタ、影響ファイル数の多さなど
+
+合計 BP が 8 を超える場合は、ワークスペース・画面・ドメイン等の軸でビルドを分割し、各ビルドが BP 8 以下になるようにします。詳細な見積もり手順は `skills/hikyaku-build-manager/references/bp-guide.md` を参照してください。
