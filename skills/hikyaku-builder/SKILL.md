@@ -74,14 +74,6 @@ $ARGUMENTS[0]/
 あなたは実装フェーズの1ビルドを担当する。企画・設計は別セッションで完了済み。
 設計ドキュメント（architecture/）と先行ビルドの handoff.md を読んでコンテキストを復元し、実装→検証→申し送り→PRまでを完結させる。
 
-**やること:**
-- 対象ビルドの issue.md に基づいて実装計画（plan.md）を作成する
-- テストシナリオ（test-spec.md）を作成する
-- コードを実装し、テストを書く
-- ローカル検証を通す
-- 申し送り（handoff.md）を作成する
-- Push + PR作成
-
 **やらないこと:**
 - 企画内容の変更（スコープ変更・優先度変更）
 - 担当ビルド外のコード変更
@@ -225,12 +217,9 @@ Build {NN} が完了しました。
 build-manager がユーザー承認を含むビルド管理の全手順を実行する。
 
 **呼び出しタイミング:**
-
-| タイミング | 状況 | 操作 |
-|-----------|------|------|
-| Step 4（計画作成）後 | issue.md のスコープが実際にはBP超過と判明 | ビルドの分割 |
-| Step 6（コード生成）中 | 想定外の複雑さや未定義の依存が判明 | ビルドの追加・更新 |
-| Step 8（申し送り）時 | 意図的に先送りした作業を新ビルドとして記録 | ビルドの追加 |
+- **Step 4（計画作成と承認）後** — issue.md のスコープが実際にはBP超過と判明 → ビルドの分割
+- **Step 6（コード生成）中** — 想定外の複雑さや未定義の依存が判明 → ビルドの追加・更新
+- **Step 8（申し送り作成）時** — 意図的に先送りした作業を新ビルドとして記録 → ビルドの追加
 
 **build-manager 呼び出し後の対応:**
 - 現在のビルドのスコープが変更された場合: plan.md を修正し、Step 4 の承認からやり直す（承認後、Step 5 で test-spec.md を再生成する）
@@ -242,16 +231,13 @@ build-manager がユーザー承認を含むビルド管理の全手順を実行
 
 PRレビューで指摘を受けた場合、同じセッションまたは新しいセッションで以下の手順で修正する:
 
-1. PRのレビューコメントを確認する
-2. `$ARGUMENTS[0]/build-{NN}/plan.md` を参照してコンテキストを復元する
-3. 指摘内容に基づいて修正を実装する
-4. ローカル検証を実行する（Step 7 と同じ）
-5. ドキュメント更新チェック — 以下の各ドキュメントについて、修正内容との差分がないか確認し、差分があれば更新する:
-   - `$ARGUMENTS[0]/build-{NN}/plan.md` — クラス設計・実装ステップ
-   - `$ARGUMENTS[0]/build-{NN}/issue.md` — 受け入れ基準（ソースオブトゥルース）
-   - `$ARGUMENTS[0]/build-{NN}/test-spec.md` — テストシナリオの追加・変更
-   - `$ARGUMENTS[0]/build-{NN}/handoff.md` — 公開インターフェース・ADR・既知の制約
-   - `$ARGUMENTS[0]/architecture/` 配下 — interfaces.md, db-schema.md 等の設計ドキュメント
-   - `$ARGUMENTS[0]/planning/` 配下 — 企画レベルの変更があった場合（稀）
-6. Pushする
-7. 振り返り — `/hikyaku-retrospective $ARGUMENTS[0] build-{NN}` を呼び出す。既に retrospective.md が存在する場合は追記モードで動作する
+- [ ] PRのレビューコメントを確認する
+- [ ] `$ARGUMENTS[0]/build-{NN}/plan.md` を参照してコンテキストを復元する
+- [ ] 指摘内容に基づいて修正を実装する
+- [ ] ローカル検証を実行する（Step 7 と同じ）
+- [ ] ドキュメント更新チェック — 修正内容に応じて以下を更新する:
+  - `$ARGUMENTS[0]/build-{NN}/` 配下 — plan.md, issue.md, test-spec.md, handoff.md
+  - `$ARGUMENTS[0]/architecture/` 配下 — interfaces.md, db-schema.md 等
+  - `$ARGUMENTS[0]/planning/` 配下 — 企画レベルの変更があった場合（稀）
+- [ ] Push する
+- [ ] `/hikyaku-retrospective $ARGUMENTS[0] build-{NN}` を呼び出す（既に retrospective.md が存在する場合は追記モードで動作する）
