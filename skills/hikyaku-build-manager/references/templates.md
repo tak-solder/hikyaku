@@ -12,6 +12,12 @@
 | 3 | 投稿API | 3 | 2 | |
 | 4 | 共通ユーティリティ | 2 | 1 | |
 
+## builder呼び出し
+
+```
+/hikyaku-builder {DOC_ROOT}
+```
+
 ## 依存グラフ
 
 ```mermaid
