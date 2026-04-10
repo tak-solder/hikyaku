@@ -11,7 +11,7 @@ metadata:
 
 # Hikyaku Build Manager
 
-`$ARGUMENTS` に指定されたパスの `tasklist.md` と `build-{NN}/issue.md` を管理する。
+`$ARGUMENTS[0]` に指定されたパスの `tasklist.md` と `build-{NN}/issue.md` を管理する。
 
 **このスキルは hikyaku-architect および hikyaku-builder からモデル呼び出しで使用される内部スキルです。**
 ユーザーが直接呼び出すことは想定していません。hikyaku ワークフロー以外のコンテキストから呼び出された場合は、その旨をユーザーに伝えて終了してください。
@@ -32,7 +32,7 @@ metadata:
 
 - [ ] `<SKILL_ROOT>/references/templates.md`: 各種成果物のテンプレート（必須）
 - [ ] `<SKILL_ROOT>/references/bp-guide.md`: BP見積もりガイド（必須）
-- [ ] `$ARGUMENTS/tasklist.md` を読み込む（存在しない場合は新規作成モード）
+- [ ] `$ARGUMENTS[0]/tasklist.md` を読み込む（存在しない場合は新規作成モード）
 
 → すべて読み込めたら Step 1 へ。必須ファイルが読み込めなかった場合はユーザーに報告して終了。
 
@@ -86,7 +86,7 @@ metadata:
 ### Step 4: ファイル書き込み
 
 - [ ] **tasklist.md** — テーブル行の追加・更新、依存グラフの再生成、ビルド要約の追加・更新
-- [ ] **issue.md** — 新規作成または更新（`$ARGUMENTS/build-{NN}/issue.md`）
+- [ ] **issue.md** — 新規作成または更新（`$ARGUMENTS[0]/build-{NN}/issue.md`）
   - 各ファイルのフォーマットは [templates.md](references/templates.md) を参照
 
 ## 共通ルール
