@@ -90,7 +90,7 @@ $ARGUMENTS[0]/
 
 - [ ] `<SKILL_ROOT>/references/templates.md`: 各種成果物のテンプレート（必須）
 - [ ] `<SKILL_ROOT>/references/retry-policy.md`: エラー発生時のリトライ方針（必須）
-- [ ] `<$ARGUMENTS[0]>/instruction.md`: ワークフロー独自のインストラクション（存在する場合のみ）
+- [ ] `$ARGUMENTS[0]/instruction.md`: ワークフロー独自のインストラクション（存在する場合のみ）
 
 なお、インストラクションは次の優先順で適用する。上位の指示が下位と矛盾する場合は、上位を優先すること。
 
