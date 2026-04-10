@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.4.0] - Unreleased
+
+### Changed
+- 全スキルの作業ステップをチェックボックス形式に再構成 — 完了条件を明確化し、手順スキップを防止 (#16)
+- 全スキルに Step 0（ファイル読み込み）を追加 — テンプレートやリファレンスの読み込み漏れを防止
+- 承認ステップを作成ステップに統合し、フィードバックループを明確化（planner, architect, builder）
+- mermaid フローチャート・冗長なリスト（「やること」「成果物」）を削除し、全体で約185行削減
+- `$ARGUMENTS[0]` 表記を全スキルで統一
+- plan.md テンプレートに BP 見積もりセクションを追加
+- tasklist.md テンプレートに builder 呼び出しコマンドを追加
+
 ## [0.3.0] - 2026-04-06
 
 ### Added
