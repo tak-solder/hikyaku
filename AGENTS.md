@@ -14,11 +14,19 @@
 
 ## Agent Skills
 
+スキルを編集する際は次のページを参照して、仕様やベストプラクティスを遵守してください。
+
 Agent Skillsの仕様については次のページを参照してください
-https://agentskills.io/specification.md
+- https://agentskills.io/specification.md
+
+スキル作成のベストプラクティス
+- https://platform.claude.com/docs/ja/agents-and-tools/agent-skills/best-practices.md
 
 ## 作業時の注意
 
 - `skills/`配下のファイルを変更したときは、各スキルのフロントマターに記載されているバージョンを更新してください。
     - バージョンは `MAJOR.MINOR.PATCH` の形式で、変更の内容に応じて適切にインクリメントしてください。
     - すべてのスキルのバージョンは統一してください。つまり、1つでもスキルを変更したら、すべてのスキルのバージョンを更新する必要があります。
+- バージョンを上げる際は`CHANGELOG.md`に変更内容を記載してください。
+    - 変更内容は、どのスキルをどのように変更したかを具体的に説明してください。
+    - 変更内容がユーザーに与える影響（例: 互換性の有無、必要な対応など）も明記してください。
