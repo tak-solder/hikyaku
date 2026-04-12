@@ -4,7 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [0.4.0] - Unreleased
+## [0.4.1]
+
+### Changed
+- リトライポリシーの判定基準を「根本原因ベース」から「同一ファイルへの修正回数ベース」に変更 — AIが根本原因の変化を自己判断してカウントをリセットし、コンテキストを浪費する問題を防止
+
+## [0.4.0]
 
 ### Changed
 - 全スキルの作業ステップをチェックボックス形式に再構成 — 完了条件を明確化し、手順スキップを防止 (#16)
