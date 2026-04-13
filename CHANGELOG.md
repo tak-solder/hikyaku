@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.4.2]
+
+### Changed
+- `hikyaku-builder` Step 4 の質問手順を明確化 — 不明点があればまず `questions.md` に書き出してからユーザーに提示するよう手順を4ステップで明記。以前の曖昧な記述により CLI で直接質問してしまう問題を修正。既存の動作に対する互換性への影響なし。
+
 ## [0.4.1]
 
 ### Changed

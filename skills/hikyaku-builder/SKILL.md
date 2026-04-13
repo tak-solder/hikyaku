@@ -7,7 +7,7 @@ disable-model-invocation: true
 argument-hint: "{DOC_ROOT} [buildID|next]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.4.1"
+  version: "0.4.2"
 ---
 
 # Hikyaku Builder
@@ -134,12 +134,16 @@ $ARGUMENTS[0]/
 
 ### Step 4: 実装計画の作成と承認
 
-- [ ] 実装計画を作成するにあたっての確認点や不明点がある場合は `$ARGUMENTS[0]/build-{NN}/questions.md` でユーザーに質問する
+- [ ] 実装計画を作成するにあたっての確認点や不明点がある場合は、次の手順でユーザーに質問する
+  1. 質問内容を `$ARGUMENTS[0]/build-{NN}/questions.md` に書き出す（テンプレートは [templates.md](references/templates.md) の「questions.md（質問）」を使用する）
+  2. ファイルの内容をユーザーに提示し、回答を求める
+  3. 回答を questions.md に記録する
+  4. すべての質問が解消されたら次のサブステップへ進む
 - [ ] すべての確認点や不明点が解消でき、ユーザーとすり合わせが出来たら `$ARGUMENTS[0]/build-{NN}/plan.md` を作成する
-    - `NN`は buildID をゼロ埋め2桁にしたもの（例: buildID 3 → build-03）
-    - テンプレートは [templates.md](references/templates.md) の「plan.md（実装計画）」を使用する
-    - **plan.md に含めるもの:** 依存パッケージの選定、クラス設計（メソッドシグネチャ）、セキュリティ等の非機能要件
-    - **plan.md に含めないもの:** 詳細な実装コード、テストコードの実装方法
+  - `NN`は buildID をゼロ埋め2桁にしたもの（例: buildID 3 → build-03）
+  - テンプレートは [templates.md](references/templates.md) の「plan.md（実装計画）」を使用する
+  - **plan.md に含めるもの:** 依存パッケージの選定、クラス設計（メソッドシグネチャ）、セキュリティ等の非機能要件
+  - **plan.md に含めないもの:** 詳細な実装コード、テストコードの実装方法
 - [ ] plan.md の内容をユーザーに提示し、承認を得る
 
 → 承認を得たら Step 5 へ。フィードバックがあれば plan.md に反映し、Step 4 の承認からやり直す。
