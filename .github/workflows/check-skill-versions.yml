@@ -18,7 +18,7 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           path: base
 
-      - name: Check skill versions are unified
+      - name: Check skill and plugin versions are unified
         run: |
           versions=()
           for skill_file in current/skills/*/SKILL.md; do
@@ -28,36 +28,60 @@ jobs:
             versions+=("$version")
           done
 
+          plugin_version=$(jq -r '.version' current/.claude-plugin/plugin.json)
+          echo "plugin.json: $plugin_version"
+          versions+=("$plugin_version")
+
           first="${versions[0]}"
           for v in "${versions[@]}"; do
             if [ "$v" != "$first" ]; then
-              echo "::error::Skill versions are not unified. All skills must have the same version."
+              echo "::error::Skill versions and plugin.json version are not unified. All must have the same version."
               exit 1
             fi
           done
-          echo "All skill versions are unified: $first"
+          echo "All versions are unified: $first"
 
-      - name: Check version bump if skills changed
+      - name: Check version bump if skills or plugin manifest changed
         run: |
-          # Check if current/skills/ has changes compared to base
+          # Check if current/skills/ or .claude-plugin/ has changes compared to base
           changed=$(diff -rq current/skills/ base/skills/ 2>/dev/null || true)
-          if [ -z "$changed" ]; then
-            echo "No changes in skills/ — skipping version bump check."
+          plugin_changed=$(diff -rq current/.claude-plugin/ base/.claude-plugin/ 2>/dev/null || true)
+          if [ -z "$changed" ] && [ -z "$plugin_changed" ]; then
+            echo "No changes in skills/ or .claude-plugin/ — skipping version bump check."
             exit 0
           fi
 
-          echo "Changed files in skills/:"
-          echo "$changed"
+          if [ -n "$changed" ]; then
+            echo "Changed files in skills/:"
+            echo "$changed"
+          fi
+          if [ -n "$plugin_changed" ]; then
+            echo "Changed files in .claude-plugin/:"
+            echo "$plugin_changed"
+          fi
 
-          # Extract current version from any skill (already verified they're unified)
-          current=$(yq --front-matter=extract '.metadata.version' current/skills/hikyaku-planner/SKILL.md)
-          base=$(yq --front-matter=extract '.metadata.version' base/skills/hikyaku-planner/SKILL.md)
+          # Extract current version from plugin.json (single source of truth, already verified unified)
+          current=$(jq -r '.version' current/.claude-plugin/plugin.json)
+
+          # Extract base version. plugin.json may not exist on the base branch
+          # (i.e. before the plugin migration), in which case fall back to any
+          # SKILL.md in the base tree.
+          if [ -f base/.claude-plugin/plugin.json ]; then
+            base=$(jq -r '.version' base/.claude-plugin/plugin.json)
+          else
+            base_skill=$(find base/skills -mindepth 2 -maxdepth 2 -name SKILL.md | head -n1)
+            if [ -z "$base_skill" ]; then
+              echo "::error::Could not determine base version: no plugin.json or SKILL.md in base tree."
+              exit 1
+            fi
+            base=$(yq --front-matter=extract '.metadata.version' "$base_skill")
+          fi
 
           echo "Base version: $base"
           echo "Current version: $current"
 
           if [ "$current" = "$base" ]; then
-            echo "::error::skills/ has changes but version was not bumped. Please update the version in all SKILL.md files."
+            echo "::error::skills/ or .claude-plugin/ has changes but version was not bumped. Please update the version in all SKILL.md files and plugin.json."
             exit 1
           fi
 

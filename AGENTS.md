@@ -24,9 +24,17 @@ Agent Skillsの仕様については次のページを参照してください
 
 ## 作業時の注意
 
-- `skills/`配下のファイルを変更したときは、各スキルのフロントマターに記載されているバージョンを更新してください。
+- `skills/`配下のファイルを変更したときは、各スキルのフロントマターに記載されているバージョンと `.claude-plugin/plugin.json` の `version` を更新してください。
     - バージョンは `MAJOR.MINOR.PATCH` の形式で、変更の内容に応じて適切にインクリメントしてください。
-    - すべてのスキルのバージョンは統一してください。つまり、1つでもスキルを変更したら、すべてのスキルのバージョンを更新する必要があります。
+    - すべてのスキルのバージョンと plugin.json のバージョンは統一してください。つまり、1つでもスキルを変更したら、すべてのスキルと plugin.json のバージョンを更新する必要があります。
 - バージョンを上げる際は`CHANGELOG.md`に変更内容を記載してください。
     - 変更内容は、どのスキルをどのように変更したかを具体的に説明してください。
     - 変更内容がユーザーに与える影響（例: 互換性の有無、必要な対応など）も明記してください。
+
+## プラグイン構成
+
+このリポジトリは Claude Code のプラグイン仕様（[plugins.md](https://code.claude.com/docs/en/plugins.md), [plugins-reference.md](https://code.claude.com/docs/en/plugins-reference.md)）に準拠しています。
+
+- `.claude-plugin/plugin.json`: プラグインマニフェスト
+- `.claude-plugin/marketplace.json`: マーケットプレイス定義（リポジトリ自身を単一プラグイン構成のマーケットプレイスとして配布）
+- `skills/<name>/SKILL.md`: 各スキル定義。インストール後は `/hikyaku:<name>` で呼び出される

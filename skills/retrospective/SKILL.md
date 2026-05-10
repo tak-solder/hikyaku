@@ -1,19 +1,19 @@
 ---
-name: hikyaku-retrospective
+name: retrospective
 description: "Hikyaku 振り返り: セッション中のスキル外指示を分析し、改善提案を分類・記録する内部スキル。各フェーズから呼び出される。"
 user-invocable: false
 disable-model-invocation: false
 argument-hint: "{DOC_ROOT} {SUB_DIR}"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.4.1"
+  version: "0.5.0"
 ---
 
 # Hikyaku Retrospective
 
 セッション全体を振り返り、改善提案を分類・記録する。
 
-**このスキルは hikyaku-planner / hikyaku-architect / hikyaku-builder からモデル呼び出しで使用される内部スキルです。**
+**このスキルは hikyaku:planner / hikyaku:architect / hikyaku:builder からモデル呼び出しで使用される内部スキルです。**
 ユーザーが直接呼び出すことは想定していません。hikyaku ワークフロー以外のコンテキストから呼び出された場合は、その旨をユーザーに伝えて終了してください。
 
 ## 引数

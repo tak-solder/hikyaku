@@ -1,19 +1,19 @@
 ---
-name: hikyaku-build-manager
-description: "Hikyaku ビルド管理: ビルドの追加・更新・分割・依存グラフ管理を行う内部スキル。hikyaku-architect / hikyaku-builder から呼び出される。"
+name: build-manager
+description: "Hikyaku ビルド管理: ビルドの追加・更新・分割・依存グラフ管理を行う内部スキル。hikyaku:architect / hikyaku:builder から呼び出される。"
 user-invocable: false
 disable-model-invocation: false
 argument-hint: "{DOC_ROOT}"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.4.1"
+  version: "0.5.0"
 ---
 
 # Hikyaku Build Manager
 
 `$ARGUMENTS[0]` に指定されたパスの `tasklist.md` と `build-{NN}/issue.md` を管理する。
 
-**このスキルは hikyaku-architect および hikyaku-builder からモデル呼び出しで使用される内部スキルです。**
+**このスキルは hikyaku:architect および hikyaku:builder からモデル呼び出しで使用される内部スキルです。**
 ユーザーが直接呼び出すことは想定していません。hikyaku ワークフロー以外のコンテキストから呼び出された場合は、その旨をユーザーに伝えて終了してください。
 
 ## 操作

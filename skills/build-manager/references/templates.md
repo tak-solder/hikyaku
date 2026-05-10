@@ -15,7 +15,7 @@
 ## builder呼び出し
 
 ```
-/hikyaku-builder {DOC_ROOT}
+/hikyaku:builder {DOC_ROOT}
 ```
 
 ## 依存グラフ

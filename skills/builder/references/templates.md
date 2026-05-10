@@ -29,7 +29,7 @@ issue.md のスコープ定義・受け入れ基準をソースオブトゥル�
 
 ## BP見積もり
 
-見積結果が6BP以上となった場合、`/hikyaku-build-manager {DOC_ROOT}`を呼び出してビルド分割を検討すること
+見積結果が6BP以上となった場合、`/hikyaku:build-manager {DOC_ROOT}`を呼び出してビルド分割を検討すること
 
 - architectフェーズ段階: 〇BP 
 - builderフェーズ段階: 〇BP

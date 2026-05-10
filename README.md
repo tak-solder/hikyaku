@@ -1,15 +1,35 @@
 # Hikyaku (飛脚)
 
-Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUILD の3フェーズ**で構成される、AIエージェント協働開発ワークフローです。   
+Hikyaku は **PLAN → ARCHITECT → BUILD の3フェーズ**で構成される、AIエージェント協働開発ワークフローです。Claude Code のプラグインとして配布され、Agent Skills の仕様に準拠しています。
 
 
 ## 特徴
 
-- **スタンドアロン** — Agent Skillのみで動作。ワークフローで使用するファイルを保存するディレクトリも指定可能
+- **プラグイン形式** — `claude plugin install` で導入可能。ワークフロー用ファイルの保存先ディレクトリも指定可能
 - **セッション分離** — 各フェーズは別の AI セッションが担当し、コンテキストウィンドウを効率的に使う
 - **ファイルベースの引き継ぎ** — セッション間の情報は `planning/`, `architecture/`, `handoff.md` 等のドキュメントで受け渡す
 - **ユーザー承認ゲート** — 各フェーズで必ずユーザーの承認を取り、誤りの波及を防ぐ
 - **振り返りによる自己改善** — 各フェーズ末に retrospective を作成し、スキル自体を継続的に改善する
+
+## インストール
+
+Claude Code の `/plugin` インターフェースまたは CLI から、本リポジトリのマーケットプレイスを追加してプラグインをインストールします。
+
+```bash
+# マーケットプレイスを追加
+claude plugin marketplace add tak-solder/hikyaku
+
+# プラグインをインストール
+claude plugin install hikyaku@hikyaku
+```
+
+ローカルチェックアウトから試す場合は `--plugin-dir` で読み込むこともできます:
+
+```bash
+claude --plugin-dir /path/to/hikyaku
+```
+
+インストール後はスキルが `/hikyaku:planner` のように **`hikyaku:` 名前空間付き**で呼び出せるようになります。
 
 ## ワークフロー
 
@@ -17,19 +37,19 @@ Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUI
 - **DOC_ROOT**: ワークフローのドキュメント（企画・設計・ビルド定義など）を保存するディレクトリ。リポジトリ内の任意のパスを指定できます。
 
 ```
-/hikyaku-planner {DOC_ROOT}              → {DOC_ROOT}/planning/ を生成
+/hikyaku:planner {DOC_ROOT}              → {DOC_ROOT}/planning/ を生成
       ↓ ユーザー承認
-/hikyaku-architect {DOC_ROOT}            → {DOC_ROOT}/architecture/ + {DOC_ROOT}/tasklist.md + {DOC_ROOT}/build-{NN}/issue.md を生成
+/hikyaku:architect {DOC_ROOT}            → {DOC_ROOT}/architecture/ + {DOC_ROOT}/tasklist.md + {DOC_ROOT}/build-{NN}/issue.md を生成
       ↓ ユーザー承認                        （build-manager でビルド管理）
-/hikyaku-builder {DOC_ROOT}              → {DOC_ROOT}/build-01/ を生成し、実装 → PR
-/hikyaku-builder {DOC_ROOT}              → {DOC_ROOT}/build-02/ を生成し、実装 → PR
+/hikyaku:builder {DOC_ROOT}              → {DOC_ROOT}/build-01/ を生成し、実装 → PR
+/hikyaku:builder {DOC_ROOT}              → {DOC_ROOT}/build-02/ を生成し、実装 → PR
   ...（ビルド数分、各回別セッションで繰り返し）
       　                                    （必要に応じて build-manager でビルド追加・分割）
 ```
 
-`/hikyaku-builder` は buildID を指定して特定ビルドを実行することもできます（例: `/hikyaku-builder {DOC_ROOT} 3`）。省略時は次のビルドを自動選択します。
+`/hikyaku:builder` は buildID を指定して特定ビルドを実行することもできます（例: `/hikyaku:builder {DOC_ROOT} 3`）。省略時は次のビルドを自動選択します。
 
-### Phase 1: `/hikyaku-planner` — 企画
+### Phase 1: `/hikyaku:planner` — 企画
 
 既存の企画ドキュメントを読み込み、ユーザーストーリーとして構造化する。
 
@@ -37,22 +57,22 @@ Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUI
 - MoSCoW 優先度付きのユーザーストーリーを作成
 - **成果物**: `planning/questions.md`, `planning/user-stories.md`
 
-### Phase 2: `/hikyaku-architect` — 設計
+### Phase 2: `/hikyaku:architect` — 設計
 
 企画成果物と既存コードベースを入力に、技術設計とビルド分割を行う。
 
 - 既存コードを Agent で調査し `codebase-survey.md` を作成
 - 設計ドキュメント（tech-stack, db-schema, interfaces, conventions）を必要に応じて作成
-- `hikyaku-build-manager` を使い、BP 見積もり付きでビルド分割（1ビルド = 1セッションで完結する粒度）
+- `build-manager` を使い、BP 見積もり付きでビルド分割（1ビルド = 1セッションで完結する粒度）
 - **成果物**: `architecture/`, `tasklist.md`, `build-{NN}/issue.md`
 
-### Phase 3: `/hikyaku-builder` — 実装
+### Phase 3: `/hikyaku:builder` — 実装
 
 1ビルド = 1セッションでコード実装から PR 作成までを完結させる。
 
 - 設計ドキュメントと先行ビルドの `handoff.md` でコンテキストを復元
 - 実装計画 → テストシナリオ → コード生成 → ローカル検証 → PR
-- 実装中にスコープ超過や追加タスクが判明した場合、`hikyaku-build-manager` でビルドの追加・分割が可能
+- 実装中にスコープ超過や追加タスクが判明した場合、`build-manager` でビルドの追加・分割が可能
 - **成果物**: 実装コード, `plan.md`, `test-spec.md`, `handoff.md`, PR
 
 ## ワークフローディレクトリ構造
@@ -87,16 +107,16 @@ Hikyaku は Agent Skills の仕様に準拠した、**PLAN → ARCHITECT → BUI
 
 ## 内部スキル
 
-以下のスキルはユーザーが直接呼び出すものではなく、各フェーズのスキルが必要に応じて自動的に呼び出します。
+以下のスキルはユーザーが直接呼び出すものではなく、各フェーズのスキルが必要に応じて自動的に呼び出します（プラグイン名前空間は `hikyaku:`）。
 
-### `hikyaku-build-manager` — ビルド管理
+### `build-manager` — ビルド管理
 
 architect と builder から呼び出される内部スキル。ビルドの追加・更新・分割と依存グラフ管理を一元的に行う。
 
 - BP見積もり、tasklist.md の管理、issue.md の作成・更新
 - 変更時はユーザー承認を必須とする
 
-### `hikyaku-retrospective` — 振り返り
+### `retrospective` — 振り返り
 
 各フェーズから呼び出される内部スキル。セッション中のスキル外指示を分析し、改善提案を分類・記録する。
 
@@ -129,4 +149,19 @@ BP は以下の指標から算出します:
 - **ベースBP** — 新規ファイル数・実装行数・API操作数・画面数・DBテーブル数のうち最大値
 - **加算BP** — 基盤セットアップ、外部API連携、大規模リファクタ、影響ファイル数の多さなど
 
-合計 BP が 8 を超える場合は、ワークスペース・画面・ドメイン等の軸でビルドを分割し、各ビルドが BP 8 以下になるようにします。詳細な見積もり手順は `skills/hikyaku-build-manager/references/bp-guide.md` を参照してください。
+合計 BP が 8 を超える場合は、ワークスペース・画面・ドメイン等の軸でビルドを分割し、各ビルドが BP 8 以下になるようにします。詳細な見積もり手順は `skills/build-manager/references/bp-guide.md` を参照してください。
+
+## プラグイン構成
+
+```
+./
+├── .claude-plugin/
+│   ├── plugin.json            # プラグインマニフェスト
+│   └── marketplace.json       # マーケットプレイス定義（リポジトリ自身を1プラグイン構成のマーケットプレイスとして配布）
+└── skills/
+    ├── planner/               # /hikyaku:planner
+    ├── architect/             # /hikyaku:architect
+    ├── builder/               # /hikyaku:builder
+    ├── build-manager/         # 内部スキル（model-invocable）
+    └── retrospective/         # 内部スキル（model-invocable）
+```

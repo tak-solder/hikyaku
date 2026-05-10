@@ -1,12 +1,12 @@
 ---
-name: hikyaku-architect
+name: architect
 description: "Hikyaku 設計フェーズ: 企画フェーズの成果物を入力として、技術設計・ビルド分割・ビルド定義を出力する"
 user-invocable: true
 disable-model-invocation: true
 argument-hint: "{DOC_ROOT}"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.4.1"
+  version: "0.5.0"
 ---
 
 # Hikyaku Architect
@@ -25,12 +25,12 @@ Hikyakuは PLAN → ARCHITECT → BUILD の3フェーズで構成されるAIエ�
 ### 全体フロー
 
 ```
-/hikyaku-planner   → planning/ を生成（完了済み）
+/hikyaku:planner   → planning/ を生成（完了済み）
       ↓
-/hikyaku-architect → architecture/ + tasklist.md + build-{NN}/issue.md を生成  ← あなたはここ
+/hikyaku:architect → architecture/ + tasklist.md + build-{NN}/issue.md を生成  ← あなたはここ
       ↓ ユーザー承認
-/hikyaku-builder   → build-01/ を実装 → handoff.md → PR
-/hikyaku-builder   → build-02/ を実装 → handoff.md → PR
+/hikyaku:builder   → build-01/ を実装 → handoff.md → PR
+/hikyaku:builder   → build-02/ を実装 → handoff.md → PR
   ...（ビルド数分繰り返し）
 ```
 
@@ -91,7 +91,7 @@ $ARGUMENTS[0]/
 - [ ] `$ARGUMENTS[0]/planning/questions.md` — 企画段階の質問と回答
 - [ ] `$ARGUMENTS[0]/planning/user-stories.md` — ユーザーストーリー
 
-→ すべて読み込めたら Step 2 へ。いずれかが存在しない場合はユーザーに報告し、先に `/hikyaku-planner` を実行するよう案内して終了。
+→ すべて読み込めたら Step 2 へ。いずれかが存在しない場合はユーザーに報告し、先に `/hikyaku:planner` を実行するよう案内して終了。
 
 ### Step 2: 既存コードベースの調査
 
@@ -136,7 +136,7 @@ $ARGUMENTS[0]/
 
 ### Step 5: ビルド作成と設計全体の承認
 
-- [ ] 設計ドキュメントに基づいてビルドの論理的な単位を特定し、`/hikyaku-build-manager $ARGUMENTS[0]` を呼び出してビルドの作成を委任する
+- [ ] 設計ドキュメントに基づいてビルドの論理的な単位を特定し、`/hikyaku:build-manager $ARGUMENTS[0]` を呼び出してビルドの作成を委任する
   - build-manager に伝える情報: 各ビルドのタイトル・スコープ・依存関係・設計ドキュメントの参照先
   - build-manager がBP見積もり、tasklist.md の作成、各 issue.md の作成、ユーザー承認までを行う
 - [ ] 設計ドキュメント（architecture/）の全内容をユーザーに提示し、最終承認を得る
@@ -145,16 +145,16 @@ $ARGUMENTS[0]/
 
 → 承認を得たら Step 6 へ。フィードバックの内容に応じて対応が異なる:
 - 設計ドキュメントへのフィードバック → Step 3 に戻る
-- ビルドへのフィードバック → `/hikyaku-build-manager $ARGUMENTS[0]` を再度呼び出す
+- ビルドへのフィードバック → `/hikyaku:build-manager $ARGUMENTS[0]` を再度呼び出す
 
 ### Step 6: 振り返り
 
-- [ ] `/hikyaku-retrospective $ARGUMENTS[0] architecture` を呼び出して振り返りを実施する
+- [ ] `/hikyaku:retrospective $ARGUMENTS[0] architecture` を呼び出して振り返りを実施する
 - [ ] 振り返り完了後（またはスキップ後）、以下を案内する
 
 ```
 設計フェーズが完了しました。
 
 BUILDフェーズを開始するには、新しいセッションで以下を実行してください:
-/hikyaku-builder $ARGUMENTS[0]
+/hikyaku:builder $ARGUMENTS[0]
 ```

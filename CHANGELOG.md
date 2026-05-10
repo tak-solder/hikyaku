@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.0]
+
+### Changed
+
+- **BREAKING**: Claude Code プラグイン形式に対応 — `.claude-plugin/plugin.json` と `.claude-plugin/marketplace.json` を追加し、`claude plugin install hikyaku@hikyaku` で導入できるようにした
+- **BREAKING**: スキル名から `hikyaku-` プレフィックスを除去 — プラグインの名前空間機能（`/<plugin>:<skill>`）と統合
+  - `/hikyaku-planner` → `/hikyaku:planner`
+  - `/hikyaku-architect` → `/hikyaku:architect`
+  - `/hikyaku-builder` → `/hikyaku:builder`
+  - 内部スキル: `hikyaku-build-manager` → `build-manager`、`hikyaku-retrospective` → `retrospective`
+- スキルディレクトリも対応してリネーム（`skills/hikyaku-*/` → `skills/*/`）
+- README にプラグインインストール手順を追加
+
+### Migration
+
+- 旧バージョン（0.4.x）のスタンドアロン構成を使っているユーザーは、`.claude/skills/` から旧 `hikyaku-*` スキルを削除し、新しいプラグインを `claude plugin install hikyaku@hikyaku` で導入する必要がある
+- 既存の `{DOC_ROOT}/` 配下のドキュメント（`tasklist.md`, `planning/`, `architecture/`, `build-NN/`）は変更不要
+
 ## [0.4.1]
 
 ### Changed
