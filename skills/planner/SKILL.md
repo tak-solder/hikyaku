@@ -1,12 +1,12 @@
 ---
-name: hikyaku-planner
+name: planner
 description: "Hikyaku 企画フェーズ: 既存の企画ドキュメントを読み込み、にユーザーストーリーとして構造化したドキュメントを出力する"
 user-invocable: true
 disable-model-invocation: true
 argument-hint: "{DOC_ROOT}"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.4.1"
+  version: "0.5.0"
 ---
 
 # Hikyaku Planner
@@ -25,12 +25,12 @@ Hikyakuは PLAN → ARCHITECT → BUILD の3フェーズで構成されるAIエ�
 ### 全体フロー
 
 ```
-/hikyaku-planner   → planning/ を生成 ← あなたはここ
+/hikyaku:planner   → planning/ を生成 ← あなたはここ
       ↓ ユーザー承認
-/hikyaku-architect → architecture/ + tasklist.md + build-{NN}/issue.md を生成
+/hikyaku:architect → architecture/ + tasklist.md + build-{NN}/issue.md を生成
       ↓ ユーザー承認
-/hikyaku-builder   → build-01/ を実装 → handoff.md → PR
-/hikyaku-builder   → build-02/ を実装 → handoff.md → PR
+/hikyaku:builder   → build-01/ を実装 → handoff.md → PR
+/hikyaku:builder   → build-02/ を実装 → handoff.md → PR
   ...（ビルド数分繰り返し）
 ```
 
@@ -119,12 +119,12 @@ $ARGUMENTS[0]/
 
 ### Step 4: 振り返り
 
-- [ ] `/hikyaku-retrospective $ARGUMENTS[0] planning` を呼び出して振り返りを実施する
+- [ ] `/hikyaku:retrospective $ARGUMENTS[0] planning` を呼び出して振り返りを実施する
 - [ ] 振り返り完了後（またはスキップ後）、以下を案内する
 
 ```
 企画フェーズが完了しました。
 
 設計フェーズを開始するには、新しいセッションで以下を実行してください:
-/hikyaku-architect $ARGUMENTS[0]
+/hikyaku:architect $ARGUMENTS[0]
 ```

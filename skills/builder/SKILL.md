@@ -1,5 +1,5 @@
 ---
-name: hikyaku-builder
+name: builder
 description: "Hikyaku 実装フェーズ: 設計フェーズや依存する実装フェーズの成果物を入力として、実装計画・コード生成・検証・PR作成を出力する。"
 compatibility: "Requires git and gh CLI."
 user-invocable: true
@@ -7,7 +7,7 @@ disable-model-invocation: true
 argument-hint: "{DOC_ROOT} [buildID|next]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.4.1"
+  version: "0.5.0"
 ---
 
 # Hikyaku Builder
@@ -27,12 +27,12 @@ Hikyakuは PLAN → ARCHITECT → BUILD の3フェーズで構成されるAIエ�
 ### 全体フロー
 
 ```
-/hikyaku-planner   → planning/ を生成（完了済み）
+/hikyaku:planner   → planning/ を生成（完了済み）
       ↓
-/hikyaku-architect → architecture/ + tasklist.md + build-{NN}/issue.md を生成（完了済み）
+/hikyaku:architect → architecture/ + tasklist.md + build-{NN}/issue.md を生成（完了済み）
       ↓
-/hikyaku-builder   → build-01/ を実装 → handoff.md → PR
-/hikyaku-builder   → build-02/ を実装 → handoff.md → PR  ← あなたはここ
+/hikyaku:builder   → build-01/ を実装 → handoff.md → PR
+/hikyaku:builder   → build-02/ を実装 → handoff.md → PR  ← あなたはここ
   ...（ビルド数分繰り返し）
 ```
 
@@ -221,21 +221,21 @@ Agent に渡すフォーマット指定:
 
 ### Step 10: 振り返り
 
-- [ ] `/hikyaku-retrospective $ARGUMENTS[0] build-{NN}` を呼び出して振り返りを実施する
+- [ ] `/hikyaku:retrospective $ARGUMENTS[0] build-{NN}` を呼び出して振り返りを実施する
 - [ ] 振り返り完了後（またはスキップ後）、以下を案内する
 
 ```
 Build {NN} が完了しました。
 
 次のビルドを開始するには、新しいセッションで以下を実行してください:
-/hikyaku-builder $ARGUMENTS[0]
+/hikyaku:builder $ARGUMENTS[0]
 ```
 
 ---
 
 ## ビルド管理（タスクの追加・変更）
 
-実装中に以下の状況が発生した場合、`/hikyaku-build-manager $ARGUMENTS[0]` を呼び出してビルドの追加・変更を行う。
+実装中に以下の状況が発生した場合、`/hikyaku:build-manager $ARGUMENTS[0]` を呼び出してビルドの追加・変更を行う。
 build-manager がユーザー承認を含むビルド管理の全手順を実行する。
 
 **呼び出しタイミング:**
@@ -262,4 +262,4 @@ PRレビューで指摘を受けた場合、同じセッションまたは新し
   - `$ARGUMENTS[0]/architecture/` 配下 — interfaces.md, db-schema.md 等
   - `$ARGUMENTS[0]/planning/` 配下 — 企画レベルの変更があった場合（稀）
 - [ ] Push する
-- [ ] `/hikyaku-retrospective $ARGUMENTS[0] build-{NN}` を呼び出す（既に retrospective.md が存在する場合は追記モードで動作する）
+- [ ] `/hikyaku:retrospective $ARGUMENTS[0] build-{NN}` を呼び出す（既に retrospective.md が存在する場合は追記モードで動作する）

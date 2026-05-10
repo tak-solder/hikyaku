@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'skills/**'
+      - '.claude-plugin/**'
 
 concurrency:
   group: tag-release
@@ -22,10 +23,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          version=$(yq --front-matter=extract '.metadata.version' skills/hikyaku-planner/SKILL.md)
+          version=$(jq -r '.version' .claude-plugin/plugin.json)
 
-          if [ -z "${version}" ]; then
-            echo "::error::Version extracted from SKILL.md is empty."
+          if [ -z "${version}" ] || [ "${version}" = "null" ]; then
+            echo "::error::Version extracted from .claude-plugin/plugin.json is empty."
             exit 1
           fi
 
