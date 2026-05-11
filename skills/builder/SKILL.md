@@ -55,13 +55,13 @@ $ARGUMENTS[0]/
 │   └── retrospective.md      # 振り返り（ARCHITECT で作成）
 ├── build-01/                  # 完了済みビルド
 │   ├── issue.md               # ビルド定義（ARCHITECT で作成済み）
-│   ├── plan.md              # 実装計画
+│   ├── plan.md                # 実装計画
 │   ├── test-spec.md           # テストシナリオ
 │   ├── handoff.md             # 申し送り → 後続ビルドが参照
 │   └── retrospective.md      # 振り返り
 ├── build-02/                  # ← これから作業するビルド
 │   ├── issue.md               # ビルド定義（ARCHITECT で作成済み）
-│   ├── plan.md              # ← BUILD で作成
+│   ├── plan.md                # ← BUILD で作成
 │   ├── test-spec.md           # ← BUILD で作成（テストシナリオ）
 │   ├── questions.md           # （必要時のみ）
 │   ├── handoff.md             # ← BUILD で作成
@@ -216,6 +216,8 @@ Agent に渡すフォーマット指定:
 - [ ] 変更を Push する
 - [ ] PR を作成する
 - [ ] `$ARGUMENTS[0]/tasklist.md` のPR列を更新し、Pushする
+
+**注意:** 後続ビルドのセッションは、このPRがマージされてから開始すること。後続ビルドは main ブランチの `tasklist.md` を参照して依存ビルドの完了を確認するため、マージ前に開始すると依存が未完了と判定される。
 
 → Step 10 へ。
 

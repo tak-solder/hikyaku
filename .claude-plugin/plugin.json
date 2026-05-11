@@ -9,6 +9,7 @@
   },
   "homepage": "https://github.com/tak-solder/hikyaku",
   "repository": "https://github.com/tak-solder/hikyaku",
+  "license": "MIT",
   "keywords": [
     "workflow",
     "agent-skills",
