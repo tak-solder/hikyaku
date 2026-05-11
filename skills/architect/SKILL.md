@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "{DOC_ROOT}"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.5.0"
+  version: "0.5.1"
 ---
 
 # Hikyaku Architect
@@ -53,7 +53,7 @@ $ARGUMENTS[0]/
 │   └── retrospective.md      # 振り返り（ARCHITECT で作成）
 ├── build-01/
 │   ├── issue.md               # ビルド定義（ARCHITECT で作成）
-│   ├── plan.md              # 実装計画（BUILD で作成）
+│   ├── plan.md                # 実装計画（BUILD で作成）
 │   ├── test-spec.md           # テストシナリオ（BUILD で作成）
 │   ├── handoff.md             # 申し送り（BUILD で作成）
 │   └── retrospective.md      # 振り返り（BUILD で作成）
@@ -134,16 +134,15 @@ $ARGUMENTS[0]/
 
 → Step 5 へ。
 
-### Step 5: ビルド作成と設計全体の承認
+### Step 5: 設計全体の承認とビルド作成
 
-- [ ] 設計ドキュメントに基づいてビルドの論理的な単位を特定し、`/hikyaku:build-manager $ARGUMENTS[0]` を呼び出してビルドの作成を委任する
+- [ ] 設計ドキュメント（architecture/）の全内容をユーザーに提示し、最終承認を得る
+  - **承認観点:** 技術選定は妥当か、設計方針に問題はないか
+- [ ] 設計ドキュメントが承認されたら、設計ドキュメントに基づいてビルドの論理的な単位を特定し、`/hikyaku:build-manager $ARGUMENTS[0]` を呼び出してビルドの作成を委任する
   - build-manager に伝える情報: 各ビルドのタイトル・スコープ・依存関係・設計ドキュメントの参照先
   - build-manager がBP見積もり、tasklist.md の作成、各 issue.md の作成、ユーザー承認までを行う
-- [ ] 設計ドキュメント（architecture/）の全内容をユーザーに提示し、最終承認を得る
-  - ビルドの承認は build-manager が取得済みのため、ここでは設計ドキュメントに集中する
-  - **承認観点:** 技術選定は妥当か、設計方針に問題はないか
 
-→ 承認を得たら Step 6 へ。フィードバックの内容に応じて対応が異なる:
+→ すべての承認を得たら Step 6 へ。フィードバックの内容に応じて対応が異なる:
 - 設計ドキュメントへのフィードバック → Step 3 に戻る
 - ビルドへのフィードバック → `/hikyaku:build-manager $ARGUMENTS[0]` を再度呼び出す
 

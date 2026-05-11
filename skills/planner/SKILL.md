@@ -1,12 +1,12 @@
 ---
 name: planner
-description: "Hikyaku 企画フェーズ: 既存の企画ドキュメントを読み込み、にユーザーストーリーとして構造化したドキュメントを出力する"
+description: "Hikyaku 企画フェーズ: 既存の企画ドキュメントを読み込み、ユーザーストーリーとして構造化したドキュメントを出力する"
 user-invocable: true
 disable-model-invocation: true
 argument-hint: "{DOC_ROOT}"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.5.0"
+  version: "0.5.1"
 ---
 
 # Hikyaku Planner
@@ -53,7 +53,7 @@ $ARGUMENTS[0]/
 │   └── retrospective.md      # 振り返り（ARCHITECT で作成）
 ├── build-01/
 │   ├── issue.md               # ビルド定義（ARCHITECT で作成）
-│   ├── plan.md              # 実装計画（BUILD で作成）
+│   ├── plan.md                # 実装計画（BUILD で作成）
 │   ├── test-spec.md           # テストシナリオ（BUILD で作成）
 │   ├── handoff.md             # 申し送り（BUILD で作成）
 │   └── retrospective.md      # 振り返り（BUILD で作成）
