@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.1]
+
+### Changed
+
+- **BP閾値の統一**: `build-manager/SKILL.md`・`build-manager/references/bp-guide.md`・`README.md` に分散していたBP閾値を統一（分割推奨: 合計BP 6以上、分割必須: 合計BP 9以上）。互換性への影響なし
+- **設計フェーズの承認順序を変更**: `architect` Step 5 で「設計ドキュメント承認 → build-manager 呼び出し」の順に変更。設計を確認してからビルド分割を承認する自然な流れに整理
+- **実装フェーズに後続セッション開始タイミングの注意書きを追加**: `builder` Step 9 に「後続ビルドのセッションは PR マージ後に開始すること」の注記を追加
+
+### Fixed
+
+- `planner` の description にあった typo を修正（「読み込み、にユーザー」→「読み込み、ユーザー」）
+- 各スキルのディレクトリ構造例で `plan.md` 行のインデントが他行と揃っていなかった点を修正
+
+### Added
+
+- `.claude-plugin/plugin.json` に `license` フィールド（MIT）を追加
+
 ## [0.5.0]
 
 ### Changed
