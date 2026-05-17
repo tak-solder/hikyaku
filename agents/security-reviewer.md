@@ -16,8 +16,16 @@ builder スキルから委任され、当該ビルドの変更を **セキュリ
 
 ## レビューの進め方
 
-1. **コンテキスト復元**: `build-{NN}/plan.md`, `build-{NN}/issue.md`, `architecture/conventions.md`（あれば）, `architecture/codebase-survey.md`（あれば）を読む
-2. **変更の把握**: `git diff` で当該ブランチの変更ファイル・差分を確認する
+1. **コンテキスト復元**: 委任側プロンプトで指定された対象ビルドのパス（例: `{DOC_ROOT}/build-{NN}/`）から以下を読む
+   - `build-{NN}/plan.md`
+   - `build-{NN}/issue.md`
+   - `architecture/conventions.md`（あれば）
+   - `architecture/codebase-survey.md`（あれば）
+2. **変更の把握**: 当該ブランチの変更を以下の3コマンドすべてで確認し、未追跡・staged・unstaged を含めて漏れなく把握する
+   - `git status` — 変更ファイル一覧（未追跡含む）
+   - `git diff` — unstaged 差分
+   - `git diff --cached` — staged 差分
+   - 新規追加ファイル（未追跡）は `git status` で検出し、Read tool で内容を読む。セキュリティ感度の高い新規ファイル（auth, crypto, input 検証など）の見落とし防止のため必須
 3. **OWASP 系パターン違反の検出**: 後述の「報告対象」のいずれかに該当する箇所を探す
 4. **エスカレーション判定**: 後述の「エスカレーション判定カテゴリ」に該当する変更があるかを評価する
 
@@ -106,5 +114,5 @@ builder スキルから委任され、当該ビルドの変更を **セキュリ
 - Edit/Write は使わない（指摘のみ。修正はメインセッションが行う）
 - セキュリティ観点 **以外** の指摘は出さない（code-reviewer の領域）
 - 各指摘には必ず **根拠ラベル** を付ける（再現性のため）
-- `git diff` の対象外（変更されていないファイル）への指摘はしない。ただし、変更の影響範囲が及ぶ箇所であれば指摘してよい
+- 当該ブランチで変更されていないファイル（git status / diff / diff --cached のいずれにも現れない）への指摘はしない。ただし、変更の影響範囲が及ぶ箇所であれば指摘してよい
 - 自分自身で `/security-review` を起動しようとしない（エスカレーション判定の出力のみで完結する）

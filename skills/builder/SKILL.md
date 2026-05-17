@@ -202,8 +202,12 @@ Agent に渡すフォーマット指定:
 機械的検証（lint / test / build）だけでは検出できない品質・規約・セキュリティ観点をレビューする。スコープ逸脱や規約違反、セキュリティ問題を申し送り作成前に潰す。
 
 - [ ] **`code-reviewer` と `security-reviewer` を並列起動する**
-  - 両エージェントに渡す情報: `build-{NN}/plan.md`, `build-{NN}/issue.md`, `architecture/conventions.md`（あれば）, `architecture/codebase-survey.md`（あれば）
-  - 両エージェントは `git diff` で当該ブランチの変更を確認する
+  - 両エージェントに渡す情報: 対象ビルドのパス（`$ARGUMENTS[0]/build-{NN}/`）、`$ARGUMENTS[0]/build-{NN}/plan.md`, `$ARGUMENTS[0]/build-{NN}/issue.md`, `$ARGUMENTS[0]/architecture/conventions.md`（あれば）, `$ARGUMENTS[0]/architecture/codebase-survey.md`（あれば）
+  - 両エージェントは以下の3コマンドすべてで当該ブランチの変更を確認する（未追跡・staged・unstaged を漏らさないため）:
+    - `git status` — 変更ファイル一覧（未追跡含む）
+    - `git diff` — unstaged 差分
+    - `git diff --cached` — staged 差分
+    - 新規追加ファイル（未追跡）は Read tool で内容を読む
   - 担当範囲:
     - `code-reviewer`: スコープ準拠 / 規約準拠 / バグ・ロジック誤り / 冗長性
     - `security-reviewer`: OWASP 系のセキュリティパターン違反、および `/security-review` へのエスカレーション判定

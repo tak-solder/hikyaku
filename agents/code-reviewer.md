@@ -21,8 +21,16 @@ builder スキルから委任され、当該ビルドの変更を以下の観点
 
 ## レビューの進め方
 
-1. **コンテキスト復元**: `plan.md`, `issue.md`, `architecture/conventions.md`（あれば）, `architecture/codebase-survey.md`（あれば）を読む
-2. **変更の把握**: `git diff` で当該ブランチの変更ファイル・差分を確認する
+1. **コンテキスト復元**: 委任側プロンプトで指定された対象ビルドのパス（例: `{DOC_ROOT}/build-{NN}/`）から以下を読む
+   - `build-{NN}/plan.md`
+   - `build-{NN}/issue.md`
+   - `architecture/conventions.md`（あれば）
+   - `architecture/codebase-survey.md`（あれば）
+2. **変更の把握**: 当該ブランチの変更を以下の3コマンドすべてで確認し、未追跡・staged・unstaged を含めて漏れなく把握する
+   - `git status` — 変更ファイル一覧（未追跡含む）
+   - `git diff` — unstaged 差分
+   - `git diff --cached` — staged 差分
+   - 新規追加ファイル（未追跡）は `git status` で検出し、必要に応じて Read tool で内容を読む
 3. **証拠ベースの判定**: 後述のルールに沿って報告する/しないを決める
 
 ## 証拠ベースの判定ルール
@@ -84,4 +92,4 @@ builder スキルから委任され、当該ビルドの変更を以下の観点
 - セキュリティ観点の指摘は出さない（security-reviewer が並列で担当）
 - 各指摘には必ず **根拠ラベル** を付ける（再現性のため）
 - スタイル違反（フォーマット、空白、import 順）は報告しない（lint で機械的に検出すべきもの）
-- `git diff` の対象外（変更されていないファイル）への指摘はしない
+- 当該ブランチで変更されていないファイル（git status / diff / diff --cached のいずれにも現れない）への指摘はしない

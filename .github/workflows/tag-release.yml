@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'skills/**'
+      - 'agents/**'
       - '.claude-plugin/**'
 
 concurrency:

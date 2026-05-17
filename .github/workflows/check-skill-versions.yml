@@ -41,19 +41,24 @@ jobs:
           done
           echo "All versions are unified: $first"
 
-      - name: Check version bump if skills or plugin manifest changed
+      - name: Check version bump if skills, agents, or plugin manifest changed
         run: |
-          # Check if current/skills/ or .claude-plugin/ has changes compared to base
+          # Check if current/skills/, current/agents/, or .claude-plugin/ has changes compared to base
           changed=$(diff -rq current/skills/ base/skills/ 2>/dev/null || true)
+          agents_changed=$(diff -rq current/agents/ base/agents/ 2>/dev/null || true)
           plugin_changed=$(diff -rq current/.claude-plugin/ base/.claude-plugin/ 2>/dev/null || true)
-          if [ -z "$changed" ] && [ -z "$plugin_changed" ]; then
-            echo "No changes in skills/ or .claude-plugin/ — skipping version bump check."
+          if [ -z "$changed" ] && [ -z "$agents_changed" ] && [ -z "$plugin_changed" ]; then
+            echo "No changes in skills/, agents/, or .claude-plugin/ — skipping version bump check."
             exit 0
           fi
 
           if [ -n "$changed" ]; then
             echo "Changed files in skills/:"
             echo "$changed"
+          fi
+          if [ -n "$agents_changed" ]; then
+            echo "Changed files in agents/:"
+            echo "$agents_changed"
           fi
           if [ -n "$plugin_changed" ]; then
             echo "Changed files in .claude-plugin/:"
@@ -68,7 +73,7 @@ jobs:
           echo "Current version: $current"
 
           if [ "$current" = "$base" ]; then
-            echo "::error::skills/ or .claude-plugin/ has changes but version was not bumped. Please update the version in all SKILL.md files and plugin.json."
+            echo "::error::skills/, agents/, or .claude-plugin/ has changes but version was not bumped. Please update the version in all SKILL.md files and plugin.json."
             exit 1
           fi
 
