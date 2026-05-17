@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.6.0]
+
+### Added
+
+- **サブエージェント定義の新設**: `agents/` 配下に `code-explorer` / `code-architect` / `code-reviewer` の3エージェントを追加。architect / builder スキルから委任されて起動される
+  - `code-explorer`: architect Step 2 で起動。担当観点に沿った既存コード調査と **Key Files リスト** を返す
+  - `code-architect`: architect Step 4 で起動。指定された観点（Minimal / Clean / Pragmatic 等）に基づく単一の設計案を返す
+  - `code-reviewer`: builder Step 8 で起動。信頼度80以上のコードレビュー指摘のみ報告する
+- **planner Step 3「目的とスコープのすり合わせ」を新設**: 質問ループ前に「何を実現したいか / 背景・目的 / 対象画面・対象データ / 制約・要件」の4項目を要約してユーザーと認識合わせを行う Discovery 確認ゲートを追加（旧 Step 3 は Step 4 に、旧 Step 4 は Step 5 に繰り下げ）
+- **architect Step 2 を並列調査+Key Files 一次読解に拡張**: user-stories の規模に応じて `code-explorer` を複数並列で起動し、各エージェントが返す Key Files をメインセッションが直接 Read することで設計判断の解像度を上げる
+- **architect Step 4 に「主要設計判断の特定と分岐評価」サブステップを追加**: 妥当な代替案が複数ある判断について、`code-architect` を2〜3並列で起動して trade-off 比較・推奨案提示・ユーザー選択を行うパターンを導入。分岐がない判断は従来通り単一案で確定する
+- **builder Step 8「コードレビュー」を新設**: ローカル検証（lint / test / build）と申し送り作成の間に `code-reviewer` を呼ぶレビューステップを追加。指摘ごとに「今修正 / 新ビルド化 / そのまま進める」をユーザーが選択できる（旧 Step 8〜10 は Step 9〜11 に繰り下げ）
+
+### Migration
+
+- 既存ワークフローの `planning/`, `architecture/`, `build-NN/` の中身は変更不要
+- ステップ番号の変更（planner Step 4-5、builder Step 9-11）はスキル内部の参照番号のため、ユーザー側の対応は不要
+
 ## [0.5.1]
 
 ### Changed

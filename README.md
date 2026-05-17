@@ -158,6 +158,10 @@ BP は以下の指標から算出します:
 ├── .claude-plugin/
 │   ├── plugin.json            # プラグインマニフェスト
 │   └── marketplace.json       # マーケットプレイス定義（リポジトリ自身を1プラグイン構成のマーケットプレイスとして配布）
+├── agents/                    # スキルから委任されるサブエージェント定義
+│   ├── code-explorer.md       # architect Step 2 で起動。既存コード調査と Key Files リストを返す
+│   ├── code-architect.md      # architect Step 4 で起動。指定観点の単一設計案を返す
+│   └── code-reviewer.md       # builder Step 8 で起動。信頼度80以上のコードレビュー指摘を返す
 └── skills/
     ├── planner/               # /hikyaku:planner
     ├── architect/             # /hikyaku:architect
