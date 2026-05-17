@@ -199,18 +199,35 @@ Agent に渡すフォーマット指定:
 
 ### Step 8: コードレビュー
 
-機械的検証（lint / test / build）だけでは検出できない以下の観点をレビューする。スコープ逸脱や規約違反を申し送り作成前に潰す。
+機械的検証（lint / test / build）だけでは検出できない品質・規約・セキュリティ観点をレビューする。スコープ逸脱や規約違反、セキュリティ問題を申し送り作成前に潰す。
 
-- [ ] **`code-reviewer` エージェントを起動する**
-  - エージェントに渡す情報: `build-{NN}/plan.md`, `build-{NN}/issue.md`, `architecture/conventions.md`（あれば）, `architecture/codebase-survey.md`（あれば）
-  - エージェントには `git diff` で当該ブランチの変更を確認させる
-  - エージェントの出力フォーマットは `agents/code-reviewer.md` を参照
-  - **信頼度80以上の指摘のみ** が返る前提（ノイズを増やさない）
-- [ ] エージェントから返ってきた指摘をメインセッションで取りまとめ、ユーザーに以下の選択肢で提示する
+- [ ] **`code-reviewer` と `security-reviewer` を並列起動する**
+  - 両エージェントに渡す情報: `build-{NN}/plan.md`, `build-{NN}/issue.md`, `architecture/conventions.md`（あれば）, `architecture/codebase-survey.md`（あれば）
+  - 両エージェントは `git diff` で当該ブランチの変更を確認する
+  - 担当範囲:
+    - `code-reviewer`: スコープ準拠 / 規約準拠 / バグ・ロジック誤り / 冗長性
+    - `security-reviewer`: OWASP 系のセキュリティパターン違反、および `/security-review` へのエスカレーション判定
+  - 各エージェントは **証拠ベースの判定** で報告対象を絞る。出力フォーマットは `agents/code-reviewer.md` および `agents/security-reviewer.md` を参照
+- [ ] 両エージェントから返ってきた指摘をメインセッションで統合する
+  - 同一箇所への重複指摘は1件に統合し、`security-reviewer` の指摘を優先採用する
+  - 各指摘の **根拠ラベル**（ドキュメント不整合 / バグ / Injection / 認可漏れ など）はそのまま残す
+- [ ] 統合した指摘をユーザーに提示し、以下の選択肢で対応を決める
   - **今修正する** — 該当箇所を修正し、Step 7（ローカル検証）に戻る
   - **新ビルド化して後で対応** — `/hikyaku:build-manager $ARGUMENTS[0]` を呼び出して新ビルドを追加する。現在のビルドはそのまま進める
   - **そのまま進める** — 指摘を handoff.md の「既知の制約・注意点」に記録した上で次のステップへ
-- [ ] 指摘が「指摘なし」の場合はそのまま Step 9 へ進む
+- [ ] **エスカレーション判定の処理**
+  - `security-reviewer` のエスカレーション判定が「**推奨**」の場合、指摘一覧の最後に以下を提示する:
+
+    ```
+    ⚠️ security-reviewer は本ビルドを「セキュリティ感度の高い変更」と判定しました
+    該当カテゴリ: （security-reviewer の出力をそのまま転記）
+    より深い監査のため、本ビルド完了後に `/security-review` の実行を強く推奨します。
+    ```
+  - ユーザーに「**Step 9 に進む前に `/security-review` を実行するか**」を確認する
+    - 実行する場合: ユーザーが別途 `/security-review` を実行する（builder からは自動起動しない）。完了したらユーザーが手動で本セッションに戻り、Step 9 へ進む
+    - 実行しない場合: handoff.md の「既知の制約・注意点」に「security-reviewer がエスカレーションを推奨したが /security-review を実行せずに完了」と記録する
+  - エスカレーション判定が「不要」の場合は、この処理をスキップして Step 9 へ進む
+- [ ] 両エージェントが「指摘なし」かつエスカレーション判定が「不要」の場合は、そのまま Step 9 へ進む
 
 → ユーザー選択に応じて対応後、Step 9 へ。
 
