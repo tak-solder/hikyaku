@@ -43,9 +43,17 @@ jobs:
 
       - name: Check version bump if skills, agents, or plugin manifest changed
         run: |
-          # Check if current/skills/, current/agents/, or .claude-plugin/ has changes compared to base
+          # Check if current/skills/, current/agents/, or .claude-plugin/ has changes compared to base.
+          # For agents/: treat one-sided absence (initial add or full directory removal) as "changed",
+          # since `diff -rq` errors out (and `2>/dev/null` discards it) when one side is missing.
+          if [ -d current/agents ] && [ -d base/agents ]; then
+            agents_changed=$(diff -rq current/agents/ base/agents/ 2>/dev/null || true)
+          elif [ -d current/agents ] || [ -d base/agents ]; then
+            agents_changed="agents/ directory presence changed between base and current"
+          else
+            agents_changed=""
+          fi
           changed=$(diff -rq current/skills/ base/skills/ 2>/dev/null || true)
-          agents_changed=$(diff -rq current/agents/ base/agents/ 2>/dev/null || true)
           plugin_changed=$(diff -rq current/.claude-plugin/ base/.claude-plugin/ 2>/dev/null || true)
           if [ -z "$changed" ] && [ -z "$agents_changed" ] && [ -z "$plugin_changed" ]; then
             echo "No changes in skills/, agents/, or .claude-plugin/ — skipping version bump check."

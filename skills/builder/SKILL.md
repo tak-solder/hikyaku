@@ -203,10 +203,11 @@ Agent に渡すフォーマット指定:
 
 - [ ] **`code-reviewer` と `security-reviewer` を並列起動する**
   - 両エージェントに渡す情報: 対象ビルドのパス（`$ARGUMENTS[0]/build-{NN}/`）、`$ARGUMENTS[0]/build-{NN}/plan.md`, `$ARGUMENTS[0]/build-{NN}/issue.md`, `$ARGUMENTS[0]/architecture/conventions.md`（あれば）, `$ARGUMENTS[0]/architecture/codebase-survey.md`（あれば）
-  - 両エージェントは以下の3コマンドすべてで当該ブランチの変更を確認する（未追跡・staged・unstaged を漏らさないため）:
+  - 両エージェントは以下のコマンドすべてで当該ブランチの変更を確認する（未追跡・staged・unstaged・コミット済みを漏らさないため）:
     - `git status` — 変更ファイル一覧（未追跡含む）
     - `git diff` — unstaged 差分
     - `git diff --cached` — staged 差分
+    - `git diff $(git merge-base origin/main HEAD)..HEAD` — base ブランチ（origin/main）からの **コミット済み差分**。再開セッションや途中コミットを含むビルドではこの差分にしか実装が現れない
     - 新規追加ファイル（未追跡）は Read tool で内容を読む
   - 担当範囲:
     - `code-reviewer`: スコープ準拠 / 規約準拠 / バグ・ロジック誤り / 冗長性
@@ -225,7 +226,7 @@ Agent に渡すフォーマット指定:
     ```
     ⚠️ security-reviewer は本ビルドを「セキュリティ感度の高い変更」と判定しました
     該当カテゴリ: （security-reviewer の出力をそのまま転記）
-    より深い監査のため、本ビルド完了後に `/security-review` の実行を強く推奨します。
+    より深い監査のため、Step 9（申し送り作成）に進む前に `/security-review` の実行を強く推奨します。
     ```
   - ユーザーに「**Step 9 に進む前に `/security-review` を実行するか**」を確認する
     - 実行する場合: ユーザーが別途 `/security-review` を実行する（builder からは自動起動しない）。完了したらユーザーが手動で本セッションに戻り、Step 9 へ進む

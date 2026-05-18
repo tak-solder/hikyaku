@@ -21,10 +21,11 @@ builder スキルから委任され、当該ビルドの変更を **セキュリ
    - `build-{NN}/issue.md`
    - `architecture/conventions.md`（あれば）
    - `architecture/codebase-survey.md`（あれば）
-2. **変更の把握**: 当該ブランチの変更を以下の3コマンドすべてで確認し、未追跡・staged・unstaged を含めて漏れなく把握する
+2. **変更の把握**: 当該ブランチの変更を以下のコマンドすべてで確認し、未追跡・staged・unstaged・コミット済みを含めて漏れなく把握する
    - `git status` — 変更ファイル一覧（未追跡含む）
    - `git diff` — unstaged 差分
    - `git diff --cached` — staged 差分
+   - `git diff $(git merge-base origin/main HEAD)..HEAD` — base ブランチ（origin/main）からの **コミット済み差分**。再開セッションや途中コミットを含むビルドではこの差分にしか実装が現れないため必須
    - 新規追加ファイル（未追跡）は `git status` で検出し、Read tool で内容を読む。セキュリティ感度の高い新規ファイル（auth, crypto, input 検証など）の見落とし防止のため必須
 3. **OWASP 系パターン違反の検出**: 後述の「報告対象」のいずれかに該当する箇所を探す
 4. **エスカレーション判定**: 後述の「エスカレーション判定カテゴリ」に該当する変更があるかを評価する

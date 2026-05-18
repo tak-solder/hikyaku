@@ -26,10 +26,11 @@ builder スキルから委任され、当該ビルドの変更を以下の観点
    - `build-{NN}/issue.md`
    - `architecture/conventions.md`（あれば）
    - `architecture/codebase-survey.md`（あれば）
-2. **変更の把握**: 当該ブランチの変更を以下の3コマンドすべてで確認し、未追跡・staged・unstaged を含めて漏れなく把握する
+2. **変更の把握**: 当該ブランチの変更を以下のコマンドすべてで確認し、未追跡・staged・unstaged・コミット済みを含めて漏れなく把握する
    - `git status` — 変更ファイル一覧（未追跡含む）
    - `git diff` — unstaged 差分
    - `git diff --cached` — staged 差分
+   - `git diff $(git merge-base origin/main HEAD)..HEAD` — base ブランチ（origin/main）からの **コミット済み差分**。再開セッションや途中コミットを含むビルドではこの差分にしか実装が現れないため必須
    - 新規追加ファイル（未追跡）は `git status` で検出し、必要に応じて Read tool で内容を読む
 3. **証拠ベースの判定**: 後述のルールに沿って報告する/しないを決める
 
