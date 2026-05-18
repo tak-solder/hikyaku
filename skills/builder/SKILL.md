@@ -7,7 +7,7 @@ disable-model-invocation: true
 argument-hint: "{DOC_ROOT} [buildID|next]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.5.1"
+  version: "0.6.0"
 ---
 
 # Hikyaku Builder
@@ -197,7 +197,46 @@ Agent に渡すフォーマット指定:
 
 → Step 8 へ。
 
-### Step 8: 申し送り作成
+### Step 8: コードレビュー
+
+機械的検証（lint / test / build）だけでは検出できない品質・規約・セキュリティ観点をレビューする。スコープ逸脱や規約違反、セキュリティ問題を申し送り作成前に潰す。
+
+- [ ] **`code-reviewer` と `security-reviewer` を並列起動する**
+  - 両エージェントに渡す情報: 対象ビルドのパス（`$ARGUMENTS[0]/build-{NN}/`）、`$ARGUMENTS[0]/build-{NN}/plan.md`, `$ARGUMENTS[0]/build-{NN}/issue.md`, `$ARGUMENTS[0]/architecture/conventions.md`（あれば）, `$ARGUMENTS[0]/architecture/codebase-survey.md`（あれば）
+  - 両エージェントは以下のコマンドすべてで当該ブランチの変更を確認する（未追跡・staged・unstaged・コミット済みを漏らさないため）:
+    - `git status` — 変更ファイル一覧（未追跡含む）
+    - `git diff` — unstaged 差分
+    - `git diff --cached` — staged 差分
+    - `git diff $(git merge-base origin/main HEAD)..HEAD` — base ブランチ（origin/main）からの **コミット済み差分**。再開セッションや途中コミットを含むビルドではこの差分にしか実装が現れない
+    - 新規追加ファイル（未追跡）は Read tool で内容を読む
+  - 担当範囲:
+    - `code-reviewer`: スコープ準拠 / 規約準拠 / バグ・ロジック誤り / 冗長性
+    - `security-reviewer`: OWASP 系のセキュリティパターン違反、および `/security-review` へのエスカレーション判定
+  - 各エージェントは **証拠ベースの判定** で報告対象を絞る。出力フォーマットは `agents/code-reviewer.md` および `agents/security-reviewer.md` を参照
+- [ ] 両エージェントから返ってきた指摘をメインセッションで統合する
+  - 同一箇所への重複指摘は1件に統合し、`security-reviewer` の指摘を優先採用する
+  - 各指摘の **根拠ラベル**（ドキュメント不整合 / バグ / Injection / 認可漏れ など）はそのまま残す
+- [ ] 統合した指摘をユーザーに提示し、以下の選択肢で対応を決める
+  - **今修正する** — 該当箇所を修正し、Step 7（ローカル検証）に戻る
+  - **新ビルド化して後で対応** — `/hikyaku:build-manager $ARGUMENTS[0]` を呼び出して新ビルドを追加する。現在のビルドはそのまま進める
+  - **そのまま進める** — 指摘を handoff.md の「既知の制約・注意点」に記録した上で次のステップへ
+- [ ] **エスカレーション判定の処理**
+  - `security-reviewer` のエスカレーション判定が「**推奨**」の場合、指摘一覧の最後に以下を提示する:
+
+    ```
+    ⚠️ security-reviewer は本ビルドを「セキュリティ感度の高い変更」と判定しました
+    該当カテゴリ: （security-reviewer の出力をそのまま転記）
+    より深い監査のため、Step 9（申し送り作成）に進む前に `/security-review` の実行を強く推奨します。
+    ```
+  - ユーザーに「**Step 9 に進む前に `/security-review` を実行するか**」を確認する
+    - 実行する場合: ユーザーが別途 `/security-review` を実行する（builder からは自動起動しない）。完了したらユーザーが手動で本セッションに戻り、Step 9 へ進む
+    - 実行しない場合: handoff.md の「既知の制約・注意点」に「security-reviewer がエスカレーションを推奨したが /security-review を実行せずに完了」と記録する
+  - エスカレーション判定が「不要」の場合は、この処理をスキップして Step 9 へ進む
+- [ ] 両エージェントが「指摘なし」かつエスカレーション判定が「不要」の場合は、そのまま Step 9 へ進む
+
+→ ユーザー選択に応じて対応後、Step 9 へ。
+
+### Step 9: 申し送り作成
 
 - [ ] 実装中に planning/ や architecture/ と異なる判断をした場合は、該当する設計ドキュメントを直接更新する
   - 設計ドキュメントがソースオブトゥルースであり、handoff.md には設計ドキュメントに収まらない実装固有の文脈のみ残す
@@ -207,11 +246,11 @@ Agent に渡すフォーマット指定:
     - 公開インターフェース — architecture/interfaces.md に反映済みの内容は省略し、差分・補足のみ
     - 技術的判断の記録（ADR）— 実装中に行った判断とその理由
     - 環境変更 — 新しい環境変数、DBマイグレーション、設定ファイル等
-    - 既知の制約・注意点 — 後続ビルドが知るべき前提や制約
+    - 既知の制約・注意点 — 後続ビルドが知るべき前提や制約（Step 8 で「そのまま進める」を選んだ指摘もここに記録する）
 
-→ Step 9 へ。
+→ Step 10 へ。
 
-### Step 9: Push + PR作成
+### Step 10: Push + PR作成
 
 - [ ] 変更を Push する
 - [ ] PR を作成する
@@ -219,9 +258,9 @@ Agent に渡すフォーマット指定:
 
 **注意:** 後続ビルドのセッションは、このPRがマージされてから開始すること。後続ビルドは main ブランチの `tasklist.md` を参照して依存ビルドの完了を確認するため、マージ前に開始すると依存が未完了と判定される。
 
-→ Step 10 へ。
+→ Step 11 へ。
 
-### Step 10: 振り返り
+### Step 11: 振り返り
 
 - [ ] `/hikyaku:retrospective $ARGUMENTS[0] build-{NN}` を呼び出して振り返りを実施する
 - [ ] 振り返り完了後（またはスキップ後）、以下を案内する
@@ -243,7 +282,8 @@ build-manager がユーザー承認を含むビルド管理の全手順を実行
 **呼び出しタイミング:**
 - **Step 4（計画作成と承認）後** — issue.md のスコープが実際にはBP超過と判明 → ビルドの分割
 - **Step 6（コード生成）中** — 想定外の複雑さや未定義の依存が判明 → ビルドの追加・更新
-- **Step 8（申し送り作成）時** — 意図的に先送りした作業を新ビルドとして記録 → ビルドの追加
+- **Step 8（コードレビュー）時** — 指摘の「新ビルド化して後で対応」を選択 → 新ビルドの追加
+- **Step 9（申し送り作成）時** — 意図的に先送りした作業を新ビルドとして記録 → ビルドの追加
 
 **build-manager 呼び出し後の対応:**
 - 現在のビルドのスコープが変更された場合: plan.md を修正し、Step 4 の承認からやり直す（承認後、Step 5 で test-spec.md を再生成する）
