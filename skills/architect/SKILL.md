@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "{DOC_ROOT}"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.6.0"
+  version: "0.7.0"
 ---
 
 # Hikyaku Architect
@@ -46,6 +46,7 @@ $ARGUMENTS[0]/
 ├── architecture/              # 設計ドキュメント（ARCHITECT で作成）
 │   ├── codebase-survey.md     # 既存コード調査結果（既存コードがある場合のみ）
 │   ├── design-questions.md    # 設計段階の質問と回答
+│   ├── decisions.md           # 設計判断ログ（ADR、分岐評価のあった判断のみ）
 │   ├── tech-stack.md          # 技術選択（必要時のみ）
 │   ├── db-schema.md           # DBスキーマ（必要時のみ）
 │   ├── interfaces.md          # インターフェース定義（必要時のみ）
@@ -179,6 +180,11 @@ $ARGUMENTS[0]/
 - [ ] 各案を **trade-off表** にまとめ、**推奨案と理由** を明記してユーザーに提示する
 - [ ] ユーザーから「お任せ」と回答された場合も、推奨案を改めて提示し **明示的な確認** を得る（空回答として進めない）
 - [ ] ユーザーの採用案を確定する
+- [ ] **確定した採用案を `$ARGUMENTS[0]/architecture/decisions.md` に追記する**
+  - 1つの「分岐あり」判断 = 1つの `AD-N` エントリ
+  - フォーマットは [templates.md](references/templates.md) の `decisions.md` を参照
+  - 記録項目: 決定 / 文脈 / 検討した案（code-architect が返した複数案を要約） / 採用理由 / トレードオフ
+  - **トレードオフ欄に「特になし」は書かない**（書きたくなる場合は Step 4a の分岐判定を見直す）
 
 #### Step 4c: 設計ドキュメントの作成
 
