@@ -63,6 +63,7 @@ claude --plugin-dir /path/to/hikyaku
 
 - 既存コードを Agent で調査し `codebase-survey.md` を作成
 - 設計ドキュメント（tech-stack, db-schema, interfaces, conventions）を必要に応じて作成
+- 分岐評価で trade-off が非自明な判断は `decisions.md`（ADR）に採用理由・トレードオフを記録
 - `build-manager` を使い、BP 見積もり付きでビルド分割（1ビルド = 1セッションで完結する粒度）
 - **成果物**: `architecture/`, `tasklist.md`, `build-{NN}/issue.md`
 
@@ -88,6 +89,7 @@ claude --plugin-dir /path/to/hikyaku
 ├── architecture/              # 設計ドキュメント
 │   ├── codebase-survey.md     # 既存コード調査（既存コードがある場合）
 │   ├── design-questions.md
+│   ├── decisions.md           # 設計判断ログ（ADR、分岐評価のあった判断のみ）
 │   ├── tech-stack.md          # 必要時のみ
 │   ├── db-schema.md           # 必要時のみ
 │   ├── interfaces.md          # 必要時のみ

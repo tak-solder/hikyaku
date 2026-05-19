@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "{DOC_ROOT}"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.6.0"
+  version: "0.7.0"
 ---
 
 # Hikyaku Architect
@@ -46,6 +46,7 @@ $ARGUMENTS[0]/
 ├── architecture/              # 設計ドキュメント（ARCHITECT で作成）
 │   ├── codebase-survey.md     # 既存コード調査結果（既存コードがある場合のみ）
 │   ├── design-questions.md    # 設計段階の質問と回答
+│   ├── decisions.md           # 設計判断ログ（ADR、分岐評価のあった判断のみ）
 │   ├── tech-stack.md          # 技術選択（必要時のみ）
 │   ├── db-schema.md           # DBスキーマ（必要時のみ）
 │   ├── interfaces.md          # インターフェース定義（必要時のみ）
@@ -162,7 +163,7 @@ $ARGUMENTS[0]/
 
 #### Step 4b: 分岐がある判断について複数案を提示（該当時のみ）
 
-分岐がない判断のみの場合はこの手順をスキップして Step 4c へ。
+分岐がない判断のみの場合はこの手順をスキップして Step 4c へ。**この場合 `decisions.md` は作成しない**（記録対象は分岐ありの判断のみ）。
 
 - [ ] 分岐がある各判断について、**`code-architect` エージェントを2〜3並列**で起動し、異なる観点の案を生成させる
   - サブエージェントは別コンテキストで起動されるため、委任プロンプトに **以下のファイル絶対パスを必ず明示する**:
@@ -179,6 +180,12 @@ $ARGUMENTS[0]/
 - [ ] 各案を **trade-off表** にまとめ、**推奨案と理由** を明記してユーザーに提示する
 - [ ] ユーザーから「お任せ」と回答された場合も、推奨案を改めて提示し **明示的な確認** を得る（空回答として進めない）
 - [ ] ユーザーの採用案を確定する
+- [ ] **Step 4a で「分岐あり」と判定した各判断について、確定した採用案を `$ARGUMENTS[0]/architecture/decisions.md` に追記する**（分岐なしと判定した判断は記録しない）
+  - 1つの「分岐あり」判断 = 1つの `AD-N` エントリ
+  - `decisions.md` が未作成の場合はこのステップで新規作成する
+  - フォーマットは [templates.md](references/templates.md) の `decisions.md` を参照
+  - 記録項目: 決定 / 文脈 / 検討した案（code-architect が返した複数案を要約） / 採用理由 / トレードオフ
+  - **トレードオフ欄に「特になし」は書かない**（書きたくなる場合は Step 4a の分岐判定を見直す）
 
 #### Step 4c: 設計ドキュメントの作成
 
@@ -189,7 +196,7 @@ $ARGUMENTS[0]/
   - conventions.md — 新規開発 or 新しい規約が必要な場合
   - **含めないもの:** 実装例・メソッド内部のコード、詳細なProps定義・型定義
   - 各ドキュメントのフォーマットは [templates.md](references/templates.md) を参照
-  - Step 4b で確定した採用案の内容を反映する
+  - **Step 4b を実施した場合は、確定した採用案の内容を反映する**（Step 4b をスキップした場合は分岐なしの判断のみで作成する）
 
 → Step 5 へ。
 

@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.7.0]
+
+### Added
+
+- **企画フェーズの4項目サマリを永続化**: planner Step 3 ですり合わせる「実現したいこと / 背景・目的 / 対象画面・対象データ / 制約・要件」の4項目を、`planning/user-stories.md` 冒頭の「## 概要」セクション（各項目 h3 見出し）として記録するようテンプレートを拡張。これまで会話表示のみで揮発していた Discovery の合意内容が後段フェーズで参照できるようになる
+- **設計判断ログ（ADR）の新設**: `architecture/decisions.md` を新規追加。architect Step 4a で「分岐あり」と判定された判断について、Step 4b 末尾で **決定 / 文脈 / 検討した案 / 採用理由 / トレードオフ** を1エントリ（`AD-N`）として記録する。トレードオフ欄に「特になし」は禁止（書きたくなる場合は分岐判定を見直す）
+- **builder の判断追従**: builder Step 2（コンテキスト復元）で `architecture/decisions.md` を読み込む手順を追加。後続ビルドが採用案を意図せず覆さないようにする。覆す必要が生じた場合は新しい AD エントリの追記と handoff.md への記録を義務化
+
+### Migration
+
+- 既存ワークフローの `planning/`, `architecture/`, `build-NN/` の中身は変更不要
+- 過去に作成済みの `user-stories.md` への「## 概要」追記は任意（新規ワークフローのみ義務）
+- 過去ワークフローの `decisions.md` は不要。新規ワークフローで分岐ありの判断が出た時点で作成される
+
 ## [0.6.0]
 
 ### Added

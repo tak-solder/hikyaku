@@ -7,7 +7,7 @@ disable-model-invocation: true
 argument-hint: "{DOC_ROOT} [buildID|next]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.6.0"
+  version: "0.7.0"
 ---
 
 # Hikyaku Builder
@@ -48,6 +48,7 @@ $ARGUMENTS[0]/
 ├── architecture/              # 設計ドキュメント（ARCHITECT で作成済み、実装時に差分があれば更新）
 │   ├── codebase-survey.md     # 既存コード調査結果（任意）
 │   ├── design-questions.md    # 設計段階の質問と回答
+│   ├── decisions.md           # 設計判断ログ（ADR、任意）
 │   ├── tech-stack.md          # 技術選択（任意）
 │   ├── db-schema.md           # DBスキーマ（任意）
 │   ├── interfaces.md          # インターフェース定義（任意）
@@ -120,6 +121,10 @@ $ARGUMENTS[0]/
 - [ ] `$ARGUMENTS[0]/build-{NN}/` に既存の成果物（plan.md, test-spec.md, handoff.md 等）がないか確認する
   - 存在する場合は過去のセッションで作業が途中まで進んでいるため、内容を読み込んで途中から再開する
 - [ ] `$ARGUMENTS[0]/architecture/codebase-survey.md` — 既存コードの構成・規約・拡張ポイント（存在する場合）
+- [ ] `$ARGUMENTS[0]/architecture/decisions.md` — 設計判断ログ（存在する場合）
+  - 採用理由とトレードオフを把握し、実装中に判断を覆さないようにする
+  - 覆す必要が生じた場合は新しい AD エントリを `decisions.md` に追記し、さらに `$ARGUMENTS[0]/build-{NN}/handoff.md` にも記録する
+    - 記録項目: **覆した AD 番号** / **覆した理由** / **影響範囲（変更したコンポーネント・後続ビルドへの波及）**
 - [ ] `$ARGUMENTS[0]/architecture/` — その他の関連する設計ドキュメントを参照
 - [ ] 依存ビルドの `$ARGUMENTS[0]/build-{NN}/handoff.md` を読み込む
   - **直接依存するビルドの handoff.md のみ** 読み込む（全ビルド分は読まない）

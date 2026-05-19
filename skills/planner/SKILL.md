@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "{DOC_ROOT}"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.6.0"
+  version: "0.7.0"
 ---
 
 # Hikyaku Planner
@@ -46,6 +46,7 @@ $ARGUMENTS[0]/
 ├── architecture/              # 設計ドキュメント（ARCHITECT で作成）
 │   ├── codebase-survey.md     # 既存コード調査結果（既存コードがある場合のみ）
 │   ├── design-questions.md    # 設計段階の質問と回答
+│   ├── decisions.md           # 設計判断ログ（ADR、分岐評価のあった判断のみ）
 │   ├── tech-stack.md          # 技術選択（必要時のみ）
 │   ├── db-schema.md           # DBスキーマ（必要時のみ）
 │   ├── interfaces.md          # インターフェース定義（必要時のみ）
@@ -127,6 +128,7 @@ $ARGUMENTS[0]/
 - [ ] 構造化に必要な情報が揃うまで質問を繰り返す
 - [ ] インプットと質問ループで得た情報を統合し、`$ARGUMENTS[0]/planning/user-stories.md` を作成する
   - フォーマットは [templates.md](references/templates.md) を参照
+  - **Step 3 ですり合わせた4項目（実現したいこと / 背景・目的 / 対象画面・対象データ / 制約・要件）は、`user-stories.md` 冒頭の「概要」セクションに反映する**。質問ループで補足や修正があれば最終内容を反映する
 - [ ] planning/questions.md と planning/user-stories.md をユーザーに提示し、承認を得る
 
 → 承認を得たら Step 5 へ。フィードバックがあれば反映し、Step 4 の質問ループからやり直す。
