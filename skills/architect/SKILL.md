@@ -196,7 +196,7 @@ $ARGUMENTS[0]/
   - conventions.md — 新規開発 or 新しい規約が必要な場合
   - **含めないもの:** 実装例・メソッド内部のコード、詳細なProps定義・型定義
   - 各ドキュメントのフォーマットは [templates.md](references/templates.md) を参照
-  - Step 4b で確定した採用案の内容を反映する
+  - **Step 4b を実施した場合は、確定した採用案の内容を反映する**（Step 4b をスキップした場合は分岐なしの判断のみで作成する）
 
 → Step 5 へ。
 

@@ -123,7 +123,8 @@ $ARGUMENTS[0]/
 - [ ] `$ARGUMENTS[0]/architecture/codebase-survey.md` — 既存コードの構成・規約・拡張ポイント（存在する場合）
 - [ ] `$ARGUMENTS[0]/architecture/decisions.md` — 設計判断ログ（存在する場合）
   - 採用理由とトレードオフを把握し、実装中に判断を覆さないようにする
-  - 覆す必要が生じた場合は新しい AD エントリを追記し、handoff.md にも記録する
+  - 覆す必要が生じた場合は新しい AD エントリを `decisions.md` に追記し、さらに `$ARGUMENTS[0]/build-{NN}/handoff.md` にも記録する
+    - 記録項目: **覆した AD 番号** / **覆した理由** / **影響範囲（変更したコンポーネント・後続ビルドへの波及）**
 - [ ] `$ARGUMENTS[0]/architecture/` — その他の関連する設計ドキュメントを参照
 - [ ] 依存ビルドの `$ARGUMENTS[0]/build-{NN}/handoff.md` を読み込む
   - **直接依存するビルドの handoff.md のみ** 読み込む（全ビルド分は読まない）
