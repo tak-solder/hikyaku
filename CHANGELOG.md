@@ -19,7 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Migration
 
 - 既存ワークフローへの影響なし。`.hikyaku.config` を作成しない場合はすべての設定がデフォルト値となり、従来の動作が維持される
-- `argument-hint` が `[{DOC_ROOT}]` に変更（引数がオプションであることを明示）。スキルの動作に影響なし
+- planner / architect / builder の `argument-hint` を `[{DOC_ROOT}]` に変更（引数がオプションであることを明示）。内部スキル（build-manager / retrospective）は対象外。スキルの動作に影響なし
 
 ## [0.7.0]
 

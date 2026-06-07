@@ -98,7 +98,7 @@ $ARGUMENTS[0]/
   - どちらも未設定の場合 → ユーザーに DOC_ROOT の指定を求めて終了する
 - [ ] **BASE_BRANCH を決定する**
   - `.hikyaku.config` に `base_branch` が設定されている場合 → `origin/{base_branch}` を使用する
-  - 未設定の場合 → `git remote show origin | grep 'HEAD branch'` でデフォルトブランチを検出し、`origin/{branch}` 形式で使用する
+  - 未設定の場合 → `git remote show origin | grep 'HEAD branch' | awk '{print $NF}'` でデフォルトブランチ名を抽出し、`origin/{branch}` 形式で使用する
 - [ ] **設定値のデフォルトを確認する**（`.hikyaku.config` で未設定の場合はデフォルト値を使用する）
   - `code_review`: デフォルト `true`
   - `security_review`: デフォルト `true`
@@ -219,8 +219,8 @@ Agent に渡すフォーマット指定:
 
 機械的検証（lint / test / build）だけでは検出できない品質・規約・セキュリティ観点をレビューする。スコープ逸脱や規約違反、セキュリティ問題を申し送り作成前に潰す。
 
-- [ ] `code_review` が `false` の場合はこのステップをスキップして Step 9 へ
-- [ ] **`code-reviewer` と `security-reviewer` を並列起動する**（`security_review` が `false` の場合は `code-reviewer` のみ起動する）
+- [ ] `code_review` と `security_review` が共に `false` の場合はこのステップをスキップして Step 9 へ
+- [ ] **`code-reviewer` と `security-reviewer` を並列起動する**（`code_review` が `false` の場合は `security-reviewer` のみ、`security_review` が `false` の場合は `code-reviewer` のみ起動する）
   - 起動するエージェントに渡す情報: 対象ビルドのパス（`{DOC_ROOT}/build-{NN}/`）、`{DOC_ROOT}/build-{NN}/plan.md`, `{DOC_ROOT}/build-{NN}/issue.md`, `{DOC_ROOT}/architecture/conventions.md`（あれば）, `{DOC_ROOT}/architecture/codebase-survey.md`（あれば）
   - 各エージェントは以下のコマンドすべてで当該ブランチの変更を確認する（未追跡・staged・unstaged・コミット済みを漏らさないため）:
     - `git status` — 変更ファイル一覧（未追跡含む）
