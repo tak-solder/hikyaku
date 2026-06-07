@@ -3,10 +3,10 @@ name: architect
 description: "Hikyaku 設計フェーズ: 企画フェーズの成果物を入力として、技術設計・ビルド分割・ビルド定義を出力する"
 user-invocable: true
 disable-model-invocation: true
-argument-hint: "{DOC_ROOT}"
+argument-hint: "[{DOC_ROOT}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # Hikyaku Architect
@@ -72,12 +72,19 @@ $ARGUMENTS[0]/
 
 ## 作業ステップ
 
-### Step 0: ファイルの読み込み
+### Step 0: ファイルの読み込みと設定の解決
 
-作業の開始前に必ず次のファイルを読み込む。
+作業の開始前に必ず以下を実行する。
 
 - [ ] `<SKILL_ROOT>/references/templates.md`: 各種成果物のテンプレート（必須）
-- [ ] `$ARGUMENTS[0]/instruction.md`: ワークフロー独自のインストラクション（存在する場合のみ）
+- [ ] リポジトリルートの `.hikyaku.config` を読み込む（存在する場合のみ）
+- [ ] **DOC_ROOT を決定する**
+  - `$ARGUMENTS[0]` が指定されている場合 → その値を DOC_ROOT として使用する
+  - `$ARGUMENTS[0]` が未指定で `.hikyaku.config` に `doc_root` が設定されている場合 → その値を DOC_ROOT として使用する
+  - どちらも未設定の場合 → ユーザーに DOC_ROOT の指定を求めて終了する
+- [ ] `{DOC_ROOT}/instruction.md`: ワークフロー独自のインストラクション（存在する場合のみ）
+
+以降のステップでは DOC_ROOT を `$ARGUMENTS[0]` の代わりに使用する。
 
 なお、インストラクションは次の優先順で適用する。上位の指示が下位と矛盾する場合は、上位を優先すること。
 

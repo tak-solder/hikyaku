@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.8.0]
+
+### Added
+
+- **`.hikyaku.config` による設定ファイルのサポート**: リポジトリルートに `.hikyaku.config`（TOML形式）を配置することで、スキル呼び出し時の引数省略や動作カスタマイズが可能になった。フォーマットの詳細は README の「設定ファイル」セクションを参照
+  - `doc_root` — DOC_ROOT パスを固定し、`/hikyaku:planner`, `/hikyaku:architect`, `/hikyaku:builder` の引数を省略可能にする
+  - `base_branch` — PRのベースブランチを指定。未設定時は `git remote show origin` でデフォルトブランチを自動検出する
+  - `retrospective` — 振り返りの動作を `prompt`（デフォルト・毎回確認）/ `auto`（確認なし自動実行）/ `skip`（スキップ）で制御する
+  - `bp_max` — ビルド分割のBP上限を変更する（デフォルト: 8）
+  - `code_review` — `false` にすると builder Step 8 のコードレビューをスキップする（デフォルト: true）
+  - `security_review` — `false` にすると builder Step 8 のセキュリティレビューをスキップする（デフォルト: true）
+
+### Migration
+
+- 既存ワークフローへの影響なし。`.hikyaku.config` を作成しない場合はすべての設定がデフォルト値となり、従来の動作が維持される
+- `argument-hint` が `[{DOC_ROOT}]` に変更（引数がオプションであることを明示）。スキルの動作に影響なし
+
 ## [0.7.0]
 
 ### Added
