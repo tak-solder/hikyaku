@@ -4,10 +4,10 @@ description: "Hikyaku 実装フェーズ: 設計フェーズや依存する実�
 compatibility: "Requires git and gh CLI."
 user-invocable: true
 disable-model-invocation: true
-argument-hint: "{DOC_ROOT} [buildID|next]"
+argument-hint: "[{DOC_ROOT}] [buildID|next]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # Hikyaku Builder
@@ -85,13 +85,26 @@ $ARGUMENTS[0]/
 
 ## 作業ステップ
 
-### Step 0: ファイルの読み込み
+### Step 0: ファイルの読み込みと設定の解決
 
-作業の開始前に必ず次のファイルを読み込む。
+作業の開始前に必ず以下を実行する。
 
 - [ ] `<SKILL_ROOT>/references/templates.md`: 各種成果物のテンプレート（必須）
 - [ ] `<SKILL_ROOT>/references/retry-policy.md`: エラー発生時のリトライ方針（必須）
-- [ ] `$ARGUMENTS[0]/instruction.md`: ワークフロー独自のインストラクション（存在する場合のみ）
+- [ ] リポジトリルートの `.hikyaku.config` を読み込む（存在する場合のみ）
+- [ ] **DOC_ROOT を決定する**
+  - `$ARGUMENTS[0]` が指定されている場合 → その値を DOC_ROOT として使用する
+  - `$ARGUMENTS[0]` が未指定で `.hikyaku.config` に `doc_root` が設定されている場合 → その値を DOC_ROOT として使用する
+  - どちらも未設定の場合 → ユーザーに DOC_ROOT の指定を求めて終了する
+- [ ] **BASE_BRANCH を決定する**
+  - `.hikyaku.config` に `base_branch` が設定されている場合 → `origin/{base_branch}` を使用する
+  - 未設定の場合 → `git remote show origin | grep 'HEAD branch' | awk '{print $NF}'` でデフォルトブランチ名を抽出し、`origin/{branch}` 形式で使用する
+- [ ] **設定値のデフォルトを確認する**（`.hikyaku.config` で未設定の場合はデフォルト値を使用する）
+  - `code_review`: デフォルト `true`
+  - `security_review`: デフォルト `true`
+- [ ] `{DOC_ROOT}/instruction.md`: ワークフロー独自のインストラクション（存在する場合のみ）
+
+以降のステップでは DOC_ROOT を `$ARGUMENTS[0]` の代わりに、BASE_BRANCH を `origin/main` の代わりに使用する。
 
 なお、インストラクションは次の優先順で適用する。上位の指示が下位と矛盾する場合は、上位を優先すること。
 
@@ -206,13 +219,14 @@ Agent に渡すフォーマット指定:
 
 機械的検証（lint / test / build）だけでは検出できない品質・規約・セキュリティ観点をレビューする。スコープ逸脱や規約違反、セキュリティ問題を申し送り作成前に潰す。
 
-- [ ] **`code-reviewer` と `security-reviewer` を並列起動する**
-  - 両エージェントに渡す情報: 対象ビルドのパス（`$ARGUMENTS[0]/build-{NN}/`）、`$ARGUMENTS[0]/build-{NN}/plan.md`, `$ARGUMENTS[0]/build-{NN}/issue.md`, `$ARGUMENTS[0]/architecture/conventions.md`（あれば）, `$ARGUMENTS[0]/architecture/codebase-survey.md`（あれば）
-  - 両エージェントは以下のコマンドすべてで当該ブランチの変更を確認する（未追跡・staged・unstaged・コミット済みを漏らさないため）:
+- [ ] `code_review` と `security_review` が共に `false` の場合はこのステップをスキップして Step 9 へ
+- [ ] **`code-reviewer` と `security-reviewer` を並列起動する**（`code_review` が `false` の場合は `security-reviewer` のみ、`security_review` が `false` の場合は `code-reviewer` のみ起動する）
+  - 起動するエージェントに渡す情報: 対象ビルドのパス（`{DOC_ROOT}/build-{NN}/`）、`{DOC_ROOT}/build-{NN}/plan.md`, `{DOC_ROOT}/build-{NN}/issue.md`, `{DOC_ROOT}/architecture/conventions.md`（あれば）, `{DOC_ROOT}/architecture/codebase-survey.md`（あれば）
+  - 各エージェントは以下のコマンドすべてで当該ブランチの変更を確認する（未追跡・staged・unstaged・コミット済みを漏らさないため）:
     - `git status` — 変更ファイル一覧（未追跡含む）
     - `git diff` — unstaged 差分
     - `git diff --cached` — staged 差分
-    - `git diff $(git merge-base origin/main HEAD)..HEAD` — base ブランチ（origin/main）からの **コミット済み差分**。再開セッションや途中コミットを含むビルドではこの差分にしか実装が現れない
+    - `git diff $(git merge-base {BASE_BRANCH} HEAD)..HEAD` — base ブランチ（Step 0 で解決した BASE_BRANCH）からの **コミット済み差分**。再開セッションや途中コミットを含むビルドではこの差分にしか実装が現れない
     - 新規追加ファイル（未追跡）は Read tool で内容を読む
   - 担当範囲:
     - `code-reviewer`: スコープ準拠 / 規約準拠 / バグ・ロジック誤り / 冗長性

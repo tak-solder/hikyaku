@@ -6,7 +6,7 @@ disable-model-invocation: false
 argument-hint: "{DOC_ROOT} {SUB_DIR}"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # Hikyaku Retrospective
@@ -24,6 +24,16 @@ metadata:
 出力先: `$ARGUMENTS[0]/$ARGUMENTS[1]/retrospective.md`
 
 ## 作業ステップ
+
+### Step 0: 設定の確認
+
+- [ ] リポジトリルートの `.hikyaku.config` を読み込む（存在する場合のみ）
+  - `retrospective` の設定値を取得する（未設定の場合は `prompt`）
+
+設定値に応じて動作を決定する:
+- `skip`: 振り返りをスキップし、呼び出し元に制御を返す
+- `auto`: ユーザーへの確認をスキップして Step 2 へ進む
+- `prompt`（デフォルト）: Step 1 へ進む
 
 ### Step 1: ユーザーに振り返りの実施を確認
 

@@ -6,7 +6,7 @@ disable-model-invocation: false
 argument-hint: "{DOC_ROOT}"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.7.0"
+  version: "0.8.0"
 ---
 
 # Hikyaku Build Manager
@@ -32,6 +32,8 @@ metadata:
 
 - [ ] `<SKILL_ROOT>/references/templates.md`: 各種成果物のテンプレート（必須）
 - [ ] `<SKILL_ROOT>/references/bp-guide.md`: BP見積もりガイド（必須）
+- [ ] リポジトリルートの `.hikyaku.config` を読み込む（存在する場合のみ）
+  - `bp_max` の設定値を取得する（未設定の場合は `8`）
 - [ ] `$ARGUMENTS[0]/tasklist.md` を読み込む（存在しない場合は新規作成モード）
 
 → すべて読み込めたら Step 1 へ。必須ファイルが読み込めなかった場合はユーザーに報告して終了。
@@ -65,8 +67,8 @@ metadata:
   - ビルドが関わるワークスペース（パッケージ）を特定する
   - ワークスペースごとに、主要指標（新規ファイル数、実装行数、API操作数、画面数、DBテーブル数）の最大値 + 加算要素でBPを算出する
   - 全ワークスペースのBPを合計する
-  - 合計BPが6以上の場合は分割を検討する
-- [ ] BP 9 以上の場合は分割が必須。BP 6〜8 は以下のいずれかに該当する場合のみ許容する:
+  - 合計BPが (bp_max − 2) 以上の場合は分割を検討する（デフォルト: 6 以上）
+- [ ] bp_max + 1 以上（デフォルト: 9 以上）の場合は分割が必須。(bp_max − 2) 以上 bp_max 以下（デフォルト: 6〜8）で以下のいずれかに該当する場合のみ許容する:
   - 分割したビルド間で同一ファイルの同一箇所を編集する必要があり、マージコンフリクトが避けられない
   - 分割の一方が BP 1 未満になり、ビルドとして成立しない
 

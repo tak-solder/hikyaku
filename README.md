@@ -136,6 +136,37 @@ Hikyaku は以下の優先順位でインストラクションを適用します
 
 `{DOC_ROOT}/instruction.md` はワークフロー固有のルールや制約を記述するためのファイルです。大きなリポジトリやモノレポの一部で Hikyaku を使う場合に、リポジトリ全体の規約とは別にワークフロー固有の指示を定義できます。このファイルは任意で、存在しなければスキップされます。
 
+## 設定ファイル（`.hikyaku.config`）
+
+リポジトリルートに `.hikyaku.config`（TOML形式）を配置することで、スキル呼び出し時の引数省略や動作のカスタマイズができます。すべての項目はオプションです。
+
+```toml
+# ワークフロードキュメントのルートパス
+# 設定すると /hikyaku:planner, /hikyaku:architect, /hikyaku:builder の引数を省略できます
+# doc_root = "docs/hikyaku"
+
+# PRのベースブランチ（未設定時はリポジトリのデフォルトブランチを自動検出）
+# base_branch = "main"
+
+# 振り返りのデフォルト動作: prompt（デフォルト）| auto | skip
+# retrospective = "prompt"
+
+# ビルド分割のBP上限（デフォルト: 8）
+# bp_max = 8
+
+# コードレビュー・セキュリティレビューの有効化（デフォルト: true）
+# code_review = true
+# security_review = true
+```
+
+`doc_root` を設定した場合、各スキルの引数を省略して呼び出せます:
+
+```
+/hikyaku:planner      # doc_root で指定したパスを自動使用
+/hikyaku:architect
+/hikyaku:builder
+```
+
 ## ビルドポイント（BP）
 
 ビルドポイント（BP）は、AIエージェントとの1セッション（20万トークン目安）で実装が完了するかどうかを判断するための定量指標です。ARCHITECT フェーズでビルド分割する際の基準として使用します。
