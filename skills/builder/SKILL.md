@@ -7,7 +7,7 @@ disable-model-invocation: true
 argument-hint: "[{DOC_ROOT}] [buildID|next]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.8.0"
+  version: "0.8.1"
 ---
 
 # Hikyaku Builder
@@ -102,6 +102,7 @@ $ARGUMENTS[0]/
 - [ ] **設定値のデフォルトを確認する**（`.hikyaku.config` で未設定の場合はデフォルト値を使用する）
   - `code_review`: デフォルト `true`
   - `security_review`: デフォルト `true`
+  - `test_spec_review`: デフォルト `true`
 - [ ] `{DOC_ROOT}/instruction.md`: ワークフロー独自のインストラクション（存在する場合のみ）
 
 以降のステップでは DOC_ROOT を `$ARGUMENTS[0]` の代わりに、BASE_BRANCH を `origin/main` の代わりに使用する。
@@ -192,9 +193,11 @@ Agent に渡すフォーマット指定:
 - Given/When/Then は具体的な値を含める（例: `Given: メールアドレス "user@example.com" のユーザーが登録済み`）
 - 1シナリオ = 1つの検証観点に絞る。表形式は使わないこと
 ````
-- [ ] 生成された test-spec.md の内容を確認し、ユーザーに提示して承認を得る
+- [ ] 生成された test-spec.md の内容を確認する
+  - `test_spec_review` が `true` の場合: 内容をユーザーに提示して承認を得る
+  - `test_spec_review` が `false` の場合: 承認ステップをスキップしてそのまま Step 6 へ進む
 
-→ 承認を得たら Step 6 へ。フィードバックがあれば test-spec.md に反映し、Step 5 の承認からやり直す。
+→ 承認を得たら（または `test_spec_review = false` でスキップしたら）Step 6 へ。フィードバックがあれば test-spec.md に反映し、Step 5 の承認からやり直す。
 
 ### Step 6: コード生成
 
