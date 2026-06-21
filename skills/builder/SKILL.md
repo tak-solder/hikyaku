@@ -197,7 +197,7 @@ Agent に渡すフォーマット指定:
   - `test_spec_review` が `true` の場合: 内容をユーザーに提示して承認を得る
   - `test_spec_review` が `false` の場合: 承認ステップをスキップしてそのまま Step 6 へ進む
 
-→ 承認を得たら（または `test_spec_review: false` でスキップしたら）Step 6 へ。フィードバックがあれば test-spec.md に反映し、Step 5 の承認からやり直す。
+→ 承認を得たら（または `test_spec_review = false` でスキップしたら）Step 6 へ。フィードバックがあれば test-spec.md に反映し、Step 5 の承認からやり直す。
 
 ### Step 6: コード生成
 
