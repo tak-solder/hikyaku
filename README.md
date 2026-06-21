@@ -157,6 +157,9 @@ Hikyaku は以下の優先順位でインストラクションを適用します
 # コードレビュー・セキュリティレビューの有効化（デフォルト: true）
 # code_review = true
 # security_review = true
+
+# test-spec.md 作成後の承認ゲートの有効化（デフォルト: true）
+# test_spec_review = true
 ```
 
 `doc_root` を設定した場合、各スキルの引数を省略して呼び出せます:

@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.8.1]
+
+### Added
+
+- **`test_spec_review` 設定オプション**: `.hikyaku.config` に `test_spec_review = false` を設定すると、builder Step 5 での test-spec.md 承認ゲートをスキップできるようになった。plan.md 承認後の test-spec.md 作成がスムーズになり、承認ループを減らしたいプロジェクト向けのオプション（デフォルト: `true`）
+
+### Migration
+
+- 既存ワークフローへの影響なし。`.hikyaku.config` に `test_spec_review` を設定しない場合はデフォルト `true` となり、従来の承認ゲートが維持される
+
 ## [0.8.0]
 
 ### Added
