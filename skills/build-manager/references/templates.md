@@ -5,12 +5,12 @@
 ````markdown
 # ビルド一覧
 
-| buildID | title | BP | dependencies | PR |
-|---------|-------|----|--------------|----|
-| 1 | DB基盤 | 2 | | |
-| 2 | 認証API | 3 | 1,4 | |
-| 3 | 投稿API | 3 | 2 | |
-| 4 | 共通ユーティリティ | 2 | 1 | |
+| buildID | title | BP | dependencies | issue | PR |
+|---------|-------|----|--------------|-------|----|
+| 1 | DB基盤 | 2 | | [issue](./build-01/issue.md) | |
+| 2 | 認証API | 3 | 1,4 | [issue](./build-02/issue.md) | |
+| 3 | 投稿API | 3 | 2 | [issue](./build-03/issue.md) | |
+| 4 | 共通ユーティリティ | 2 | 1 | [issue](./build-04/issue.md) | |
 
 ## builder呼び出し
 
@@ -50,7 +50,10 @@ Prisma導入、DBマイグレーションの整備
 - **title**: ビルド名
 - **BP**: ビルドポイント（bp-guide.md 参照）
 - **dependencies**: 依存ビルドID（カンマ区切り）。実行順序はこの依存グラフで決定される
+- **issue**: `build-{NN}/issue.md` への相対リンク（`[issue](./build-{NN}/issue.md)`）。build-manager が作成時に記録し、以後不変
 - **PR**: PR番号またはURL（BUILDフェーズ完了後に記入）
+
+**`issue_backend` による列の違い:** 上記は `issue_backend = "file"`（デフォルト）の場合の列構成です。`issue`/`task`列はどのbackendでもMarkdownリンク形式ですが、リンク先が異なります。`github` の場合は `issue` 列の値が `[#12](https://github.com/owner/repo/issues/12)` のようなissue URLへのリンクになります。`asana` の場合は `issue` 列が `task` 列に置き換わり、`[<gid>](<permalink_url>)` のようなAsana task URLへのリンクを記録します（issue.md自体はローカルに常設されず外部レコードが正のため、相対リンクではなくtask URLで参照する）。**`PR` 列はどのbackendでも共通で存在し**、builderがStep 10で記録します（`github`/`asana`では可視化目的のみで、完了判定には使いません）。詳細は [backends.md](backends.md) を参照してください。
 
 **依存グラフの書き方:**
 - テーブルの dependencies 列と同じ情報を Mermaid `graph LR` で記述する

@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "[{DOC_ROOT}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.8.1"
+  version: "1.0.0"
 ---
 
 # Hikyaku Planner
@@ -38,6 +38,8 @@ Hikyakuは PLAN → ARCHITECT → BUILD の3フェーズで構成されるAIエ�
 
 ```
 $ARGUMENTS[0]/
+├── .gitignore                 # PLAN 初回実行時に自動生成（retrospective.md / test-spec.md / questions.md / design-questions.md を除外）
+├── .hikyaku.config             # このワークフロー固有の設定上書き（任意、PLAN 初回実行時に雛形生成）
 ├── tasklist.md               # ビルド一覧（ARCHITECT で作成、BUILD で PR列を更新）
 ├── planning/                  # 企画ドキュメント（PLAN で作成）
 │   ├── questions.md           # 企画段階の質問と回答
@@ -56,10 +58,13 @@ $ARGUMENTS[0]/
 │   ├── issue.md               # ビルド定義（ARCHITECT で作成）
 │   ├── plan.md                # 実装計画（BUILD で作成）
 │   ├── test-spec.md           # テストシナリオ（BUILD で作成）
+│   ├── questions.md           # 実装時の質問と回答（BUILD で作成、必要時のみ）
 │   ├── handoff.md             # 申し送り（BUILD で作成）
 │   └── retrospective.md      # 振り返り（BUILD で作成）
 └── ...
 ```
+
+上記は `issue_backend = "file"`（デフォルト）の場合の構成です。`github`/`asana` を選択した場合、`build-{NN}/` 配下は丸ごと `.gitignore` 対象になりコミットされません（詳細は `skills/build-manager/references/backends.md`）。
 
 ### あなたの役割（企画フェーズ）
 
@@ -84,6 +89,7 @@ $ARGUMENTS[0]/
   - `$ARGUMENTS[0]` が指定されている場合 → その値を DOC_ROOT として使用する
   - `$ARGUMENTS[0]` が未指定で `.hikyaku.config` に `doc_root` が設定されている場合 → その値を DOC_ROOT として使用する
   - どちらも未設定の場合 → ユーザーに DOC_ROOT の指定を求めて終了する
+- [ ] `{DOC_ROOT}/.hikyaku.config` が存在する場合は読み込み、`doc_root` を除くキーをリポジトリルートの設定にキー単位で上書きする（このワークフロー固有の設定。`doc_root` はリポジトリルートの設定でのみ有効）
 - [ ] `{DOC_ROOT}/instruction.md`: ワークフロー独自のインストラクション（存在する場合のみ）
 
 以降のステップでは DOC_ROOT を `$ARGUMENTS[0]` の代わりに使用する。
@@ -96,9 +102,47 @@ $ARGUMENTS[0]/
 
 → すべて読み込めたら Step 1 へ。必須ファイルが読み込めなかった場合はユーザーに報告して終了。
 
-### Step 1: ワークフローディレクトリの作成
+### Step 1: プロジェクトディレクトリの初期化
 
+DOC_ROOT を対象に、以下を **冪等に**（既に存在するものは上書きしない）実行する。
+
+- [ ] `$ARGUMENTS[0]/` ディレクトリが存在しなければ作成する
 - [ ] `$ARGUMENTS[0]/planning/` ディレクトリが存在しなければ作成する
+- [ ] `$ARGUMENTS[0]/.gitignore` を確認する
+  - 存在しない場合: 新規作成する
+  - 存在する場合: 以下のパターンが含まれているか確認し、無ければ追記する（既存内容は書き換えない）
+  ```gitignore
+  # Hikyaku: セッションローカルの成果物（コミット対象外）
+  **/retrospective.md
+  **/test-spec.md
+  **/questions.md
+  **/design-questions.md
+  ```
+- [ ] `$ARGUMENTS[0]/.hikyaku.config` を確認する
+  - 存在しない場合: 全項目コメントアウト済みの雛形を新規作成する
+  - 存在する場合: 何もしない（ユーザーが設定した上書き内容を保持する）
+  ```toml
+  # このファイルはこのワークフロー（$ARGUMENTS[0]）固有の設定です。
+  # リポジトリルートの .hikyaku.config の値をキー単位で上書きします。
+  # doc_root はここでは指定できません（リポジトリルートの設定でのみ有効）。
+
+  # base_branch = "main"
+  # retrospective = "prompt"
+  # bp_max = 8
+  # code_review = true
+  # security_review = true
+  # test_spec_review = true
+  # user_stories_review = true
+  # architecture_review = true
+  # plan_review = true
+  # issue_backend = "file"
+
+  # [github]
+  # # repo = "owner/repo"
+
+  # [asana]
+  # project_gid = "..."
+  ```
 
 → Step 2 へ。
 
@@ -136,7 +180,11 @@ $ARGUMENTS[0]/
 - [ ] インプットと質問ループで得た情報を統合し、`$ARGUMENTS[0]/planning/user-stories.md` を作成する
   - フォーマットは [templates.md](references/templates.md) を参照
   - **Step 3 ですり合わせた4項目（実現したいこと / 背景・目的 / 対象画面・対象データ / 制約・要件）は、`user-stories.md` 冒頭の「概要」セクションに反映する**。質問ループで補足や修正があれば最終内容を反映する
-- [ ] planning/questions.md と planning/user-stories.md をユーザーに提示し、承認を得る
+- [ ] `user_stories_review` が `true`（デフォルト）の場合、`doc-reviewer` エージェントを起動する（`context: user-stories`）
+  - 渡す情報: `$ARGUMENTS[0]/planning/user-stories.md`, `$ARGUMENTS[0]/planning/questions.md`
+  - 出力フォーマットは `agents/doc-reviewer.md` を参照
+  - 返ってきた指摘のうち、明確な不整合・網羅漏れは user-stories.md に反映する（主観的な指摘は無視してよい）
+- [ ] planning/questions.md と planning/user-stories.md を、doc-reviewer の指摘（あれば）と併せてユーザーに提示し、承認を得る
 
 → 承認を得たら Step 5 へ。フィードバックがあれば反映し、Step 4 の質問ループからやり直す。
 

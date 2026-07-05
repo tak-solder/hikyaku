@@ -7,7 +7,7 @@ disable-model-invocation: true
 argument-hint: "[{DOC_ROOT}] [buildID|next]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.8.1"
+  version: "1.0.0"
 ---
 
 # Hikyaku Builder
@@ -40,6 +40,8 @@ Hikyakuは PLAN → ARCHITECT → BUILD の3フェーズで構成されるAIエ�
 
 ```
 $ARGUMENTS[0]/
+├── .gitignore                 # PLAN 初回実行時に自動生成（retrospective.md / test-spec.md / questions.md / design-questions.md を除外）
+├── .hikyaku.config             # このワークフロー固有の設定上書き（任意、PLAN 初回実行時に雛形生成）
 ├── tasklist.md               # ビルド一覧（ARCHITECT で作成済み、BUILD で PR列を更新）
 ├── planning/                  # 企画ドキュメント（PLAN で作成済み、参照のみ）
 │   ├── questions.md           # 企画段階の質問と回答
@@ -70,6 +72,8 @@ $ARGUMENTS[0]/
 └── ...
 ```
 
+上記は `issue_backend = "file"`（デフォルト）の場合の構成です。`github`/`asana` を選択した場合、`build-{NN}/` 配下は丸ごと `.gitignore` 対象になりコミットされません（詳細は `skills/build-manager/references/backends.md`）。
+
 ### あなたの役割（実装フェーズ）
 
 あなたは実装フェーズの1ビルドを担当する。企画・設計は別セッションで完了済み。
@@ -96,6 +100,7 @@ $ARGUMENTS[0]/
   - `$ARGUMENTS[0]` が指定されている場合 → その値を DOC_ROOT として使用する
   - `$ARGUMENTS[0]` が未指定で `.hikyaku.config` に `doc_root` が設定されている場合 → その値を DOC_ROOT として使用する
   - どちらも未設定の場合 → ユーザーに DOC_ROOT の指定を求めて終了する
+- [ ] `{DOC_ROOT}/.hikyaku.config` が存在する場合は読み込み、`doc_root` を除くキーをリポジトリルートの設定にキー単位で上書きする（このワークフロー固有の設定）
 - [ ] **BASE_BRANCH を決定する**
   - `.hikyaku.config` に `base_branch` が設定されている場合 → `origin/{base_branch}` を使用する
   - 未設定の場合 → `git remote show origin | grep 'HEAD branch' | awk '{print $NF}'` でデフォルトブランチ名を抽出し、`origin/{branch}` 形式で使用する
@@ -103,6 +108,10 @@ $ARGUMENTS[0]/
   - `code_review`: デフォルト `true`
   - `security_review`: デフォルト `true`
   - `test_spec_review`: デフォルト `true`
+  - `plan_review`: デフォルト `true`
+  - `issue_backend`: デフォルト `file`
+- [ ] `issue_backend` が `asana` の場合、Asana操作用のMCPツールが利用可能か確認する（ToolSearchで`asana`を検索するなど）
+  - 見つからない場合: 「`issue_backend = "asana"` が設定されていますが、Asana操作用のMCPツールが見つかりません。Asana MCPサーバーを設定するか、`.hikyaku.config` の `issue_backend` を `file` または `github` に変更してください。」と報告して終了する
 - [ ] `{DOC_ROOT}/instruction.md`: ワークフロー独自のインストラクション（存在する場合のみ）
 
 以降のステップでは DOC_ROOT を `$ARGUMENTS[0]` の代わりに、BASE_BRANCH を `origin/main` の代わりに使用する。
@@ -118,10 +127,14 @@ $ARGUMENTS[0]/
 ### Step 1: 対象ビルドの特定
 
 - [ ] `$ARGUMENTS[0]/tasklist.md` を読み込む
+- [ ] **ビルドの完了判定方法を確認する**（`issue_backend` により異なる。詳細は `skills/build-manager/references/backends.md`）
+  - `file`: 該当ビルドのPR列が非空
+  - `github`: 該当ビルドの `issue` 列のリンクテキスト（`#<番号>`）から番号を抽出し、`gh issue view <番号> --json state` をライブ照会し、`state == "CLOSED"`
+  - `asana`: 該当ビルドの `task` 列のリンクテキストからgidを抽出し、Asana MCPツールでタスク完了状態をライブ照会
 - [ ] 対象ビルドの buildID を特定する
   - `$ARGUMENTS[1]` が数値の場合: 該当する buildID のビルドを対象とする
-  - `$ARGUMENTS[1]` が省略または `next` の場合: PR列が空かつ、依存ビルド（dependencies列）のPR列がすべて埋まっているビルドの中から、最小のbuildIDを選択する
-- [ ] 対象ビルドの依存ビルド（dependencies列）のPR列がすべて埋まっていることを確認する
+  - `$ARGUMENTS[1]` が省略または `next` の場合: 未完了かつ、依存ビルド（dependencies列）がすべて完了しているビルドの中から、最小のbuildIDを選択する
+- [ ] 対象ビルドの依存ビルド（dependencies列）がすべて完了していることを確認する
 
 **注意:** buildID の数値順は実行順序と一致しない場合がある（ビルド分割により後から追加されたビルドが、数値上は大きいが依存グラフ上は先に実行すべきケースがある）。必ず dependencies 列に基づいて判断すること。
 
@@ -131,8 +144,11 @@ $ARGUMENTS[0]/
 
 以下の順でドキュメントを読み込む:
 
-- [ ] `$ARGUMENTS[0]/build-{NN}/issue.md` — 対象ビルドの定義（やること/やらないこと/受け入れ基準）
-- [ ] `$ARGUMENTS[0]/build-{NN}/` に既存の成果物（plan.md, test-spec.md, handoff.md 等）がないか確認する
+- [ ] **issue.md 相当の内容を読み込む**（対象ビルドの定義: やること/やらないこと/受け入れ基準）。`issue_backend` により取得元が異なる（詳細は `skills/build-manager/references/backends.md`）
+  - `file`: `$ARGUMENTS[0]/build-{NN}/issue.md` を読む
+  - `github`: tasklist.mdの `issue` 列のリンクテキストから番号を抽出し、`gh issue view <番号>` で取得する
+  - `asana`: tasklist.mdの `task` 列のリンクテキストからgidを抽出し、Asana MCPツールで取得する
+- [ ] `$ARGUMENTS[0]/build-{NN}/` に既存の成果物（plan.md, test-spec.md, handoff.md 等のローカルキャッシュ）がないか確認する
   - 存在する場合は過去のセッションで作業が途中まで進んでいるため、内容を読み込んで途中から再開する
 - [ ] `$ARGUMENTS[0]/architecture/codebase-survey.md` — 既存コードの構成・規約・拡張ポイント（存在する場合）
 - [ ] `$ARGUMENTS[0]/architecture/decisions.md` — 設計判断ログ（存在する場合）
@@ -140,8 +156,11 @@ $ARGUMENTS[0]/
   - 覆す必要が生じた場合は新しい AD エントリを `decisions.md` に追記し、さらに `$ARGUMENTS[0]/build-{NN}/handoff.md` にも記録する
     - 記録項目: **覆した AD 番号** / **覆した理由** / **影響範囲（変更したコンポーネント・後続ビルドへの波及）**
 - [ ] `$ARGUMENTS[0]/architecture/` — その他の関連する設計ドキュメントを参照
-- [ ] 依存ビルドの `$ARGUMENTS[0]/build-{NN}/handoff.md` を読み込む
-  - **直接依存するビルドの handoff.md のみ** 読み込む（全ビルド分は読まない）
+- [ ] **依存ビルドのhandoff.md相当を読み込む**（`issue_backend` により取得元が異なる）
+  - `file`: 依存ビルドの `$ARGUMENTS[0]/build-{NN}/handoff.md` を読む
+  - `github`: 依存ビルドの `issue` 列のリンクテキストから番号を抽出し、`gh issue view <番号> --json comments` でsub-issueのコメント一覧を取得し、最新のhandoff投稿を読む
+  - `asana`: 依存ビルドの `task` 列のリンクテキストからgidを抽出し、Asana taskのコメントをMCPツール経由で取得する
+  - **直接依存するビルドの分のみ** 取得する（全ビルド分は読まない）
 
 → すべて読み込めたら Step 3 へ。
 
@@ -159,9 +178,14 @@ $ARGUMENTS[0]/
     - テンプレートは [templates.md](references/templates.md) の「plan.md（実装計画）」を使用する
     - **plan.md に含めるもの:** 依存パッケージの選定、クラス設計（メソッドシグネチャ）、セキュリティ等の非機能要件
     - **plan.md に含めないもの:** 詳細な実装コード、テストコードの実装方法
-- [ ] plan.md の内容をユーザーに提示し、承認を得る
+- [ ] `plan_review` が `true`（デフォルト）の場合、`doc-reviewer` エージェントを起動する（`context: plan`）
+  - 渡す情報: `$ARGUMENTS[0]/build-{NN}/plan.md`, `$ARGUMENTS[0]/build-{NN}/issue.md`, `architecture/` 配下の関連ドキュメント, 依存ビルドの `handoff.md`
+  - 出力フォーマットは `agents/doc-reviewer.md` を参照
+  - 返ってきた指摘のうち、明確な不整合・網羅漏れは plan.md に反映する（主観的な指摘は無視してよい）
+- [ ] plan.md の内容を、doc-reviewer の指摘（あれば）と併せてユーザーに提示し、承認を得る
+- [ ] `issue_backend` が `file` 以外の場合、`/hikyaku:build-manager $ARGUMENTS[0]` を呼び出し、承認済みplan.mdの内容を対応する外部レコード（sub-issueコメント / Asana taskコメント）に記録する
 
-→ 承認を得たら Step 5 へ。フィードバックがあれば plan.md に反映し、Step 4 の承認からやり直す。
+→ 承認を得たら Step 5 へ。フィードバックがあれば plan.md に反映し、Step 4 の承認からやり直す（`issue_backend` が `file` 以外の場合、再承認後に外部レコードへの記録も更新する）。
 
 ### Step 5: テストシナリオ作成と承認
 
@@ -233,28 +257,17 @@ Agent に渡すフォーマット指定:
     - 新規追加ファイル（未追跡）は Read tool で内容を読む
   - 担当範囲:
     - `code-reviewer`: スコープ準拠 / 規約準拠 / バグ・ロジック誤り / 冗長性
-    - `security-reviewer`: OWASP 系のセキュリティパターン違反、および `/security-review` へのエスカレーション判定
+    - `security-reviewer`: OWASP 系のセキュリティパターン違反
   - 各エージェントは **証拠ベースの判定** で報告対象を絞る。出力フォーマットは `agents/code-reviewer.md` および `agents/security-reviewer.md` を参照
 - [ ] 両エージェントから返ってきた指摘をメインセッションで統合する
   - 同一箇所への重複指摘は1件に統合し、`security-reviewer` の指摘を優先採用する
   - 各指摘の **根拠ラベル**（ドキュメント不整合 / バグ / Injection / 認可漏れ など）はそのまま残す
+  - `security-reviewer` の「確度が低い懸念」セクションの指摘は、重要度: 高/中/低の指摘とは区別し、「確度: 要確認」ラベルを保持したまま別枠で提示する（確定的な指摘と同列に扱わない）
 - [ ] 統合した指摘をユーザーに提示し、以下の選択肢で対応を決める
   - **今修正する** — 該当箇所を修正し、Step 7（ローカル検証）に戻る
   - **新ビルド化して後で対応** — `/hikyaku:build-manager $ARGUMENTS[0]` を呼び出して新ビルドを追加する。現在のビルドはそのまま進める
   - **そのまま進める** — 指摘を handoff.md の「既知の制約・注意点」に記録した上で次のステップへ
-- [ ] **エスカレーション判定の処理**
-  - `security-reviewer` のエスカレーション判定が「**推奨**」の場合、指摘一覧の最後に以下を提示する:
-
-    ```
-    ⚠️ security-reviewer は本ビルドを「セキュリティ感度の高い変更」と判定しました
-    該当カテゴリ: （security-reviewer の出力をそのまま転記）
-    より深い監査のため、Step 9（申し送り作成）に進む前に `/security-review` の実行を強く推奨します。
-    ```
-  - ユーザーに「**Step 9 に進む前に `/security-review` を実行するか**」を確認する
-    - 実行する場合: ユーザーが別途 `/security-review` を実行する（builder からは自動起動しない）。完了したらユーザーが手動で本セッションに戻り、Step 9 へ進む
-    - 実行しない場合: handoff.md の「既知の制約・注意点」に「security-reviewer がエスカレーションを推奨したが /security-review を実行せずに完了」と記録する
-  - エスカレーション判定が「不要」の場合は、この処理をスキップして Step 9 へ進む
-- [ ] 両エージェントが「指摘なし」かつエスカレーション判定が「不要」の場合は、そのまま Step 9 へ進む
+- [ ] 両エージェントが「指摘なし」（`security-reviewer` の「確度が低い懸念」も無し）の場合は、そのまま Step 9 へ進む
 
 → ユーザー選択に応じて対応後、Step 9 へ。
 
@@ -269,6 +282,7 @@ Agent に渡すフォーマット指定:
     - 技術的判断の記録（ADR）— 実装中に行った判断とその理由
     - 環境変更 — 新しい環境変数、DBマイグレーション、設定ファイル等
     - 既知の制約・注意点 — 後続ビルドが知るべき前提や制約（Step 8 で「そのまま進める」を選んだ指摘もここに記録する）
+- [ ] `issue_backend` が `file` 以外の場合、`/hikyaku:build-manager $ARGUMENTS[0]` を呼び出し、handoff.mdの内容を対応する外部レコードに記録する
 
 → Step 10 へ。
 
@@ -276,9 +290,12 @@ Agent に渡すフォーマット指定:
 
 - [ ] 変更を Push する
 - [ ] PR を作成する
+  - `issue_backend` が `github` の場合、tasklist.mdの`issue`列のリンクテキストから番号を抽出し、PR本文に `Closes #<番号>` を含める（PRマージ時にsub-issueが自動closeされ、後続ビルドの完了判定に使われる）
 - [ ] `$ARGUMENTS[0]/tasklist.md` のPR列を更新し、Pushする
 
-**注意:** 後続ビルドのセッションは、このPRがマージされてから開始すること。後続ビルドは main ブランチの `tasklist.md` を参照して依存ビルドの完了を確認するため、マージ前に開始すると依存が未完了と判定される。
+**注意:** 後続ビルドのセッションは、このPRがマージされてから開始すること。
+- `issue_backend` が `file` の場合: 後続ビルドは main ブランチの `tasklist.md` を参照して依存ビルドの完了を確認するため、マージ前に開始すると依存が未完了と判定される
+- `issue_backend` が `github`/`asana` の場合: 完了判定はsub-issue/taskのライブ照会のため、マージ後にsub-issueがcloseされて初めて依存完了と判定される（マージ前に開始すると依存が未完了と判定される点は同じ）
 
 → Step 11 へ。
 
