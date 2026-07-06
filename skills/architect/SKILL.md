@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "[{DOC_ROOT}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.8.1"
+  version: "1.0.0"
 ---
 
 # Hikyaku Architect
@@ -38,6 +38,8 @@ Hikyakuは PLAN → ARCHITECT → BUILD の3フェーズで構成されるAIエ�
 
 ```
 $ARGUMENTS[0]/
+├── .gitignore                 # PLAN 初回実行時に自動生成（retrospective.md / test-spec.md / design-questions.md / build配下のquestions.md を除外）
+├── .hikyaku.config             # このワークフロー固有の設定上書き（任意、PLAN 初回実行時に雛形生成）
 ├── tasklist.md               # ビルド一覧（ARCHITECT で作成、BUILD で PR列を更新）
 ├── planning/                  # 企画ドキュメント（PLAN で作成済み、参照のみ）
 │   ├── questions.md           # 企画段階の質問と回答
@@ -56,10 +58,13 @@ $ARGUMENTS[0]/
 │   ├── issue.md               # ビルド定義（ARCHITECT で作成）
 │   ├── plan.md                # 実装計画（BUILD で作成）
 │   ├── test-spec.md           # テストシナリオ（BUILD で作成）
+│   ├── questions.md           # 実装時の質問と回答（BUILD で作成、必要時のみ）
 │   ├── handoff.md             # 申し送り（BUILD で作成）
 │   └── retrospective.md      # 振り返り（BUILD で作成）
 └── ...
 ```
+
+上記は `issue_backend = "file"`（デフォルト）の場合の構成です。`github`/`asana` を選択した場合、`build-{NN}/` 配下は丸ごと `.gitignore` 対象になりコミットされません（詳細は `skills/build-manager/references/backends.md`）。
 
 ### あなたの役割（設計フェーズ）
 
@@ -82,6 +87,7 @@ $ARGUMENTS[0]/
   - `$ARGUMENTS[0]` が指定されている場合 → その値を DOC_ROOT として使用する
   - `$ARGUMENTS[0]` が未指定で `.hikyaku.config` に `doc_root` が設定されている場合 → その値を DOC_ROOT として使用する
   - どちらも未設定の場合 → ユーザーに DOC_ROOT の指定を求めて終了する
+- [ ] `{DOC_ROOT}/.hikyaku.config` が存在する場合は読み込み、`doc_root` を除くキーをリポジトリルートの設定にキー単位で上書きする（このワークフロー固有の設定）
 - [ ] `{DOC_ROOT}/instruction.md`: ワークフロー独自のインストラクション（存在する場合のみ）
 
 以降のステップでは DOC_ROOT を `$ARGUMENTS[0]` の代わりに使用する。
@@ -207,17 +213,39 @@ $ARGUMENTS[0]/
 
 → Step 5 へ。
 
-### Step 5: 設計全体の承認とビルド作成
+### Step 5: 設計全体の承認とビルド分割
 
-- [ ] 設計ドキュメント（architecture/）の全内容をユーザーに提示し、最終承認を得る
+#### Step 5a: 設計ドキュメントの承認
+
+- [ ] `architecture_review` が `true`（デフォルト）の場合、`doc-reviewer` エージェントを起動する（`context: architecture`）
+  - 渡す情報: Step 4c で作成した `architecture/` 配下のドキュメント（`design-questions.md` / `retrospective.md` を除く）, `$ARGUMENTS[0]/planning/user-stories.md`
+  - 出力フォーマットは `agents/doc-reviewer.md` を参照
+  - 返ってきた指摘のうち、明確な不整合・網羅漏れは該当ドキュメントに反映する（主観的な指摘は無視してよい）
+- [ ] 設計ドキュメント（architecture/）の全内容を、doc-reviewer の指摘（あれば）と併せてユーザーに提示し、最終承認を得る
   - **承認観点:** 技術選定は妥当か、設計方針に問題はないか
-- [ ] 設計ドキュメントが承認されたら、設計ドキュメントに基づいてビルドの論理的な単位を特定し、`/hikyaku:build-manager $ARGUMENTS[0]` を呼び出してビルドの作成を委任する
+
+→ 承認を得たら Step 5b へ。フィードバックがあれば Step 3 に戻る。
+
+#### Step 5b: ビルド分割ドラフトの確定（書き込みなし）
+
+**この段階では tasklist.md・issue.md 相当への書き込みを一切行わない。** ビルドの追加・分割・依存関係の見直しをこのやり取りだけで完結させることで、`issue_backend` が `github`/`asana` の場合に外部システム（issue/タスク）の作成・削除が乱造されるのを防ぐ。
+
+- [ ] 設計ドキュメントに基づいてビルドの論理的な単位（タイトル・スコープ・依存関係）をドラフトとして列挙する
+- [ ] 各ビルドの概算BPを `skills/build-manager/references/bp-guide.md` の考え方に沿って見積もる（正式なBP見積もりは Step 5c の build-manager が行うため、ここでは分割要否の判断材料となる概算でよい）
+- [ ] ドラフトをユーザーに提示し、フィードバックがあれば同じドラフト上で修正を繰り返す（追加・削除・統合・分割）
+
+→ ドラフトが確定したら Step 5c へ。
+
+#### Step 5c: build-managerへの一括委任
+
+- [ ] 確定したビルド分割ドラフトをもとに、`/hikyaku:build-manager $ARGUMENTS[0]` を **1回だけ** 呼び出し、全ビルド分をまとめて作成する
   - build-manager に伝える情報: 各ビルドのタイトル・スコープ・依存関係・設計ドキュメントの参照先
-  - build-manager がBP見積もり、tasklist.md の作成、各 issue.md の作成、ユーザー承認までを行う
+  - build-manager がBP見積もり、tasklist.md の作成、各 issue.md 相当の作成（`issue_backend` に応じてファイル / GitHub issue / Asanaタスク）、ユーザー承認までを行う
 
 → すべての承認を得たら Step 6 へ。フィードバックの内容に応じて対応が異なる:
 - 設計ドキュメントへのフィードバック → Step 3 に戻る
-- ビルドへのフィードバック → `/hikyaku:build-manager $ARGUMENTS[0]` を再度呼び出す
+- ビルド分割ドラフトへのフィードバック → Step 5b に戻る
+- build-manager 承認後のビルドへのフィードバック → `/hikyaku:build-manager $ARGUMENTS[0]` を再度呼び出す
 
 ### Step 6: 振り返り
 

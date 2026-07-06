@@ -80,6 +80,8 @@ claude --plugin-dir /path/to/hikyaku
 
 ```
 {DOC_ROOT}/
+├── .gitignore                 # PLAN 初回実行時に自動生成（retrospective.md / test-spec.md / design-questions.md / build配下のquestions.md を除外）
+├── .hikyaku.config             # このワークフロー固有の設定上書き（任意、PLAN 初回実行時に雛形生成）
 ├── instruction.md             # ワークフロー固有のインストラクション（任意）
 ├── tasklist.md               # ビルド一覧（ARCHITECT で作成、BUILD で更新）
 ├── planning/                  # 企画ドキュメント
@@ -107,16 +109,19 @@ claude --plugin-dir /path/to/hikyaku
 └── ...
 ```
 
+上記は `issue_backend = "file"`（デフォルト）の場合の構成です。`github`/`asana` を選択した場合、**`build-{NN}/` 配下は丸ごと `.gitignore` 対象になり、コミットされません**（`issue.md`/`plan.md`/`handoff.md`は対応する外部レコード（GitHub sub-issue / Asana task）が正となり、`test-spec.md`/`questions.md`/`retrospective.md`はbackendによらず元々コミット対象外のため）。`tasklist.md`はどのbackendでも依存関係判定の唯一の真実としてコミット対象のまま変わりません。詳細は `skills/build-manager/references/backends.md` を参照してください。
+
 ## 内部スキル
 
 以下のスキルはユーザーが直接呼び出すものではなく、各フェーズのスキルが必要に応じて自動的に呼び出します（プラグイン名前空間は `hikyaku:`）。
 
 ### `build-manager` — ビルド管理
 
-architect と builder から呼び出される内部スキル。ビルドの追加・更新・分割と依存グラフ管理を一元的に行う。
+architect と builder から呼び出される内部スキル。ビルドの追加・更新・分割と依存グラフ管理、および issue/plan/handoff の永続化（`issue_backend` に応じてファイル / GitHub issue / Asanaタスク）を一元的に行う。
 
-- BP見積もり、tasklist.md の管理、issue.md の作成・更新
+- BP見積もり、tasklist.md の管理、issue.md 相当の作成・更新、plan.md/handoff.md の外部記録
 - 変更時はユーザー承認を必須とする
+- バックエンド別の手順は `skills/build-manager/references/backends.md` を参照
 
 ### `retrospective` — 振り返り
 
@@ -138,11 +143,17 @@ Hikyaku は以下の優先順位でインストラクションを適用します
 
 ## 設定ファイル（`.hikyaku.config`）
 
-リポジトリルートに `.hikyaku.config`（TOML形式）を配置することで、スキル呼び出し時の引数省略や動作のカスタマイズができます。すべての項目はオプションです。
+`.hikyaku.config`（TOML形式）を配置することで、スキル呼び出し時の引数省略や動作のカスタマイズができます。すべての項目はオプションです。設定は2階層あり、**DOC_ROOT側の設定がリポジトリルート側の設定をキー単位で上書き**します（`doc_root` を除く）。
+
+```
+リポジトリルート/.hikyaku.config   ← ベース設定（全ワークフロー共通）
+{DOC_ROOT}/.hikyaku.config         ← このワークフロー固有の上書き（任意）
+```
 
 ```toml
 # ワークフロードキュメントのルートパス
 # 設定すると /hikyaku:planner, /hikyaku:architect, /hikyaku:builder の引数を省略できます
+# リポジトリルートの設定でのみ有効（DOC_ROOT側では指定できません）
 # doc_root = "docs/hikyaku"
 
 # PRのベースブランチ（未設定時はリポジトリのデフォルトブランチを自動検出）
@@ -160,6 +171,20 @@ Hikyaku は以下の優先順位でインストラクションを適用します
 
 # test-spec.md 作成後の承認ゲートの有効化（デフォルト: true）
 # test_spec_review = true
+
+# 中間成果物レビュー（doc-reviewer）の有効化（デフォルト: true）
+# user_stories_review = true
+# architecture_review = true
+# plan_review = true
+
+# issue・plan・handoffの保存先: file（デフォルト）| github | asana
+# issue_backend = "file"
+
+# [github]
+# # repo = "owner/repo"  # 省略時はカレントリポジトリ（issue_backend = "github" の場合のみ参照）
+
+# [asana]
+# project_gid = "..."    # issue_backend = "asana" の場合は必須。認証はユーザー設定済みのAsana MCPツールに委ねる
 ```
 
 `doc_root` を設定した場合、各スキルの引数を省略して呼び出せます:
@@ -169,6 +194,11 @@ Hikyaku は以下の優先順位でインストラクションを適用します
 /hikyaku:architect
 /hikyaku:builder
 ```
+
+`/hikyaku:planner` の初回実行時、DOC_ROOT配下に以下が自動生成されます（既に存在する場合は変更しません）:
+
+- **`{DOC_ROOT}/.gitignore`** — `retrospective.md` / `test-spec.md` など、セッションローカルでコミット対象外にすべき成果物のパターン
+- **`{DOC_ROOT}/.hikyaku.config`** — 全項目コメントアウト済みの雛形（このワークフロー固有の上書き用）
 
 ## ビルドポイント（BP）
 
@@ -198,11 +228,12 @@ BP は以下の指標から算出します:
 │   ├── code-explorer.md       # architect Step 2 で起動。既存コード調査と Key Files リストを返す
 │   ├── code-architect.md      # architect Step 4 で起動。指定観点の単一設計案を返す
 │   ├── code-reviewer.md       # builder Step 8 で security-reviewer と並列起動。スコープ・規約・バグ・冗長性を証拠ベースで報告
-│   └── security-reviewer.md   # builder Step 8 で code-reviewer と並列起動。OWASP 系セキュリティ指摘とエスカレーション判定を返す
+│   ├── security-reviewer.md   # builder Step 8 で code-reviewer と並列起動。OWASP 系セキュリティ指摘を返す
+│   └── doc-reviewer.md        # planner/architect/builder の各承認前に起動。中間成果物の整合性・網羅性を証拠ベースで報告
 └── skills/
     ├── planner/               # /hikyaku:planner
     ├── architect/             # /hikyaku:architect
     ├── builder/               # /hikyaku:builder
-    ├── build-manager/         # 内部スキル（model-invocable）
+    ├── build-manager/         # 内部スキル（model-invocable）。references/backends.md にバックエンド別I/O手順
     └── retrospective/         # 内部スキル（model-invocable）
 ```

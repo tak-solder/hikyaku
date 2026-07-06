@@ -6,7 +6,7 @@ disable-model-invocation: false
 argument-hint: "{DOC_ROOT} {SUB_DIR}"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "0.8.1"
+  version: "1.0.0"
 ---
 
 # Hikyaku Retrospective
@@ -28,6 +28,7 @@ metadata:
 ### Step 0: 設定の確認
 
 - [ ] リポジトリルートの `.hikyaku.config` を読み込む（存在する場合のみ）
+- [ ] `$ARGUMENTS[0]/.hikyaku.config` が存在する場合は読み込み、`doc_root` を除くキーをリポジトリルートの設定にキー単位で上書きする
   - `retrospective` の設定値を取得する（未設定の場合は `prompt`）
 
 設定値に応じて動作を決定する:

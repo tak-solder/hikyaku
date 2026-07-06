@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.0.0]
+
+### Added
+
+- **issue保存先バックエンドの抽象化（`issue_backend`）**: `.hikyaku.config` に `issue_backend = "file" | "github" | "asana"` を設定することで、各ビルドの issue.md / plan.md / handoff.md の記録先を切り替えられるようになった
+  - `file`（デフォルト）: 従来通りローカルファイルとして作成・コミットする
+  - `github`: 対象リポジトリに tasklist 相当の親issueと各ビルドのsub-issueを作成し、plan.md/handoff.mdをコメントとして記録する。完了判定はsub-issueのopen/closeをライブ照会し、PRマージ時の `Closes #N` で自動close される
+  - `asana`: `.hikyaku.config` の `asana.project_gid` で指定したプロジェクトに各ビルドをタスクとして作成する（ユーザー設定済みのAsana MCPツールを前提とする）
+  - いずれのバックエンドでも `tasklist.md` の buildID/title/BP/dependencies はファイル管理のまま維持し、依存関係判定の唯一の真実とする。各ビルドの issue.md 相当を指す参照列（`issue`列/`asana`のみ`task`列）と `PR` 列も全バックエンド共通で存在し、値はすべてMarkdownリンク形式（`file`: `build-{NN}/issue.md`への相対リンク、`github`: issue URLへのリンク、`asana`: Asana task URLへのリンク）で統一する（詳細は `skills/build-manager/references/backends.md`）
+  - `build-manager` がplan.md/handoff.mdの永続化も含む「ビルド記録I/O」全般の唯一の窓口になった（新操作: 記録の永続化）
+  - architect のビルド分割は、ドラフト確定（書き込みなし）→ build-manager への一括委任（Step 5a/5b/5c）の2段階に変更し、外部システムでのissue/タスクの作成・削除の乱造を防ぐ
+- **中間成果物レビュー（doc-reviewer）**: 新規エージェント `doc-reviewer` が、`user_stories_review` / `architecture_review` / `plan_review`（`.hikyaku.config`、デフォルトいずれも `true`）に応じて、承認前の user-stories.md / architecture配下ドキュメント / plan.md の整合性・網羅性を証拠ベースでレビューする
+  - `architecture` / `plan` の2contextでは、設計・計画レベルでのセキュリティ考慮の欠落（セキュリティ設計漏れ / 非機能要件のセキュリティ未反映）も報告対象に含む。確定的な根拠までは無くても、高感度カテゴリに該当し具体箇所を指摘できる懸念は「確度: 要確認」ラベル付きで「確度が低い懸念」セクションに出す
+- **DOC_ROOTレベルのconfig上書き**: `{DOC_ROOT}/.hikyaku.config` を配置すると、`doc_root` を除くキーをリポジトリルートの `.hikyaku.config` に対してキー単位で上書きできるようになった
+- **プロジェクトディレクトリの自動初期化**: `/hikyaku:planner` の初回実行時、`{DOC_ROOT}/.gitignore`（`retrospective.md`/`test-spec.md`/`design-questions.md`/`build-{NN}/questions.md` を除外。`planning/questions.md`はarchitectが必須入力として読むため対象外）と `{DOC_ROOT}/.hikyaku.config` の雛形を冪等に自動生成するようになった
+- **`issue_backend` が `file` 以外の場合の `build-{NN}/` 除外を明確化**: `issue.md`/`plan.md`/`handoff.md`は外部レコードが正、`test-spec.md`/`questions.md`/`retrospective.md`はbackendによらず常に除外のため、結果として`build-{NN}/`配下には残るファイルが無くなる。これを個別ファイルパターンではなく`build-*/`という単一の`.gitignore`パターンで明示するようにした（`tasklist.md`は`build-{NN}/`の外にあり、依存関係判定の唯一の真実として全backend共通で除外対象にしない）。各フェーズスキル（planner/architect/builder）のディレクトリ構造説明にもこの挙動を明記した
+- **security-reviewerの確度が低い懸念の報告**: 認証・認可、暗号、外部入力等の高感度カテゴリに該当する変更については、確定的な根拠（データフロー等）を示せなくても、具体的な箇所を指摘できる懸念であれば「確度: 要確認」ラベル付きで「確度が低い懸念」セクションに報告するようになった（false negativeのコストがfalse positiveより大きいというセキュリティ特有の非対称性を踏まえた変更）
+
+### Removed
+
+- **security-reviewerのエスカレーション判定を廃止**: builder Step 8 で `security-reviewer` が `/security-review` へのエスカレーションを判定・提案する挙動を削除した。`security-reviewer` はOWASP系パターンの指摘に専念する（高感度カテゴリの確度が低い懸念は上記の通り別枠で報告する）。`/security-review` スキル自体はユーザーが任意のタイミングで実行可能なまま変更なし
+
+### Migration
+
+- **破壊的変更**: `retrospective.md` / `test-spec.md` / `design-questions.md` / `build-{NN}/questions.md` は `{DOC_ROOT}/.gitignore` の対象になり、以後コミットされなくなる（`planning/questions.md`はarchitectの必須入力のため対象外のまま）。既存ワークフローでこれらをコミット済みの場合、次回コミットからは追跡対象外になる（既存のコミット履歴には影響しない）
+- `issue_backend` を設定しない場合は `file` がデフォルトとなり、既存ワークフローの動作に変更はない
+- `user_stories_review` / `architecture_review` / `plan_review` を設定しない場合はいずれも `true` となり、新たにレビューステップが各承認前に挟まる（従来より承認ラウンドが増えることはないが、レビュー実行分のセッション消費が増える点に注意）
+- builderからの `/security-review` への自動エスカレーション提案が無くなるため、セキュリティ感度の高い変更を扱うプロジェクトでは `/security-review` を明示的に実行するタイミングを別途運用で定める必要がある
+- `security-reviewer` / `doc-reviewer`（architecture・planコンテキスト）は「確度が低い懸念」を新たに報告するようになるため、従来より指摘件数が増える場合がある。ただし重要度: 高/中/低の指摘とは別枠で提示されるため、確定的な指摘との混同はしない
+
 ## [0.8.1]
 
 ### Added
