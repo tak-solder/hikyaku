@@ -80,7 +80,7 @@ claude --plugin-dir /path/to/hikyaku
 
 ```
 {DOC_ROOT}/
-├── .gitignore                 # PLAN 初回実行時に自動生成（retrospective.md / test-spec.md / questions.md / design-questions.md を除外）
+├── .gitignore                 # PLAN 初回実行時に自動生成（retrospective.md / test-spec.md / design-questions.md / build配下のquestions.md を除外）
 ├── .hikyaku.config             # このワークフロー固有の設定上書き（任意、PLAN 初回実行時に雛形生成）
 ├── instruction.md             # ワークフロー固有のインストラクション（任意）
 ├── tasklist.md               # ビルド一覧（ARCHITECT で作成、BUILD で更新）
@@ -109,7 +109,7 @@ claude --plugin-dir /path/to/hikyaku
 └── ...
 ```
 
-上記は `issue_backend = "file"`（デフォルト）の場合の構成です。`github`/`asana` を選択した場合、**`build-{NN}/` 配下は丸ごと `.gitignore` 対象になり、コミットされません**（`issue.md`/`plan.md`/`handoff.md`は対応する外部レコード（GitHub sub-issue / Asana task）が正となり、`test-spec.md`/`questions.md`/`retrospective.md`はbackendによらず元々コミット対象外のため）。`github` の場合はさらに `tasklist.md` も対象外になります（tasklist相当の親issueが正になるため）。詳細は `skills/build-manager/references/backends.md` を参照してください。
+上記は `issue_backend = "file"`（デフォルト）の場合の構成です。`github`/`asana` を選択した場合、**`build-{NN}/` 配下は丸ごと `.gitignore` 対象になり、コミットされません**（`issue.md`/`plan.md`/`handoff.md`は対応する外部レコード（GitHub sub-issue / Asana task）が正となり、`test-spec.md`/`questions.md`/`retrospective.md`はbackendによらず元々コミット対象外のため）。`tasklist.md`はどのbackendでも依存関係判定の唯一の真実としてコミット対象のまま変わりません。詳細は `skills/build-manager/references/backends.md` を参照してください。
 
 ## 内部スキル
 

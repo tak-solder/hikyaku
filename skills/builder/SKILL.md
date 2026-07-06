@@ -40,7 +40,7 @@ Hikyakuは PLAN → ARCHITECT → BUILD の3フェーズで構成されるAIエ�
 
 ```
 $ARGUMENTS[0]/
-├── .gitignore                 # PLAN 初回実行時に自動生成（retrospective.md / test-spec.md / questions.md / design-questions.md を除外）
+├── .gitignore                 # PLAN 初回実行時に自動生成（retrospective.md / test-spec.md / design-questions.md / build配下のquestions.md を除外）
 ├── .hikyaku.config             # このワークフロー固有の設定上書き（任意、PLAN 初回実行時に雛形生成）
 ├── tasklist.md               # ビルド一覧（ARCHITECT で作成済み、BUILD で PR列を更新）
 ├── planning/                  # 企画ドキュメント（PLAN で作成済み、参照のみ）
@@ -148,6 +148,7 @@ $ARGUMENTS[0]/
   - `file`: `$ARGUMENTS[0]/build-{NN}/issue.md` を読む
   - `github`: tasklist.mdの `issue` 列のリンクテキストから番号を抽出し、`gh issue view <番号>` で取得する
   - `asana`: tasklist.mdの `task` 列のリンクテキストからgidを抽出し、Asana MCPツールで取得する
+  - `github`/`asana`の場合、取得した内容を `$ARGUMENTS[0]/build-{NN}/issue.md` にローカルキャッシュとして書き出す（`build-*/`パターンで`.gitignore`対象。以降のStepはbackendによらずこのファイルを参照する）
 - [ ] `$ARGUMENTS[0]/build-{NN}/` に既存の成果物（plan.md, test-spec.md, handoff.md 等のローカルキャッシュ）がないか確認する
   - 存在する場合は過去のセッションで作業が途中まで進んでいるため、内容を読み込んで途中から再開する
 - [ ] `$ARGUMENTS[0]/architecture/codebase-survey.md` — 既存コードの構成・規約・拡張ポイント（存在する場合）

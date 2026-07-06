@@ -43,7 +43,7 @@ metadata:
 - [ ] `$ARGUMENTS[0]/tasklist.md` を読み込む（存在しない場合は新規作成モード）
 - [ ] `$ARGUMENTS[0]/.gitignore` に `issue_backend` に応じたパターンが含まれているか確認し、無ければ追記する（既存内容は書き換えない）
   - `issue_backend` が `file` 以外の場合: `build-*/`（issue.md/plan.md/handoff.md含め、`build-{NN}/` 配下は丸ごとローカルキャッシュとなりコミット対象外になるため、個別ファイルではなくディレクトリ単位で除外する）
-  - `issue_backend` が `github` の場合: 追加で `tasklist.md`
+  - **`tasklist.md` はどのbackendでも除外しない**（依存関係判定の唯一の真実として全backend共通でコミット対象。詳細は [backends.md](references/backends.md)）
 
 → すべて読み込めたら Step 1 へ。必須ファイルが読み込めなかった場合はユーザーに報告して終了。
 

@@ -38,7 +38,7 @@ Hikyakuは PLAN → ARCHITECT → BUILD の3フェーズで構成されるAIエ�
 
 ```
 $ARGUMENTS[0]/
-├── .gitignore                 # PLAN 初回実行時に自動生成（retrospective.md / test-spec.md / questions.md / design-questions.md を除外）
+├── .gitignore                 # PLAN 初回実行時に自動生成（retrospective.md / test-spec.md / design-questions.md / build配下のquestions.md を除外）
 ├── .hikyaku.config             # このワークフロー固有の設定上書き（任意、PLAN 初回実行時に雛形生成）
 ├── tasklist.md               # ビルド一覧（ARCHITECT で作成、BUILD で PR列を更新）
 ├── planning/                  # 企画ドキュメント（PLAN で作成済み、参照のみ）
