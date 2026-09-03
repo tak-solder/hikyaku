@@ -1,9 +1,9 @@
 ---
 name: architect
-description: "Hikyaku 設計フェーズ: 企画フェーズの成果物を入力として、技術設計・ビルド分割・ビルド定義を出力する"
+description: "Hikyaku 設計フェーズ: 企画成果物と既存コードを入力に、このサイクルの設計差分（design-delta）とビルド分割を出力する"
 user-invocable: true
 disable-model-invocation: true
-argument-hint: "[{DOC_ROOT}]"
+argument-hint: "[{HIKYAKU_ROOT}] [{cycle}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
   version: "2.0.0"
@@ -11,250 +11,264 @@ metadata:
 
 # Hikyaku Architect
 
-`$ARGUMENTS[0]` に指定されたパスから企画ドキュメントを読み込み、設計フェーズを実行する。
-
-## Hikyaku ワークフロー概要
-
-Hikyakuは PLAN → ARCHITECT → BUILD の3フェーズで構成されるAIエージェント協働開発ワークフロー。
-
-- 各フェーズは **別セッション（＝別のAI）** が担当する
-  - フェーズごとに1セッション（20万トークン）が目安 
-- フェーズ間の情報引き継ぎはファイル（planning/, architecture/, handoff.md）で行う
-- 各フェーズには反復的な質問ループがあり、目的が達成されるまで確認を繰り返す
-
-### 全体フロー
+対象サイクルの設計フェーズ（ARCHITECT）を実行する。
 
 ```
-/hikyaku:planner   → planning/ を生成（完了済み）
-      ↓
-/hikyaku:architect → architecture/ + tasklist.md + build-{NN}/issue.md を生成  ← あなたはここ
-      ↓ ユーザー承認
-/hikyaku:builder   → build-01/ を実装 → handoff.md → PR
-/hikyaku:builder   → build-02/ を実装 → handoff.md → PR
-  ...（ビルド数分繰り返し）
+/hikyaku:planner       → planning/ を生成（完了済み）
+/hikyaku:architect     → design/ + tasklist.md + build-NN/issue.md  ← あなたはここ
+/hikyaku:builder       → build-NN を実装 → PR
+/hikyaku:close-cycle   → 永続ドキュメントへ昇格
 ```
 
-### ワークフローディレクトリ構造
+## あなたの役割
 
-```
-$ARGUMENTS[0]/
-├── .gitignore                 # PLAN 初回実行時に自動生成（retrospective.md / test-spec.md / design-questions.md / build配下のquestions.md を除外）
-├── .hikyaku.config             # このワークフロー固有の設定上書き（任意、PLAN 初回実行時に雛形生成）
-├── tasklist.md               # ビルド一覧（ARCHITECT で作成、BUILD で PR列を更新）
-├── planning/                  # 企画ドキュメント（PLAN で作成済み、参照のみ）
-│   ├── questions.md           # 企画段階の質問と回答
-│   ├── user-stories.md        # ユーザーストーリー
-│   └── retrospective.md      # 振り返り（PLAN で作成）
-├── architecture/              # 設計ドキュメント（ARCHITECT で作成）
-│   ├── codebase-survey.md     # 既存コード調査結果（既存コードがある場合のみ）
-│   ├── design-questions.md    # 設計段階の質問と回答
-│   ├── decisions.md           # 設計判断ログ（ADR、分岐評価のあった判断のみ）
-│   ├── tech-stack.md          # 技術選択（必要時のみ）
-│   ├── db-schema.md           # DBスキーマ（必要時のみ）
-│   ├── interfaces.md          # インターフェース定義（必要時のみ）
-│   ├── conventions.md         # 共通規約（必要時のみ）
-│   └── retrospective.md      # 振り返り（ARCHITECT で作成）
-├── build-01/
-│   ├── issue.md               # ビルド定義（ARCHITECT で作成）
-│   ├── plan.md                # 実装計画（BUILD で作成）
-│   ├── test-spec.md           # テストシナリオ（BUILD で作成）
-│   ├── questions.md           # 実装時の質問と回答（BUILD で作成、必要時のみ）
-│   ├── handoff.md             # 申し送り（BUILD で作成）
-│   └── retrospective.md      # 振り返り（BUILD で作成）
-└── ...
-```
+企画フェーズの成果物を入力とし、「**どう作るか**」を決める。
 
-上記は `issue_backend = "file"`（デフォルト）の場合の構成です。`github`/`asana` を選択した場合、`build-{NN}/` 配下は丸ごと `.gitignore` 対象になりコミットされません（詳細は `${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/backends.md`）。
+### 最も重要な制約: 永続ドキュメントを書き換えない
 
-### あなたの役割（設計フェーズ）
+永続ドキュメント（overview / constraints / learnings / conventions 等）は
+「**実装済みの現実（as-is）**」を表す。あなたが作るのは「**これから作るもの（to-be）**」で、
+それは `design-delta.md` に書く。
 
-あなたは設計フェーズを担当する。企画フェーズの成果物を入力とし、「**どう作るか**」を決めることがゴール。
+この区別があるから、並行して走る別サイクルが**未実装の設計を現実として読む事故**が防げる。
+昇格は実装が全部終わってから close-cycle が行う。
+
+**ADR（decisions）だけが例外。** 決定した時点で記録するのが ADR 本来の思想なので、
+あなたが `status: accepted`（決定済み・未実装）で追記する。`implemented` への更新は
+close-cycle が行う。並行サイクルはこの status を見て「決まっているが、まだ動いていない」と
+判別できる。
 
 **やらないこと:**
-- 企画内容の変更（スコープ変更・優先度変更は企画フェーズに差し戻す）
-- 実装コードの記述
-- テストコードの記述
+- 企画内容の変更（スコープ・優先度の変更は企画フェーズに差し戻す）
+- 実装コード・テストコードの記述
+- ADR 以外の永続ドキュメントへの書き込み
 
 ## 作業ステップ
 
-### Step 0: ファイルの読み込みと設定の解決
+### Step 0: 設定の解決と入力の読み込み
 
-作業の開始前に必ず以下を実行する。
+- [ ] `${CLAUDE_PLUGIN_ROOT}/skills/architect/references/templates.md`: 各種テンプレート（必須）
+- [ ] 設定を解決し、対象サイクルの状態を確認する
 
-- [ ] `${CLAUDE_PLUGIN_ROOT}/skills/architect/references/templates.md`: 各種成果物のテンプレート（必須）
-- [ ] リポジトリルートの `.hikyaku.config` を読み込む（存在する場合のみ）
-- [ ] **DOC_ROOT を決定する**
-  - `$ARGUMENTS[0]` が指定されている場合 → その値を DOC_ROOT として使用する
-  - `$ARGUMENTS[0]` が未指定で `.hikyaku.config` に `doc_root` が設定されている場合 → その値を DOC_ROOT として使用する
-  - どちらも未設定の場合 → ユーザーに DOC_ROOT の指定を求めて終了する
-- [ ] `{DOC_ROOT}/.hikyaku.config` が存在する場合は読み込み、`doc_root` を除くキーをリポジトリルートの設定にキー単位で上書きする（このワークフロー固有の設定）
-- [ ] `{DOC_ROOT}/instruction.md`: ワークフロー独自のインストラクション（存在する場合のみ）
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config --root $ARGUMENTS[0] --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle} --root {HIKYAKU_ROOT}
+```
 
-以降のステップでは DOC_ROOT を `$ARGUMENTS[0]` の代わりに使用する。
+中断からの再開の場合、`cycle status` がどこまで進んだかを教えてくれる。
 
-なお、インストラクションは次の優先順で適用する。上位の指示が下位と矛盾する場合は、上位を優先すること。
+- [ ] 企画成果物を読み込む（必須）
+  - `cycles/{cycle}/planning/user-stories.md`
+  - `cycles/{cycle}/planning/questions.md`（存在する場合）
 
-1. リポジトリ全体のインストラクション（AGENTS.md, CLAUDE.md 等）
-2. ワークフロー独自のインストラクション
-3. このスキルの説明（SKILL.md）
+いずれも無ければ `/hikyaku:planner` を先に実行するよう案内して終了する。
 
-→ すべて読み込めたら Step 1 へ。必須ファイルが読み込めなかった場合はユーザーに報告して終了。
+- [ ] **永続ドキュメントを読み込む**
 
-### Step 1: 企画成果物の読み込み
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs list --root {HIKYAKU_ROOT}
+```
 
-- [ ] `$ARGUMENTS[0]/planning/questions.md` — 企画段階の質問と回答
-- [ ] `$ARGUMENTS[0]/planning/user-stories.md` — ユーザーストーリー
+概要欄を見て、**今回のスコープに関係するものだけ**を読む。全部読む必要はない。
+概要欄があるのはそのためで、パスだけでは全部読むしかなくなる。
 
-→ すべて読み込めたら Step 2 へ。いずれかが存在しない場合はユーザーに報告し、先に `/hikyaku:planner` を実行するよう案内して終了。
+- `overview` — 実装済みの現実。Step 2 の差分調査の基準になる
+- `constraints` — 既に確定している非機能要件。再度質問しないため
+- `decisions` — 過去の設計判断。**採用理由とトレードオフを把握し、実装中に覆さない**
+- `learnings` — 既知の落とし穴
+- `conventions` — 規約（AGENTS.md にマップされていることが多い）
 
-### Step 2: 既存コードベースの調査
+`repo` 管理のドキュメントは**既存形式が正**。参考として読むが、形式には手を出さない。
+`tech-stack` / `db-schema` / `interfaces` は俯瞰の手がかりとして読むが、
+**コードと矛盾したら常にコードを正とする**（勝手に直さず、handoff に記録する）。
 
-**既存コードがない（新規開発）場合はこのステップをスキップして Step 3 へ。**
+- [ ] `{HIKYAKU_ROOT}/instruction.md` を読む（存在する場合のみ）
 
-調査過程のコンテキスト消費を避けるため、コードベース全体の探索はサブエージェント（`code-explorer`）に委任する。ただし、本セッションが設計判断を下すために必要な **Key Files** は本セッション自身が読み込む。
+→ Step 1 へ。
+
+### Step 1: 並行サイクルの確認
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active --root {HIKYAKU_ROOT}
+```
+
+**他に走行中のサイクルが無ければこのステップをスキップして Step 2 へ。**
+
+- [ ] `cycle-scanner` エージェントを起動する
+  - 渡す情報: 今回の `user-stories.md` のパス / 走行中サイクルのディレクトリ一覧 / `document-guide.md` のパス
+  - 出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/agents/cycle-scanner.md` を参照
+- [ ] 重複が報告されたら、ユーザーに提示して方針を確認する
+  - 設計を分ける / どちらかに寄せる / そのまま進める
+
+全走行サイクルの本文を本セッションで読むと、大規模リポジトリでコンテキストが破綻する。
+だから軽量エージェントに委任し、返ってきた重複箇所だけを本セッションで扱う。
+
+→ Step 2 へ。
+
+### Step 2: 既存コードベースの差分調査
+
+**既存コードがない（新規開発）場合はスキップして Step 3 へ。**
+
+調査のコンテキスト消費を避けるため、探索は `code-explorer` に委任する。ただし、
+設計判断に必要な **Key Files** は本セッション自身が読む。
 
 - [ ] **調査範囲の判定**
-  - user-stories.md が単一機能・小規模スコープ → **単一エージェント** で調査（モード: 単一起動）
-  - user-stories.md が複数の独立した機能領域を含む、または既存コードベースが大規模 → **複数エージェントを観点別に並列起動**（2〜3つ。モード: 並列起動）
+  - 単一機能・小規模スコープ → **単一エージェント**（モード: 単一起動）
+  - 複数の独立した機能領域を含む、または大規模 → **観点別に2〜3並列**（モード: 並列起動）
 
-- [ ] **code-explorer エージェントを起動する**
-  - サブエージェントは別コンテキストで起動されるため、委任プロンプトに **以下のファイル絶対パスを必ず明示する**:
-    - ワークフロー DOC_ROOT: `$ARGUMENTS[0]`
-    - 入力となる企画成果物: `$ARGUMENTS[0]/planning/user-stories.md`
-    - 調査対象リポジトリのルート: 現在の作業ディレクトリ（通常はリポジトリルート）
-  - **単一起動モード**の場合: 委任プロンプトに「モード: 単一起動。リポジトリ概要・ディレクトリ構成・関連コード・既存パターン・拡張ポイントを広くカバーすること」と明記する
-  - **並列起動モード**の場合: 委任プロンプトに「モード: 並列起動。担当観点: ...」と明記する。観点例:
-    - 「user-stories の `US-X` に類似する既存機能のトレース」
-    - 「user-stories 全体に関連するアーキテクチャ層・抽象化の把握」
-    - 「拡張ポイント（フック・インターフェース・抽象クラス）の特定」
-  - 並列起動モードの場合、いずれか1エージェントに「**概観担当**」を追加で指示する（リポジトリ概要・ディレクトリ構成セクションを出力させる）
-  - 各エージェントには以下を必ず返させる:
-    - 担当観点の調査結果
-    - **Key Files**: その観点で本セッションが直接読むべき5〜10ファイルのパスと役割
-  - 出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/agents/code-explorer.md` を参照
+- [ ] **`code-explorer` を起動する**
+  - 委任プロンプトに以下の絶対パスを必ず明示する:
+    - ワークスペース: `{HIKYAKU_ROOT}`
+    - 要件: `cycles/{cycle}/planning/user-stories.md`
+    - 調査対象リポジトリのルート
+    - **`overview` のパス（登録されている場合）** ← これが差分調査の鍵
+  - `overview` を渡すと、エージェントは**全体調査ではなく差分調査**を行う
+    - 調べる: 今回のスコープに関係する箇所 / overview に無い詳細 / overview とコードのズレ
+    - 調べない: overview に既にある内容の再確認
+  - 並列起動の場合は「担当観点」を明記し、いずれか1つに「概観担当」を追加指示する
+  - 各エージェントに **Key Files**（5〜10ファイルのパスと役割）を必ず返させる
 
 - [ ] **Key Files をメインセッションで直接読む**
-  - 各エージェントが返した Key Files の重複を排除する
-  - Read tool で実ファイルを直接読み、設計判断の一次情報を本セッションに取り込む
-  - **このステップを省略しない**（エージェントの要約だけで後段の設計を進めると、規約・インターフェースの解像度が落ちる）
+  - 重複を排除し、Read tool で実ファイルを読む
+  - **このステップを省略しない。** 要約だけで設計を進めると規約・インターフェースの解像度が落ちる
 
-- [ ] **`codebase-survey.md` の作成**
-  - 単一起動・並列起動のどちらの場合も、**メインセッションが [templates.md](references/templates.md) の `codebase-survey.md` フォーマットに整形** して `$ARGUMENTS[0]/architecture/codebase-survey.md` を作成する
-  - エージェントの出力（担当観点 / 調査結果 / Key Files）はテンプレートのフォーマットと異なるため、そのまま書き出さずに以下のセクションへ統合する:
-    - **リポジトリ概要** ← 単一エージェントの「リポジトリ概要」、または並列モードで概観担当エージェントの「リポジトリ概要」
-    - **ディレクトリ構成** ← 同上
-    - **ユーザーストーリーとの関連箇所** ← 各エージェントの「関連コード」と Key Files から得た一次情報
-    - **既存の規約・パターン** ← 各エージェントの「既存パターン・規約」を統合
-    - **拡張ポイント** ← 各エージェントの「拡張ポイント」を統合
+- [ ] **`cycles/{cycle}/design/codebase-survey.md` を作成する**
+  - フォーマットは [templates.md](references/templates.md) を参照
+  - **overview に既にある内容は書かない。** これが差分調査の肝で、書いてしまうと
+    2周目以降も初回と同じコストがかかり、overview を持つ意味が失われる
+  - 恒久的な価値のある発見（規約・拡張ポイント）は、close-cycle が overview へ昇格させる。
+    ここでは「今回のサイクルで必要な範囲」に留める
+- [ ] **コミット & push する**
 
-- [ ] `codebase-survey.md` をユーザーに提示し、誤り・見落とし・追加の制約がないか確認する
+- [ ] **`codebase_survey_gate` が有効な場合**（strict のみ）、ユーザーに提示して確認を得る
 
 → Step 3 へ。
 
 ### Step 3: 設計に関する質問（反復ループ）
 
-**codebase-survey.md や planning/ に明記されている内容は質問しない。**
+**codebase-survey.md・planning/・永続ドキュメントに明記されている内容は質問しない。**
+特に `constraints` に書かれている非機能要件を聞き直さないこと。
 
-- [ ] ユーザーストーリーを技術設計に落とし込む過程で生じる不明点を質問する
+- [ ] 技術設計に落とし込む過程で生じる不明点を質問する
   - 1ラウンドの質問数に上限はない。聞くべきことは1回でまとめて聞く
   - 確認観点: **技術選定**, **データ設計**, **インターフェース設計**, **非機能要件**, **既存コードとの整合**
-  - 質問ファイルのフォーマットは [templates.md](references/templates.md) を参照
-- [ ] 設計判断に必要な情報が揃うまで質問を繰り返す
+  - 質問が発生した場合のみ `cycles/{cycle}/design/design-questions.md` に記録する
+  - **未回答の質問を放置しない**
+- [ ] 設計判断に必要な情報が揃うまで繰り返す
 
 → Step 4 へ。
 
-### Step 4: 設計ドキュメント作成
+### Step 4: 設計判断と design-delta の作成
 
-**必要なものだけ作成する。不要なドキュメントは作らない。**
+#### Step 4a: 主要な設計判断の特定と分岐評価
 
-#### Step 4a: 主要設計判断の特定と分岐評価
-
-- [ ] Step 3 の質問結果・`codebase-survey.md`・`user-stories.md` を踏まえ、設計ドキュメントに反映する主要な技術判断（例: 認証方式、状態管理戦略、データ同期方式、API設計の粒度）を列挙する
-- [ ] 各判断について、**妥当な代替案が複数あり trade-off が非自明** かどうかを評価する
+- [ ] 設計に反映する主要な技術判断を列挙する（認証方式、状態管理戦略、データ同期方式など）
+- [ ] 各判断について、**妥当な代替案が複数あり trade-off が非自明**かを評価する
   - 既存規約から自明 / 単一の合理的選択肢しかない → **分岐なし**
   - 複数案で trade-off が異なり、ユーザーの判断が必要 → **分岐あり**
 
-#### Step 4b: 分岐がある判断について複数案を提示（該当時のみ）
+#### Step 4b: 分岐がある判断の選択（G3・常時必須）
 
-分岐がない判断のみの場合はこの手順をスキップして Step 4c へ。**この場合 `decisions.md` は作成しない**（記録対象は分岐ありの判断のみ）。
+分岐がなければスキップして Step 4c へ。**この場合 ADR は作成しない**（記録対象は分岐ありの判断のみ）。
 
-- [ ] 分岐がある各判断について、**`code-architect` エージェントを2〜3並列**で起動し、異なる観点の案を生成させる
-  - サブエージェントは別コンテキストで起動されるため、委任プロンプトに **以下のファイル絶対パスを必ず明示する**:
-    - ワークフロー DOC_ROOT: `$ARGUMENTS[0]`
-    - 要件: `$ARGUMENTS[0]/planning/user-stories.md`
-    - 設計質問の回答: `$ARGUMENTS[0]/architecture/design-questions.md`（存在する場合）
-    - 既存コード調査結果: `$ARGUMENTS[0]/architecture/codebase-survey.md`（存在する場合）
-  - 観点の例:
-    - **Minimal**: 既存資産の最大活用、変更最小、低リスク
-    - **Clean**: 関心分離・抽象化重視、長期保守性優先
-    - **Pragmatic**: 上記の中間。実装スピードと保守性のバランス
-  - 各エージェントには「影響ファイル」「主要コンポーネントの責務」「Trade-off」を返させる
-  - 各観点の出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/agents/code-architect.md` を参照
-- [ ] 各案を **trade-off表** にまとめ、**推奨案と理由** を明記してユーザーに提示する
-- [ ] ユーザーから「お任せ」と回答された場合も、推奨案を改めて提示し **明示的な確認** を得る（空回答として進めない）
-- [ ] ユーザーの採用案を確定する
-- [ ] **Step 4a で「分岐あり」と判定した各判断について、確定した採用案を `$ARGUMENTS[0]/architecture/decisions.md` に追記する**（分岐なしと判定した判断は記録しない）
-  - 1つの「分岐あり」判断 = 1つの `AD-N` エントリ
-  - `decisions.md` が未作成の場合はこのステップで新規作成する
-  - フォーマットは [templates.md](references/templates.md) の `decisions.md` を参照
-  - 記録項目: 決定 / 文脈 / 検討した案（code-architect が返した複数案を要約） / 採用理由 / トレードオフ
-  - **トレードオフ欄に「特になし」は書かない**（書きたくなる場合は Step 4a の分岐判定を見直す）
+- [ ] 各判断について **`code-architect` を2〜3並列**で起動し、異なる観点の案を生成させる
+  - 委任プロンプトに以下の絶対パスを明示する:
+    - 要件: `cycles/{cycle}/planning/user-stories.md`
+    - 設計質問の回答: `cycles/{cycle}/design/design-questions.md`（存在する場合）
+    - 既存コード調査: `cycles/{cycle}/design/codebase-survey.md`（存在する場合）
+    - 永続ドキュメント: `overview` / `constraints` / `decisions` のパス
+  - 観点の例: **Minimal**（既存資産の最大活用・低リスク）/ **Clean**（関心分離・長期保守性）/ **Pragmatic**（中間）
+  - 各案に「影響ファイル」「主要コンポーネントの責務」「Trade-off」を返させる
+- [ ] **trade-off表**にまとめ、**推奨案と理由**を明記して提示する
+- [ ] 「お任せ」と回答された場合も、推奨案を改めて提示して**明示的な確認**を得る（空回答として進めない）
 
-#### Step 4c: 設計ドキュメントの作成
+**この承認（G3）は profile の管轄外で、どのプロファイルでも省略しない。**
+不可逆だからではなく、**トレードオフの選択は人間にしか下せない判断**だから。
 
-- [ ] `$ARGUMENTS[0]/architecture/` 配下に設計ドキュメントを作成する
-  - tech-stack.md — 新規開発 or 技術選定が必要な場合
-  - db-schema.md — DBを使う場合
-  - interfaces.md — API or 複数コンポーネント間の連携がある場合
-  - conventions.md — 新規開発 or 新しい規約が必要な場合
-  - **含めないもの:** 実装例・メソッド内部のコード、詳細なProps定義・型定義
-  - 各ドキュメントのフォーマットは [templates.md](references/templates.md) を参照
-  - **Step 4b を実施した場合は、確定した採用案の内容を反映する**（Step 4b をスキップした場合は分岐なしの判断のみで作成する）
+- [ ] 確定した採用案を **ADR として追記する**
+  - 昇格先は `document-guide.md` の `decisions` が指すパス
+  - **`hikyaku` 管理の場合**: 日付ベースのファイル名（`20260901-auth-strategy.md`）、`status: accepted`
+  - **`repo` 管理の場合**: **既存形式に合わせる。** 連番なら連番、独自テンプレートならそれに従う。
+    既存に status 欄が無い場合、勝手に欄を足さず**ユーザーに提案して判断を仰ぐ**
+  - 記録項目: 決定 / 文脈 / 検討した案 / 採用理由 / **トレードオフ** / 影響範囲
+  - **トレードオフ欄に「特になし」と書かない。** 書きたくなるなら Step 4a の分岐判定が誤っている
+  - **既存エントリは書き換えない**（覆すときは新エントリ + 旧を superseded）
+- [ ] コミット & push する
+
+#### Step 4c: design-delta.md の作成
+
+- [ ] `cycles/{cycle}/design/design-delta.md` を作成する
+  - フォーマットは [templates.md](references/templates.md) を参照
+  - **書く**: このサイクルで作るもの（to-be）/ **永続ドキュメントのどこを更新する予定か** / 既存構造への影響
+  - **書かない**: 実装コード / ビルド分割（tasklist が正）/ 恒久的な設計判断（ADR が正）/
+    **既に永続側にある内容の再掲**
+  - 「永続ドキュメントのどこを更新する予定か」は close-cycle と cycle-scanner の入力になる
+- [ ] コミット & push する
 
 → Step 5 へ。
 
-### Step 5: 設計全体の承認とビルド分割
+### Step 5: 承認とビルド分割
 
-#### Step 5a: 設計ドキュメントの承認
+#### Step 5a: 設計の承認（G4）
 
-- [ ] `architecture_review` が `true`（デフォルト）の場合、`doc-reviewer` エージェントを起動する（`context: architecture`）
-  - 渡す情報: Step 4c で作成した `architecture/` 配下のドキュメント（`design-questions.md` / `retrospective.md` を除く）, `$ARGUMENTS[0]/planning/user-stories.md`
-  - 出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/agents/doc-reviewer.md` を参照
-  - 返ってきた指摘のうち、明確な不整合・網羅漏れは該当ドキュメントに反映する（主観的な指摘は無視してよい）
-- [ ] 設計ドキュメント（architecture/）の全内容を、doc-reviewer の指摘（あれば）と併せてユーザーに提示し、最終承認を得る
-  - **承認観点:** 技術選定は妥当か、設計方針に問題はないか
+- [ ] **`architecture_review` が有効な場合**（light / standard / strict）、`doc-reviewer` を起動する（`context: architecture`）
+  - 渡す情報: `design-delta.md`, `codebase-survey.md`, 今回追記した ADR, `user-stories.md`
+  - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
+- [ ] **`architecture_gate` が有効な場合**（saving / standard / strict）、ユーザーに提示して承認を得る
+
+**承認観点はこれに限定する:**
+
+```
+- Step 4b で採用した案が design-delta に正しく反映されているか
+- 分岐なしとして ADR に記録しなかった判断に、見落としがないか
+- doc-reviewer の指摘への対処は妥当か
+```
+
+技術選定の是非は **G3 で決着済み**なので、ここで問い直さない。同じことを二度聞くのが
+承認ラウンドの冗長さの正体になる。
 
 → 承認を得たら Step 5b へ。フィードバックがあれば Step 3 に戻る。
 
-#### Step 5b: ビルド分割ドラフトの確定（書き込みなし）
+#### Step 5b: ビルド分割（G6）
 
-**この段階では tasklist.md・issue.md 相当への書き込みを一切行わない。** ビルドの追加・分割・依存関係の見直しをこのやり取りだけで完結させることで、`issue_backend` が `github`/`asana` の場合に外部システム（issue/タスク）の作成・削除が乱造されるのを防ぐ。
+**v1 にあった「ビルド分割ドラフトの承認」は廃止した。** あれは `issue_backend` が
+github/asana のとき外部システムで issue の作成・削除が乱造されるのを防ぐためのもので、
+ファイル正に変えた時点で理由が消えた。build-manager が `--dry-run` で差分を提示し、
+承認後に初めて書き込むので、拒否されても外部に何も残らない。
 
-- [ ] 設計ドキュメントに基づいてビルドの論理的な単位（タイトル・スコープ・依存関係）をドラフトとして列挙する
-- [ ] 各ビルドの概算BPを `${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/bp-guide.md` の考え方に沿って見積もる（正式なBP見積もりは Step 5c の build-manager が行うため、ここでは分割要否の判断材料となる概算でよい）
-- [ ] ドラフトをユーザーに提示し、フィードバックがあれば同じドラフト上で修正を繰り返す（追加・削除・統合・分割）
+- [ ] 設計に基づいてビルドの論理的な単位（タイトル・スコープ・依存関係）を整理する
+- [ ] `/hikyaku:build-manager {HIKYAKU_ROOT} {cycle}` を呼び出す
+  - 伝える情報: 各ビルドのタイトル・スコープ・依存関係・参照すべき設計ドキュメント
+  - build-manager が BP見積もり、tasklist の更新、issue.md の作成、承認までを行う
+- [ ] 検証する
 
-→ ドラフトが確定したら Step 5c へ。
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate {cycle} --root {HIKYAKU_ROOT}
+```
 
-#### Step 5c: build-managerへの一括委任
+→ 承認を得たら Step 6 へ。フィードバックの内容に応じて対応する:
+- 設計へのフィードバック → Step 3 に戻る
+- ビルド分割へのフィードバック → build-manager を再度呼び出す
 
-- [ ] 確定したビルド分割ドラフトをもとに、`/hikyaku:build-manager $ARGUMENTS[0]` を **1回だけ** 呼び出し、全ビルド分をまとめて作成する
-  - build-manager に伝える情報: 各ビルドのタイトル・スコープ・依存関係・設計ドキュメントの参照先
-  - build-manager がBP見積もり、tasklist.md の作成、各 issue.md 相当の作成（`issue_backend` に応じてファイル / GitHub issue / Asanaタスク）、ユーザー承認までを行う
+### Step 6: 振り返りと PR
 
-→ すべての承認を得たら Step 6 へ。フィードバックの内容に応じて対応が異なる:
-- 設計ドキュメントへのフィードバック → Step 3 に戻る
-- ビルド分割ドラフトへのフィードバック → Step 5b に戻る
-- build-manager 承認後のビルドへのフィードバック → `/hikyaku:build-manager $ARGUMENTS[0]` を再度呼び出す
+- [ ] `retrospective` 設定に従って `/hikyaku:retrospective {HIKYAKU_ROOT} {cycle} architecture` を呼び出す
+- [ ] PR を作成する（タイトルは `hikyaku pr title architect {cycle}` で生成）
 
-### Step 6: 振り返り
+**この PR も速やかにマージすることを想定している。** tasklist.md がデフォルトブランチに
+入らないと、builder が依存ビルドの完了を判定できない。
 
-- [ ] `/hikyaku:retrospective $ARGUMENTS[0] architecture` を呼び出して振り返りを実施する
-- [ ] 振り返り完了後（またはスキップ後）、以下を案内する
+- [ ] 完了後、次に着手できるビルドを案内する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle} --root {HIKYAKU_ROOT}
+```
 
 ```
 設計フェーズが完了しました。
 
 BUILDフェーズを開始するには、新しいセッションで以下を実行してください:
-/hikyaku:builder $ARGUMENTS[0]
+/hikyaku:builder {HIKYAKU_ROOT} {cycle} {buildID}
+
+依存関係のないビルドは並行して進められます。
 ```

@@ -1,9 +1,9 @@
 ---
 name: planner
-description: "Hikyaku 企画フェーズ: 既存の企画ドキュメントを読み込み、ユーザーストーリーとして構造化したドキュメントを出力する"
+description: "Hikyaku 企画フェーズ: チケットと既存の企画ドキュメントを読み込み、そのサイクルのユーザーストーリーとして構造化する"
 user-invocable: true
 disable-model-invocation: true
-argument-hint: "[{DOC_ROOT}]"
+argument-hint: "[{HIKYAKU_ROOT}] [{cycle}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
   version: "2.0.0"
@@ -11,191 +11,172 @@ metadata:
 
 # Hikyaku Planner
 
-`$ARGUMENTS[0]` に指定されたパスにワークフロードキュメントをセットアップし、企画フェーズを実行する。
+対象サイクルの企画フェーズ（PLAN）を実行する。
 
 ## Hikyaku ワークフロー概要
 
-Hikyakuは PLAN → ARCHITECT → BUILD の3フェーズで構成されるAIエージェント協働開発ワークフロー。
+Hikyaku は PLAN → ARCHITECT → BUILD → CLOSE の4フェーズで構成される、
+AIエージェント協働開発ワークフロー。
 
-- 各フェーズは **別セッション（＝別のAI）** が担当する
-  - フェーズごとに1セッション（20万トークン）が目安
-- フェーズ間の情報引き継ぎはファイル（planning/, architecture/, handoff.md）で行う
-- 各フェーズには反復的な質問ループがあり、目的が達成されるまで確認を繰り返す
-
-### 全体フロー
+- 各フェーズは **別セッション（＝別のAI）** が担当する（1セッション20万トークンが目安）
+- フェーズ間の情報引き継ぎはファイルで行う
+- **1サイクル = 1チケット**。複数のサイクルを並行して回せる
 
 ```
-/hikyaku:planner   → planning/ を生成 ← あなたはここ
-      ↓ ユーザー承認
-/hikyaku:architect → architecture/ + tasklist.md + build-{NN}/issue.md を生成
-      ↓ ユーザー承認
-/hikyaku:builder   → build-01/ を実装 → handoff.md → PR
-/hikyaku:builder   → build-02/ を実装 → handoff.md → PR
-  ...（ビルド数分繰り返し）
+/hikyaku:init          → ワークスペースを初期化（初回のみ）
+/hikyaku:create-cycle  → サイクルを作成し profile を選ぶ
+/hikyaku:planner       → planning/ を生成  ← あなたはここ
+/hikyaku:architect     → design/ + tasklist.md + build-NN/issue.md を生成
+/hikyaku:builder       → build-NN を実装 → PR（依存が無ければ並行実行可）
+/hikyaku:close-cycle   → 永続ドキュメントへ昇格し、サイクルを closed に
 ```
 
-### ワークフローディレクトリ構造
+### ディレクトリ構造
 
 ```
-$ARGUMENTS[0]/
-├── .gitignore                 # PLAN 初回実行時に自動生成（retrospective.md / test-spec.md / design-questions.md / build配下のquestions.md を除外）
-├── .hikyaku.config             # このワークフロー固有の設定上書き（任意、PLAN 初回実行時に雛形生成）
-├── tasklist.md               # ビルド一覧（ARCHITECT で作成、BUILD で PR列を更新）
-├── planning/                  # 企画ドキュメント（PLAN で作成）
-│   ├── questions.md           # 企画段階の質問と回答
-│   ├── user-stories.md        # ユーザーストーリー
-│   └── retrospective.md      # 振り返り（PLAN で作成）
-├── architecture/              # 設計ドキュメント（ARCHITECT で作成）
-│   ├── codebase-survey.md     # 既存コード調査結果（既存コードがある場合のみ）
-│   ├── design-questions.md    # 設計段階の質問と回答
-│   ├── decisions.md           # 設計判断ログ（ADR、分岐評価のあった判断のみ）
-│   ├── tech-stack.md          # 技術選択（必要時のみ）
-│   ├── db-schema.md           # DBスキーマ（必要時のみ）
-│   ├── interfaces.md          # インターフェース定義（必要時のみ）
-│   ├── conventions.md         # 共通規約（必要時のみ）
-│   └── retrospective.md      # 振り返り（ARCHITECT で作成）
-├── build-01/
-│   ├── issue.md               # ビルド定義（ARCHITECT で作成）
-│   ├── plan.md                # 実装計画（BUILD で作成）
-│   ├── test-spec.md           # テストシナリオ（BUILD で作成）
-│   ├── questions.md           # 実装時の質問と回答（BUILD で作成、必要時のみ）
-│   ├── handoff.md             # 申し送り（BUILD で作成）
-│   └── retrospective.md      # 振り返り（BUILD で作成）
-└── ...
+{HIKYAKU_ROOT}/
+├── .hikyaku.config
+├── document-guide.md          # 永続ドキュメントの所在（必須）
+├── cycles.md                  # サイクル索引（必須）
+├── instruction.md             # ワークフロー独自の指示（任意）
+└── cycles/
+    └── {NNN}-{slug}/
+        ├── planning/          # ← あなたが作る
+        │   ├── questions.md
+        │   └── user-stories.md
+        ├── design/            # ARCHITECT が作る
+        ├── tasklist.md        # ARCHITECT が作る
+        └── build-01/          # BUILD が作る
 ```
 
-上記は `issue_backend = "file"`（デフォルト）の場合の構成です。`github`/`asana` を選択した場合、`build-{NN}/` 配下は丸ごと `.gitignore` 対象になりコミットされません（詳細は `${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/backends.md`）。
+**永続ドキュメント（overview / decisions / constraints / learnings / conventions 等）は
+HIKYAKU_ROOT の外にある。** 所在は `document-guide.md` が宣言する。
 
-### あなたの役割（企画フェーズ）
+### あなたの役割
 
-あなたは企画フェーズを担当する。
-ユーザーは既にある程度の企画・要件を持っている。あなたの仕事は、既存のドキュメントやユーザーの説明を読み込み、**次の設計フェーズ（ARCHITECT）が作業を開始できる形に構造化すること**。
+ユーザーは既にチケットや企画メモを持っている。あなたの仕事は、それを読み込んで
+**次の設計フェーズ（ARCHITECT）が作業を開始できる形に構造化すること**。
 
 **やらないこと:**
-- 技術選定（言語、フレームワーク、ライブラリの選択）
-- システム設計（DB設計、API設計、アーキテクチャ）
-- ビルド分割・見積もり
-- 実装方法の提案
+- 技術的な実現方法の決定（設計フェーズの仕事）
+- **永続ドキュメントへの書き込み**（close-cycle だけが行う）
+- このサイクル外のストーリーを書くこと（バックログ管理はスコープ外）
 
 ## 作業ステップ
 
-### Step 0: ファイルの読み込みと設定の解決
+### Step 0: 設定の解決とサイクルの特定
 
-作業の開始前に必ず以下を実行する。
+- [ ] `${CLAUDE_PLUGIN_ROOT}/skills/planner/references/templates.md`: 各種テンプレート（必須）
+- [ ] 設定を解決する
 
-- [ ] `${CLAUDE_PLUGIN_ROOT}/skills/planner/references/templates.md`: 各種成果物のテンプレート（必須）
-- [ ] リポジトリルートの `.hikyaku.config` を読み込む（存在する場合のみ）
-- [ ] **DOC_ROOT を決定する**
-  - `$ARGUMENTS[0]` が指定されている場合 → その値を DOC_ROOT として使用する
-  - `$ARGUMENTS[0]` が未指定で `.hikyaku.config` に `doc_root` が設定されている場合 → その値を DOC_ROOT として使用する
-  - どちらも未設定の場合 → ユーザーに DOC_ROOT の指定を求めて終了する
-- [ ] `{DOC_ROOT}/.hikyaku.config` が存在する場合は読み込み、`doc_root` を除くキーをリポジトリルートの設定にキー単位で上書きする（このワークフロー固有の設定。`doc_root` はリポジトリルートの設定でのみ有効）
-- [ ] `{DOC_ROOT}/instruction.md`: ワークフロー独自のインストラクション（存在する場合のみ）
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config --root $ARGUMENTS[0] --json
+```
 
-以降のステップでは DOC_ROOT を `$ARGUMENTS[0]` の代わりに使用する。
+- **未初期化の場合**（`document-guide.md` が無い）→ `/hikyaku:init` を実行して初期化を代行する
+- **サイクルが未作成の場合** → `/hikyaku:create-cycle` を実行して代行する
+  - 代行した場合、create-cycle は PR を作らない。成果物が cycles.md の1行だけなので、
+    このスキルの PR に畳む
+- [ ] 対象サイクルを特定する
 
-なお、インストラクションは次の優先順で適用する。上位の指示が下位と矛盾する場合は、上位を優先すること。
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle} --root {HIKYAKU_ROOT}
+```
+
+**中断からの再開の場合**、このコマンドがどこまで進んだかを教えてくれる。
+既存の成果物があれば読み込んで途中から再開する。
+
+- [ ] `{HIKYAKU_ROOT}/instruction.md` を読む（存在する場合のみ）
+- [ ] サイクルの `profile` を確認し、以降のゲートとレビューの有無を決める
+
+インストラクションは次の優先順で適用する。上位が下位と矛盾する場合は上位を優先する。
 
 1. リポジトリ全体のインストラクション（AGENTS.md, CLAUDE.md 等）
-2. ワークフロー独自のインストラクション
+2. ワークフロー独自のインストラクション（`{HIKYAKU_ROOT}/instruction.md`）
 3. このスキルの説明（SKILL.md）
 
-→ すべて読み込めたら Step 1 へ。必須ファイルが読み込めなかった場合はユーザーに報告して終了。
+→ Step 1 へ。
 
-### Step 1: プロジェクトディレクトリの初期化
+### Step 1: ブランチ作成
 
-DOC_ROOT を対象に、以下を **冪等に**（既に存在するものは上書きしない）実行する。
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch name plan {cycle} --root {HIKYAKU_ROOT}
+```
 
-- [ ] `$ARGUMENTS[0]/` ディレクトリが存在しなければ作成する
-- [ ] `$ARGUMENTS[0]/planning/` ディレクトリが存在しなければ作成する
-- [ ] `$ARGUMENTS[0]/.gitignore` を確認する
-  - 存在しない場合: 新規作成する
-  - 存在する場合: 以下のパターンが含まれているか確認し、無ければ追記する（既存内容は書き換えない）
-  ```gitignore
-  # Hikyaku: セッションローカルの成果物（コミット対象外）
-  **/retrospective.md
-  **/test-spec.md
-  build-*/questions.md
-  **/design-questions.md
-  ```
-- [ ] `$ARGUMENTS[0]/.hikyaku.config` を確認する
-  - 存在しない場合: 全項目コメントアウト済みの雛形を新規作成する
-  - 存在する場合: 何もしない（ユーザーが設定した上書き内容を保持する）
-  ```toml
-  # このファイルはこのワークフロー（$ARGUMENTS[0]）固有の設定です。
-  # リポジトリルートの .hikyaku.config の値をキー単位で上書きします。
-  # doc_root はここでは指定できません（リポジトリルートの設定でのみ有効）。
-
-  # base_branch = "main"
-  # retrospective = "prompt"
-  # bp_max = 8
-  # code_review = true
-  # security_review = true
-  # test_spec_review = true
-  # user_stories_review = true
-  # architecture_review = true
-  # plan_review = true
-  # issue_backend = "file"
-
-  # [github]
-  # # repo = "owner/repo"
-
-  # [asana]
-  # project_gid = "..."
-  ```
+返ってきた名前でブランチを作成する。
 
 → Step 2 へ。
 
 ### Step 2: インプットの読み込み
 
+- [ ] cycles.md に記録された**チケット**を確認する
 - [ ] ユーザーが指定したドキュメント（企画書、仕様メモ、Issue、Slack抜粋など）を読み込む
-  - 指定がない場合はユーザーにインプットとなるドキュメントの場所を確認する。自分で探索しない
+  - 指定がない場合はユーザーにインプットの場所を確認する。自分で探索しない
+- [ ] `document-guide.md` を読み、**`constraints` が登録されていれば読む**
+  - 既に確定している非機能要件を再度質問しないため
 
 → Step 3 へ。
 
 ### Step 3: 目的とスコープのすり合わせ
 
-質問ループに入る前に、インプットから読み取った内容を要約してユーザーに提示し、認識のズレを先に解消する。**質問ループの精度を上げるための事前すり合わせステップであり、本格的な詳細確認は次のステップで行う。**
+質問ループに入る前に、インプットから読み取った内容を要約して提示し、認識のズレを先に解消する。
 
-- [ ] インプットを読み込んだ上で、以下の4項目を簡潔にまとめてユーザーに提示する
+- [ ] 以下の4項目を簡潔にまとめてユーザーに提示する
   - **何を実現したいか**: ユーザーが何ができるようになる機能か
-  - **背景・目的**: なぜこの機能が必要か（解決したい課題など）
-  - **対象画面・対象データ**: どの画面・どのデータに関わるか（例: セッション一覧、種目マスタ、プロフィール等）
-  - **制約・要件**: あれば（例: モバイル優先、オフライン対応、既存データとの互換性など）
-  - インプットから読み取れない点を補完で記述した場合は **「（推測）」** を付記する
+  - **背景・目的**: なぜこの機能が必要か
+  - **対象画面・対象データ**: どの画面・どのデータに関わるか
+  - **制約・要件**: あれば（`constraints` に既にあるものは再掲せず参照する）
+  - インプットから読み取れない補完には **「（推測）」** を付ける
 - [ ] ユーザーから誤り・補足を聞き、認識を合わせる
 
-→ 認識合わせができたら Step 4 へ。修正があれば反映してから進む。
+→ Step 4 へ。
 
-### Step 4: 企画内容の確認と承認
+### Step 4: 質問ループと user-stories の作成
 
-**既存ドキュメントやStep 3 ですり合わせ済みの内容は再度聞かない。** ドキュメントから読み取れない点、曖昧な点、矛盾する点のみを質問する。
+**インプットや Step 3 で明記されている内容は質問しない。**
 
-- [ ] Step 3 のすり合わせを踏まえ、ユーザーストーリーに構造化するために不足している情報を質問する
+- [ ] 構造化に必要な情報を質問する
   - 1ラウンドの質問数に上限はない。聞くべきことは1回でまとめて聞く
-  - インプットや Step 3 で明記されている内容は質問しない
-  - 確認観点: **目的**, **対象ユーザー**, **コア機能**, **スコープ境界**, **優先度**, **制約条件**（納期、予算、運用体制など）
-  - 質問ファイルのフォーマットは [templates.md](references/templates.md) を参照
-- [ ] 構造化に必要な情報が揃うまで質問を繰り返す
-- [ ] インプットと質問ループで得た情報を統合し、`$ARGUMENTS[0]/planning/user-stories.md` を作成する
+  - 確認観点: **目的**, **対象ユーザー**, **コア機能**, **スコープ境界**, **優先度**, **制約条件**
+  - 質問が発生した場合のみ `cycles/{cycle}/planning/questions.md` に記録する
+  - **未回答の質問を放置しない。** 未回答なら明示的にそう記す
+- [ ] `cycles/{cycle}/planning/user-stories.md` を作成する
   - フォーマットは [templates.md](references/templates.md) を参照
-  - **Step 3 ですり合わせた4項目（実現したいこと / 背景・目的 / 対象画面・対象データ / 制約・要件）は、`user-stories.md` 冒頭の「概要」セクションに反映する**。質問ループで補足や修正があれば最終内容を反映する
-- [ ] `user_stories_review` が `true`（デフォルト）の場合、`doc-reviewer` エージェントを起動する（`context: user-stories`）
-  - 渡す情報: `$ARGUMENTS[0]/planning/user-stories.md`, `$ARGUMENTS[0]/planning/questions.md`
+  - Step 3 の4項目を冒頭の「概要」セクションに反映する
+  - **このサイクルのスコープに閉じる。** 将来やりたいことは書かない
+- [ ] **コミット & push する**
+
+成果物を1つ作るごとにコミット & push すること。コミットされていなければ、
+中断時に他セッションから進捗が見えず、再開点を検出できない。
+
+→ Step 5 へ。
+
+### Step 5: レビューと承認
+
+- [ ] **`user_stories_review` が有効な場合**（light / standard / strict）、`doc-reviewer` を起動する（`context: user-stories`）
+  - 渡す情報: `cycles/{cycle}/planning/user-stories.md`, `planning/questions.md`
   - 出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/agents/doc-reviewer.md` を参照
-  - 返ってきた指摘のうち、明確な不整合・網羅漏れは user-stories.md に反映する（主観的な指摘は無視してよい）
-- [ ] planning/questions.md と planning/user-stories.md を、doc-reviewer の指摘（あれば）と併せてユーザーに提示し、承認を得る
+  - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
+- [ ] **`user_stories_gate` が有効な場合**（saving / standard / strict）、ユーザーに提示して承認を得る
+  - `light` ではこのゲートを省略する。問題は PR レビューで拾う想定
 
-→ 承認を得たら Step 5 へ。フィードバックがあれば反映し、Step 4 の質問ループからやり直す。
+profile ごとの有効・無効は Step 0 の `config --json` の `gates` / `reviews` を見る。
 
-### Step 5: 振り返り
+→ 承認を得たら（または light で省略したら）Step 6 へ。
 
-- [ ] `/hikyaku:retrospective $ARGUMENTS[0] planning` を呼び出して振り返りを実施する
-- [ ] 振り返り完了後（またはスキップ後）、以下を案内する
+### Step 6: 振り返りと PR
+
+- [ ] `retrospective` 設定に従って `/hikyaku:retrospective {HIKYAKU_ROOT} {cycle} planning` を呼び出す
+- [ ] PR を作成する（タイトルは `hikyaku pr title plan {cycle}` で生成）
+
+**このフェーズの PR はドキュメントのみで、速やかにマージすることを想定している。**
+デフォルトブランチに入っていない情報は他サイクルから見えないため。
+
+- [ ] 完了後、以下を案内する
 
 ```
 企画フェーズが完了しました。
 
 設計フェーズを開始するには、新しいセッションで以下を実行してください:
-/hikyaku:architect $ARGUMENTS[0]
+/hikyaku:architect {HIKYAKU_ROOT} {cycle}
 ```

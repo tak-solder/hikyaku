@@ -1,10 +1,9 @@
 ---
 name: builder
-description: "Hikyaku 実装フェーズ: 設計フェーズや依存する実装フェーズの成果物を入力として、実装計画・コード生成・検証・PR作成を出力する。"
-compatibility: "Requires git and gh CLI."
+description: "Hikyaku 実装フェーズ: 1ビルド = 1セッションでコード実装から PR 作成までを完結させる"
 user-invocable: true
 disable-model-invocation: true
-argument-hint: "[{DOC_ROOT}] [buildID|next]"
+argument-hint: "[{HIKYAKU_ROOT}] [{cycle}] [{buildID}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
   version: "2.0.0"
@@ -12,190 +11,114 @@ metadata:
 
 # Hikyaku Builder
 
-`$ARGUMENTS[0]` のワークフローパスから企画・設計ドキュメントを読み込み、実装フェーズを実行する。`$ARGUMENTS[1]` で buildID を指定できる（省略時は次のビルドを自動選択）。
-
-## Hikyaku ワークフロー概要
-
-Hikyakuは PLAN → ARCHITECT → BUILD の3フェーズで構成されるAIエージェント協働開発ワークフロー。
-
-- 各フェーズは **別セッション（＝別のAI）** が担当する
-   - フェーズごとに1セッション（20万トークン）が目安
-- BUILDセッションは設計ドキュメント（architecture/）と、先行ビルドの申し送り（handoff.md）を読んでコンテキストを復元する
-- 1ビルド＝1セッションで完結させる
-- セッション間の情報引き継ぎはファイル（planning/, architecture/, handoff.md）で行う
-
-### 全体フロー
+対象ビルドの実装フェーズ（BUILD）を実行する。**1ビルド = 1セッション**で完結させる。
 
 ```
-/hikyaku:planner   → planning/ を生成（完了済み）
-      ↓
-/hikyaku:architect → architecture/ + tasklist.md + build-{NN}/issue.md を生成（完了済み）
-      ↓
-/hikyaku:builder   → build-01/ を実装 → handoff.md → PR
-/hikyaku:builder   → build-02/ を実装 → handoff.md → PR  ← あなたはここ
-  ...（ビルド数分繰り返し）
+/hikyaku:architect     → design/ + tasklist.md + build-NN/issue.md（完了済み）
+/hikyaku:builder       → build-NN を実装 → PR  ← あなたはここ
+/hikyaku:close-cycle   → 永続ドキュメントへ昇格
 ```
 
-### ワークフローディレクトリ構造
+## あなたの役割
 
-```
-$ARGUMENTS[0]/
-├── .gitignore                 # PLAN 初回実行時に自動生成（retrospective.md / test-spec.md / design-questions.md / build配下のquestions.md を除外）
-├── .hikyaku.config             # このワークフロー固有の設定上書き（任意、PLAN 初回実行時に雛形生成）
-├── tasklist.md               # ビルド一覧（ARCHITECT で作成済み、BUILD で PR列を更新）
-├── planning/                  # 企画ドキュメント（PLAN で作成済み、参照のみ）
-│   ├── questions.md           # 企画段階の質問と回答
-│   ├── user-stories.md        # ユーザーストーリー
-│   └── retrospective.md      # 振り返り（PLAN で作成）
-├── architecture/              # 設計ドキュメント（ARCHITECT で作成済み、実装時に差分があれば更新）
-│   ├── codebase-survey.md     # 既存コード調査結果（任意）
-│   ├── design-questions.md    # 設計段階の質問と回答
-│   ├── decisions.md           # 設計判断ログ（ADR、任意）
-│   ├── tech-stack.md          # 技術選択（任意）
-│   ├── db-schema.md           # DBスキーマ（任意）
-│   ├── interfaces.md          # インターフェース定義（任意）
-│   ├── conventions.md         # 共通規約（任意）
-│   └── retrospective.md      # 振り返り（ARCHITECT で作成）
-├── build-01/                  # 完了済みビルド
-│   ├── issue.md               # ビルド定義（ARCHITECT で作成済み）
-│   ├── plan.md                # 実装計画
-│   ├── test-spec.md           # テストシナリオ
-│   ├── handoff.md             # 申し送り → 後続ビルドが参照
-│   └── retrospective.md      # 振り返り
-├── build-02/                  # ← これから作業するビルド
-│   ├── issue.md               # ビルド定義（ARCHITECT で作成済み）
-│   ├── plan.md                # ← BUILD で作成
-│   ├── test-spec.md           # ← BUILD で作成（テストシナリオ）
-│   ├── questions.md           # （必要時のみ）
-│   ├── handoff.md             # ← BUILD で作成
-│   └── retrospective.md      # ← BUILD で作成
-└── ...
-```
+対象ビルドを実装し、PR を作成する。
 
-上記は `issue_backend = "file"`（デフォルト）の場合の構成です。`github`/`asana` を選択した場合、`build-{NN}/` 配下は丸ごと `.gitignore` 対象になりコミットされません（詳細は `${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/backends.md`）。
+### 最も重要な制約: 永続ドキュメントを書き換えない
 
-### あなたの役割（実装フェーズ）
+永続ドキュメント（overview / constraints / learnings / decisions 等）を書けるのは
+**close-cycle だけ**。あなたは読むだけで、一切書き換えない。
 
-あなたは実装フェーズの1ビルドを担当する。企画・設計は別セッションで完了済み。
-設計ドキュメント（architecture/）と先行ビルドの handoff.md を読んでコンテキストを復元し、実装→検証→申し送り→PRまでを完結させる。
+実装中に設計とのズレや新たに判明した制約があれば、**`handoff.md` に記録する**。
+close-cycle がそれを素材として昇格させる。
 
-**やらないこと:**
-- 企画内容の変更（スコープ変更・優先度変更）
-- 担当ビルド外のコード変更
-- build-manager を通さずにビルドのスコープを直接変更すること
-
-**設計ドキュメントの更新について:**
-- 実装中に planning/ や architecture/ の内容と異なる判断が必要になった場合は、該当ドキュメントを直接更新する（ソースオブトゥルースを1箇所に保つ）
+これにより、あなたのコンテキストは実装だけに集中できる。
 
 ## 作業ステップ
 
-### Step 0: ファイルの読み込みと設定の解決
+### Step 0: 設定の解決と対象ビルドの決定
 
-作業の開始前に必ず以下を実行する。
+- [ ] `${CLAUDE_PLUGIN_ROOT}/skills/builder/references/templates.md`: 各種テンプレート（必須）
+- [ ] `${CLAUDE_PLUGIN_ROOT}/skills/builder/references/retry-policy.md`: リトライ方針（必須）
+- [ ] 設定を解決する
 
-- [ ] `${CLAUDE_PLUGIN_ROOT}/skills/builder/references/templates.md`: 各種成果物のテンプレート（必須）
-- [ ] `${CLAUDE_PLUGIN_ROOT}/skills/builder/references/retry-policy.md`: エラー発生時のリトライ方針（必須）
-- [ ] リポジトリルートの `.hikyaku.config` を読み込む（存在する場合のみ）
-- [ ] **DOC_ROOT を決定する**
-  - `$ARGUMENTS[0]` が指定されている場合 → その値を DOC_ROOT として使用する
-  - `$ARGUMENTS[0]` が未指定で `.hikyaku.config` に `doc_root` が設定されている場合 → その値を DOC_ROOT として使用する
-  - どちらも未設定の場合 → ユーザーに DOC_ROOT の指定を求めて終了する
-- [ ] `{DOC_ROOT}/.hikyaku.config` が存在する場合は読み込み、`doc_root` を除くキーをリポジトリルートの設定にキー単位で上書きする（このワークフロー固有の設定）
-- [ ] **BASE_BRANCH を決定する**
-  - `.hikyaku.config` に `base_branch` が設定されている場合 → `origin/{base_branch}` を使用する
-  - 未設定の場合 → `git remote show origin | grep 'HEAD branch' | awk '{print $NF}'` でデフォルトブランチ名を抽出し、`origin/{branch}` 形式で使用する
-- [ ] **設定値のデフォルトを確認する**（`.hikyaku.config` で未設定の場合はデフォルト値を使用する）
-  - `code_review`: デフォルト `true`
-  - `security_review`: デフォルト `true`
-  - `test_spec_review`: デフォルト `true`
-  - `plan_review`: デフォルト `true`
-  - `issue_backend`: デフォルト `file`
-- [ ] `issue_backend` が `asana` の場合、Asana操作用のMCPツールが利用可能か確認する（ToolSearchで`asana`を検索するなど）
-  - 見つからない場合: 「`issue_backend = "asana"` が設定されていますが、Asana操作用のMCPツールが見つかりません。Asana MCPサーバーを設定するか、`.hikyaku.config` の `issue_backend` を `file` または `github` に変更してください。」と報告して終了する
-- [ ] `{DOC_ROOT}/instruction.md`: ワークフロー独自のインストラクション（存在する場合のみ）
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config --root $ARGUMENTS[0] --json
+```
 
-以降のステップでは DOC_ROOT を `$ARGUMENTS[0]` の代わりに、BASE_BRANCH を `origin/main` の代わりに使用する。
+- [ ] 対象ビルドを決める
 
-なお、インストラクションは次の優先順で適用する。上位の指示が下位と矛盾する場合は、上位を優先すること。
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle} --root {HIKYAKU_ROOT}
+```
 
-1. リポジトリ全体のインストラクション（AGENTS.md, CLAUDE.md 等）
-2. ワークフロー独自のインストラクション
-3. このスキルの説明（SKILL.md）
+`$ARGUMENTS[2]` で buildID が指定されていればそれを使う。省略された場合、
+`next` が返した**着手可能なビルド**から選ぶ。
 
-→ すべて読み込めたら Step 1 へ。必須ファイルが読み込めなかった場合はユーザーに報告して終了。
+**依存関係のあるビルドは、先行ビルドがデフォルトブランチにマージ済みであることが必須。**
+`next` はこれを tasklist.md の `PR` 列で判定している。待機中と表示されたビルドには着手しない。
 
-### Step 1: 対象ビルドの特定
+**依存関係がないビルドは並行実行できる。** `next` が「着手中」と表示したビルドは、
+他セッションが作業している可能性がある。選ぶ前にユーザーに確認する。
 
-- [ ] `$ARGUMENTS[0]/tasklist.md` を読み込む
-- [ ] **ビルドの完了判定方法を確認する**（`issue_backend` により異なる。詳細は `${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/backends.md`）
-  - `file`: 該当ビルドのPR列が非空
-  - `github`: 該当ビルドの `issue` 列のリンクテキスト（`#<番号>`）から番号を抽出し、`gh issue view <番号> --json state` をライブ照会し、`state == "CLOSED"`
-  - `asana`: 該当ビルドの `task` 列のリンクテキストからgidを抽出し、Asana MCPツールでタスク完了状態をライブ照会
-- [ ] 対象ビルドの buildID を特定する
-  - `$ARGUMENTS[1]` が数値の場合: 該当する buildID のビルドを対象とする
-  - `$ARGUMENTS[1]` が省略または `next` の場合: 未完了かつ、依存ビルド（dependencies列）がすべて完了しているビルドの中から、最小のbuildIDを選択する
-- [ ] 対象ビルドの依存ビルド（dependencies列）がすべて完了していることを確認する
+- [ ] `{HIKYAKU_ROOT}/instruction.md` を読む（存在する場合のみ）
 
-**注意:** buildID の数値順は実行順序と一致しない場合がある（ビルド分割により後から追加されたビルドが、数値上は大きいが依存グラフ上は先に実行すべきケースがある）。必ず dependencies 列に基づいて判断すること。
+→ Step 1 へ。
 
-→ すべて完了したら Step 2 へ。対象ビルドが見つからない、または依存ビルドが未完了の場合はユーザーに報告して終了。
+### Step 1: コンテキスト復元
 
-### Step 2: コンテキスト復元
+以下の順で読み込む。**3層に分かれていることを意識する。**
 
-以下の順でドキュメントを読み込む:
+| 層 | 何を表すか | 読むもの |
+|---|---|---|
+| **永続** | 実装済みの現実（他サイクルの成果も含む） | overview / constraints / decisions / learnings / conventions |
+| **サイクル** | このサイクルが作ろうとしている差分 | design-delta.md / codebase-survey.md |
+| **ビルド** | 同一サイクル内の先行ビルドの実績 | 依存ビルドの handoff.md |
 
-- [ ] **issue.md 相当の内容を読み込む**（対象ビルドの定義: やること/やらないこと/受け入れ基準）。`issue_backend` により取得元が異なる（詳細は `${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/backends.md`）
-  - `file`: `$ARGUMENTS[0]/build-{NN}/issue.md` を読む
-  - `github`: tasklist.mdの `issue` 列のリンクテキストから番号を抽出し、`gh issue view <番号>` で取得する
-  - `asana`: tasklist.mdの `task` 列のリンクテキストからgidを抽出し、Asana MCPツールで取得する
-  - `github`/`asana`の場合、取得した内容を `$ARGUMENTS[0]/build-{NN}/issue.md` にローカルキャッシュとして書き出す（`build-*/`パターンで`.gitignore`対象。以降のStepはbackendによらずこのファイルを参照する）
-- [ ] `$ARGUMENTS[0]/build-{NN}/` に既存の成果物（plan.md, test-spec.md, handoff.md 等のローカルキャッシュ）がないか確認する
-  - 存在する場合は過去のセッションで作業が途中まで進んでいるため、内容を読み込んで途中から再開する
-- [ ] `$ARGUMENTS[0]/architecture/codebase-survey.md` — 既存コードの構成・規約・拡張ポイント（存在する場合）
-- [ ] `$ARGUMENTS[0]/architecture/decisions.md` — 設計判断ログ（存在する場合）
-  - 採用理由とトレードオフを把握し、実装中に判断を覆さないようにする
-  - 覆す必要が生じた場合は新しい AD エントリを `decisions.md` に追記し、さらに `$ARGUMENTS[0]/build-{NN}/handoff.md` にも記録する
-    - 記録項目: **覆した AD 番号** / **覆した理由** / **影響範囲（変更したコンポーネント・後続ビルドへの波及）**
-- [ ] `$ARGUMENTS[0]/architecture/` — その他の関連する設計ドキュメントを参照
-- [ ] **依存ビルドのhandoff.md相当を読み込む**（`issue_backend` により取得元が異なる）
-  - `file`: 依存ビルドの `$ARGUMENTS[0]/build-{NN}/handoff.md` を読む
-  - `github`: 依存ビルドの `issue` 列のリンクテキストから番号を抽出し、`gh issue view <番号> --json comments` でsub-issueのコメント一覧を取得し、最新のhandoff投稿を読む
-  - `asana`: 依存ビルドの `task` 列のリンクテキストからgidを抽出し、Asana taskのコメントをMCPツール経由で取得する
-  - **直接依存するビルドの分のみ** 取得する（全ビルド分は読まない）
+- [ ] `cycles/{cycle}/build-{NN}/issue.md` を読む（対象ビルドの定義）
+- [ ] `cycle status` で既存の成果物を確認する
 
-→ すべて読み込めたら Step 3 へ。
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle} --root {HIKYAKU_ROOT}
+```
 
-### Step 3: ブランチ作成
+中断からの再開なら、どこまで進んだかが表示される。既存の成果物を読み込んで途中から再開する。
 
-- [ ] ビルド用のブランチを作成する
+- [ ] `docs list` で永続ドキュメントの所在を確認し、**今回のビルドに関係するものだけ**を読む
+  - `decisions` は採用理由とトレードオフを把握し、**実装中に判断を覆さない**
+  - 覆す必要が生じた場合は、覆した ADR・理由・影響範囲を **`handoff.md` に記録する**
+    （ADR 自体の更新は close-cycle が行う。あなたは永続ドキュメントを書き換えない）
+- [ ] `cycles/{cycle}/design/design-delta.md` を読む
+- [ ] **依存ビルドの `handoff.md` を読む**（直接依存するビルドの分のみ。全ビルド分は読まない）
 
-→ Step 4 へ。
+→ Step 2 へ。
 
-### Step 4: 実装計画の作成と承認
+### Step 2: ブランチ作成
 
-- [ ] 実装計画を作成するにあたっての確認点や不明点がある場合は `$ARGUMENTS[0]/build-{NN}/questions.md` でユーザーに質問する
-- [ ] すべての確認点や不明点が解消でき、ユーザーとすり合わせが出来たら `$ARGUMENTS[0]/build-{NN}/plan.md` を作成する
-    - `NN`は buildID をゼロ埋め2桁にしたもの（例: buildID 3 → build-03）
-    - テンプレートは [templates.md](references/templates.md) の「plan.md（実装計画）」を使用する
-    - **plan.md に含めるもの:** 依存パッケージの選定、クラス設計（メソッドシグネチャ）、セキュリティ等の非機能要件
-    - **plan.md に含めないもの:** 詳細な実装コード、テストコードの実装方法
-- [ ] `plan_review` が `true`（デフォルト）の場合、`doc-reviewer` エージェントを起動する（`context: plan`）
-  - 渡す情報: `$ARGUMENTS[0]/build-{NN}/plan.md`, `$ARGUMENTS[0]/build-{NN}/issue.md`, `architecture/` 配下の関連ドキュメント, 依存ビルドの `handoff.md`
-  - 出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/agents/doc-reviewer.md` を参照
-  - 返ってきた指摘のうち、明確な不整合・網羅漏れは plan.md に反映する（主観的な指摘は無視してよい）
-- [ ] plan.md の内容を、doc-reviewer の指摘（あれば）と併せてユーザーに提示し、承認を得る
-- [ ] `issue_backend` が `file` 以外の場合、`/hikyaku:build-manager $ARGUMENTS[0]` を呼び出し、承認済みplan.mdの内容を対応する外部レコード（sub-issueコメント / Asana taskコメント）に記録する
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch name build-{NN} {cycle} --root {HIKYAKU_ROOT}
+```
 
-→ 承認を得たら Step 5 へ。フィードバックがあれば plan.md に反映し、Step 4 の承認からやり直す（`issue_backend` が `file` 以外の場合、再承認後に外部レコードへの記録も更新する）。
+返ってきた名前でブランチを作成する。**このブランチの存在が「着手中」の印**になるので、
+早めに push しておくと他セッションとの衝突を避けられる。
 
-### Step 5: テストシナリオ作成と承認
+→ Step 3 へ。
 
-テストケースの洗い出し過程のコンテキスト消費を避けるため、メインセッションでは直接作成しない。
+### Step 3: 実装計画とテストシナリオの作成
 
-- [ ] **Agent に委任して** `$ARGUMENTS[0]/build-{NN}/test-spec.md` を生成させる
-  - Agent に渡す情報: `plan.md`, `issue.md`, `architecture/` 配下の関連ドキュメント
-  - Agent に渡すプロンプトに以下のフォーマット指定を必ず含めること
-  - **承認時のユーザーの関心:** 受け入れ基準の網羅性、正常系・異常系・境界値のカバー範囲、不要・過剰なテストの有無
+- [ ] 不明点があれば `cycles/{cycle}/build-{NN}/questions.md` でユーザーに質問する
+- [ ] `cycles/{cycle}/build-{NN}/plan.md` を作成する
+  - テンプレートは [templates.md](references/templates.md) を参照
+  - **含めるもの:** 依存パッケージの選定、クラス設計（メソッドシグネチャ）、非機能要件
+  - **含めないもの:** 詳細な実装コード、テストコードの実装方法
+- [ ] コミット & push する
+
+- [ ] **`plan_gate` が有効な場合**（strict のみ）、ここで plan.md の承認を得る（G7）
+  - それ以外のプロファイルでは Step 3 の最後にまとめて承認する（G8）
+
+- [ ] テストシナリオを **Agent に委任して** `cycles/{cycle}/build-{NN}/test-spec.md` を生成させる
+  - 洗い出し過程のコンテキスト消費を避けるため、メインセッションでは直接作成しない
+  - Agent に渡す情報: `plan.md`, `issue.md`, `design-delta.md`, 関連する永続ドキュメント
+  - テスト対象が無いビルド（ドキュメントのみ等）ではスキップしてよい
 
 Agent に渡すフォーマット指定:
 
@@ -218,20 +141,28 @@ Agent に渡すフォーマット指定:
 - Given/When/Then は具体的な値を含める（例: `Given: メールアドレス "user@example.com" のユーザーが登録済み`）
 - 1シナリオ = 1つの検証観点に絞る。表形式は使わないこと
 ````
-- [ ] 生成された test-spec.md の内容を確認する
-  - `test_spec_review` が `true` の場合: 内容をユーザーに提示して承認を得る
-  - `test_spec_review` が `false` の場合: 承認ステップをスキップしてそのまま Step 6 へ進む
 
-→ 承認を得たら（または `test_spec_review = false` でスキップしたら）Step 6 へ。フィードバックがあれば test-spec.md に反映し、Step 5 の承認からやり直す。
+- [ ] コミット & push する
 
-### Step 6: コード生成
+- [ ] **`plan_review` が有効な場合**（light / standard / strict）、`doc-reviewer` を起動する（`context: plan`）
+  - 渡す情報: `plan.md`, `issue.md`, `design-delta.md`, 依存ビルドの `handoff.md`
+  - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
 
-- [ ] plan.md の実装ステップに沿って実装する（実装ステップのチェックボックスを完了ごとに更新する）
+- [ ] **plan.md と test-spec.md をまとめてユーザーに提示し、承認を得る（G8）**
+  - 承認観点: 実装ステップの妥当性 / 受け入れ基準の網羅性 / 正常系・異常系・境界値のカバー範囲 / 不要なテストの有無
+  - この承認は profile の管轄外で、どのプロファイルでも省略しない
+  - strict では G7 で plan を既に承認しているので、ここでは test-spec に焦点を当てる
+
+→ 承認を得たら Step 4 へ。フィードバックがあれば反映して承認からやり直す。
+
+### Step 4: コード生成
+
+- [ ] plan.md の実装ステップに沿って実装する（チェックボックスを完了ごとに更新する）
 - [ ] test-spec.md のシナリオに基づいてテストコードを生成する
 
-→ Step 7 へ。
+→ Step 5 へ。
 
-### Step 7: ローカル検証
+### Step 5: ローカル検証
 
 **全ての項目がパスするまで Push しない。**
 
@@ -239,109 +170,154 @@ Agent に渡すフォーマット指定:
 - [ ] エラーがあれば修正して再実行する
   - [retry-policy.md](references/retry-policy.md) の試行回数上限に従う
   - 上限に達したらユーザーに報告して判断を仰ぐ
-- [ ] すべての品質管理項目がパスしたことを確認する
+
+→ Step 6 へ。
+
+### Step 6: コードレビュー
+
+機械的検証だけでは検出できない品質・規約・セキュリティ観点をレビューする。
+
+- [ ] **`code_review` が有効な場合**（全プロファイル）、`code-reviewer` を起動する
+- [ ] **`security_review` の判定**
+
+| 設定値 | 挙動 |
+|---|---|
+| `off`（light / saving） | 起動しない |
+| `on`（strict） | 常に起動する |
+| `recommended`（standard） | **判定基準に該当する場合のみ、起動するか確認する** |
+
+`recommended` の場合、対象ビルドの `issue.md` と実際の diff を見て、
+`[review.security].triggers` に該当するか判定する。`config --json` の
+`security.triggers` に基準が入っている（未設定なら既定の3カテゴリ）。
+
+```
+- 個人情報・秘密情報を扱う（氏名/住所/連絡先/生年月日、パスワード、トークン、APIキー）
+- 認証・認可（ログイン、セッション、権限判定、アクセス制御）
+- 決済（支払い、カード情報、請求、返金）
+```
+
+該当する場合は**判定根拠を一行で示して確認する**。ヒューリスティックである以上
+外れるので、ユーザーが上書きできる形にする。
+
+```
+このビルドは「認証・認可」に該当する変更を含みます（auth/session.ts の権限判定を変更）。
+security_review を起動しますか？ [Y/n]
+```
+
+- [ ] エージェントは以下すべてで当該ブランチの変更を確認する（漏らさないため）
+  - `git status` — 変更ファイル一覧（未追跡含む）
+  - `git diff` — unstaged 差分
+  - `git diff --cached` — staged 差分
+  - `git diff $(git merge-base {BASE_BRANCH} HEAD)..HEAD` — base からのコミット済み差分
+  - 新規追加ファイル（未追跡）は Read tool で内容を読む
+- [ ] 担当範囲
+  - `code-reviewer`: スコープ準拠 / 規約準拠 / バグ・ロジック誤り / 冗長性
+  - `security-reviewer`: OWASP 系のセキュリティパターン違反
+- [ ] 指摘を統合する
+  - 同一箇所への重複指摘は1件に統合し、`security-reviewer` の指摘を優先する
+  - 「確度が低い懸念」は「確度: 要確認」ラベルを保持したまま別枠で提示する
+- [ ] 統合した指摘をユーザーに提示し、対応を決める
+  - **今修正する** — 修正して Step 5 に戻る
+  - **新ビルド化して後で対応** — `/hikyaku:build-manager` を呼び出して新ビルドを追加する
+  - **そのまま進める** — 指摘を `handoff.md` の「既知の制約・注意点」に記録する
+
+→ Step 7 へ。
+
+### Step 7: 申し送りの作成
+
+- [ ] `cycles/{cycle}/build-{NN}/handoff.md` を作成する
+  - テンプレートは [templates.md](references/templates.md) を参照
+  - **書く**: 実装内容の要約 / 後続ビルドが知るべき変更 / 意図的に残した未対応 /
+    **覆した設計判断とその理由** / 実装中に判明した新たな制約
+  - **書かない**: 実装の全詳細（コードが正）/ 一般的な進捗報告
+
+**handoff.md は close-cycle の昇格素材になる。** 恒久的な価値のある発見（落とし穴、
+アーキテクチャへの影響、新たな制約）はここに書いておけば、close-cycle が
+learnings / overview / constraints へ昇格させる。**あなたが永続ドキュメントを
+直接書き換えることはない。**
+
+- [ ] コミット & push する
 
 → Step 8 へ。
 
-### Step 8: コードレビュー
+### Step 8: PR 作成と完了記録
 
-機械的検証（lint / test / build）だけでは検出できない品質・規約・セキュリティ観点をレビューする。スコープ逸脱や規約違反、セキュリティ問題を申し送り作成前に潰す。
+- [ ] tasklist.md の PR 列を更新する
 
-- [ ] `code_review` と `security_review` が共に `false` の場合はこのステップをスキップして Step 9 へ
-- [ ] **`code-reviewer` と `security-reviewer` を並列起動する**（`code_review` が `false` の場合は `security-reviewer` のみ、`security_review` が `false` の場合は `code-reviewer` のみ起動する）
-  - 起動するエージェントに渡す情報: 対象ビルドのパス（`{DOC_ROOT}/build-{NN}/`）、`{DOC_ROOT}/build-{NN}/plan.md`, `{DOC_ROOT}/build-{NN}/issue.md`, `{DOC_ROOT}/architecture/conventions.md`（あれば）, `{DOC_ROOT}/architecture/codebase-survey.md`（あれば）
-  - 各エージェントは以下のコマンドすべてで当該ブランチの変更を確認する（未追跡・staged・unstaged・コミット済みを漏らさないため）:
-    - `git status` — 変更ファイル一覧（未追跡含む）
-    - `git diff` — unstaged 差分
-    - `git diff --cached` — staged 差分
-    - `git diff $(git merge-base {BASE_BRANCH} HEAD)..HEAD` — base ブランチ（Step 0 で解決した BASE_BRANCH）からの **コミット済み差分**。再開セッションや途中コミットを含むビルドではこの差分にしか実装が現れない
-    - 新規追加ファイル（未追跡）は Read tool で内容を読む
-  - 担当範囲:
-    - `code-reviewer`: スコープ準拠 / 規約準拠 / バグ・ロジック誤り / 冗長性
-    - `security-reviewer`: OWASP 系のセキュリティパターン違反
-  - 各エージェントは **証拠ベースの判定** で報告対象を絞る。出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/agents/code-reviewer.md` および `${CLAUDE_PLUGIN_ROOT}/agents/security-reviewer.md` を参照
-- [ ] 両エージェントから返ってきた指摘をメインセッションで統合する
-  - 同一箇所への重複指摘は1件に統合し、`security-reviewer` の指摘を優先採用する
-  - 各指摘の **根拠ラベル**（ドキュメント不整合 / バグ / Injection / 認可漏れ など）はそのまま残す
-  - `security-reviewer` の「確度が低い懸念」セクションの指摘は、重要度: 高/中/低の指摘とは区別し、「確度: 要確認」ラベルを保持したまま別枠で提示する（確定的な指摘と同列に扱わない）
-- [ ] 統合した指摘をユーザーに提示し、以下の選択肢で対応を決める
-  - **今修正する** — 該当箇所を修正し、Step 7（ローカル検証）に戻る
-  - **新ビルド化して後で対応** — `/hikyaku:build-manager $ARGUMENTS[0]` を呼び出して新ビルドを追加する。現在のビルドはそのまま進める
-  - **そのまま進める** — 指摘を handoff.md の「既知の制約・注意点」に記録した上で次のステップへ
-- [ ] 両エージェントが「指摘なし」（`security-reviewer` の「確度が低い懸念」も無し）の場合は、そのまま Step 9 へ進む
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist done {cycle} \
+  --id {buildID} --pr {PR の URL} --root {HIKYAKU_ROOT}
+```
 
-→ ユーザー選択に応じて対応後、Step 9 へ。
+**この変更は必ずこのビルドの PR に同梱する。** 先にデフォルトブランチへ入れると、
+未マージのビルドを完了と誤判定する。PR 列が非空であること自体が「マージ済み = 完了」を
+意味するのは、この同梱が守られているからこそ成立する。
 
-### Step 9: 申し送り作成
+- [ ] PR を作成する（タイトルは `hikyaku pr title build-{NN} {cycle} --build-title "{title}"` で生成）
+  - PR 作成前の承認は取らない。PR はレビューのための提案であって不可逆ではなく、
+    ユーザーが `/hikyaku:builder` を実行した時点で PR 作成まで依頼されている
+- [ ] 外部投影が有効な場合は同期を試みる（失敗してもワークフローは止めない）
 
-- [ ] 実装中に planning/ や architecture/ と異なる判断をした場合は、該当する設計ドキュメントを直接更新する
-  - 設計ドキュメントがソースオブトゥルースであり、handoff.md には設計ドキュメントに収まらない実装固有の文脈のみ残す
-- [ ] `$ARGUMENTS[0]/build-{NN}/handoff.md` を作成する
-  - テンプレートは [templates.md](references/templates.md) の「handoff.md（申し送り）」を使用する
-  - 後続ビルドがコンテキストを復元するため、以下を正確に記録する:
-    - 公開インターフェース — architecture/interfaces.md に反映済みの内容は省略し、差分・補足のみ
-    - 技術的判断の記録（ADR）— 実装中に行った判断とその理由
-    - 環境変更 — 新しい環境変数、DBマイグレーション、設定ファイル等
-    - 既知の制約・注意点 — 後続ビルドが知るべき前提や制約（Step 8 で「そのまま進める」を選んだ指摘もここに記録する）
-- [ ] `issue_backend` が `file` 以外の場合、`/hikyaku:build-manager $ARGUMENTS[0]` を呼び出し、handoff.mdの内容を対応する外部レコードに記録する
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external sync --root {HIKYAKU_ROOT}
+```
 
-→ Step 10 へ。
+**注意:** このビルドに依存する後続ビルドは、**この PR がマージされてから**開始すること。
+依存ビルドの完了判定はデフォルトブランチ上の `tasklist.md` の `PR` 列で行うため、
+マージ前に開始すると依存が未完了と判定される。依存関係のないビルドは並行して進められる。
 
-### Step 10: Push + PR作成
+→ Step 9 へ。
 
-- [ ] 変更を Push する
-- [ ] PR を作成する
-  - `issue_backend` が `github` の場合、tasklist.mdの`issue`列のリンクテキストから番号を抽出し、PR本文に `Closes #<番号>` を含める（PRマージ時にsub-issueが自動closeされ、後続ビルドの完了判定に使われる）
-- [ ] `$ARGUMENTS[0]/tasklist.md` のPR列を更新し、Pushする
+### Step 9: 振り返り
 
-**注意:** 後続ビルドのセッションは、このPRがマージされてから開始すること。
-- `issue_backend` が `file` の場合: 後続ビルドは main ブランチの `tasklist.md` を参照して依存ビルドの完了を確認するため、マージ前に開始すると依存が未完了と判定される
-- `issue_backend` が `github`/`asana` の場合: 完了判定はsub-issue/taskのライブ照会のため、マージ後にsub-issueがcloseされて初めて依存完了と判定される（マージ前に開始すると依存が未完了と判定される点は同じ）
+- [ ] `retrospective` 設定に従って `/hikyaku:retrospective {HIKYAKU_ROOT} {cycle} build-{NN}` を呼び出す
+- [ ] 完了後、次の状況を案内する
 
-→ Step 11 へ。
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle} --root {HIKYAKU_ROOT}
+```
 
-### Step 11: 振り返り
-
-- [ ] `/hikyaku:retrospective $ARGUMENTS[0] build-{NN}` を呼び出して振り返りを実施する
-- [ ] 振り返り完了後（またはスキップ後）、以下を案内する
+全ビルドが完了していれば、close-cycle を案内する。
 
 ```
 Build {NN} が完了しました。
 
-次のビルドを開始するには、新しいセッションで以下を実行してください:
-/hikyaku:builder $ARGUMENTS[0]
+（未完了のビルドがある場合）
+次のビルドを開始するには、新しいセッションで:
+/hikyaku:builder {HIKYAKU_ROOT} {cycle} {次のbuildID}
+
+（全ビルドが完了した場合）
+サイクルを締めるには、新しいセッションで:
+/hikyaku:close-cycle {HIKYAKU_ROOT} {cycle}
+
+実装は完了していますが、永続ドキュメントへの昇格がまだです。
+この状態が続くと、他サイクルが古い overview を「実装済みの現実」として
+読んでしまいます。速やかに実行してください。
 ```
 
 ---
 
-## ビルド管理（タスクの追加・変更）
+## ビルド管理（実装中のスコープ変更）
 
-実装中に以下の状況が発生した場合、`/hikyaku:build-manager $ARGUMENTS[0]` を呼び出してビルドの追加・変更を行う。
-build-manager がユーザー承認を含むビルド管理の全手順を実行する。
+実装中に以下が判明した場合、`/hikyaku:build-manager {HIKYAKU_ROOT} {cycle}` を呼び出す。
 
-**呼び出しタイミング:**
-- **Step 4（計画作成と承認）後** — issue.md のスコープが実際にはBP超過と判明 → ビルドの分割
-- **Step 6（コード生成）中** — 想定外の複雑さや未定義の依存が判明 → ビルドの追加・更新
-- **Step 8（コードレビュー）時** — 指摘の「新ビルド化して後で対応」を選択 → 新ビルドの追加
-- **Step 9（申し送り作成）時** — 意図的に先送りした作業を新ビルドとして記録 → ビルドの追加
+- **Step 3 後** — issue.md のスコープが実際には BP 超過 → ビルドの分割
+- **Step 4 中** — 想定外の複雑さや未定義の依存 → ビルドの追加・更新
+- **Step 6 時** — 指摘の「新ビルド化して後で対応」 → 新ビルドの追加
+- **Step 7 時** — 意図的に先送りした作業 → 新ビルドの追加
 
-**build-manager 呼び出し後の対応:**
-- 現在のビルドのスコープが変更された場合: plan.md を修正し、Step 4 の承認からやり直す（承認後、Step 5 で test-spec.md を再生成する）
+呼び出し後の対応:
+- 現在のビルドのスコープが変わった場合: plan.md を修正し、Step 3 の承認からやり直す
 - 新ビルドが追加されただけの場合: 現在の作業を続行する
-
----
 
 ## PRレビュー指摘への対応
 
-PRレビューで指摘を受けた場合、同じセッションまたは新しいセッションで以下の手順で修正する:
-
-- [ ] PRのレビューコメントを確認する
-- [ ] `$ARGUMENTS[0]/build-{NN}/plan.md` を参照してコンテキストを復元する
-- [ ] 指摘内容に基づいて修正を実装する
-- [ ] ローカル検証を実行する（Step 7 と同じ）
-- [ ] ドキュメント更新チェック — 修正内容に応じて以下を更新する:
-  - `$ARGUMENTS[0]/build-{NN}/` 配下 — plan.md, issue.md, test-spec.md, handoff.md
-  - `$ARGUMENTS[0]/architecture/` 配下 — interfaces.md, db-schema.md 等
-  - `$ARGUMENTS[0]/planning/` 配下 — 企画レベルの変更があった場合（稀）
+- [ ] PR のレビューコメントを確認する
+- [ ] `cycles/{cycle}/build-{NN}/plan.md` を参照してコンテキストを復元する
+- [ ] 修正を実装し、ローカル検証を実行する（Step 5 と同じ）
+- [ ] ドキュメント更新チェック — **サイクルドキュメントのみ**を更新する
+  - `cycles/{cycle}/build-{NN}/` — plan.md, issue.md, test-spec.md, handoff.md
+  - `cycles/{cycle}/design/design-delta.md` — 設計レベルの変更があった場合
+  - **永続ドキュメントは更新しない。** 昇格が必要な内容は handoff.md に記録する
 - [ ] Push する
-- [ ] `/hikyaku:retrospective $ARGUMENTS[0] build-{NN}` を呼び出す（既に retrospective.md が存在する場合は追記モードで動作する）
+- [ ] `/hikyaku:retrospective` を呼び出す（既に retrospective.md があれば追記モードで動作する）

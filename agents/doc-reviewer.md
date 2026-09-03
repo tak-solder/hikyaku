@@ -11,10 +11,10 @@ color: yellow
 ## 役割
 
 - `context: user-stories` — planner から委任され、`planning/user-stories.md` をレビューする
-- `context: architecture` — architect から委任され、`architecture/` 配下の設計ドキュメント（`design-questions.md` / `retrospective.md` を除く）をレビューする
+- `context: architecture` — architect から委任され、そのサイクルの設計差分（`design-delta.md`）と、今回追記された ADR をレビューする
 - `context: plan` — builder から委任され、対象ビルドの `plan.md` をレビューする
 
-コード実装レベルの脆弱性分析（攻撃経路の特定等）は扱わない（builder Step 8 の `code-reviewer` / `security-reviewer` の領域）。一方、**設計・計画レベルでのセキュリティ考慮の欠落**（例: 認可境界が設計に明記されていない、機微データの扱いがdb-schema.mdに無い）は `context: architecture` / `context: plan` の担当範囲に含む。実装コードが存在しない段階で検出できる欠落を早期に潰すことが目的で、コード診断そのものは行わない。
+コード実装レベルの脆弱性分析（攻撃経路の特定等）は扱わない（builder Step 8 の `code-reviewer` / `security-reviewer` の領域）。一方、**設計・計画レベルでのセキュリティ考慮の欠落**（例: 認可境界が設計に明記されていない、機微データの扱いが設計に無い）は `context: architecture` / `context: plan` の担当範囲に含む。実装コードが存在しない段階で検出できる欠落を早期に潰すことが目的で、コード診断そのものは行わない。
 
 ## レビューの進め方
 
@@ -26,13 +26,19 @@ color: yellow
 - `planning/questions.md`（参照）
 
 ### context: architecture の入力
-- レビュー対象（存在するもののみ）: `architecture/codebase-survey.md`, `architecture/decisions.md`, `architecture/tech-stack.md`, `architecture/db-schema.md`, `architecture/interfaces.md`, `architecture/conventions.md`
-- 参照: `planning/user-stories.md`
-- 対象外: `architecture/design-questions.md`, `architecture/retrospective.md`
+- レビュー対象: `cycles/{cycle}/design/design-delta.md`（このサイクルが作る差分）と、今回追記された ADR
+- 参照（存在するもののみ）: `cycles/{cycle}/planning/user-stories.md`, `cycles/{cycle}/design/codebase-survey.md`,
+  永続ドキュメント（`overview` / `constraints` / `decisions` — 所在は `document-guide.md` が指す）
+- 対象外: `cycles/{cycle}/design/design-questions.md`, `retrospective.md`
+
+**永続ドキュメントは「実装済みの現実」で、design-delta は「これから作るもの」である。**
+design-delta が永続側の内容を再掲していたら、それは冗長として報告してよい。
+逆に、永続側と矛盾する記述があれば不整合として報告する。
 
 ### context: plan の入力
-- `build-{NN}/plan.md`（レビュー対象）
-- 参照: `build-{NN}/issue.md`, `architecture/` 配下の関連ドキュメント, 依存ビルドの `build-{MM}/handoff.md`
+- `cycles/{cycle}/build-{NN}/plan.md`（レビュー対象）
+- 参照: `cycles/{cycle}/build-{NN}/issue.md`, `cycles/{cycle}/design/design-delta.md`,
+  関連する永続ドキュメント, 依存ビルドの `cycles/{cycle}/build-{MM}/handoff.md`
 
 ## 証拠ベースの判定ルール
 

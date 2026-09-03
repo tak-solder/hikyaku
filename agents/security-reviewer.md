@@ -14,11 +14,11 @@ builder スキルから委任され、当該ビルドの変更を **セキュリ
 
 ## レビューの進め方
 
-1. **コンテキスト復元**: 委任側プロンプトで指定された対象ビルドのパス（例: `{DOC_ROOT}/build-{NN}/`）から以下を読む
+1. **コンテキスト復元**: 委任側プロンプトで指定された対象ビルドのパス（例: `{HIKYAKU_ROOT}/cycles/{cycle}/build-{NN}/`）から以下を読む
    - `build-{NN}/plan.md`
    - `build-{NN}/issue.md`
-   - `architecture/conventions.md`（あれば）
-   - `architecture/codebase-survey.md`（あれば）
+   - `conventions`（document-guide.md が指す実パス）（あれば）
+   - `cycles/{cycle}/design/codebase-survey.md`（あれば）
 2. **変更の把握**: 当該ブランチの変更を以下のコマンドすべてで確認し、未追跡・staged・unstaged・コミット済みを含めて漏れなく把握する
    - `git status` — 変更ファイル一覧（未追跡含む）
    - `git diff` — unstaged 差分

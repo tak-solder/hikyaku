@@ -3,7 +3,7 @@ name: retrospective
 description: "Hikyaku 振り返り: セッション中のスキル外指示を分析し、改善提案を分類・記録する内部スキル。各フェーズから呼び出される。"
 user-invocable: false
 disable-model-invocation: false
-argument-hint: "{DOC_ROOT} {SUB_DIR}"
+argument-hint: "{HIKYAKU_ROOT} {cycle} {SUB_DIR}"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
   version: "2.0.0"
@@ -13,23 +13,49 @@ metadata:
 
 セッション全体を振り返り、改善提案を分類・記録する。
 
-**このスキルは hikyaku:planner / hikyaku:architect / hikyaku:builder からモデル呼び出しで使用される内部スキルです。**
+**このスキルは hikyaku:planner / hikyaku:architect / hikyaku:builder / hikyaku:close-cycle からモデル呼び出しで使用される内部スキルです。**
 ユーザーが直接呼び出すことは想定していません。hikyaku ワークフロー以外のコンテキストから呼び出された場合は、その旨をユーザーに伝えて終了してください。
 
 ## 引数
 
-- `$ARGUMENTS[0]`: DOC_ROOT — ワークフロードキュメントのルートパス
-- `$ARGUMENTS[1]`: SUB_DIR — 振り返りファイルを出力するサブディレクトリ（`planning`, `architecture`, `build-{NN}`）
+- `$ARGUMENTS[0]`: HIKYAKU_ROOT — Hikyaku ワークスペースのルートパス
+- `$ARGUMENTS[1]`: cycle — 対象サイクル（`{NNN}-{slug}`）
+- `$ARGUMENTS[2]`: SUB_DIR — 出力先サブディレクトリ（`planning`, `design`, `build-{NN}`, `close`）
 
-出力先: `$ARGUMENTS[0]/$ARGUMENTS[1]/retrospective.md`
+出力先: `$ARGUMENTS[0]/cycles/$ARGUMENTS[1]/$ARGUMENTS[2]/retrospective.md`
+
+## 2種類の学びを分けること
+
+振り返りには性質の異なる2種類が混ざる。**分けて記録する。**
+
+| 種類 | 行き先 |
+|---|---|
+| **Hikyaku スキル自体への改善提案** | retrospective.md に留める。永続ドキュメントには書かない |
+| **このリポジトリ固有の学び**（再現条件が明確な落とし穴、触ると波及する箇所） | retrospective.md に「昇格候補」として明記し、**close-cycle が `learnings` へ昇格させる** |
+
+v1 では retrospective.md が `.gitignore` されていたため、サイクルをまたいで学びが
+蓄積しなかった。v2 ではコミット対象になり、close-cycle が昇格素材として読む。
+
+昇格候補には次を書く。書けないものは昇格候補にしない。
+
+- **再現条件が明確**であること（「なんとなく遅い」ではなく「N=1000 でタイムアウトする」）
+- どのビルドで、いつ判明したか
+
+一般的なプログラミング知識や、「気をつける」だけの曖昧な注意は昇格候補にしない。
 
 ## 作業ステップ
 
 ### Step 0: 設定の確認
 
-- [ ] リポジトリルートの `.hikyaku.config` を読み込む（存在する場合のみ）
-- [ ] `$ARGUMENTS[0]/.hikyaku.config` が存在する場合は読み込み、`doc_root` を除くキーをリポジトリルートの設定にキー単位で上書きする
-  - `retrospective` の設定値を取得する（未設定の場合は `prompt`）
+- [ ] 設定を解決する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config --root $ARGUMENTS[0] \
+  --profile {サイクルの profile} --json
+```
+
+`reviews.retrospective` の値を取得する。profile ごとの既定は
+light / saving が `skip`、standard が `prompt`、strict が `auto`。
 
 設定値に応じて動作を決定する:
 - `skip`: 振り返りをスキップし、呼び出し元に制御を返す
@@ -51,8 +77,9 @@ metadata:
 
 - [ ] SUB_DIR からどのフェーズの振り返りかを判定する
   - `planning` → 企画フェーズ（ヘッダー: `企画フェーズ 振り返り`）
-  - `architecture` → 設計フェーズ（ヘッダー: `設計フェーズ 振り返り`）
+  - `design` → 設計フェーズ（ヘッダー: `設計フェーズ 振り返り`）
   - `build-{NN}` → 実装フェーズ（ヘッダー: `Build {NN}: {ビルド名} 振り返り`、issue.md からビルド名を取得）
+  - `close` → サイクル終了フェーズ（ヘッダー: `サイクル終了 振り返り`）
 - [ ] 出力先に既に `retrospective.md` が存在するか確認する（存在する場合は追記モード）
 
 → Step 3 へ。

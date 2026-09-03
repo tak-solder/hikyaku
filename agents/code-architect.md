@@ -17,8 +17,8 @@ architect スキルから委任され、与えられた観点（例: Minimal / C
 1. **観点の確認**: 委任側プロンプトで指定された観点と、対象とする設計判断（例: 認証方式、状態管理戦略）を確認する
 2. **要件の把握**: 以下を読み、対象ユーザー・受け入れ条件・既に確定した設計制約を確認する
    - `planning/user-stories.md` — ユーザーストーリーと受け入れ基準
-   - `architecture/design-questions.md` — Step 3 で確定したユーザー回答（存在する場合のみ）
-3. **既存資産の調査**: `architecture/codebase-survey.md` を読み、観点に合う既存パターン・拡張ポイントを把握する
+   - `cycles/{cycle}/design/design-questions.md` — Step 3 で確定したユーザー回答（存在する場合のみ）
+3. **既存資産の調査**: `cycles/{cycle}/design/codebase-survey.md` を読み、観点に合う既存パターン・拡張ポイントを把握する
 4. **設計案の構築**: その観点で最も整合性のある設計を1案構築する。**要件（user-stories、design-questions）から外れる案は出さない**
 5. **trade-off の明文化**: 採用しなかった他観点と比較した時の長所・短所、適している条件を整理する
 
