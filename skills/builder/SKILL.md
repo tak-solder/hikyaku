@@ -7,7 +7,7 @@ disable-model-invocation: true
 argument-hint: "[{DOC_ROOT}] [buildID|next]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "1.0.0"
+  version: "2.0.0"
 ---
 
 # Hikyaku Builder
@@ -72,7 +72,7 @@ $ARGUMENTS[0]/
 └── ...
 ```
 
-上記は `issue_backend = "file"`（デフォルト）の場合の構成です。`github`/`asana` を選択した場合、`build-{NN}/` 配下は丸ごと `.gitignore` 対象になりコミットされません（詳細は `skills/build-manager/references/backends.md`）。
+上記は `issue_backend = "file"`（デフォルト）の場合の構成です。`github`/`asana` を選択した場合、`build-{NN}/` 配下は丸ごと `.gitignore` 対象になりコミットされません（詳細は `${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/backends.md`）。
 
 ### あなたの役割（実装フェーズ）
 
@@ -93,8 +93,8 @@ $ARGUMENTS[0]/
 
 作業の開始前に必ず以下を実行する。
 
-- [ ] `<SKILL_ROOT>/references/templates.md`: 各種成果物のテンプレート（必須）
-- [ ] `<SKILL_ROOT>/references/retry-policy.md`: エラー発生時のリトライ方針（必須）
+- [ ] `${CLAUDE_PLUGIN_ROOT}/skills/builder/references/templates.md`: 各種成果物のテンプレート（必須）
+- [ ] `${CLAUDE_PLUGIN_ROOT}/skills/builder/references/retry-policy.md`: エラー発生時のリトライ方針（必須）
 - [ ] リポジトリルートの `.hikyaku.config` を読み込む（存在する場合のみ）
 - [ ] **DOC_ROOT を決定する**
   - `$ARGUMENTS[0]` が指定されている場合 → その値を DOC_ROOT として使用する
@@ -127,7 +127,7 @@ $ARGUMENTS[0]/
 ### Step 1: 対象ビルドの特定
 
 - [ ] `$ARGUMENTS[0]/tasklist.md` を読み込む
-- [ ] **ビルドの完了判定方法を確認する**（`issue_backend` により異なる。詳細は `skills/build-manager/references/backends.md`）
+- [ ] **ビルドの完了判定方法を確認する**（`issue_backend` により異なる。詳細は `${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/backends.md`）
   - `file`: 該当ビルドのPR列が非空
   - `github`: 該当ビルドの `issue` 列のリンクテキスト（`#<番号>`）から番号を抽出し、`gh issue view <番号> --json state` をライブ照会し、`state == "CLOSED"`
   - `asana`: 該当ビルドの `task` 列のリンクテキストからgidを抽出し、Asana MCPツールでタスク完了状態をライブ照会
@@ -144,7 +144,7 @@ $ARGUMENTS[0]/
 
 以下の順でドキュメントを読み込む:
 
-- [ ] **issue.md 相当の内容を読み込む**（対象ビルドの定義: やること/やらないこと/受け入れ基準）。`issue_backend` により取得元が異なる（詳細は `skills/build-manager/references/backends.md`）
+- [ ] **issue.md 相当の内容を読み込む**（対象ビルドの定義: やること/やらないこと/受け入れ基準）。`issue_backend` により取得元が異なる（詳細は `${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/backends.md`）
   - `file`: `$ARGUMENTS[0]/build-{NN}/issue.md` を読む
   - `github`: tasklist.mdの `issue` 列のリンクテキストから番号を抽出し、`gh issue view <番号>` で取得する
   - `asana`: tasklist.mdの `task` 列のリンクテキストからgidを抽出し、Asana MCPツールで取得する
@@ -181,7 +181,7 @@ $ARGUMENTS[0]/
     - **plan.md に含めないもの:** 詳細な実装コード、テストコードの実装方法
 - [ ] `plan_review` が `true`（デフォルト）の場合、`doc-reviewer` エージェントを起動する（`context: plan`）
   - 渡す情報: `$ARGUMENTS[0]/build-{NN}/plan.md`, `$ARGUMENTS[0]/build-{NN}/issue.md`, `architecture/` 配下の関連ドキュメント, 依存ビルドの `handoff.md`
-  - 出力フォーマットは `agents/doc-reviewer.md` を参照
+  - 出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/agents/doc-reviewer.md` を参照
   - 返ってきた指摘のうち、明確な不整合・網羅漏れは plan.md に反映する（主観的な指摘は無視してよい）
 - [ ] plan.md の内容を、doc-reviewer の指摘（あれば）と併せてユーザーに提示し、承認を得る
 - [ ] `issue_backend` が `file` 以外の場合、`/hikyaku:build-manager $ARGUMENTS[0]` を呼び出し、承認済みplan.mdの内容を対応する外部レコード（sub-issueコメント / Asana taskコメント）に記録する
@@ -259,7 +259,7 @@ Agent に渡すフォーマット指定:
   - 担当範囲:
     - `code-reviewer`: スコープ準拠 / 規約準拠 / バグ・ロジック誤り / 冗長性
     - `security-reviewer`: OWASP 系のセキュリティパターン違反
-  - 各エージェントは **証拠ベースの判定** で報告対象を絞る。出力フォーマットは `agents/code-reviewer.md` および `agents/security-reviewer.md` を参照
+  - 各エージェントは **証拠ベースの判定** で報告対象を絞る。出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/agents/code-reviewer.md` および `${CLAUDE_PLUGIN_ROOT}/agents/security-reviewer.md` を参照
 - [ ] 両エージェントから返ってきた指摘をメインセッションで統合する
   - 同一箇所への重複指摘は1件に統合し、`security-reviewer` の指摘を優先採用する
   - 各指摘の **根拠ラベル**（ドキュメント不整合 / バグ / Injection / 認可漏れ など）はそのまま残す

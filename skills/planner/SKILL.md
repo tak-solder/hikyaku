@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "[{DOC_ROOT}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "1.0.0"
+  version: "2.0.0"
 ---
 
 # Hikyaku Planner
@@ -64,7 +64,7 @@ $ARGUMENTS[0]/
 └── ...
 ```
 
-上記は `issue_backend = "file"`（デフォルト）の場合の構成です。`github`/`asana` を選択した場合、`build-{NN}/` 配下は丸ごと `.gitignore` 対象になりコミットされません（詳細は `skills/build-manager/references/backends.md`）。
+上記は `issue_backend = "file"`（デフォルト）の場合の構成です。`github`/`asana` を選択した場合、`build-{NN}/` 配下は丸ごと `.gitignore` 対象になりコミットされません（詳細は `${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/backends.md`）。
 
 ### あなたの役割（企画フェーズ）
 
@@ -83,7 +83,7 @@ $ARGUMENTS[0]/
 
 作業の開始前に必ず以下を実行する。
 
-- [ ] `<SKILL_ROOT>/references/templates.md`: 各種成果物のテンプレート（必須）
+- [ ] `${CLAUDE_PLUGIN_ROOT}/skills/planner/references/templates.md`: 各種成果物のテンプレート（必須）
 - [ ] リポジトリルートの `.hikyaku.config` を読み込む（存在する場合のみ）
 - [ ] **DOC_ROOT を決定する**
   - `$ARGUMENTS[0]` が指定されている場合 → その値を DOC_ROOT として使用する
@@ -182,7 +182,7 @@ DOC_ROOT を対象に、以下を **冪等に**（既に存在するものは上
   - **Step 3 ですり合わせた4項目（実現したいこと / 背景・目的 / 対象画面・対象データ / 制約・要件）は、`user-stories.md` 冒頭の「概要」セクションに反映する**。質問ループで補足や修正があれば最終内容を反映する
 - [ ] `user_stories_review` が `true`（デフォルト）の場合、`doc-reviewer` エージェントを起動する（`context: user-stories`）
   - 渡す情報: `$ARGUMENTS[0]/planning/user-stories.md`, `$ARGUMENTS[0]/planning/questions.md`
-  - 出力フォーマットは `agents/doc-reviewer.md` を参照
+  - 出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/agents/doc-reviewer.md` を参照
   - 返ってきた指摘のうち、明確な不整合・網羅漏れは user-stories.md に反映する（主観的な指摘は無視してよい）
 - [ ] planning/questions.md と planning/user-stories.md を、doc-reviewer の指摘（あれば）と併せてユーザーに提示し、承認を得る
 

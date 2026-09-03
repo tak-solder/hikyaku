@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "[{DOC_ROOT}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "1.0.0"
+  version: "2.0.0"
 ---
 
 # Hikyaku Architect
@@ -64,7 +64,7 @@ $ARGUMENTS[0]/
 └── ...
 ```
 
-上記は `issue_backend = "file"`（デフォルト）の場合の構成です。`github`/`asana` を選択した場合、`build-{NN}/` 配下は丸ごと `.gitignore` 対象になりコミットされません（詳細は `skills/build-manager/references/backends.md`）。
+上記は `issue_backend = "file"`（デフォルト）の場合の構成です。`github`/`asana` を選択した場合、`build-{NN}/` 配下は丸ごと `.gitignore` 対象になりコミットされません（詳細は `${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/backends.md`）。
 
 ### あなたの役割（設計フェーズ）
 
@@ -81,7 +81,7 @@ $ARGUMENTS[0]/
 
 作業の開始前に必ず以下を実行する。
 
-- [ ] `<SKILL_ROOT>/references/templates.md`: 各種成果物のテンプレート（必須）
+- [ ] `${CLAUDE_PLUGIN_ROOT}/skills/architect/references/templates.md`: 各種成果物のテンプレート（必須）
 - [ ] リポジトリルートの `.hikyaku.config` を読み込む（存在する場合のみ）
 - [ ] **DOC_ROOT を決定する**
   - `$ARGUMENTS[0]` が指定されている場合 → その値を DOC_ROOT として使用する
@@ -131,7 +131,7 @@ $ARGUMENTS[0]/
   - 各エージェントには以下を必ず返させる:
     - 担当観点の調査結果
     - **Key Files**: その観点で本セッションが直接読むべき5〜10ファイルのパスと役割
-  - 出力フォーマットは `agents/code-explorer.md` を参照
+  - 出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/agents/code-explorer.md` を参照
 
 - [ ] **Key Files をメインセッションで直接読む**
   - 各エージェントが返した Key Files の重複を排除する
@@ -189,7 +189,7 @@ $ARGUMENTS[0]/
     - **Clean**: 関心分離・抽象化重視、長期保守性優先
     - **Pragmatic**: 上記の中間。実装スピードと保守性のバランス
   - 各エージェントには「影響ファイル」「主要コンポーネントの責務」「Trade-off」を返させる
-  - 各観点の出力フォーマットは `agents/code-architect.md` を参照
+  - 各観点の出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/agents/code-architect.md` を参照
 - [ ] 各案を **trade-off表** にまとめ、**推奨案と理由** を明記してユーザーに提示する
 - [ ] ユーザーから「お任せ」と回答された場合も、推奨案を改めて提示し **明示的な確認** を得る（空回答として進めない）
 - [ ] ユーザーの採用案を確定する
@@ -219,7 +219,7 @@ $ARGUMENTS[0]/
 
 - [ ] `architecture_review` が `true`（デフォルト）の場合、`doc-reviewer` エージェントを起動する（`context: architecture`）
   - 渡す情報: Step 4c で作成した `architecture/` 配下のドキュメント（`design-questions.md` / `retrospective.md` を除く）, `$ARGUMENTS[0]/planning/user-stories.md`
-  - 出力フォーマットは `agents/doc-reviewer.md` を参照
+  - 出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/agents/doc-reviewer.md` を参照
   - 返ってきた指摘のうち、明確な不整合・網羅漏れは該当ドキュメントに反映する（主観的な指摘は無視してよい）
 - [ ] 設計ドキュメント（architecture/）の全内容を、doc-reviewer の指摘（あれば）と併せてユーザーに提示し、最終承認を得る
   - **承認観点:** 技術選定は妥当か、設計方針に問題はないか
@@ -231,7 +231,7 @@ $ARGUMENTS[0]/
 **この段階では tasklist.md・issue.md 相当への書き込みを一切行わない。** ビルドの追加・分割・依存関係の見直しをこのやり取りだけで完結させることで、`issue_backend` が `github`/`asana` の場合に外部システム（issue/タスク）の作成・削除が乱造されるのを防ぐ。
 
 - [ ] 設計ドキュメントに基づいてビルドの論理的な単位（タイトル・スコープ・依存関係）をドラフトとして列挙する
-- [ ] 各ビルドの概算BPを `skills/build-manager/references/bp-guide.md` の考え方に沿って見積もる（正式なBP見積もりは Step 5c の build-manager が行うため、ここでは分割要否の判断材料となる概算でよい）
+- [ ] 各ビルドの概算BPを `${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/bp-guide.md` の考え方に沿って見積もる（正式なBP見積もりは Step 5c の build-manager が行うため、ここでは分割要否の判断材料となる概算でよい）
 - [ ] ドラフトをユーザーに提示し、フィードバックがあれば同じドラフト上で修正を繰り返す（追加・削除・統合・分割）
 
 → ドラフトが確定したら Step 5c へ。

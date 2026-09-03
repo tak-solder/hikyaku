@@ -2,65 +2,64 @@
 
 ## tasklist.md
 
+`tasklist.md` の生成・更新はスクリプトが行います。手で書き換えず、
+`hikyaku tasklist add / update / done` を使ってください（依存グラフの再生成と
+循環依存の検証が同時に行われます）。
+
 ````markdown
-# ビルド一覧
+# ビルド一覧 — 002-billing
 
-| buildID | title | BP | dependencies | issue | PR |
-|---------|-------|----|--------------|-------|----|
-| 1 | DB基盤 | 2 | | [issue](./build-01/issue.md) | |
-| 2 | 認証API | 3 | 1,4 | [issue](./build-02/issue.md) | |
-| 3 | 投稿API | 3 | 2 | [issue](./build-03/issue.md) | |
-| 4 | 共通ユーティリティ | 2 | 1 | [issue](./build-04/issue.md) | |
+ビルドの完了判定は `PR` 列が非空かどうかで行います。
+`PR` 列の更新は当該ビルドの PR に同梱されるため、デフォルトブランチ上で
+`PR` 列が埋まっていること自体がマージ済みを意味します。
 
-## builder呼び出し
+依存関係のあるビルドは、先行ビルドがデフォルトブランチにマージ済みであることが必須です。
+依存関係がないビルドは並行実行できます。
 
-```
-/hikyaku:builder {DOC_ROOT}
-```
+| buildID | title              | BP | dependencies | issue                        | PR         |
+| ------- | ------------------ | -- | ------------ | ---------------------------- | ---------- |
+| 1       | DB基盤             | 2  | —            | [issue](./build-01/issue.md) | pr/10      |
+| 2       | 認証API            | 3  | 1, 4         | [issue](./build-02/issue.md) | —          |
+| 3       | 投稿API            | 3  | 2            | [issue](./build-03/issue.md) | —          |
+| 4       | 共通ユーティリティ | 2  | 1            | [issue](./build-04/issue.md) | —          |
 
 ## 依存グラフ
 
 ```mermaid
-graph LR
-  1["#1 DB基盤"] --> 4["#4 共通ユーティリティ"]
-  1 --> 2["#2 認証API"]
-  4 --> 2
-  2 --> 3["#3 投稿API"]
+graph TD
+  b01["build-01: DB基盤"]
+  b02["build-02: 認証API"]
+  b03["build-03: 投稿API"]
+  b04["build-04: 共通ユーティリティ"]
+  b01 --> b02
+  b04 --> b02
+  b02 --> b03
+  b01 --> b04
 ```
-
-## ビルド要約
-
-ビルド要約はビルドの推奨解決順に並んでいるため、BuildIDが前後することがあります。
-
-### Build 01: DB基盤
-Prisma導入、DBマイグレーションの整備
-
-### Build 04: 共通ユーティリティ
-共通ユーティリティの整備（Build 01 から分割）
-
-### Build 02: 認証API
-メールアドレス・パスワード認証のAPI実装（セッション管理含む）
-
-### Build 03: 投稿API
-メッセージ投稿APIの実装
 ````
 
 **カラム説明:**
-- **buildID**: ビルドの一意識別子（ゼロ埋め2桁: 01, 02, ...）。作成順の連番で、実行順序とは一致しない場合がある
-- **title**: ビルド名
-- **BP**: ビルドポイント（bp-guide.md 参照）
-- **dependencies**: 依存ビルドID（カンマ区切り）。実行順序はこの依存グラフで決定される
-- **issue**: `build-{NN}/issue.md` への相対リンク（`[issue](./build-{NN}/issue.md)`）。build-manager が作成時に記録し、以後不変
-- **PR**: PR番号またはURL（BUILDフェーズ完了後に記入）
 
-**`issue_backend` による列の違い:** 上記は `issue_backend = "file"`（デフォルト）の場合の列構成です。`issue`/`task`列はどのbackendでもMarkdownリンク形式ですが、リンク先が異なります。`github` の場合は `issue` 列の値が `[#12](https://github.com/owner/repo/issues/12)` のようなissue URLへのリンクになります。`asana` の場合は `issue` 列が `task` 列に置き換わり、`[<gid>](<permalink_url>)` のようなAsana task URLへのリンクを記録します（issue.md自体はローカルに常設されず外部レコードが正のため、相対リンクではなくtask URLで参照する）。**`PR` 列はどのbackendでも共通で存在し**、builderがStep 10で記録します（`github`/`asana`では可視化目的のみで、完了判定には使いません）。詳細は [backends.md](backends.md) を参照してください。
+| 列 | 意味 |
+|---|---|
+| `buildID` | 作成順の連番。`max(既存) + 1` で採番し、リナンバリングは行わない |
+| `title` | ビルド名 |
+| `BP` | ビルドポイント（[bp-guide.md](bp-guide.md) 参照） |
+| `dependencies` | 依存ビルドID。実行順序はこの依存グラフで決まる |
+| `issue` | `build-{NN}/issue.md` への相対リンク。作成時に記録し以後不変 |
+| `PR` | **完了判定に使う唯一の列**。当該ビルドの PR に同梱して更新する |
 
-**依存グラフの書き方:**
-- テーブルの dependencies 列と同じ情報を Mermaid `graph LR` で記述する
-- ノードラベルは `buildID["#buildID title"]` の形式
-- エッジは `依存元 --> 依存先` の形式（依存元の完了後に依存先を実行可能）
+**`PR` 列を先にデフォルトブランチへ入れてはいけません。** 未マージのビルドを
+完了と誤判定します。`hikyaku tasklist done` の結果は、必ずそのビルドの PR に含めてください。
+
+**status 列は持ちません。** PR 列の更新が当該ビルドの PR に同梱される以上、
+デフォルトブランチ上で PR 列が埋まっていること自体が「マージ済み = 完了」を意味します。
+status 列を別に持つと「status は done だが PR 列が空」という嘘の状態が作れてしまいます。
 
 ## build-{NN}/issue.md
+
+issue.md の本文は build-manager（LLM）が書きます。tasklist.md の行は
+スクリプトが書きます。この分担により、長い Markdown をスクリプトへ渡す必要がなくなります。
 
 ```markdown
 # Build {NN}: {ビルド名}
@@ -71,10 +70,14 @@ Prisma導入、DBマイグレーションの整備
 
 ## やらないこと
 
-- （明示的なスコープ外）
+- （明示的なスコープ外。ここを書かないとスコープが膨らむ）
 
 ## 受け入れ基準
 
 - [ ] （完了条件1）
 - [ ] （完了条件2）
+
+## 参照する設計ドキュメント
+
+- （design-delta.md の該当箇所、永続ドキュメントの該当箇所）
 ```
