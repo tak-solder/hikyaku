@@ -143,17 +143,19 @@ export function validateGraph(builds: BuildRecord[]): GraphProblem[] {
   for (const build of builds) {
     for (const dep of build.dependsOn) {
       if (!ids.has(dep)) {
-        problems.push({ message: `build-${build.id} の依存 build-${dep} が存在しません` });
+        problems.push({
+          message: `${buildDirName(build.id)} の依存 ${buildDirName(dep)} が存在しません`,
+        });
       }
       if (dep === build.id) {
-        problems.push({ message: `build-${build.id} が自分自身に依存しています` });
+        problems.push({ message: `${buildDirName(build.id)} が自分自身に依存しています` });
       }
     }
   }
 
   for (const cycle of findCycles(builds)) {
     problems.push({
-      message: `依存グラフに循環があります: ${cycle.map((id) => `build-${id}`).join(" → ")}`,
+      message: `依存グラフに循環があります: ${cycle.map(buildDirName).join(" → ")}`,
     });
   }
 
