@@ -1,208 +1,280 @@
 # Hikyaku (飛脚)
 
-Hikyaku は **PLAN → ARCHITECT → BUILD の3フェーズ**で構成される、AIエージェント協働開発ワークフローです。Claude Code のプラグインとして配布され、Agent Skills の仕様に準拠しています。
-
+Hikyaku は **PLAN → ARCHITECT → BUILD → CLOSE の4フェーズ**で構成される、AIエージェント協働開発ワークフローです。Claude Code のプラグインとして配布され、Agent Skills の仕様に準拠しています。
 
 ## 特徴
 
-- **プラグイン形式** — `claude plugin install` で導入可能。ワークフロー用ファイルの保存先ディレクトリも指定可能
+- **複数サイクルの並行実行** — 1リポジトリで複数のライン（サイクル）を同時に回せる
 - **セッション分離** — 各フェーズは別の AI セッションが担当し、コンテキストウィンドウを効率的に使う
-- **ファイルベースの引き継ぎ** — セッション間の情報は `planning/`, `architecture/`, `handoff.md` 等のドキュメントで受け渡す
-- **ユーザー承認ゲート** — 各フェーズで必ずユーザーの承認を取り、誤りの波及を防ぐ
-- **振り返りによる自己改善** — 各フェーズ末に retrospective を作成し、スキル自体を継続的に改善する
+- **永続ドキュメントとサイクルドキュメントの分離** — 「実装済みの現実」と「これから作るもの」を混ぜない
+- **リポジトリがマスター** — issue も設計判断もリポジトリ側に置き、外部システムへは片方向で投影するだけ
+- **決定的な状態管理** — 状態は保存せず、ファイル・ブランチ・PR 列から導出する
+- **プロファイル** — 承認ゲートとレビューの量をサイクルごとに選べる
 
 ## インストール
 
-Claude Code の `/plugin` インターフェースまたは CLI から、本リポジトリのマーケットプレイスを追加してプラグインをインストールします。
-
 ```bash
-# マーケットプレイスを追加
 claude plugin marketplace add tak-solder/hikyaku
-
-# プラグインをインストール
 claude plugin install hikyaku@hikyaku
 ```
 
-ローカルチェックアウトから試す場合は `--plugin-dir` で読み込むこともできます:
+ローカルチェックアウトから試す場合:
 
 ```bash
 claude --plugin-dir /path/to/hikyaku
 ```
 
-インストール後はスキルが `/hikyaku:planner` のように **`hikyaku:` 名前空間付き**で呼び出せるようになります。
+インストール後はスキルが `/hikyaku:planner` のように **`hikyaku:` 名前空間付き**で呼び出せます。
+
+### 動作要件
+
+**Node.js v22.18.0 以上。** スクリプトは TypeScript のまま Node で直接実行します（型剥がしがフラグ無しで有効になる最小バージョンが v22.18.0 です）。実行時依存はゼロで、`npm install` もビルドも不要です。
+
+環境の確認:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" doctor
+```
 
 ## ワークフロー
 
-### スキル変数
-- **DOC_ROOT**: ワークフローのドキュメント（企画・設計・ビルド定義など）を保存するディレクトリ。リポジトリ内の任意のパスを指定できます。
-
 ```
-/hikyaku:planner {DOC_ROOT}              → {DOC_ROOT}/planning/ を生成
-      ↓ ユーザー承認
-/hikyaku:architect {DOC_ROOT}            → {DOC_ROOT}/architecture/ + {DOC_ROOT}/tasklist.md + {DOC_ROOT}/build-{NN}/issue.md を生成
-      ↓ ユーザー承認                        （build-manager でビルド管理）
-/hikyaku:builder {DOC_ROOT}              → {DOC_ROOT}/build-01/ を生成し、実装 → PR
-/hikyaku:builder {DOC_ROOT}              → {DOC_ROOT}/build-02/ を生成し、実装 → PR
-  ...（ビルド数分、各回別セッションで繰り返し）
-      　                                    （必要に応じて build-manager でビルド追加・分割）
+/hikyaku:init            → ワークスペースを初期化（リポジトリにつき1回）
+      ↓
+/hikyaku:create-cycle    → サイクルを作成し profile を選択
+      ↓
+/hikyaku:planner         → planning/ を生成
+      ↓
+/hikyaku:architect       → design/ + tasklist.md + build-NN/issue.md を生成
+      ↓
+/hikyaku:builder         → build-01 を実装 → PR
+/hikyaku:builder         → build-02 を実装 → PR   （依存が無ければ並行実行可）
+      ↓
+/hikyaku:close-cycle     → 永続ドキュメントへ昇格し、サイクルを closed に
 ```
 
-`/hikyaku:builder` は buildID を指定して特定ビルドを実行することもできます（例: `/hikyaku:builder {DOC_ROOT} 3`）。省略時は次のビルドを自動選択します。
+`init` と `create-cycle` は明示的に制御したいときの入口で、**planner が必要に応じて代行します**。実質の最短経路は4フェーズです。
 
 ### Phase 1: `/hikyaku:planner` — 企画
 
-既存の企画ドキュメントを読み込み、ユーザーストーリーとして構造化する。
+チケットと既存の企画メモを読み込み、そのサイクルのユーザーストーリーとして構造化します。
 
 - 不足・曖昧・矛盾する点を質問ループで解消
-- MoSCoW 優先度付きのユーザーストーリーを作成
 - **成果物**: `planning/questions.md`, `planning/user-stories.md`
 
 ### Phase 2: `/hikyaku:architect` — 設計
 
-企画成果物と既存コードベースを入力に、技術設計とビルド分割を行う。
+企画成果物と既存コードを入力に、**このサイクルの設計差分**とビルド分割を行います。
 
-- 既存コードを Agent で調査し `codebase-survey.md` を作成
-- 設計ドキュメント（tech-stack, db-schema, interfaces, conventions）を必要に応じて作成
-- 分岐評価で trade-off が非自明な判断は `decisions.md`（ADR）に採用理由・トレードオフを記録
-- `build-manager` を使い、BP 見積もり付きでビルド分割（1ビルド = 1セッションで完結する粒度）
-- **成果物**: `architecture/`, `tasklist.md`, `build-{NN}/issue.md`
+- 他に走行中のサイクルがあれば `cycle-scanner` で重複を検出
+- `overview` がある場合、既存コード調査は**差分だけ**を行う（2周目以降のコストが下がる）
+- 分岐評価で trade-off が非自明な判断は ADR に記録（`status: accepted`）
+- **永続ドキュメントは書き換えない。** 作るのは `design-delta.md`
+- **成果物**: `design/`, `tasklist.md`, `build-{NN}/issue.md`
 
 ### Phase 3: `/hikyaku:builder` — 実装
 
-1ビルド = 1セッションでコード実装から PR 作成までを完結させる。
+1ビルド = 1セッションでコード実装から PR 作成までを完結させます。
 
-- 設計ドキュメントと先行ビルドの `handoff.md` でコンテキストを復元
-- 実装計画 → テストシナリオ → コード生成 → ローカル検証 → PR
-- 実装中にスコープ超過や追加タスクが判明した場合、`build-manager` でビルドの追加・分割が可能
+- 依存関係のないビルドは**並行実行できる**
+- **永続ドキュメントは書き換えない。** 昇格が必要な内容は `handoff.md` に記録する
 - **成果物**: 実装コード, `plan.md`, `test-spec.md`, `handoff.md`, PR
 
-## ワークフローディレクトリ構造
+### Phase 4: `/hikyaku:close-cycle` — サイクル終了
+
+実装済みの成果を**永続ドキュメントへ昇格**させ、サイクルを締めます。
+
+- `handoff.md` / `retrospective.md` から昇格候補を抽出（サブエージェントに委任）
+- 昇格内容の取捨選択はユーザーが承認する
+- ADR の `status` を `accepted` → `implemented` に更新
+- **成果物**: 永続ドキュメントの更新, `cycles.md` の更新, PR
+
+## ディレクトリ構造
 
 ```
-{DOC_ROOT}/
-├── .gitignore                 # PLAN 初回実行時に自動生成（retrospective.md / test-spec.md / design-questions.md / build配下のquestions.md を除外）
-├── .hikyaku.config             # このワークフロー固有の設定上書き（任意、PLAN 初回実行時に雛形生成）
-├── instruction.md             # ワークフロー固有のインストラクション（任意）
-├── tasklist.md               # ビルド一覧（ARCHITECT で作成、BUILD で更新）
-├── planning/                  # 企画ドキュメント
-│   ├── questions.md
-│   ├── user-stories.md
-│   └── retrospective.md
-├── architecture/              # 設計ドキュメント
-│   ├── codebase-survey.md     # 既存コード調査（既存コードがある場合）
-│   ├── design-questions.md
-│   ├── decisions.md           # 設計判断ログ（ADR、分岐評価のあった判断のみ）
-│   ├── tech-stack.md          # 必要時のみ
-│   ├── db-schema.md           # 必要時のみ
-│   ├── interfaces.md          # 必要時のみ
-│   ├── conventions.md         # 必要時のみ
-│   └── retrospective.md
-├── build-01/
-│   ├── issue.md               # ビルド定義（ARCHITECT で作成）
-│   ├── plan.md                # 実装計画（BUILD で作成）
-│   ├── test-spec.md           # テストシナリオ（BUILD で作成）
-│   ├── questions.md           # 実装時の質問と回答（BUILD で作成、必要時のみ）
-│   ├── handoff.md             # 申し送り（BUILD で作成）
-│   └── retrospective.md      # 振り返り（BUILD で作成）
-├── build-02/
-│   └── ...
-└── ...
+リポジトリルート/
+├── .hikyaku.config            # 振る舞いの設定（ドキュメントの所在は含まない）
+├── AGENTS.md                  # 永続ドキュメントの索引ブロックが埋め込まれる
+├── docs/                      # 永続ドキュメント（所在はリポジトリ規約に従う）
+│   ├── overview.md
+│   ├── constraints.md
+│   ├── learnings.md
+│   └── adr/
+└── docs/hikyaku/              # HIKYAKU_ROOT
+    ├── .hikyaku.config        # このワークフロー固有の上書き（任意）
+    ├── document-guide.md      # 永続ドキュメントの所在を宣言（必須）
+    ├── cycles.md              # サイクル索引（必須）
+    ├── instruction.md         # ワークフロー独自の指示（任意）
+    └── cycles/
+        ├── 001-user-auth/
+        │   ├── planning/      # questions.md, user-stories.md
+        │   ├── design/        # design-delta.md, codebase-survey.md, design-questions.md
+        │   ├── tasklist.md
+        │   ├── build-01/      # issue.md, plan.md, test-spec.md, handoff.md
+        │   └── build-02/
+        └── 002-billing/
 ```
 
-上記は `issue_backend = "file"`（デフォルト）の場合の構成です。`github`/`asana` を選択した場合、**`build-{NN}/` 配下は丸ごと `.gitignore` 対象になり、コミットされません**（`issue.md`/`plan.md`/`handoff.md`は対応する外部レコード（GitHub sub-issue / Asana task）が正となり、`test-spec.md`/`questions.md`/`retrospective.md`はbackendによらず元々コミット対象外のため）。`tasklist.md`はどのbackendでも依存関係判定の唯一の真実としてコミット対象のまま変わりません。詳細は `skills/build-manager/references/backends.md` を参照してください。
+**永続ドキュメントは HIKYAKU_ROOT の外**にあり、リポジトリ側の規約に従った場所に置きます。所在は `document-guide.md` が宣言します。
 
-## 内部スキル
+## 設計の考え方
 
-以下のスキルはユーザーが直接呼び出すものではなく、各フェーズのスキルが必要に応じて自動的に呼び出します（プラグイン名前空間は `hikyaku:`）。
+### 永続ドキュメントは「コピーではなくポインタ」を持つ
 
-### `build-manager` — ビルド管理
+何を書くかは **復元コスト ÷ 陳腐化速度** で決めます。
 
-architect と builder から呼び出される内部スキル。ビルドの追加・更新・分割と依存グラフ管理、および issue/plan/handoff の永続化（`issue_backend` に応じてファイル / GitHub issue / Asanaタスク）を一元的に行う。
+| | 復元コスト | 陳腐化速度 | 判定 |
+|---|---|---|---|
+| DBスキーマの全テーブル定義 | 低（マイグレーションを読めばよい） | 速い | **書かない** |
+| 責務・境界・データフロー | 極めて高い（全ファイルを読んで推論） | 遅い | **書く** |
 
-- BP見積もり、tasklist.md の管理、issue.md 相当の作成・更新、plan.md/handoff.md の外部記録
-- 変更時はユーザー承認を必須とする
-- バックエンド別の手順は `skills/build-manager/references/backends.md` を参照
+`overview` に「主要テーブル: users, orders」と書くと腐り、しかも腐っていることに誰も気づけません。「スキーマの正は `db/migrations/`」というポインタなら腐らず、**パスが消えれば `hikyaku validate` が検出できます**。
 
-### `retrospective` — 振り返り
+そのため `tech-stack` / `db-schema` / `interfaces` は Hikyaku が作りません。リポジトリにあれば読みますが、コードと矛盾したら常にコードを正とします。
 
-各フェーズから呼び出される内部スキル。セッション中のスキル外指示を分析し、改善提案を分類・記録する。
+### 状態は保存せず導出する
 
-- 振り返り実施前にユーザーに確認し、不要ならスキップ可能
-- 改善提案の対象を判断フローに基づいて分類（`skill:` / `repo:` / `workflow:` / `記録のみ`）
-- PRレビュー対応後の追記モードにも対応
+保存するのは `cycles.md` の `status`（`active` / `closed` / `abandoned`）だけです。これはサイクルの生涯で2回しか変わりません。
 
-## インストラクションの優先順位
+| 知りたいこと | 導出方法 |
+|---|---|
+| フェーズ（planning / architecting / building / completed） | ファイルの存在 |
+| ビルドが着手中か | ブランチの存在（`git ls-remote`） |
+| ビルドが完了したか | `tasklist.md` の `PR` 列が非空 |
+| どこで中断したか | ブランチ上の成果物の有無 |
 
-Hikyaku は以下の優先順位でインストラクションを適用します:
+重複した状態は必ず腐り、しかも腐っていることに気づけないためです。
 
-1. **リポジトリ全体のインストラクション**（AGENTS.md, CLAUDE.md 等）
-2. **ワークフロー用インストラクション**（`{DOC_ROOT}/instruction.md`）
-3. **スキルの説明**（各 SKILL.md）
+### 承認ゲートは「確認」と「同意」を分ける
 
-`{DOC_ROOT}/instruction.md` はワークフロー固有のルールや制約を記述するためのファイルです。大きなリポジトリやモノレポの一部で Hikyaku を使う場合に、リポジトリ全体の規約とは別にワークフロー固有の指示を定義できます。このファイルは任意で、存在しなければスキップされます。
+profile で省略できるのは**確認**だけです。次の2つは**人間にしか下せない判断**なので、どのプロファイルでも省略しません。
+
+- **設計案の選択**（architect）— トレードオフの選択
+- **永続ドキュメント昇格の承認**（close-cycle）— 何を昇格させるかの取捨選択
 
 ## 設定ファイル（`.hikyaku.config`）
 
-`.hikyaku.config`（TOML形式）を配置することで、スキル呼び出し時の引数省略や動作のカスタマイズができます。すべての項目はオプションです。設定は2階層あり、**DOC_ROOT側の設定がリポジトリルート側の設定をキー単位で上書き**します（`doc_root` を除く）。
+TOML 形式。すべての項目がオプションです。**ドキュメントの所在は含みません**（`document-guide.md` が唯一の宣言先）。
 
-```
-リポジトリルート/.hikyaku.config   ← ベース設定（全ワークフロー共通）
-{DOC_ROOT}/.hikyaku.config         ← このワークフロー固有の上書き（任意）
-```
+設定は2階層あり、**HIKYAKU_ROOT 側がリポジトリルート側をキー単位で上書き**します（`hikyaku_root` を除く）。
 
 ```toml
-# ワークフロードキュメントのルートパス
-# 設定すると /hikyaku:planner, /hikyaku:architect, /hikyaku:builder の引数を省略できます
-# リポジトリルートの設定でのみ有効（DOC_ROOT側では指定できません）
-# doc_root = "docs/hikyaku"
+hikyaku_root = "docs/hikyaku"   # リポジトリルートでのみ有効
 
-# PRのベースブランチ（未設定時はリポジトリのデフォルトブランチを自動検出）
-# base_branch = "main"
+# サイクル作成時に提示する profile の既定値。
+# 無条件には採用されず、create-cycle が必ず明示的な選択を求めます。
+profile = "standard"
 
-# 振り返りのデフォルト動作: prompt（デフォルト）| auto | skip
-# retrospective = "prompt"
+base_branch = "main"            # 未設定ならデフォルトブランチを自動検出
+bp_max = 8
 
-# ビルド分割のBP上限（デフォルト: 8）
-# bp_max = 8
+[branch]
+# ブランチ名は {prefix}{separator}{cycle}{separator}{phase} で構成します。
+# 着手状態の導出にブランチ名を解析するため、構造は固定です。
+prefix = "hikyaku"
+separator = "/"                 # 空文字は不可（解析できなくなるため）
 
-# コードレビュー・セキュリティレビューの有効化（デフォルト: true）
-# code_review = true
-# security_review = true
+[pr]
+# PR タイトルは表示専用なので自由に組み立てられます。
+# 変数: {cycle} {cycle_id} {cycle_name} {phase} {build_id} {title}
+title = "[hikyaku] {cycle}: {phase} {title}"
 
-# test-spec.md 作成後の承認ゲートの有効化（デフォルト: true）
-# test_spec_review = true
+[review.security]
+# security_review を推奨する判定基準。設定すると既定値を丸ごと置き換えます。
+# 機微情報の定義はプロダクトごとに異なるため、自然言語で記述します。
+triggers = """
+- 個人情報・秘密情報を扱う
+- 認証・認可
+- 決済
+- このプロダクト固有: 診療記録テーブルに触れる変更
+"""
 
-# 中間成果物レビュー（doc-reviewer）の有効化（デフォルト: true）
-# user_stories_review = true
-# architecture_review = true
-# plan_review = true
-
-# issue・plan・handoffの保存先: file（デフォルト）| github | asana
-# issue_backend = "file"
-
-# [github]
-# # repo = "owner/repo"  # 省略時はカレントリポジトリ（issue_backend = "github" の場合のみ参照）
-
-# [asana]
-# project_gid = "..."    # issue_backend = "asana" の場合は必須。認証はユーザー設定済みのAsana MCPツールに委ねる
+[external]
+target = "none"                 # none | github | asana
+# github_repo = "owner/repo"
+# asana_project_gid = "..."
 ```
 
-`doc_root` を設定した場合、各スキルの引数を省略して呼び出せます:
+## プロファイル
+
+profile は**サイクルの属性**です。`create-cycle` で必ず明示的に選択し、`cycles.md` に記録されます。
+
+|  | 人間の承認回数 | AIレビュー |
+|---|---|---|
+| **light** | **少** | 有 |
+| **saving** | 多 | **無** |
+| **standard** | 多 | 有 |
+| **strict** | 最多 | 全部 |
+
+- **light** = 人間の時間を節約する（承認は減らすが AI には見させる）
+- **saving** = AI 実行コストを節約する（サブエージェントを起動しないが人間は見る）
+
+「承認少 + レビュー無」の組み合わせは意図的に用意していません。
+
+### 承認ゲート
+
+| # | フェーズ | ゲート | light | saving | standard | strict |
+|---|---|---|---|---|---|---|
+| G1 | planner | user-stories 承認 | ✗ | ✓ | ✓ | ✓ |
+| G2 | architect | codebase-survey 確認 | ✗ | ✗ | ✗ | ✓ |
+| G3 | architect | **設計案の選択** | ✓ | ✓ | ✓ | ✓ |
+| G4 | architect | 設計ドキュメント承認 | ✗ | ✓ | ✓ | ✓ |
+| G6 | build-manager | tasklist / issue 変更承認 | ✓ | ✓ | ✓ | ✓ |
+| G7 | builder | plan 単独の承認 | ✗ | ✗ | ✗ | ✓ |
+| G8 | builder | plan + test-spec 承認 | ✓ | ✓ | ✓ | ✓ |
+| G10 | close-cycle | **永続ドキュメント昇格の承認** | ✓ | ✓ | ✓ | ✓ |
+
+### レビュー
+
+| レビュー | light | saving | standard | strict |
+|---|---|---|---|---|
+| user_stories_review | ✓ | ✗ | ✓ | ✓ |
+| architecture_review | ✓ | ✗ | ✓ | ✓ |
+| plan_review | ✓ | ✗ | ✓ | ✓ |
+| code_review | ✓ | ✓ | ✓ | ✓ |
+| security_review | off | off | 推奨時のみ確認 | on |
+| retrospective | skip | skip | prompt | auto |
+| validate | 手動のみ | 手動のみ | 各フェーズ末 | 各ステップ |
+
+個別キー（`architecture_gate`, `plan_review` など）で profile の既定値を上書きできます。
+
+## CLI
+
+決定的な処理はすべてスクリプトが担います。`hikyaku help` が使い方を持つため、SKILL.md には「いつ、なぜ使うか」だけを書きます。
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" <command> [--root <path>] [--json] [--dry-run]
+```
 
 ```
-/hikyaku:planner      # doc_root で指定したパスを自動使用
-/hikyaku:architect
-/hikyaku:builder
+doctor / config / version / init / help
+next / validate
+docs      list / validate / link / scaffold
+cycle     new / list / status / close
+tasklist  read / add / update / done
+branch    name
+pr        title
+external  sync
 ```
 
-`/hikyaku:planner` の初回実行時、DOC_ROOT配下に以下が自動生成されます（既に存在する場合は変更しません）:
+- **書き込みコマンドはすべて `--dry-run` に対応**します。承認は常に呼び出し元のスキルが取り、スクリプトは「何が起きるか」を返す責務だけを持ちます
+- 終了コード: `0` 成功 / `1` エラー / `2` 検証失敗
 
-- **`{DOC_ROOT}/.gitignore`** — `retrospective.md` / `test-spec.md` など、セッションローカルでコミット対象外にすべき成果物のパターン
-- **`{DOC_ROOT}/.hikyaku.config`** — 全項目コメントアウト済みの雛形（このワークフロー固有の上書き用）
+### CI での利用
+
+実行時依存がゼロなので、clone するだけで動きます。
+
+```yaml
+- run: |
+    git clone --depth 1 --branch v2.0.0 https://github.com/tak-solder/hikyaku /tmp/hikyaku
+    node /tmp/hikyaku/scripts/hikyaku.mts validate
+```
+
+スキル内の `validate` は Hikyaku が書いたものしか見ませんが、CI から呼べば人間が手で編集した内容の不整合も拾えます。
 
 ## ビルドポイント（BP）
 
-ビルドポイント（BP）は、AIエージェントとの1セッション（20万トークン目安）で実装が完了するかどうかを判断するための定量指標です。ARCHITECT フェーズでビルド分割する際の基準として使用します。
+BP は、AIエージェントとの1セッション（20万トークン目安）で実装が完了するかを判断する定量指標です。
 
 | BP | 判定 |
 |----|------|
@@ -210,12 +282,31 @@ Hikyaku は以下の優先順位でインストラクションを適用します
 | 6〜8 | 分割推奨（分割コストが大きい場合のみ許容） |
 | 9〜 | 分割必須 |
 
-BP は以下の指標から算出します:
+詳細は `skills/build-manager/references/bp-guide.md` を参照してください。
 
-- **ベースBP** — 新規ファイル数・実装行数・API操作数・画面数・DBテーブル数のうち最大値
-- **加算BP** — 基盤セットアップ、外部API連携、大規模リファクタ、影響ファイル数の多さなど
+## 内部スキル
 
-合計 BP が 9 以上の場合は、ワークスペース・画面・ドメイン等の軸でビルドを分割し、各ビルドが BP 8 以下になるようにします。詳細な見積もり手順は `skills/build-manager/references/bp-guide.md` を参照してください。
+ユーザーが直接呼び出すものではなく、各フェーズのスキルが自動的に呼び出します。
+
+- **`build-manager`** — BP見積もりと分割単位の判断、issue.md の作成、承認。tasklist.md の更新はスクリプトが行う
+- **`retrospective`** — 振り返り。Hikyaku スキルへの改善提案と、リポジトリ固有の学び（close-cycle が `learnings` へ昇格させる）を分けて記録する
+
+## エージェント
+
+| エージェント | 用途 |
+|---|---|
+| `code-explorer` | 既存コード調査。`overview` が渡されると差分調査に切り替わる |
+| `cycle-scanner` | 走行中の他サイクルの設計差分を読み、重複を報告する（軽量モデル） |
+| `code-architect` | 指定観点の単一設計案を返す |
+| `code-reviewer` | スコープ・規約・バグ・冗長性を証拠ベースで報告 |
+| `security-reviewer` | OWASP 系のセキュリティ指摘 |
+| `doc-reviewer` | 中間成果物の整合性・網羅性を証拠ベースで報告 |
+
+## インストラクションの優先順位
+
+1. **リポジトリ全体のインストラクション**（AGENTS.md, CLAUDE.md 等）
+2. **ワークフロー用インストラクション**（`{HIKYAKU_ROOT}/instruction.md`）
+3. **スキルの説明**（各 SKILL.md）
 
 ## プラグイン構成
 
@@ -223,17 +314,29 @@ BP は以下の指標から算出します:
 ./
 ├── .claude-plugin/
 │   ├── plugin.json            # プラグインマニフェスト
-│   └── marketplace.json       # マーケットプレイス定義（リポジトリ自身を1プラグイン構成のマーケットプレイスとして配布）
-├── agents/                    # スキルから委任されるサブエージェント定義
-│   ├── code-explorer.md       # architect Step 2 で起動。既存コード調査と Key Files リストを返す
-│   ├── code-architect.md      # architect Step 4 で起動。指定観点の単一設計案を返す
-│   ├── code-reviewer.md       # builder Step 8 で security-reviewer と並列起動。スコープ・規約・バグ・冗長性を証拠ベースで報告
-│   ├── security-reviewer.md   # builder Step 8 で code-reviewer と並列起動。OWASP 系セキュリティ指摘を返す
-│   └── doc-reviewer.md        # planner/architect/builder の各承認前に起動。中間成果物の整合性・網羅性を証拠ベースで報告
+│   └── marketplace.json       # マーケットプレイス定義
+├── agents/                    # サブエージェント定義
+├── scripts/                   # CLI（TypeScript を Node で直接実行、実行時依存ゼロ）
+│   ├── hikyaku.mts
+│   ├── lib/
+│   └── commands/
 └── skills/
+    ├── init/                  # /hikyaku:init
+    ├── create-cycle/          # /hikyaku:create-cycle
     ├── planner/               # /hikyaku:planner
     ├── architect/             # /hikyaku:architect
     ├── builder/               # /hikyaku:builder
-    ├── build-manager/         # 内部スキル（model-invocable）。references/backends.md にバックエンド別I/O手順
-    └── retrospective/         # 内部スキル（model-invocable）
+    ├── close-cycle/           # /hikyaku:close-cycle
+    ├── build-manager/         # 内部スキル
+    └── retrospective/         # 内部スキル
 ```
+
+## v1 からの移行
+
+`/hikyaku:init` が v1 構造を検出し、**対話しながら**移行します。v1 ユーザーの状態は多様で、一律のルールでは捌けないためです。
+
+移行の中心は「ファイルを動かすこと」ではなく「**既存ドキュメントを `document-guide.md` に `repo` 管理として登録すること**」です。これにより `AD-N` 形式の ADR もそのまま使い続けられ、形式変換は不要になります。
+
+**進行中のサイクルがある場合は、プラグインのバージョンを固定して完走してから移行してください。**
+
+破壊的変更の一覧は [CHANGELOG.md](CHANGELOG.md) を参照してください。

@@ -28,6 +28,8 @@ import "./commands/cycle.mts";
 import "./commands/tasklist.mts";
 import "./commands/next.mts";
 import "./commands/validate.mts";
+import "./commands/external.mts";
+import "./commands/naming.mts";
 
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2));
