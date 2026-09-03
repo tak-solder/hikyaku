@@ -24,6 +24,7 @@ import "./commands/config.mts";
 import "./commands/doctor.mts";
 import "./commands/docs.mts";
 import "./commands/init.mts";
+import "./commands/cycle.mts";
 
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2));
