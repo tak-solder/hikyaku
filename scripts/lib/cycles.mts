@@ -77,9 +77,15 @@ export function parseCycles(source: string): CycleRecord[] {
   return table.rows
     .map((row) => {
       const rawStatus = cellText(row[2]);
-      const status = (CYCLE_STATUSES as string[]).includes(rawStatus)
-        ? (rawStatus as CycleStatus)
-        : "active";
+      // 不正な status を黙って active に落とすと、次の書き込みでその値が永続化され、
+      // closed のはずのサイクルが復活してしまう。誤りは黙って直さず報告する。
+      if (!(CYCLE_STATUSES as string[]).includes(rawStatus)) {
+        throw new HikyakuError(
+          `cycles.md の status が不正です: ${JSON.stringify(rawStatus)}（サイクル ${cellText(row[0])}）`,
+          `使用できる値: ${CYCLE_STATUSES.join(" | ")}`,
+        );
+      }
+      const status = rawStatus as CycleStatus;
       return {
         id: cellText(row[0]),
         slug: cellText(row[1]),

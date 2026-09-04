@@ -259,7 +259,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist done {cycle} \
 - [ ] 外部投影が有効な場合は同期を試みる（失敗してもワークフローは止めない）
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external sync --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external sync {target} {cycle} --root {HIKYAKU_ROOT}
 ```
 
 **注意:** このビルドに依存する後続ビルドは、**この PR がマージされてから**開始すること。
@@ -320,4 +320,4 @@ Build {NN} が完了しました。
   - `cycles/{cycle}/design/design-delta.md` — 設計レベルの変更があった場合
   - **永続ドキュメントは更新しない。** 昇格が必要な内容は handoff.md に記録する
 - [ ] Push する
-- [ ] `/hikyaku:retrospective` を呼び出す（既に retrospective.md があれば追記モードで動作する）
+- [ ] `/hikyaku:retrospective {HIKYAKU_ROOT} {cycle} build-{NN}` を呼び出す（既に retrospective.md があれば追記モードで動作する）

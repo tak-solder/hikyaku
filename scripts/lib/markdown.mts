@@ -90,10 +90,18 @@ export function escapeCell(text: string): string {
   return text.replace(/\|/g, "\\|");
 }
 
-/** 表示幅を揃えた Markdown テーブルを生成する */
+/**
+ * 表示幅を揃えた Markdown テーブルを生成する。
+ *
+ * セル内の `|` は必ずエスケープする。エスケープを忘れると行が余分な列に割れ、
+ * 再パース時に値が隣の列へずれる。tasklist.md では PR 列に issue リンクがずれ込み、
+ * 未着手のビルドが「完了」と誤判定されるため、静かなデータ破壊になる。
+ */
 export function renderTable(headers: string[], rows: string[][]): string {
-  const all = [headers, ...rows];
-  const widths = headers.map((_, column) =>
+  const escapedHeaders = headers.map(escapeCell);
+  const escapedRows = rows.map((row) => padRow(row, headers.length).map(escapeCell));
+  const all = [escapedHeaders, ...escapedRows];
+  const widths = escapedHeaders.map((_, column) =>
     Math.max(...all.map((row) => cellWidth(row[column] ?? ""))),
   );
 
@@ -101,7 +109,7 @@ export function renderTable(headers: string[], rows: string[][]): string {
     `| ${cells.map((cell, i) => cell + " ".repeat((widths[i] ?? 0) - cellWidth(cell))).join(" | ")} |`;
 
   const separator = `| ${widths.map((w) => "-".repeat(Math.max(w, 3))).join(" | ")} |`;
-  return [line(headers), separator, ...rows.map((row) => line(padRow(row, headers.length)))].join("\n");
+  return [line(escapedHeaders), separator, ...escapedRows.map(line)].join("\n");
 }
 
 function padRow(row: string[], length: number): string[] {

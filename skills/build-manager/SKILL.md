@@ -140,7 +140,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist add {cycle} \
 `[external] target` が `none` 以外の場合、書き込み後に投影を試みる。
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external sync --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external sync {target} {cycle} --root {HIKYAKU_ROOT}
 ```
 
 **投影は片方向で、マスターは常にファイル側。** 失敗してもワークフローは止めず、

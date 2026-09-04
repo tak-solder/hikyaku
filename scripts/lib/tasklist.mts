@@ -25,6 +25,16 @@ export interface BuildRecord {
 
 const EMPTY_CELLS = new Set(["", "—", "-"]);
 
+/**
+ * buildID を正規化する（`build-` 接頭辞とゼロ埋めを剥がす）。
+ * buildID 列と dependencies 列で正規化が食い違うと、
+ * 「build-02 の依存 build-01 が存在しません」のような自己矛盾した検証結果になる。
+ */
+export function normalizeBuildId(raw: string): string {
+  const stripped = raw.trim().replace(/^build-/i, "").replace(/^0+(?=\d)/, "");
+  return stripped;
+}
+
 function cellText(value: string | undefined): string {
   const trimmed = (value ?? "").trim();
   return EMPTY_CELLS.has(trimmed) ? "" : trimmed;
@@ -48,12 +58,12 @@ export function parseTasklist(source: string): BuildRecord[] {
       const bpText = cellText(row[2]);
       const bp = Number.parseInt(bpText, 10);
       return {
-        id: cellText(row[0]),
+        id: normalizeBuildId(cellText(row[0])),
         title: cellText(row[1]),
         bp: Number.isInteger(bp) ? bp : undefined,
         dependsOn: cellText(row[3])
           .split(/[,、]/)
-          .map((item) => item.trim().replace(/^build-/, "").replace(/^0+(?=\d)/, ""))
+          .map((item) => normalizeBuildId(item))
           .filter((item) => item !== ""),
         issue: cellText(row[4]),
         pr: cellText(row[5]),

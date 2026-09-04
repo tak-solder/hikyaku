@@ -252,7 +252,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate {cycle} --root {HIKYAK
 
 ### Step 6: 振り返りと PR
 
-- [ ] `retrospective` 設定に従って `/hikyaku:retrospective {HIKYAKU_ROOT} {cycle} architecture` を呼び出す
+- [ ] `retrospective` 設定に従って `/hikyaku:retrospective {HIKYAKU_ROOT} {cycle} design` を呼び出す
 - [ ] PR を作成する（タイトルは `hikyaku pr title architect {cycle}` で生成）
 
 **この PR も速やかにマージすることを想定している。** tasklist.md がデフォルトブランチに

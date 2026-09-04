@@ -1,6 +1,6 @@
 /** init — ワークスペースの雛形を冪等に生成する */
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { flagBoolean, flagString } from "../lib/args.mts";
 import { PROFILE_NAMES } from "../lib/config.mts";
@@ -53,8 +53,11 @@ register({
     const rel = relative(root, hikyakuRoot) || ".";
     const dryRun = flagBoolean(args, "dry-run");
 
+    const repoConfigPath = join(root, ".hikyaku.config");
+    const repoConfigIssues = inspectRepoConfig(repoConfigPath, rel);
+
     const planned: PlannedFile[] = [
-      plan(join(root, ".hikyaku.config"), renderRepoConfig(rel)),
+      plan(repoConfigPath, renderRepoConfig(rel)),
       plan(join(hikyakuRoot, ".hikyaku.config"), renderWorkspaceConfig()),
       plan(cyclesPath(hikyakuRoot), renderCyclesFile([])),
       plan(guidePath(hikyakuRoot), renderGuideScaffold()),
@@ -65,6 +68,7 @@ register({
         hikyakuRoot,
         dryRun,
         files: planned.map((f) => ({ path: relative(root, f.path), status: f.status })),
+        repoConfigIssues,
       },
       () => {
         const lines = [`HIKYAKU_ROOT: ${rel}`, ""];
@@ -73,8 +77,15 @@ register({
           const note = file.status === "create" ? "生成" : "既存のため変更しません";
           lines.push(`${mark} ${relative(root, file.path).padEnd(40)} ${note}`);
         }
+        if (repoConfigIssues.length > 0) {
+          lines.push(
+            "",
+            "⚠ 既存の .hikyaku.config に対応が必要です（このコマンドは既存ファイルを書き換えません）:",
+            ...repoConfigIssues.map((issue) => `  - ${issue}`),
+          );
+        }
         if (dryRun) lines.push("", "(--dry-run のため書き込んでいません)");
-        else if (planned.every((f) => f.status === "skip")) {
+        else if (planned.every((f) => f.status === "skip") && repoConfigIssues.length === 0) {
           lines.push("", "すべて既存のため、変更はありません。");
         }
         return lines.join("\n");
@@ -93,6 +104,41 @@ register({
 
 function plan(path: string, content: string): PlannedFile {
   return { path, content, status: existsSync(path) ? "skip" : "create" };
+}
+
+/**
+ * 既存のリポジトリルート設定を検査する。
+ *
+ * init は既存ファイルを決して上書きしないため、既に .hikyaku.config がある場合は
+ * hikyaku_root が記録されないまま終わる。黙って進むと、設定が古い doc_root を
+ * 指したままになり、以降のコマンドが別のパスを見にいく。必要な対応を明示する。
+ */
+function inspectRepoConfig(path: string, expectedRoot: string): string[] {
+  if (!existsSync(path)) return [];
+  const source = readFileSync(path, "utf8");
+  const issues: string[] = [];
+
+  const declared = /^\s*hikyaku_root\s*=\s*["']([^"']*)["']/m.exec(source)?.[1];
+  const legacy = /^\s*doc_root\s*=\s*["']([^"']*)["']/m.exec(source)?.[1];
+
+  if (declared === undefined && legacy !== undefined) {
+    issues.push(
+      `doc_root = "${legacy}" は v1 のキーです。hikyaku_root = "${expectedRoot}" にリネームしてください`,
+    );
+  } else if (declared === undefined) {
+    issues.push(`hikyaku_root = "${expectedRoot}" を追記してください`);
+  } else if (declared !== expectedRoot) {
+    issues.push(
+      `hikyaku_root が "${declared}" ですが、今回指定されたのは "${expectedRoot}" です。どちらが正しいか確認してください`,
+    );
+  }
+
+  if (/^\s*issue_backend\s*=/m.test(source)) {
+    issues.push(
+      "issue_backend は廃止されました。[external] target へ移行してください（完了判定が変わるため自動変換しません）",
+    );
+  }
+  return issues;
 }
 
 /** リポジトリルートの設定。hikyaku_root はここでのみ有効 */

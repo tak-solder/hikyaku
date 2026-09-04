@@ -166,7 +166,11 @@ register({
     const results: { buildId: string; action: string; ref: string }[] = [];
     for (const projection of projections) {
       try {
-        const number = /#(\d+)/.exec(projection.existing)?.[1];
+        // issue 列は `[#12](URL)` にも `https://github.com/o/r/issues/12` にもなりうる。
+        // どちらも既存として扱わないと、同期のたびに issue を作り直してしまう。
+        const number =
+          /\/issues\/(\d+)/.exec(projection.existing)?.[1] ??
+          /#(\d+)/.exec(projection.existing)?.[1];
         if (number === undefined) {
           const { stdout } = await run(
             "gh",

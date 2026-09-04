@@ -58,7 +58,22 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle} --root {HI
 
 → Step 1 へ。
 
-### Step 1: 素材の収集
+### Step 1: 振り返り
+
+**昇格より先に行う。** 後に回すと、この回の振り返りで出た学びを昇格させる機会が
+永久に無くなる（次の close-cycle は別のサイクルを見るため）。
+
+- [ ] `retrospective` 設定に従って次を呼び出す
+
+```
+/hikyaku:retrospective {HIKYAKU_ROOT} {cycle} close
+```
+
+`retrospective` が `skip` の場合はこのステップを飛ばす。
+
+→ Step 2 へ。
+
+### Step 2: 素材の収集
 
 サイクルが長い（ビルドが10本ある等）とコンテキストが厳しくなるため、
 **昇格候補の抽出はサブエージェントに委任する**。
@@ -71,9 +86,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle} --root {HI
   - `document-guide.md` — 昇格先の所在
 - [ ] エージェントには「候補リスト」だけを返させ、本文の執筆は本セッションで行う
 
-→ Step 2 へ。
+→ Step 3 へ。
 
-### Step 2: 昇格候補の整理
+### Step 3: 昇格候補の整理
 
 抽出された候補を、昇格先ごとに整理する。
 
@@ -98,9 +113,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle} --root {HI
 既存記述の削除・整理はしない。既存 ADR に status 欄が無くて実装状態が分からない
 場合も、勝手に欄を足さず**ユーザーに提案して判断を仰ぐ**。
 
-→ Step 3 へ。
+→ Step 4 へ。
 
-### Step 3: ユーザー承認（G10）
+### Step 4: ユーザー承認（G10）
 
 - [ ] 昇格候補を**昇格先ごとに**提示し、承認を得る
 
@@ -123,9 +138,9 @@ ADR:
 不可逆だからではなく、**何を昇格させるかの取捨選択は人間の判断だから**。
 自動化すると精度が落ちる。
 
-→ 承認を得たら Step 4 へ。
+→ 承認を得たら Step 5 へ。
 
-### Step 4: 書き込み
+### Step 5: 書き込み
 
 - [ ] 承認された内容を永続ドキュメントへ書き込む
 - [ ] `document-guide.md` を更新する（新規作成したドキュメントの管理列とパス列）
@@ -140,12 +155,12 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs link --root {HIKYAKU_ROOT}
 - [ ] 検証する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate {cycle} --root {HIKYAKU_ROOT}
 ```
 
-→ Step 5 へ。
+→ Step 6 へ。
 
-### Step 5: サイクルの終了
+### Step 6: サイクルの終了
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle close {cycle} \
@@ -156,11 +171,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle close {cycle} \
 
 **サイクルディレクトリは残す。** PR 履歴から辿れることに価値がある。
 
-→ Step 6 へ。
+→ Step 7 へ。
 
-### Step 6: 振り返りと PR
+### Step 7: PR 作成
 
-- [ ] `retrospective` 設定に従って `/hikyaku:retrospective` を呼び出す
 - [ ] ブランチを作成し（`hikyaku branch name close {cycle}`）、コミットして PR を作成する
 - [ ] 完了後、次を案内する
 

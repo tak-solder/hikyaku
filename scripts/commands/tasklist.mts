@@ -8,6 +8,7 @@ import { register } from "../lib/registry.mts";
 import {
   buildDirName,
   isComplete,
+  normalizeBuildId,
   renderGraph,
   validateGraph,
   type BuildRecord,
@@ -88,7 +89,7 @@ register({
       id,
       title,
       bp: flagInteger(args, "bp"),
-      dependsOn: (flagList(args, "deps") ?? []).map((dep) => dep.replace(/^build-0*/, "")),
+      dependsOn: (flagList(args, "deps") ?? []).map(normalizeBuildId),
       issue: flagString(args, "issue") ?? `[issue](./${buildDirName(id)}/issue.md)`,
       pr: "",
     };
@@ -113,7 +114,8 @@ register({
   ].join("\n"),
   run: ({ args, operands }) => {
     const ctx = context(args, operands[0]);
-    const id = flagString(args, "id")?.replace(/^build-0*/, "");
+    const rawId = flagString(args, "id");
+    const id = rawId === undefined ? undefined : normalizeBuildId(rawId);
     if (id === undefined) throw new HikyakuError("--id を指定してください");
 
     const target = ctx.builds.find((build) => build.id === id);
@@ -130,7 +132,7 @@ register({
       ...target,
       title: flagString(args, "title") ?? target.title,
       bp: flagInteger(args, "bp") ?? target.bp,
-      dependsOn: deps ? deps.map((dep) => dep.replace(/^build-0*/, "")) : target.dependsOn,
+      dependsOn: deps ? deps.map(normalizeBuildId) : target.dependsOn,
     };
 
     const next = ctx.builds.map((build) => (build.id === id ? updated : build));
@@ -153,7 +155,8 @@ register({
   ].join("\n"),
   run: ({ args, operands }) => {
     const ctx = context(args, operands[0]);
-    const id = flagString(args, "id")?.replace(/^build-0*/, "");
+    const rawId = flagString(args, "id");
+    const id = rawId === undefined ? undefined : normalizeBuildId(rawId);
     const pr = flagString(args, "pr");
     if (id === undefined) throw new HikyakuError("--id を指定してください");
     if (pr === undefined) throw new HikyakuError("--pr に PR の URL を指定してください");
