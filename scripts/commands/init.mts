@@ -141,7 +141,14 @@ function inspectRepoConfig(path: string, expectedRoot: string): string[] {
   return issues;
 }
 
-/** リポジトリルートの設定。hikyaku_root はここでのみ有効 */
+/**
+ * リポジトリルートの設定。hikyaku_root はここでのみ有効。
+ *
+ * テーブルの見出し（[branch] など）はコメントアウトしない。見出しごと
+ * コメントアウトすると、利用者がキーのコメントだけを外したときに
+ * そのキーがトップレベルへ落ちて黙って無視される。空テーブルは既定値へ
+ * フォールバックするので、見出しを出しておいても実害はない。
+ */
 function renderRepoConfig(hikyakuRoot: string): string {
   return [
     "# Hikyaku の設定（リポジトリ全体）",
@@ -161,28 +168,28 @@ function renderRepoConfig(hikyakuRoot: string): string {
     "# ビルド分割の BP 上限",
     "# bp_max = 8",
     "",
-    "# [branch]",
     "# ブランチ名は {prefix}{separator}{cycle}{separator}{phase} で構成します。",
     "# 着手状態の導出にブランチ名を解析するため、構造は固定です。",
+    "[branch]",
     '# prefix = "hikyaku"',
     '# separator = "/"        # 空文字は不可（解析できなくなるため）',
     "",
-    "# [pr]",
     "# PR タイトルは表示専用なので自由に組み立てられます。",
     "# 使える変数: {cycle} {cycle_id} {cycle_name} {phase} {build_id} {title}",
+    "[pr]",
     '# title = "[hikyaku] {cycle}: {phase} {title}"',
     "",
-    "# [review.security]",
     "# security_review を推奨する判定基準。設定すると既定値を丸ごと置き換えます。",
     "# 機微情報の定義はプロダクトごとに異なるため、自然言語で記述します。",
+    "[review.security]",
     "# triggers = \"\"\"",
     "# - 個人情報・秘密情報を扱う",
     "# - 認証・認可",
     "# - 決済",
     "# \"\"\"",
     "",
-    "# [external]",
     "# 外部システムへは冪等な片方向投影のみを行います。マスターは常にファイル側です。",
+    "[external]",
     '# target = "none"        # none | github | asana',
     '# github_repo = "owner/repo"',
     '# asana_project_gid = "..."',
