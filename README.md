@@ -53,7 +53,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" doctor
 /hikyaku:close-cycle     → 永続ドキュメントへ昇格し、サイクルを closed に
 ```
 
-`init` と `create-cycle` は明示的に制御したいときの入口で、**planner が必要に応じて代行します**。実質の最短経路は4フェーズです。
+`init` と `create-cycle` は明示的に制御したいときの入口で、**planner が必要に応じて代行します**。実質の最短経路は4フェーズです。逆に `create-cycle` から始めた場合も、そのまま PLAN へ続けられます（既定は続ける）。その場合はブランチと PR を PLAN のものに畳むので、PR は増えません。
+
+スキルにサイクルを渡すのは任意です（`/hikyaku:builder 002-billing`）。省略すると現在のブランチや前回の作業サイクルから決まり、決まらなければ尋ねます。**HIKYAKU_ROOT は渡しません** —— `.hikyaku.config` から解決されます。
 
 ### Phase 1: `/hikyaku:planner` — 企画
 
@@ -93,7 +95,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" doctor
 
 ```
 リポジトリルート/
-├── .hikyaku.config            # 振る舞いの設定（ドキュメントの所在は含まない）
+├── .hikyaku.config            # 振る舞いの設定（必須。ドキュメントの所在は含まない）
 ├── AGENTS.md                  # 永続ドキュメントの索引ブロックが埋め込まれる
 ├── docs/                      # 永続ドキュメント（所在はリポジトリ規約に従う）
 │   ├── overview.md
@@ -101,16 +103,18 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" doctor
 │   ├── learnings.md
 │   └── adr/
 └── docs/hikyaku/              # HIKYAKU_ROOT
-    ├── .hikyaku.config        # このワークフロー固有の上書き（任意）
     ├── document-guide.md      # 永続ドキュメントの所在を宣言（必須）
     ├── cycles.md              # サイクル索引（必須）
     ├── instruction.md         # ワークフロー独自の指示（任意）
+    ├── .hikyaku.local         # 最後に作業したサイクル（git 管理対象外）
+    ├── .gitignore             # .hikyaku.local の1行だけ
     └── cycles/
         ├── 001-user-auth/
-        │   ├── planning/      # questions.md, user-stories.md
-        │   ├── design/        # design-delta.md, codebase-survey.md, design-questions.md
+        │   ├── .hikyaku.config  # このサイクルだけの上書き（任意）
+        │   ├── planning/        # questions.md, user-stories.md
+        │   ├── design/          # design-delta.md, codebase-survey.md, design-questions.md
         │   ├── tasklist.md
-        │   ├── build-01/      # issue.md, plan.md, test-spec.md, handoff.md
+        │   ├── build-01/        # issue.md, plan.md, test-spec.md, handoff.md
         │   └── build-02/
         └── 002-billing/
 ```
@@ -145,6 +149,19 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" doctor
 
 重複した状態は必ず腐り、しかも腐っていることに気づけないためです。
 
+例外が1つだけあります。**「自分が最後に触ったサイクル」はリポジトリから導出できません** —— チーム開発では最後にコミットされたサイクルが他メンバーのものであることが普通だからです。これだけは `{HIKYAKU_ROOT}/.hikyaku.local`（git 管理対象外）に記録します。
+
+読むのは対象サイクルの決定だけで、`next` / `validate` / `cycle status` など判断に使う処理からは参照しません。指す先が無効なら黙って捨てて尋ね直すので、消えても支障はありません。
+
+スキルを `/hikyaku:builder` のようにサイクル指定なしで呼んだときは、次の順で対象が決まります。
+
+1. 引数での明示指定
+2. 現在のブランチ（そのブランチに居る以上に強い根拠はありません）
+3. `.hikyaku.local` の記録（`active` のもののみ）
+4. 進行中サイクルが1つだけならそれ
+
+決まらなければ候補を挙げて**ユーザーに尋ねます**。推測して別サイクルへコミットする事故を避けるためです。
+
 ### 承認ゲートは「確認」と「同意」を分ける
 
 profile で省略できるのは**確認**だけです。次の2つは**人間にしか下せない判断**なので、どのプロファイルでも省略しません。
@@ -154,9 +171,21 @@ profile で省略できるのは**確認**だけです。次の2つは**人間�
 
 ## 設定ファイル（`.hikyaku.config`）
 
-TOML 形式。すべての項目がオプションです。**ドキュメントの所在は含みません**（`document-guide.md` が唯一の宣言先）。
+TOML 形式。**ドキュメントの所在は含みません**（`document-guide.md` が唯一の宣言先）。
 
-設定は2階層あり、**HIKYAKU_ROOT 側がリポジトリルート側をキー単位で上書き**します（`hikyaku_root` を除く）。
+設定を置ける場所は2箇所だけです。
+
+| 場所 | 役割 |
+|---|---|
+| **リポジトリルート/`.hikyaku.config`** | **必須。** 設定のベース。`hikyaku_root` の唯一の宣言先 |
+| `{HIKYAKU_ROOT}/cycles/{NNN}-{slug}/.hikyaku.config` | 任意。そのサイクルだけキー単位で上書きする |
+
+サイクル側では次を上書きできません。指定するとエラーになります（黙って無視すると「設定したのに効かない」という最も気づきにくい壊れ方をするため）。
+
+| キー | 理由 |
+|---|---|
+| `hikyaku_root` / `base_branch` / `[branch]` / `[pr]` / `[session]` / `[external]` | リポジトリ全体の性質。とくにブランチ名は全サイクル横断で解析するため、サイクルごとに規則が変わると着手状態を導出できない |
+| `profile` | サイクルの属性で `cycles.md` が唯一の正。2箇所に持つと必ず食い違う |
 
 ```toml
 hikyaku_root = "docs/hikyaku"   # リポジトリルートでのみ有効
@@ -179,6 +208,10 @@ separator = "/"                 # 空文字は不可（解析できなくなる�
 # 変数: {cycle} {cycle_id} {cycle_name} {phase} {build_id} {title}
 title = "[hikyaku] {cycle}: {phase} {title}"
 
+[session]
+# セッション名。変数は [pr] と共通です。空文字なら変更しません。
+title = "{cycle} {phase} {title}"
+
 [review.security]
 # security_review を推奨する判定基準。設定すると既定値を丸ごと置き換えます。
 # 機微情報の定義はプロダクトごとに異なるため、自然言語で記述します。
@@ -194,6 +227,31 @@ target = "none"                 # none | github | asana
 # github_repo = "owner/repo"
 # asana_project_gid = "..."
 ```
+
+## 外部システムへの投影
+
+`[external] target` を設定すると、サイクルとビルドを外部システムへ**片方向で投影**します。マスターは常にファイル側で、読み取りにも完了判定にも外部システムを使いません。
+
+| 単位 | 内容 |
+|---|---|
+| **親** | サイクルに1つ。tasklist へのリンクとビルド一覧（完了状態つき） |
+| **子** | 各ビルドの `issue.md` |
+
+親が無ければ先に作るので、どのフェーズから同期を始めても収束します。通常は **PLAN の PR を作る直前**に最初の同期が走ります。その時点なら user-stories があって親の要約として成立し、以降のすべての PR が親を参照できるためです。
+
+参照は作成後に自動で記録します（親は `cycles.md` の外部列、子は `tasklist.md` の issue 列）。手で書き写す運用は必ず抜けます。
+
+**`gh` CLI が無い環境でも投影内容は返ります。** その場合はスキル側が GitHub MCP ツールで適用し、`hikyaku cycle link` / `hikyaku tasklist link` で参照を記録します。Asana も同じ形です（スクリプトからは外部 API を呼びません）。
+
+PR からのリンクは `hikyaku external ref` が1行で返します。
+
+| フェーズ | GitHub | Asana |
+|---|---|---|
+| build-NN | `Closes #12`（子 issue） | タスクの URL |
+| close | `Closes #10`（親 issue） | タスクの URL |
+| その他 | `Refs #10`（閉じない） | タスクの URL |
+
+**issue が閉じても完了判定には使いません。** 判定は常に `tasklist.md` の `PR` 列です。
 
 ## プロファイル
 
@@ -250,11 +308,12 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" <command> [--root <path>] [--js
 doctor / config / version / init / help
 next / validate
 docs      list / validate / link / scaffold
-cycle     new / list / status / close
-tasklist  read / add / update / done
-branch    name
+cycle     new / use / link / list / status / close
+tasklist  read / add / update / link / done
+branch    name / verify
 pr        title
-external  sync
+session   title
+external  sync / ref
 ```
 
 - **書き込みコマンドはすべて `--dry-run` に対応**します。承認は常に呼び出し元のスキルが取り、スクリプトは「何が起きるか」を返す責務だけを持ちます

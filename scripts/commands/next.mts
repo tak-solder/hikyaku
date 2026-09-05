@@ -55,7 +55,7 @@ register({
         const lines = [`cycle ${ctx.name}: ${state.phase}`, ""];
 
         if (state.phase !== "building") {
-          lines.push(`このサイクルはまだビルド段階ではありません。`, "", `  ${suggestCommand(state.phase, relativeRoot(config), ctx.name)}`);
+          lines.push(`このサイクルはまだビルド段階ではありません。`, "", `  ${suggestCommand(state.phase, ctx.name)}`);
           return lines.join("\n");
         }
 
@@ -96,7 +96,7 @@ register({
 
         if (available.length > 0) {
           const first = available[0];
-          lines.push("", `実行: /hikyaku:builder ${relativeRoot(config)} ${ctx.name} ${first?.id ?? ""}`);
+          lines.push("", `実行: /hikyaku:builder ${ctx.name} ${first?.id ?? ""}`);
         }
         return lines.join("\n");
       },
@@ -106,10 +106,4 @@ register({
 
 function dependencyNote(dependsOn: string[]): string {
   return dependsOn.length === 0 ? "  依存: なし" : `  依存: ${dependsOn.map(buildDirName).join(", ")}（完了）`;
-}
-
-function relativeRoot(config: { repoRoot: string; hikyakuRoot: string }): string {
-  return config.hikyakuRoot.startsWith(config.repoRoot)
-    ? config.hikyakuRoot.slice(config.repoRoot.length + 1) || "."
-    : config.hikyakuRoot;
 }

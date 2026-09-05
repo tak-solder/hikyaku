@@ -34,8 +34,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **`[review.security].triggers`**: security_review を推奨する判定基準を自然言語で記述できる。機微情報の定義はプロダクトごとに異なり、Hikyaku 側で列挙できないため
 - **ブランチ命名規則**: `{prefix}{separator}{cycle}{separator}{phase}`。着手状態の導出に解析するため構造は固定で、`prefix` と `separator` のみ設定可能
 
+- **サイクル固有の設定（`{HIKYAKU_ROOT}/cycles/{NNN}-{slug}/.hikyaku.config`）**: そのサイクルだけキー単位で上書きする。`hikyaku_root` / `base_branch` / `[branch]` / `[pr]` / `[session]` / `[external]` はリポジトリ全体の性質なので上書きできず、`profile` は `cycles.md` が唯一の正なので指定できない（いずれも黙って無視せずエラーにする）
+- **`hikyaku branch verify`**: 今いるブランチが命名規則に沿っているかを確認する。生成（`branch name`）はあっても検証が無く、エージェントが用意した別ブランチの上で作業してしまう事故を防げなかった。一致で `0`、不一致・別命名で `2` を返し、切り替えコマンドを提示する
+- **`[session] title`**: セッション名のテンプレート。変数は `[pr]` と共通で、空文字なら変更しない。`hikyaku session title` が生成する
+- **`.hikyaku.local`**: このチェックアウトで最後に作業したサイクルを記録する（git 管理対象外）。チーム開発では「最後にコミットされたサイクル」が他メンバーのものになるため、これだけはリポジトリから導出できない。読むのは対象サイクルの決定だけで、判断に使う処理からは参照しない。`hikyaku cycle use` で記録する
+- **外部システムへの親 issue**: サイクルに1つの親（tasklist へのリンクとビルド一覧）と、各ビルドの子を投影する。親が無ければ先に作るのでどのフェーズから同期しても収束するが、既定の生成タイミングは PLAN の PR 作成直前
+  - 参照は作成後に自動で記録する（親は `cycles.md` の外部列、子は `tasklist.md` の issue 列）。手で書き写す運用は必ず抜けるため
+  - `cycles.md` に**外部列**を追加した。列は並びではなく見出し名で読むようにしたので、外部列が無い既存ファイルもそのまま読める
+- **`hikyaku external ref`**: PR 本文へ入れる参照行を返す（build-NN と close は `Closes`、他フェーズは `Refs`。Asana はタスクの URL）。GitHub のクローズキーワードは `#12` か URL しか解釈しないため、Markdown リンクではなく素の番号で出す
+- **`hikyaku cycle link` / `hikyaku tasklist link`**: 外部システムへ投影した参照を記録する。gh CLI が使えない環境で、スキルが MCP ツール経由で投影した場合に使う
+
 ### Changed
 
+- **スキルは HIKYAKU_ROOT を引数に取らない**: `.hikyaku.config` から解決する。サイクルの指定も任意で、省略時は 現在のブランチ → `.hikyaku.local` → 唯一の進行中サイクル の順に決まる。決められないときは候補を挙げて**ユーザーに尋ねる**（推測して別サイクルへコミットする事故を避けるため）
+- **設定を置ける場所をリポジトリルートとサイクルディレクトリの2箇所にした**: リポジトリルートの `.hikyaku.config` を必須とし、`{HIKYAKU_ROOT}/.hikyaku.config` は生成も読み込みもしない。ドキュメントの所在が config から消えた時点で中間層の存在理由が無くなっていた。残っている場合は黙って無視せずエラーにして移行を促す
+- **`create-cycle` から PLAN へそのまま続けられるようにした**: 既定は「続ける」。続ける場合は `create` ブランチを作らず PLAN のブランチで作業し、PR を1本に畳む（成果物が `cycles.md` の1行だけであり、planner が代行する場合の前例に揃えた）
+- **gh CLI が無い場合も投影内容を返すようにした**: 警告して終わるのをやめ、`reason: "gh-not-found"` とともに投影内容を出す。スキル側が GitHub MCP ツールで適用し、`cycle link` / `tasklist link` で記録する。スクリプトから外部 API を呼ばない Asana 経路と同じ形に揃えた
+- **`tasklist.md` の `PR` 列を issue 列と同じ `[#12](URL)` 形式に整えるようにした**: 生の URL のままだと表が横に伸びて読めなくなるため。完了判定は「非空かどうか」の一点なので、表記の変更が判定に影響することはない
+- **`{HIKYAKU_ROOT}/.gitignore` を1行だけで復活させた**: 除外するのは `.hikyaku.local` のみ。v2 でいったん廃止したのは「除外すべきローカルキャッシュが無くなった」ためで、それが1つできたので前提が変わった。包括パターンは書かない（`retrospective.md` を巻き込むと close-cycle が読めなくなる）
 - **サイクル構造**: `{HIKYAKU_ROOT}/cycles/{NNN}-{slug}/` にサイクル単位でまとめる。永続ドキュメントは HIKYAKU_ROOT の外に置き、`document-guide.md` から参照する
 - **`DOC_ROOT` → `HIKYAKU_ROOT`**: 永続ドキュメントが外に出た以上、残りを DOC_ROOT と呼ぶのは実態と合わないため
 - **状態を保存せず導出する**: 保存するのは `cycles.md` の `status` 3値のみ。フェーズはファイルの存在から、着手中はブランチの存在から、完了は `tasklist.md` の `PR` 列から導出する
@@ -48,6 +64,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **成果物を1つ作るごとにコミット & push する**: コミットされていなければ中断検出が機能しない。コミットメッセージの形式はリポジトリ規約に従い、Hikyaku は関与しない
 - **`<SKILL_ROOT>` → `${CLAUDE_PLUGIN_ROOT}`**: 前者は公式の置換変数ではなく、LLM の推測に依存して動いていた
 - **G4 の承認観点を「反映の正しさ」に限定**: 技術選定は G3 で決着済みで、同じことを二度聞くのが承認ラウンドの冗長さの正体だった
+
+### Fixed
+
+- **config テンプレートのテーブル見出しがコメントアウトされていた**: `# [external]` のように見出しごとコメントアウトしていたため、キーのコメントだけを外すとそのキーがトップレベルへ落ち、設定が黙って無視されていた。見出しは常に生かし、キーだけをコメントアウトする
 
 ### Removed
 
@@ -94,6 +114,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 | **ディレクトリ構造** | `planning/` `tasklist.md` `build-NN/` は `cycles/{NNN}-{slug}/` 配下へ移動します（`cycles/001-legacy/` へのアーカイブが第一候補） |
 | **`architecture/` 配下** | 移動しません。`document-guide.md` に `repo` 管理として登録します |
 | **`retrospective.md` 等** | コミット対象になります。v1 では `.gitignore` されていたため、サイクルをまたいで学びが蓄積しませんでした |
+| **リポジトリルートの `.hikyaku.config`** | 必須になりました。`hikyaku_root` はここでのみ宣言できます |
+| **`{HIKYAKU_ROOT}/.hikyaku.config`** | 読み込まれません。**残っているとエラーになります。** 内容をリポジトリルートへ移して削除してください（黙って無視すると、設定したつもりの値が効かない状態になるため） |
+| **スキルの引数** | `{HIKYAKU_ROOT}` を渡さなくなりました。`/hikyaku:planner 002-billing` のようにサイクルだけを渡すか、省略します |
 
 `overview` が空の状態から始まるため、**初回サイクルの architect は差分調査ができず全体調査になります**（v1 と同じコスト）。初回の close-cycle で `overview` が作られ、2周目から差分調査が効きます。これは設計通りの挙動です。
 

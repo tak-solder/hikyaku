@@ -339,7 +339,7 @@ register({
         artifacts: state.artifacts,
         branches: inProgress,
         remoteUnavailable: remote.unavailable,
-        suggestion: suggestCommand(state.phase, relative(config.repoRoot, config.hikyakuRoot), name),
+        suggestion: suggestCommand(state.phase, name),
       },
       () => {
         const lines = [
@@ -370,7 +370,7 @@ register({
 
         lines.push(
           "",
-          `  再開: ${suggestCommand(state.phase, relative(config.repoRoot, config.hikyakuRoot), name)}`,
+          `  再開: ${suggestCommand(state.phase, name)}`,
         );
         return lines.join("\n");
       },

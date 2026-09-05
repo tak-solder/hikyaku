@@ -130,9 +130,12 @@ export function deriveState(
   return { phase: "building", artifacts: [], resumeAt: undefined, builds };
 }
 
-/** フェーズに対応する次の実行コマンドの案内 */
-export function suggestCommand(phase: DerivedPhase, hikyakuRoot: string, cycle: string): string {
-  const target = `${hikyakuRoot} ${cycle}`;
+/**
+ * フェーズに対応する次の実行コマンドの案内。
+ * スキルは HIKYAKU_ROOT を引数に取らない（設定から解決する）ので、渡すのはサイクルだけ。
+ */
+export function suggestCommand(phase: DerivedPhase, cycle: string): string {
+  const target = cycle;
   switch (phase) {
     case "planning":
       return `/hikyaku:planner ${target}`;
