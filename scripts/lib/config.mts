@@ -122,6 +122,8 @@ export const DEFAULT_SECURITY_TRIGGERS = `- 個人情報・秘密情報を扱う
 - 決済（支払い、カード情報、請求、返金）`;
 
 export const DEFAULT_PR_TITLE = "[hikyaku] {cycle}: {phase} {title}";
+/** セッション名の既定。空文字にするとセッション名を変更しない */
+export const DEFAULT_SESSION_TITLE = "{cycle} {phase} {title}";
 export const DEFAULT_BRANCH_PREFIX = "hikyaku";
 export const DEFAULT_BRANCH_SEPARATOR = "/";
 export const DEFAULT_BP_MAX = 8;
@@ -137,6 +139,8 @@ export interface ResolvedConfig {
   reviews: Reviews;
   branch: { prefix: string; separator: string };
   pr: { title: string };
+  /** セッション名のテンプレート。空文字なら変更しない */
+  session: { title: string };
   security: { triggers: string };
   external: { target: ExternalTarget; githubRepo?: string; asanaProjectGid?: string };
   /** 読み込んだ設定ファイルのパス（デバッグ用） */
@@ -158,7 +162,7 @@ export interface LoadOptions {
  * サイクル設定で上書きできないキー。いずれもリポジトリ全体の性質を表す。
  * profile は別メッセージで案内するため含めない。
  */
-const CYCLE_LOCKED_KEYS = ["hikyaku_root", "base_branch", "branch", "pr", "external"];
+const CYCLE_LOCKED_KEYS = ["hikyaku_root", "base_branch", "branch", "pr", "session", "external"];
 
 function readTable(table: TomlTable, key: string): TomlTable | undefined {
   const value = table[key];
@@ -427,6 +431,10 @@ function finalize(
       separator,
     },
     pr: { title: readString(readTable(merged, "pr"), "title", "[pr]") ?? DEFAULT_PR_TITLE },
+    session: {
+      title:
+        readString(readTable(merged, "session"), "title", "[session]") ?? DEFAULT_SESSION_TITLE,
+    },
     security: {
       triggers: readString(securityTable, "triggers", "[review.security]") ?? DEFAULT_SECURITY_TRIGGERS,
     },

@@ -64,6 +64,25 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
 `completed` でない場合はユーザーに確認する。未完了のビルドを残したまま締めるのは、
 サイクルを**中止（abandoned）**する場合に限る。
 
+- [ ] ブランチを作成し、命名規則どおりか確認する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch name close {cycle}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify close {cycle}
+```
+
+`branch name` が返した名前でブランチを作成（既にあれば切り替え）してから `branch verify` を実行する。
+終了コード 2 なら、表示された切り替えコマンドでブランチを移ってから続ける。
+**エージェントが用意した別のブランチの上では作業しない。**
+
+- [ ] セッション名を設定する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title close {cycle}
+```
+
+返ってきた名前をセッション名に設定する。設定する手段が無い環境ではスキップしてよい。
+
 → Step 1 へ。
 
 ### Step 1: 振り返り
@@ -183,7 +202,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle close {cycle} \
 
 ### Step 7: PR 作成
 
-- [ ] ブランチを作成し（`hikyaku branch name close {cycle}`）、コミットして PR を作成する
+- [ ] コミットする前に、もう一度ブランチを確認する（`hikyaku branch verify close {cycle}`）
+- [ ] コミットして PR を作成する（タイトルは `hikyaku pr title close {cycle}` で生成）
 - [ ] 完了後、次を案内する
 
 ```

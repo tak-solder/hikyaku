@@ -104,6 +104,27 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs list
 
 - [ ] `{HIKYAKU_ROOT}/instruction.md` を読む（存在する場合のみ）
 
+- [ ] ブランチを作成し、命名規則どおりか確認する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch name architect {cycle}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify architect {cycle}
+```
+
+`branch name` が返した名前でブランチを作成（既にあれば切り替え）してから `branch verify` を実行する。
+終了コード 2 なら、表示された切り替えコマンドでブランチを移ってから続ける。
+**エージェントが用意した別のブランチの上では作業しない。** 成果物をコミットする直前にも、
+もう一度この確認を行う。
+
+- [ ] セッション名を設定する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title architect {cycle}
+```
+
+返ってきた名前をセッション名に設定する。設定する手段が無い環境ではスキップしてよい。
+`[session] title` が空文字なら「変更しません」と返るので、その場合もスキップする。
+
 → Step 1 へ。
 
 ### Step 1: 並行サイクルの確認

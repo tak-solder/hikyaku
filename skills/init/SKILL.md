@@ -170,11 +170,15 @@ AGENTS.md はリポジトリ全体の AI 設定であり、チーム全体に影
 
 ### Step 6: コミットと PR
 
-- [ ] ブランチを作成する
+- [ ] ブランチを作成し、命名規則どおりか確認する
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch name init
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify init
 ```
+
+終了コード 2 なら、表示された切り替えコマンドでブランチを移ってから続ける。
+**エージェントが用意した別のブランチの上では作業しない。**
 
 - [ ] コミットして PR を作成する（タイトルは `hikyaku pr title init` で生成）
   - コミットメッセージの形式はリポジトリの規約に従う。Hikyaku は関与しない

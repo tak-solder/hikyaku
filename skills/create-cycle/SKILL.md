@@ -102,18 +102,58 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle new {slug} \
 cycles.md には**作成時の Hikyaku バージョン**も記録される。ディレクトリ構造や
 ファイル形式は作成時に決まるため、後からそれを解釈するのに必要になる。
 
+- [ ] 作業サイクルとして記録する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {NNN}-{slug}
+```
+
 → Step 4 へ。
 
-### Step 4: コミットと PR
+### Step 4: このまま PLAN へ進むか確認する
 
-- [ ] ブランチを作成する（`hikyaku branch name create {cycle}`）
+- [ ] ユーザーに確認する（**既定は「はい」**）
+
+```
+サイクル {NNN}-{slug} を作成しました（profile: {profile}）。
+このまま企画フェーズ（PLAN）に進みますか？ [Y/n]
+```
+
+**planner から代行された場合はこの確認をしない。** 既に PLAN の途中なので、
+そのまま planner へ戻る（この後のステップもすべて飛ばす）。
+
+- **はい** → Step 5 へ
+- **いいえ** → Step 6 へ
+
+### Step 5: PLAN へ続ける
+
+このサイクルの成果物は cycles.md の1行だけなので、**独立した PR にはしない**。
+`create` ブランチは作らず、最初から plan のブランチで作業して PLAN の PR に畳む。
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch name plan {NNN}-{slug}
+```
+
+- [ ] 返ってきた名前でブランチを作成し、cycles.md の変更をコミットする
+- [ ] `/hikyaku:planner {NNN}-{slug}` を呼び出す
+
+planner は Step 1 で同じブランチ名を検証するので、ブランチはそのまま引き継がれる。
+
+**ここで終了。以降のステップは実行しない。**
+
+### Step 6: 単独で終える場合のコミットと PR
+
+- [ ] ブランチを作成し、命名規則どおりか確認する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch name create {NNN}-{slug}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify create {NNN}-{slug}
+```
+
 - [ ] コミットして PR を作成する
 
 **cycles.md がデフォルトブランチに入らないと、他サイクルからこのサイクルが見えない。**
 並行サイクルの検出が機能しなくなるため、この PR は速やかにマージする。
-
-**planner から代行された場合はこのステップを飛ばす。** 成果物が cycles.md の1行
-だけなので、planner の PR に畳んだほうが PR 本数が減る。
 
 - [ ] 完了後、次を案内する
 

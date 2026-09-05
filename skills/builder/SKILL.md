@@ -107,14 +107,36 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
 
 → Step 2 へ。
 
-### Step 2: ブランチ作成
+### Step 2: ブランチとセッション名
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch name build-{NN} {cycle}
 ```
 
-返ってきた名前でブランチを作成する。**このブランチの存在が「着手中」の印**になるので、
-早めに push しておくと他セッションとの衝突を避けられる。
+返ってきた名前でブランチを作成する（既にあれば切り替える）。
+**このブランチの存在が「着手中」の印**になるので、早めに push しておくと
+他セッションとの衝突を避けられる。
+
+- [ ] ブランチが命名規則どおりか確認する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify build-{NN} {cycle}
+```
+
+終了コード 2 なら、表示された切り替えコマンドでブランチを移ってから続ける。
+**エージェントが用意した別のブランチの上では作業しない。** 成果物をコミットする
+直前にも、もう一度この確認を行う。
+
+- [ ] セッション名を設定する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title build-{NN} {cycle}
+```
+
+返ってきた名前をセッション名に設定する。設定する手段が無い環境ではスキップしてよい。
+`[session] title` が空文字なら「変更しません」と返るので、その場合もスキップする。
+
+`--build-title` にビルドのタイトルを渡すと、セッション名にビルド名まで入る。
 
 → Step 3 へ。
 
