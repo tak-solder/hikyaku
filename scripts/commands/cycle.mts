@@ -48,7 +48,7 @@ register({
   usage: "hikyaku cycle new <slug> --profile <name> [--ticket <ref>] [--depends 001,002] [--dry-run]",
   writes: true,
   details: [
-    "--profile は必須です。サイクルの厳格さは作成時に明示的に選ぶ必要があります",
+    "--profile は必須です。サイクルの進め方は作成時に明示的に選ぶ必要があります",
     `（${PROFILE_NAMES.join(" | ")}）。config の profile は推奨値の提示にすぎず、`,
     "無条件には採用しません。",
     "",
