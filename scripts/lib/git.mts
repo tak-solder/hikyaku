@@ -28,6 +28,32 @@ export function currentBranch(repoRootPath: string): string | undefined {
   return ref?.[1];
 }
 
+/**
+ * デフォルトブランチ。origin/HEAD が指す先から導出する。
+ *
+ * 設定の base_branch が正だが、未設定のときの自動検出をスクリプト側で持つ。
+ * origin/HEAD が無いクローンもあるので、分からなければ undefined を返す。
+ * 「分からない」を "main" と推測すると、main 以外を使うリポジトリで
+ * 「デフォルトブランチ上ではない」と誤判定する。
+ */
+export function defaultBranch(repoRootPath: string): string | undefined {
+  const gitDir = resolveGitDir(repoRootPath);
+  if (gitDir === undefined) return undefined;
+
+  const head = join(commonGitDir(gitDir), "refs", "remotes", "origin", "HEAD");
+  if (!existsSync(head)) return undefined;
+
+  return /^ref:\s*refs\/remotes\/origin\/(.+)$/m.exec(readFileSync(head, "utf8").trim())?.[1];
+}
+
+/** worktree では refs は共有される（HEAD だけが worktree 固有） */
+function commonGitDir(gitDir: string): string {
+  const pointer = join(gitDir, "commondir");
+  if (!existsSync(pointer)) return gitDir;
+  const target = readFileSync(pointer, "utf8").trim();
+  return isAbsolute(target) ? target : resolve(gitDir, target);
+}
+
 /** worktree では .git がファイルで、gitdir: の行が実体を指す */
 function resolveGitDir(repoRootPath: string): string | undefined {
   const dotGit = join(repoRootPath, ".git");

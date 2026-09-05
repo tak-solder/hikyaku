@@ -181,8 +181,9 @@ AGENTS.md はリポジトリ全体の AI 設定であり、チーム全体に影
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify init
 ```
 
-終了コード 2 なら、表示された切り替えコマンドでブランチを移ってから続ける。
-**エージェントが用意した別のブランチの上では作業しない。**
+`ok: true` ならそのまま、`onBaseBranch: true` なら `expected` の名前で作成する。
+`onBaseBranch` が `false` / `null`（既に別の作業ブランチに居る）なら、**ユーザーに尋ねる**。
+Hikyaku の規則に従う / 現在のブランチで作業する / ユーザーが指定する、の3つを提示する。
 
 - [ ] コミットして PR を作成する（タイトルは `hikyaku pr title init` で生成）
   - コミットメッセージの形式はリポジトリの規約に従う。Hikyaku は関与しない

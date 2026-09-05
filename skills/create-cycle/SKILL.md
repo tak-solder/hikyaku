@@ -134,10 +134,14 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {NNN}-{slug}
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify plan {NNN}-{slug}
 ```
 
-- [ ] 返ってきた名前でブランチを作成し、cycles.md の変更をコミットする
+`ok: true` ならそのまま、`onBaseBranch: true` なら `expected` の名前で作成する。
+`onBaseBranch` が `false` / `null`（既に別の作業ブランチに居る）なら、**ユーザーに尋ねる**。
+Hikyaku の規則に従う / 現在のブランチで作業する / ユーザーが指定する、の3つを提示する。
+
+- [ ] 決まったブランチで cycles.md の変更をコミットする
 - [ ] `/hikyaku:planner {NNN}-{slug}` を呼び出す
 
-planner は Step 1 で同じブランチ名を検証するので、ブランチはそのまま引き継がれる。
+planner も Step 1 で同じ確認をするが、ここで決めたブランチをそのまま使う（同じことを二度尋ねない）。
 
 **ここで終了。以降のステップは実行しない。**
 
@@ -148,6 +152,10 @@ planner は Step 1 で同じブランチ名を検証するので、ブランチ�
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify create {NNN}-{slug}
 ```
+
+`ok: true` ならそのまま、`onBaseBranch: true` なら `expected` の名前で作成する。
+`onBaseBranch` が `false` / `null`（既に別の作業ブランチに居る）なら、**ユーザーに尋ねる**。
+Hikyaku の規則に従う / 現在のブランチで作業する / ユーザーが指定する、の3つを提示する。
 
 - [ ] コミットして PR を作成する
 

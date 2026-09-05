@@ -4,7 +4,7 @@ import { flagString, type ParsedArgs } from "../lib/args.mts";
 import { branchName, isPhase, parseBranch, renderPrTitle, type Phase } from "../lib/branch.mts";
 import { loadConfig } from "../lib/config.mts";
 import { HikyakuError, ValidationError } from "../lib/errors.mts";
-import { currentBranch } from "../lib/git.mts";
+import { currentBranch, defaultBranch } from "../lib/git.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { openCycle } from "../lib/workspace.mts";
@@ -52,10 +52,24 @@ register({
     "**一致しないのが普通**です（まだそのブランチに居ないため）。",
     "",
     "  一致            終了コード 0",
-    "  不一致 / 別命名  終了コード 2。期待するブランチ名と切り替えコマンドを表示",
+    "  不一致           終了コード 2。期待するブランチ名と切り替えコマンドを表示",
     "",
     "終了コード 2 は「実行したが問題が見つかった」なので、実行できなかった場合",
     "（終了コード 1）と区別して扱えます。",
+    "",
+    "不一致のときの扱いは、現在のブランチがデフォルトブランチかどうかで変わります。",
+    "出力の onBaseBranch がこれを示します。",
+    "",
+    "  onBaseBranch: true   まだブランチを切っていないだけ。expected を作れば良い",
+    "  onBaseBranch: false  既に何らかの作業ブランチに居る。**どう扱うかは人間の判断**",
+    "  onBaseBranch: null   デフォルトブランチを特定できない（origin/HEAD が無い等）",
+    "",
+    "false と null のとき、スクリプトは「どうすべきか」を決めません。エージェントが",
+    "用意した別のブランチかもしれず、実行環境がブランチ名を決めているのかもしれず、",
+    "外からは区別できないためです。呼び出し元のスキルがユーザーに尋ねます。",
+    "",
+    "デフォルトブランチは base_branch の設定が正で、未設定なら origin/HEAD から",
+    "導出します。どちらも無ければ null にします（\"main\" と推測しません）。",
     "",
     "ブランチ名は着手状態の導出に解析されるため、構造は固定です。",
     "prefix と separator は [branch] で設定できますが、separator に空文字は指定できません",
@@ -75,21 +89,40 @@ register({
     const parsed = actual === undefined ? undefined : parseBranch(config.branch, actual);
     const ok = actual === expected;
 
-    emit({ ok, expected, actual, phase, cycle, parsed }, () => {
+    const base = config.baseBranch ?? defaultBranch(config.repoRoot);
+    // base が分からなければ true/false のどちらとも言えない。推測せず null で返す
+    const onBaseBranch = base === undefined || actual === undefined ? null : actual === base;
+
+    emit({ ok, expected, actual, phase, cycle, parsed, baseBranch: base ?? null, onBaseBranch }, () => {
       if (ok) return `✓ ${actual}`;
+
       const lines = [
         `期待するブランチ: ${expected}`,
         `現在のブランチ  : ${actual ?? "(detached HEAD)"}`,
+        `デフォルトブランチ: ${base ?? "(特定できません)"}`,
         "",
       ];
+
+      if (onBaseBranch === true) {
+        lines.push(
+          "デフォルトブランチに居ます。まだこのフェーズのブランチを切っていないだけなので、",
+          "期待する名前で作成してください。",
+          "",
+          `作成: git switch -c ${expected}`,
+        );
+        return lines.join("\n");
+      }
+
       lines.push(
         parsed === undefined
-          ? "現在のブランチは Hikyaku の命名規則に沿っていません。"
+          ? "既に作業ブランチに居ますが、Hikyaku の命名規則に沿っていません。"
           : `現在のブランチは ${parsed.cycle ?? "-"} の ${parsed.phase} を指しています。`,
-      );
-      lines.push(
         "",
-        `作成 / 切り替え: git switch ${expected} || git switch -c ${expected}`,
+        "**どのブランチで作業するかはユーザーに尋ねてください。** 実行環境がブランチ名を",
+        "決めている場合もあれば、別の作業のブランチに紛れ込んでいる場合もあり、",
+        "ここからは区別できません。",
+        "",
+        `Hikyaku の規則に従う場合: git switch ${expected} || git switch -c ${expected}`,
       );
       return lines.join("\n");
     });
