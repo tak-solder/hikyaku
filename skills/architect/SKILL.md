@@ -294,7 +294,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate {cycle}
 ### Step 6: 振り返りと PR
 
 - [ ] `retrospective` 設定に従って `/hikyaku:retrospective {cycle} design` を呼び出す
+- [ ] コミット前にブランチを確認する（`hikyaku branch verify architect {cycle}`）
+- [ ] 外部連携が有効なら、参照行を生成する（`hikyaku external ref architect {cycle}`）
 - [ ] PR を作成する（タイトルは `hikyaku pr title architect {cycle}` で生成）
+  - `external ref` が返した行（`Refs #12` など）を本文の末尾に入れる。空なら入れない
 
 **この PR も速やかにマージすることを想定している。** tasklist.md がデフォルトブランチに
 入らないと、builder が依存ビルドの完了を判定できない。

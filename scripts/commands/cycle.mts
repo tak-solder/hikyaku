@@ -22,7 +22,9 @@ import { deriveState, suggestCommand } from "../lib/phase.mts";
 import { emit, table } from "../lib/output.mts";
 import { pluginVersion } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
+import { formatRef } from "../lib/refs.mts";
 import { isComplete, loadTasklist } from "../lib/tasklist.mts";
+import { openCycle } from "../lib/workspace.mts";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -106,6 +108,7 @@ register({
       profile: profile as ProfileName,
       hikyaku: pluginVersion(),
       ticket: flagString(args, "ticket") ?? "",
+      external: "",
       dependsOn,
       started: today(),
       finished: "",
@@ -200,6 +203,47 @@ register({
     });
 
     if (!dryRun) writeLocalState(config.hikyakuRoot, name);
+  },
+});
+
+register({
+  name: "cycle link",
+  summary: "外部システムへ投影した親 issue / 親タスクの参照を記録する",
+  usage: "hikyaku cycle link [<cycle>] --external <url> [--dry-run]",
+  writes: true,
+  details: [
+    "cycles.md の外部列を埋めます。gh CLI が使える場合は external sync が自動で",
+    "記録するので、このコマンドを直接使うのは GitHub MCP や Asana MCP で",
+    "スキル側が投影した場合です。",
+    "",
+    "参照は `[#12](URL)` に整えて記録します。表記が揃っていないと表が横に伸びて",
+    "読めなくなるためで、判定に使う値ではありません（完了判定は常に PR 列）。",
+    "",
+    "外部システムはあくまで可視化のためのビューです。ここに記録された参照を",
+    "読み取りや完了判定に使うことはありません。",
+  ].join("\n"),
+  run: ({ args, operands }) => {
+    const { config, context: ctx } = openCycle(args, operands[0]);
+    const external = flagString(args, "external");
+    if (external === undefined) {
+      throw new HikyakuError("--external に親 issue / 親タスクの URL を指定してください");
+    }
+
+    const records = loadCycles(config.hikyakuRoot);
+    const formatted = formatRef(external, "親issue");
+    const next = records.map((record) =>
+      record.id === ctx.record.id ? { ...record, external: formatted } : record,
+    );
+    const dryRun = flagBoolean(args, "dry-run");
+
+    emit({ cycle: ctx.name, external: formatted, previous: ctx.record.external, dryRun }, () => {
+      const lines = [`${ctx.name} の外部列を ${formatted} にします`];
+      if (ctx.record.external !== "") lines.push(`（前の値: ${ctx.record.external}）`);
+      if (dryRun) lines.push("", "(--dry-run のため書き込んでいません)");
+      return lines.join("\n");
+    });
+
+    if (!dryRun) writeFileSync(cyclesPath(config.hikyakuRoot), renderCyclesFile(next), "utf8");
   },
 });
 

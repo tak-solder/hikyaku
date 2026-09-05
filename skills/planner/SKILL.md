@@ -209,7 +209,23 @@ profile ごとの有効・無効は Step 0 の `config --json` の `gates` / `re
 ### Step 6: 振り返りと PR
 
 - [ ] `retrospective` 設定に従って `/hikyaku:retrospective {cycle} planning` を呼び出す
+- [ ] コミット前にブランチを確認する（`hikyaku branch verify plan {cycle}`）
+- [ ] 外部連携が有効なら、親 issue を作る
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external sync {cycle}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref plan {cycle}
+```
+
+**親 issue はここで作る。** この時点なら user-stories があって親の要約として成立し、
+以降のすべての PR が親を参照できる。参照は `cycles.md` の外部列に記録され、この PR で
+デフォルトブランチに入るので、並行セッションからも見える。
+
+gh CLI が無い環境では投影内容だけが返る（`reason: "gh-not-found"`）。その場合は
+GitHub MCP ツールで適用し、`cycle link {cycle} --external {URL}` で記録する。
+
 - [ ] PR を作成する（タイトルは `hikyaku pr title plan {cycle}` で生成）
+  - `external ref` が返した行（`Refs #12` など）を本文の末尾に入れる。空なら入れない
 
 **このフェーズの PR はドキュメントのみで、速やかにマージすることを想定している。**
 デフォルトブランチに入っていない情報は他サイクルから見えないため。

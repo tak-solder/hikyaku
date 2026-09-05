@@ -203,7 +203,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle close {cycle} \
 ### Step 7: PR 作成
 
 - [ ] コミットする前に、もう一度ブランチを確認する（`hikyaku branch verify close {cycle}`）
+- [ ] 外部連携が有効なら、参照行を生成する（`hikyaku external ref close {cycle}`）
 - [ ] コミットして PR を作成する（タイトルは `hikyaku pr title close {cycle}` で生成）
+  - `external ref` が返した行（`Closes #12` など）を本文の末尾に入れる。
+    親 issue はこの PR のマージで閉じる
 - [ ] 完了後、次を案内する
 
 ```

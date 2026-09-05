@@ -12,6 +12,7 @@ import {
   validateGraph,
   type BuildRecord,
 } from "../lib/tasklist.mts";
+import { formatRef } from "../lib/refs.mts";
 import { openCycle, writeTasklist, type CycleContext } from "../lib/workspace.mts";
 
 function context(args: Parameters<typeof flagString>[0], key: string | undefined): CycleContext {
@@ -147,6 +148,10 @@ register({
   details: [
     "PR 列を埋めることがビルドの完了記録そのものです。status 列は持ちません。",
     "",
+    "URL は issue 列と同じ `[#12](URL)` の形に整えて記録します。番号を判別できない",
+    "場合は `[PR](URL)` になります。完了判定は「非空かどうか」の一点なので、",
+    "表記の違いが判定に影響することはありません。",
+    "",
     "この変更は当該ビルドの PR に同梱してください。そうすることで、デフォルト",
     "ブランチ上で PR 列が埋まっていること自体が「マージ済み = 完了」を意味します。",
     "先にデフォルトブランチへ入れてしまうと、未マージのビルドを完了と誤判定します。",
@@ -162,9 +167,41 @@ register({
     const target = ctx.builds.find((build) => build.id === id);
     if (!target) throw new HikyakuError(`${buildDirName(id)} が見つかりません`);
 
-    const updated: BuildRecord = { ...target, pr };
+    // issue 列と同じ `[#12](URL)` 形式に揃える。生の URL のままだと表が横に伸びる
+    const updated: BuildRecord = { ...target, pr: formatRef(pr, "PR") };
     const next = ctx.builds.map((build) => (build.id === id ? updated : build));
     finish(ctx, next, args, `${buildDirName(id)} を完了として記録します`, updated);
+  },
+});
+
+register({
+  name: "tasklist link",
+  summary: "外部システムへ投影した issue の参照を記録する",
+  usage: "hikyaku tasklist link [<cycle>] --id <n> --issue <url> [--dry-run]",
+  writes: true,
+  details: [
+    "tasklist.md の issue 列を埋めます。gh CLI が使える場合は external sync が",
+    "自動で記録するので、このコマンドを直接使うのは GitHub MCP や Asana MCP で",
+    "スキル側が投影した場合です。",
+    "",
+    "issue 列の初期値は `[issue](./build-NN/issue.md)`（ファイルへのリンク）です。",
+    "外部へ投影したらその参照で置き換えます。マスターは常にファイル側で、",
+    "外部システムは可視化のためのビューにすぎません。",
+  ].join("\n"),
+  run: ({ args, operands }) => {
+    const ctx = context(args, operands[0]);
+    const rawId = flagString(args, "id");
+    const id = rawId === undefined ? undefined : normalizeBuildId(rawId);
+    const issue = flagString(args, "issue");
+    if (id === undefined) throw new HikyakuError("--id を指定してください");
+    if (issue === undefined) throw new HikyakuError("--issue に issue の URL を指定してください");
+
+    const target = ctx.builds.find((build) => build.id === id);
+    if (!target) throw new HikyakuError(`${buildDirName(id)} が見つかりません`);
+
+    const updated: BuildRecord = { ...target, issue: formatRef(issue, "issue") };
+    const next = ctx.builds.map((build) => (build.id === id ? updated : build));
+    finish(ctx, next, args, `${buildDirName(id)} の issue 列を記録します`, updated);
   },
 });
 

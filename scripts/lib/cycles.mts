@@ -24,11 +24,20 @@ export const CYCLES_HEADERS = [
   "profile",
   "hikyaku",
   "チケット",
+  "外部",
   "依存",
   "開始",
   "完了",
   "要約",
 ];
+
+/**
+ * テーブルを特定するための最小の見出し。
+ *
+ * 列の並びで読まず見出し名で引くので、列が増えても既存の cycles.md を
+ * 読めなくならない（外部列を後から足せたのはこのため）。
+ */
+const CYCLES_MATCH_HEADERS = ["ID", "slug", "status"];
 
 export interface CycleRecord {
   id: string;
@@ -38,6 +47,8 @@ export interface CycleRecord {
   /** 作成時の Hikyaku バージョン */
   hikyaku: string;
   ticket: string;
+  /** 外部システムへ投影した親 issue / 親タスクへの参照 */
+  external: string;
   /** 依存するサイクルの ID。サイクルレベルに留める（ビルドレベルは持たない） */
   dependsOn: string[];
   started: string;
@@ -66,7 +77,7 @@ function cellText(value: string | undefined): string {
 }
 
 export function parseCycles(source: string): CycleRecord[] {
-  const table = findTableByHeaders(source, CYCLES_HEADERS);
+  const table = findTableByHeaders(source, CYCLES_MATCH_HEADERS);
   if (!table) {
     throw new HikyakuError(
       "cycles.md に想定するテーブルが見つかりません",
@@ -74,32 +85,38 @@ export function parseCycles(source: string): CycleRecord[] {
     );
   }
 
+  const column = (name: string): number => table.headers.indexOf(name);
+  const at = (row: string[], name: string): string => {
+    const index = column(name);
+    return index === -1 ? "" : cellText(row[index]);
+  };
+
   return table.rows
     .map((row) => {
-      const rawStatus = cellText(row[2]);
+      const rawStatus = at(row, "status");
       // 不正な status を黙って active に落とすと、次の書き込みでその値が永続化され、
       // closed のはずのサイクルが復活してしまう。誤りは黙って直さず報告する。
       if (!(CYCLE_STATUSES as string[]).includes(rawStatus)) {
         throw new HikyakuError(
-          `cycles.md の status が不正です: ${JSON.stringify(rawStatus)}（サイクル ${cellText(row[0])}）`,
+          `cycles.md の status が不正です: ${JSON.stringify(rawStatus)}（サイクル ${at(row, "ID")}）`,
           `使用できる値: ${CYCLE_STATUSES.join(" | ")}`,
         );
       }
-      const status = rawStatus as CycleStatus;
       return {
-        id: cellText(row[0]),
-        slug: cellText(row[1]),
-        status,
-        profile: cellText(row[3]),
-        hikyaku: cellText(row[4]),
-        ticket: cellText(row[5]),
-        dependsOn: cellText(row[6])
+        id: at(row, "ID"),
+        slug: at(row, "slug"),
+        status: rawStatus as CycleStatus,
+        profile: at(row, "profile"),
+        hikyaku: at(row, "hikyaku"),
+        ticket: at(row, "チケット"),
+        external: at(row, "外部"),
+        dependsOn: at(row, "依存")
           .split(/[,、]/)
           .map((item) => item.trim())
           .filter((item) => item !== ""),
-        started: cellText(row[7]),
-        finished: cellText(row[8]),
-        summary: cellText(row[9]),
+        started: at(row, "開始"),
+        finished: at(row, "完了"),
+        summary: at(row, "要約"),
       };
     })
     .filter((record) => record.id !== "");
@@ -125,6 +142,7 @@ function toRow(record: CycleRecord): string[] {
     dash(record.profile),
     dash(record.hikyaku),
     dash(record.ticket),
+    dash(record.external),
     record.dependsOn.length > 0 ? record.dependsOn.join(", ") : "—",
     dash(record.started),
     dash(record.finished),
@@ -146,6 +164,8 @@ export function renderCyclesFile(records: CycleRecord[]): string {
     "| `status` | `active` 進行中 / `closed` 永続ドキュメントへの昇格まで完了 / `abandoned` 中止 |",
     "| `profile` | サイクル作成時に選択した profile（light / saving / standard / strict） |",
     "| `hikyaku` | 作成時の Hikyaku バージョン。ディレクトリ構造の解釈に使う。以後更新しない |",
+    "| `チケット` | このサイクルの発端になった外部チケット（人が作ったもの） |",
+    "| `外部` | Hikyaku が投影した親 issue / 親タスク。可視化のためのビューで、判定には使わない |",
     "| `依存` | 依存するサイクルの ID。依存が満たされた = そのサイクルが `closed` |",
     "",
     renderTable(CYCLES_HEADERS, sorted.map(toRow)),
