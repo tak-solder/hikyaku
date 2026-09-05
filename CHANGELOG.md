@@ -31,7 +31,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   - **express** は人間の時間を節約（承認を減らすが AI には見させる）、**economy** は AI 実行コストを節約（サブエージェントを起動しないが人間は見る）という別の軸。品質の担保を AI に寄せるか人間に寄せるかの違いで、どちらも担保そのものは手放さない
   - **thorough** は判定基準が厳しくなるのではなく、チェックポイントが細かくなる。standard が完成した成果物の単位で必要なときに確認するのに対し、thorough は完成前の中間状態でも止まり、判断を挟まず常に実行する
   - 「承認少 + レビュー無」の組み合わせは意図的に用意していない
-  - 名前は「1本の強弱スケール」ではなく**グレードの並び**として付けている。express（人間の確認を省く）と economy（AI レビューを省く）は並列で、standard を基準に何を削るかが違うだけ。当初の `light` / `saving` は、省く対象が名前から読めないうえ「light のほうが省コストに見えて実際は最も AI を使う」という逆転があった
 - **`cycle-scanner` エージェント**: 走行中の他サイクルの `design-delta.md` を読み、重複を報告する（軽量モデル）
 - **`[review.security].triggers`**: security_review を推奨する判定基準を自然言語で記述できる。機微情報の定義はプロダクトごとに異なり、Hikyaku 側で列挙できないため
 - **ブランチ命名規則**: `{prefix}{separator}{cycle}{separator}{phase}`。着手状態の導出に解析するため構造は固定で、`prefix` と `separator` のみ設定可能
