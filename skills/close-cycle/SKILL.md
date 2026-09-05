@@ -55,15 +55,6 @@ HIKYAKU_ROOT は `.hikyaku.config` から解決されるので、引数では受
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {cycle}
 ```
 
-- [ ] 対象サイクルの状態を確認する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
-```
-
-`completed` でない場合はユーザーに確認する。未完了のビルドを残したまま締めるのは、
-サイクルを**中止（abandoned）**する場合に限る。
-
 - [ ] ブランチを作成し、命名規則どおりか確認する
 
 ```bash
@@ -96,6 +87,19 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify close {cycle}
 伝える（ブランチ名から導出しているため）。**完了判定と中断検出には影響しない。**
 
 ブランチを決めたら、成果物をコミットする直前にもう一度この確認を行う。
+
+- [ ] 対象サイクルの状態を確認する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
+```
+
+`completed` でない場合はユーザーに確認する。未完了のビルドを残したまま締めるのは、
+サイクルを**中止（abandoned）**する場合に限る。
+
+**ブランチを決めたあとに実行する。** 成果物の有無は作業ツリーを見て判定するため、
+デフォルトブランチに居るまま実行すると、別セッションが push 済みの成果物が見えない。
+中断からの再開なのに最初からやり直すことになる。
 
 - [ ] セッション名を設定する
 

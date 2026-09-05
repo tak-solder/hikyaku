@@ -77,7 +77,8 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
       validate: "manual",
     },
   },
-  // AI 実行コストを節約する。サブエージェントを起動しないが人間は見る
+  // AI 実行コストを節約する。中間成果物のレビューを起動しないが人間は見る。
+  // code だけは全プロファイルで残す（コードの差分は承認ゲートが拾える粒度を超えるため）
   saving: {
     gates: { userStories: true, codebaseSurvey: false, architecture: true, plan: false },
     reviews: {

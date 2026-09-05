@@ -72,7 +72,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active
   light     承認ゲート最小、レビューは有効。人間の時間を節約する
             → 小規模・低リスク。問題は PR レビューで拾う
 
-  saving    承認は残し、レビューエージェントを起動しない。AI 実行コストを節約する
+  saving    承認は残し、中間成果物のレビューエージェントを起動しない（コードレビューは残る）
             → 自分で見るのでレビューは要らない、という場合
 
   standard  全レビュー有効、各フェーズで承認

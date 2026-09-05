@@ -68,10 +68,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **`<SKILL_ROOT>` → `${CLAUDE_PLUGIN_ROOT}`**: 前者は公式の置換変数ではなく、LLM の推測に依存して動いていた
 - **G4 の承認観点を「反映の正しさ」に限定**: 技術選定は G3 で決着済みで、同じことを二度聞くのが承認ラウンドの冗長さの正体だった
 
-### Fixed
-
-- **config テンプレートのテーブル見出しがコメントアウトされていた**: `# [external]` のように見出しごとコメントアウトしていたため、キーのコメントだけを外すとそのキーがトップレベルへ落ち、設定が黙って無視されていた。見出しは常に生かし、キーだけをコメントアウトする
-
 ### Removed
 
 - **`issue_backend` の抽象化を廃止**: 真実の所在が分裂していた（依存関係=ファイル / 完了判定=GitHub のライブ照会 / issue本文=GitHub）。`github`/`asana` を選ぶと `build-*/` が丸ごと `.gitignore` され、リポジトリを見てもビルドの中身が分からなくなっていた
@@ -81,7 +77,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **`tech-stack` / `db-schema` / `interfaces` を Hikyaku が作らなくなった**: これらの正はコード側（lockfile / マイグレーション / OpenAPI）にあり、写すと必ず腐る。しかも腐っていることに誰も気づけない
   - 代わりに `overview` に「正がどこにあるか」のポインタを持つ。**ポインタは陳腐化を機械検出できる**（`hikyaku validate`）
   - リポジトリにこれらがあれば参考として読む。**コードと矛盾したら常にコードを正とする**
-- **`{HIKYAKU_ROOT}/.gitignore` を生成しなくなった**: ファイル正への一本化で除外すべきローカルキャッシュが無くなった。close-cycle は別セッションで `retrospective.md` を昇格素材として読むため、除外すると読めなくなる
 - **`test_spec_review` 設定を廃止**: G8（plan + test-spec の承認）として全プロファイルで常に有効になった
 
 ### Fixed
@@ -99,6 +94,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **`retrospective` のテンプレートに昇格候補セクションが無かった**。close-cycle の素材収集で拾うものが無く、`learnings` への昇格経路が機能していなかった
 - **`external sync` / `validate` がサイクル引数なしで呼ばれていた**。並行サイクルがあると曖昧で失敗し、投影や検証が実行されなかった
 - **`init` が `disable-model-invocation: true` だった**。planner が代行できず、README の記述と矛盾していた
+- **config テンプレートのテーブル見出しがコメントアウトされていた**。`# [external]` のように見出しごとコメントアウトしていたため、キーのコメントだけを外すとそのキーがトップレベルへ落ち、設定が黙って無視されていた
+- **`next` が作業ツリーの tasklist.md で完了判定していた**。PR 列が非空であることは「デフォルトブランチにマージ済み」を意味するが、ビルドブランチ上では `tasklist done` した直後の自分の PR 列が見える。そのため**未マージのビルドを完了とみなし、依存ビルドを着手可能として返していた**。完了判定はデフォルトブランチの tree から読むようにした（ビルドの一覧は作業ツリーのまま。まだマージされていない tasklist の追加分も候補に出すため）
+- **`cycle status` がブランチを決める前に実行されていた**。成果物の有無は作業ツリーを見て判定するため、デフォルトブランチに居るまま実行すると別セッションが push 済みの成果物が見えず、中断からの再開が最初からやり直しになっていた。全フェーズでブランチ確定の後へ移した
+- **builder が PR を作る前に `tasklist done --pr` を実行していた**。その時点では PR の URL がまだ存在しない。PR 作成 → PR 列の更新 → 同じブランチへ push の順にした（push は同じ PR に載るので「PR に同梱する」条件は変わらない）
+- **`document-guide.md` の管理列の不正値を黙って `対象外` に落としていた**。`hikiyaku` のようなタイプミスひとつで、登録済みのドキュメントが索引からも昇格対象からも静かに消えていた。`cycles.md` の `status` と同じくエラーにした
+- **`tasklist done --pr` が URL 以外の文字列も受け付けていた**。PR 列は非空かどうかだけで完了判定されるため、入力ミスで未マージのビルドが完了扱いになっていた
+- **`validate` が存在しないサイクルを指定しても成功していた**。引数のタイプミスで対象サイクルが1件も検証されないまま「問題なし」になっていた
+- **`external sync` が1回では収束していなかった**。全 projection を参照の確定前に組み立てていたため、初回同期の子 issue に親参照が入らず、親 issue の一覧にも子のリンクが入らなかった。親を先に片づけてから子の本文を組み立て、子の参照が揃った時点で親を作り直すようにした
+- **`hikyaku --help` が stderr へ出力して終了コード 1 で終わっていた**。グローバルオプションとして案内しているので、stdout・終了コード 0 にした
+- **closed になった slug を再利用すると古いサイクルを掴んでいた**。slug は全履歴で一意ではないため、同名で作り直すと `cycle use billing` などが古い closed のサイクルを操作していた。複数一致したときは active を採り、決まらなければ候補を挙げて尋ねる
+- **`saving` プロファイルの説明が実装と食い違っていた**。「レビュー無 / サブエージェントを起動しない」と書いていたが、`code_review` は全プロファイルで有効。省くのは中間成果物のレビューであることを明記した
 
 ### Migration
 
@@ -145,22 +151,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - **security-reviewerのエスカレーション判定を廃止**: builder Step 8 で `security-reviewer` が `/security-review` へのエスカレーションを判定・提案する挙動を削除した。`security-reviewer` はOWASP系パターンの指摘に専念する（高感度カテゴリの確度が低い懸念は上記の通り別枠で報告する）。`/security-review` スキル自体はユーザーが任意のタイミングで実行可能なまま変更なし
 
-### Fixed
-
-レビューで見つかった、v2 で新規に入り込んだ不具合を修正した（いずれも実再現を確認済み）。
-
-- **`renderTable` がセル内の `|` をエスケープしていなかった**（`escapeCell` が定義されたまま未使用だった）。タイトルや要約に `|` を含めると行が余分な列に割れ、再パース時に値が隣の列へずれていた。tasklist.md では issue リンクが `PR` 列にずれ込み、**未着手のビルドが「完了」と誤判定される**静かなデータ破壊になっていた
-- **buildID 列の正規化が dependencies 列と食い違っていた**。ゼロ埋めした tasklist で「build-02 の依存 build-01 が存在しません」という自己矛盾した検証結果になり、`validate` が終了コード 2 で落ちて対象ビルドが永久に待機状態になっていた
-- **`--id 01` が引けなかった**。`--id build-01` は通るのに `--id 01` は「build-01 が見つかりません」で失敗していた
-- **`init` が既存のリポジトリルート設定を黙って飛ばしていた**。`hikyaku_root` が記録されず、古い `doc_root` を指したまま進んでしまうため、必要な対応を明示するようにした
-- **`external sync github` が既存 issue を認識できなかった**。issue 列の既定値（ローカルリンク）にも記録後の URL にも `#123` 形式が現れず、同期のたびに issue を作り直していた
-- **不正な `status` を黙って `active` に落としていた**。次の書き込みでその値が永続化され、closed のサイクルが復活しうるため、エラーにするようにした
-- **architect が振り返りの出力先に `architecture` を渡していた**。v2 で `design` にリネームしたため、サイクルの `design/` の外に出力されていた
-- **`close-cycle` の振り返りが昇格の後に実行されていた**。その回の学びを `learnings` へ昇格させる機会が永久に無くなるため、Step 1 へ移した
-- **`retrospective` のテンプレートに昇格候補セクションが無かった**。close-cycle の素材収集で拾うものが無く、`learnings` への昇格経路が機能していなかった
-- **`external sync` / `validate` がサイクル引数なしで呼ばれていた**。並行サイクルがあると曖昧で失敗し、投影や検証が実行されなかった
-- **`init` が `disable-model-invocation: true` だった**。planner が代行できず、README の記述と矛盾していた
-
 ### Migration
 
 - **破壊的変更**: `retrospective.md` / `test-spec.md` / `design-questions.md` / `build-{NN}/questions.md` は `{DOC_ROOT}/.gitignore` の対象になり、以後コミットされなくなる（`planning/questions.md`はarchitectの必須入力のため対象外のまま）。既存ワークフローでこれらをコミット済みの場合、次回コミットからは追跡対象外になる（既存のコミット履歴には影響しない）
@@ -174,22 +164,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Added
 
 - **`test_spec_review` 設定オプション**: `.hikyaku.config` に `test_spec_review = false` を設定すると、builder Step 5 での test-spec.md 承認ゲートをスキップできるようになった。plan.md 承認後の test-spec.md 作成がスムーズになり、承認ループを減らしたいプロジェクト向けのオプション（デフォルト: `true`）
-
-### Fixed
-
-レビューで見つかった、v2 で新規に入り込んだ不具合を修正した（いずれも実再現を確認済み）。
-
-- **`renderTable` がセル内の `|` をエスケープしていなかった**（`escapeCell` が定義されたまま未使用だった）。タイトルや要約に `|` を含めると行が余分な列に割れ、再パース時に値が隣の列へずれていた。tasklist.md では issue リンクが `PR` 列にずれ込み、**未着手のビルドが「完了」と誤判定される**静かなデータ破壊になっていた
-- **buildID 列の正規化が dependencies 列と食い違っていた**。ゼロ埋めした tasklist で「build-02 の依存 build-01 が存在しません」という自己矛盾した検証結果になり、`validate` が終了コード 2 で落ちて対象ビルドが永久に待機状態になっていた
-- **`--id 01` が引けなかった**。`--id build-01` は通るのに `--id 01` は「build-01 が見つかりません」で失敗していた
-- **`init` が既存のリポジトリルート設定を黙って飛ばしていた**。`hikyaku_root` が記録されず、古い `doc_root` を指したまま進んでしまうため、必要な対応を明示するようにした
-- **`external sync github` が既存 issue を認識できなかった**。issue 列の既定値（ローカルリンク）にも記録後の URL にも `#123` 形式が現れず、同期のたびに issue を作り直していた
-- **不正な `status` を黙って `active` に落としていた**。次の書き込みでその値が永続化され、closed のサイクルが復活しうるため、エラーにするようにした
-- **architect が振り返りの出力先に `architecture` を渡していた**。v2 で `design` にリネームしたため、サイクルの `design/` の外に出力されていた
-- **`close-cycle` の振り返りが昇格の後に実行されていた**。その回の学びを `learnings` へ昇格させる機会が永久に無くなるため、Step 1 へ移した
-- **`retrospective` のテンプレートに昇格候補セクションが無かった**。close-cycle の素材収集で拾うものが無く、`learnings` への昇格経路が機能していなかった
-- **`external sync` / `validate` がサイクル引数なしで呼ばれていた**。並行サイクルがあると曖昧で失敗し、投影や検証が実行されなかった
-- **`init` が `disable-model-invocation: true` だった**。planner が代行できず、README の記述と矛盾していた
 
 ### Migration
 
@@ -207,22 +181,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   - `code_review` — `false` にすると builder Step 8 のコードレビューをスキップする（デフォルト: true）
   - `security_review` — `false` にすると builder Step 8 のセキュリティレビューをスキップする（デフォルト: true）
 
-### Fixed
-
-レビューで見つかった、v2 で新規に入り込んだ不具合を修正した（いずれも実再現を確認済み）。
-
-- **`renderTable` がセル内の `|` をエスケープしていなかった**（`escapeCell` が定義されたまま未使用だった）。タイトルや要約に `|` を含めると行が余分な列に割れ、再パース時に値が隣の列へずれていた。tasklist.md では issue リンクが `PR` 列にずれ込み、**未着手のビルドが「完了」と誤判定される**静かなデータ破壊になっていた
-- **buildID 列の正規化が dependencies 列と食い違っていた**。ゼロ埋めした tasklist で「build-02 の依存 build-01 が存在しません」という自己矛盾した検証結果になり、`validate` が終了コード 2 で落ちて対象ビルドが永久に待機状態になっていた
-- **`--id 01` が引けなかった**。`--id build-01` は通るのに `--id 01` は「build-01 が見つかりません」で失敗していた
-- **`init` が既存のリポジトリルート設定を黙って飛ばしていた**。`hikyaku_root` が記録されず、古い `doc_root` を指したまま進んでしまうため、必要な対応を明示するようにした
-- **`external sync github` が既存 issue を認識できなかった**。issue 列の既定値（ローカルリンク）にも記録後の URL にも `#123` 形式が現れず、同期のたびに issue を作り直していた
-- **不正な `status` を黙って `active` に落としていた**。次の書き込みでその値が永続化され、closed のサイクルが復活しうるため、エラーにするようにした
-- **architect が振り返りの出力先に `architecture` を渡していた**。v2 で `design` にリネームしたため、サイクルの `design/` の外に出力されていた
-- **`close-cycle` の振り返りが昇格の後に実行されていた**。その回の学びを `learnings` へ昇格させる機会が永久に無くなるため、Step 1 へ移した
-- **`retrospective` のテンプレートに昇格候補セクションが無かった**。close-cycle の素材収集で拾うものが無く、`learnings` への昇格経路が機能していなかった
-- **`external sync` / `validate` がサイクル引数なしで呼ばれていた**。並行サイクルがあると曖昧で失敗し、投影や検証が実行されなかった
-- **`init` が `disable-model-invocation: true` だった**。planner が代行できず、README の記述と矛盾していた
-
 ### Migration
 
 - 既存ワークフローへの影響なし。`.hikyaku.config` を作成しない場合はすべての設定がデフォルト値となり、従来の動作が維持される
@@ -235,22 +193,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **企画フェーズの4項目サマリを永続化**: planner Step 3 ですり合わせる「実現したいこと / 背景・目的 / 対象画面・対象データ / 制約・要件」の4項目を、`planning/user-stories.md` 冒頭の「## 概要」セクション（各項目 h3 見出し）として記録するようテンプレートを拡張。これまで会話表示のみで揮発していた Discovery の合意内容が後段フェーズで参照できるようになる
 - **設計判断ログ（ADR）の新設**: `architecture/decisions.md` を新規追加。architect Step 4a で「分岐あり」と判定された判断について、Step 4b 末尾で **決定 / 文脈 / 検討した案 / 採用理由 / トレードオフ** を1エントリ（`AD-N`）として記録する。トレードオフ欄に「特になし」は禁止（書きたくなる場合は分岐判定を見直す）
 - **builder の判断追従**: builder Step 2（コンテキスト復元）で `architecture/decisions.md` を読み込む手順を追加。後続ビルドが採用案を意図せず覆さないようにする。覆す必要が生じた場合は新しい AD エントリの追記と handoff.md への記録を義務化
-
-### Fixed
-
-レビューで見つかった、v2 で新規に入り込んだ不具合を修正した（いずれも実再現を確認済み）。
-
-- **`renderTable` がセル内の `|` をエスケープしていなかった**（`escapeCell` が定義されたまま未使用だった）。タイトルや要約に `|` を含めると行が余分な列に割れ、再パース時に値が隣の列へずれていた。tasklist.md では issue リンクが `PR` 列にずれ込み、**未着手のビルドが「完了」と誤判定される**静かなデータ破壊になっていた
-- **buildID 列の正規化が dependencies 列と食い違っていた**。ゼロ埋めした tasklist で「build-02 の依存 build-01 が存在しません」という自己矛盾した検証結果になり、`validate` が終了コード 2 で落ちて対象ビルドが永久に待機状態になっていた
-- **`--id 01` が引けなかった**。`--id build-01` は通るのに `--id 01` は「build-01 が見つかりません」で失敗していた
-- **`init` が既存のリポジトリルート設定を黙って飛ばしていた**。`hikyaku_root` が記録されず、古い `doc_root` を指したまま進んでしまうため、必要な対応を明示するようにした
-- **`external sync github` が既存 issue を認識できなかった**。issue 列の既定値（ローカルリンク）にも記録後の URL にも `#123` 形式が現れず、同期のたびに issue を作り直していた
-- **不正な `status` を黙って `active` に落としていた**。次の書き込みでその値が永続化され、closed のサイクルが復活しうるため、エラーにするようにした
-- **architect が振り返りの出力先に `architecture` を渡していた**。v2 で `design` にリネームしたため、サイクルの `design/` の外に出力されていた
-- **`close-cycle` の振り返りが昇格の後に実行されていた**。その回の学びを `learnings` へ昇格させる機会が永久に無くなるため、Step 1 へ移した
-- **`retrospective` のテンプレートに昇格候補セクションが無かった**。close-cycle の素材収集で拾うものが無く、`learnings` への昇格経路が機能していなかった
-- **`external sync` / `validate` がサイクル引数なしで呼ばれていた**。並行サイクルがあると曖昧で失敗し、投影や検証が実行されなかった
-- **`init` が `disable-model-invocation: true` だった**。planner が代行できず、README の記述と矛盾していた
 
 ### Migration
 
@@ -272,22 +214,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **architect Step 4 に「主要設計判断の特定と分岐評価」サブステップを追加**: 妥当な代替案が複数ある判断について、`code-architect` を2〜3並列で起動して trade-off 比較・推奨案提示・ユーザー選択を行うパターンを導入。分岐がない判断は従来通り単一案で確定する
 - **builder Step 8「コードレビュー」を新設**: ローカル検証（lint / test / build）と申し送り作成の間に `code-reviewer` と `security-reviewer` を **並列起動** するレビューステップを追加。指摘ごとに「今修正 / 新ビルド化 / そのまま進める」をユーザーが選択できる。`security-reviewer` がエスカレーションを推奨した場合は `/security-review` の実行をユーザーに案内する（旧 Step 8〜10 は Step 9〜11 に繰り下げ）
 - **証拠ベースの判定ルール**: `code-reviewer` と `security-reviewer` の判定基準を「信頼度80以上」という数値しきい値から、**根拠の種類** で報告/非報告を決める方式に変更。各指摘には根拠ラベル（ドキュメント不整合 / バグ / Injection / 認可漏れ 等）を必須化し、再現性と説明可能性を向上
-
-### Fixed
-
-レビューで見つかった、v2 で新規に入り込んだ不具合を修正した（いずれも実再現を確認済み）。
-
-- **`renderTable` がセル内の `|` をエスケープしていなかった**（`escapeCell` が定義されたまま未使用だった）。タイトルや要約に `|` を含めると行が余分な列に割れ、再パース時に値が隣の列へずれていた。tasklist.md では issue リンクが `PR` 列にずれ込み、**未着手のビルドが「完了」と誤判定される**静かなデータ破壊になっていた
-- **buildID 列の正規化が dependencies 列と食い違っていた**。ゼロ埋めした tasklist で「build-02 の依存 build-01 が存在しません」という自己矛盾した検証結果になり、`validate` が終了コード 2 で落ちて対象ビルドが永久に待機状態になっていた
-- **`--id 01` が引けなかった**。`--id build-01` は通るのに `--id 01` は「build-01 が見つかりません」で失敗していた
-- **`init` が既存のリポジトリルート設定を黙って飛ばしていた**。`hikyaku_root` が記録されず、古い `doc_root` を指したまま進んでしまうため、必要な対応を明示するようにした
-- **`external sync github` が既存 issue を認識できなかった**。issue 列の既定値（ローカルリンク）にも記録後の URL にも `#123` 形式が現れず、同期のたびに issue を作り直していた
-- **不正な `status` を黙って `active` に落としていた**。次の書き込みでその値が永続化され、closed のサイクルが復活しうるため、エラーにするようにした
-- **architect が振り返りの出力先に `architecture` を渡していた**。v2 で `design` にリネームしたため、サイクルの `design/` の外に出力されていた
-- **`close-cycle` の振り返りが昇格の後に実行されていた**。その回の学びを `learnings` へ昇格させる機会が永久に無くなるため、Step 1 へ移した
-- **`retrospective` のテンプレートに昇格候補セクションが無かった**。close-cycle の素材収集で拾うものが無く、`learnings` への昇格経路が機能していなかった
-- **`external sync` / `validate` がサイクル引数なしで呼ばれていた**。並行サイクルがあると曖昧で失敗し、投影や検証が実行されなかった
-- **`init` が `disable-model-invocation: true` だった**。planner が代行できず、README の記述と矛盾していた
 
 ### Migration
 
@@ -323,22 +249,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   - 内部スキル: `hikyaku-build-manager` → `build-manager`、`hikyaku-retrospective` → `retrospective`
 - スキルディレクトリも対応してリネーム（`skills/hikyaku-*/` → `skills/*/`）
 - README にプラグインインストール手順を追加
-
-### Fixed
-
-レビューで見つかった、v2 で新規に入り込んだ不具合を修正した（いずれも実再現を確認済み）。
-
-- **`renderTable` がセル内の `|` をエスケープしていなかった**（`escapeCell` が定義されたまま未使用だった）。タイトルや要約に `|` を含めると行が余分な列に割れ、再パース時に値が隣の列へずれていた。tasklist.md では issue リンクが `PR` 列にずれ込み、**未着手のビルドが「完了」と誤判定される**静かなデータ破壊になっていた
-- **buildID 列の正規化が dependencies 列と食い違っていた**。ゼロ埋めした tasklist で「build-02 の依存 build-01 が存在しません」という自己矛盾した検証結果になり、`validate` が終了コード 2 で落ちて対象ビルドが永久に待機状態になっていた
-- **`--id 01` が引けなかった**。`--id build-01` は通るのに `--id 01` は「build-01 が見つかりません」で失敗していた
-- **`init` が既存のリポジトリルート設定を黙って飛ばしていた**。`hikyaku_root` が記録されず、古い `doc_root` を指したまま進んでしまうため、必要な対応を明示するようにした
-- **`external sync github` が既存 issue を認識できなかった**。issue 列の既定値（ローカルリンク）にも記録後の URL にも `#123` 形式が現れず、同期のたびに issue を作り直していた
-- **不正な `status` を黙って `active` に落としていた**。次の書き込みでその値が永続化され、closed のサイクルが復活しうるため、エラーにするようにした
-- **architect が振り返りの出力先に `architecture` を渡していた**。v2 で `design` にリネームしたため、サイクルの `design/` の外に出力されていた
-- **`close-cycle` の振り返りが昇格の後に実行されていた**。その回の学びを `learnings` へ昇格させる機会が永久に無くなるため、Step 1 へ移した
-- **`retrospective` のテンプレートに昇格候補セクションが無かった**。close-cycle の素材収集で拾うものが無く、`learnings` への昇格経路が機能していなかった
-- **`external sync` / `validate` がサイクル引数なしで呼ばれていた**。並行サイクルがあると曖昧で失敗し、投影や検証が実行されなかった
-- **`init` が `disable-model-invocation: true` だった**。planner が代行できず、README の記述と矛盾していた
 
 ### Migration
 

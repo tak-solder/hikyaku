@@ -69,6 +69,33 @@ export function cyclesPath(hikyakuRoot: string): string {
   return join(hikyakuRoot, "cycles.md");
 }
 
+/**
+ * ID / slug / ディレクトリ名からサイクルを引く。
+ *
+ * slug は全履歴で一意ではない（closed になった slug は再利用できる）。
+ * 単に最初の1件を返すと、同名で作り直したサイクルを指したつもりが、
+ * 古い closed のサイクルを操作してしまう。複数当たったときは active を採り、
+ * それでも決まらなければ推測せずに候補を挙げて尋ねる。
+ */
+export function findCycleByKey(records: CycleRecord[], key: string): CycleRecord | undefined {
+  const exact = records.find((record) => record.id === key || cycleDirName(record) === key);
+  if (exact) return exact;
+
+  const bySlug = records.filter((record) => record.slug === key);
+  if (bySlug.length <= 1) return bySlug[0];
+
+  const active = bySlug.filter((record) => record.status === "active");
+  if (active.length === 1) return active[0];
+
+  throw new HikyakuError(
+    `slug が複数のサイクルに一致します: ${key}`,
+    [
+      "ディレクトリ名か ID で指定してください:",
+      ...bySlug.map((record) => `  ${cycleDirName(record)}（${record.status}）`),
+    ].join("\n"),
+  );
+}
+
 const EMPTY_CELLS = new Set(["", "—", "-"]);
 
 function cellText(value: string | undefined): string {

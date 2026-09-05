@@ -6,7 +6,7 @@ import { flagString } from "../lib/args.mts";
 import { loadConfig } from "../lib/config.mts";
 import { cycleDir, cycleDirName, loadCycles } from "../lib/cycles.mts";
 import { loadGuide, validateGuide } from "../lib/docs.mts";
-import { ValidationError } from "../lib/errors.mts";
+import { HikyakuError, ValidationError } from "../lib/errors.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { buildDirName, loadTasklist, validateGraph } from "../lib/tasklist.mts";
@@ -44,6 +44,21 @@ register({
     const records = loadCycles(config.hikyakuRoot);
     const ids = new Set(records.map((record) => record.id));
     const filter = operands[0];
+
+    // 引数のタイプミスで対象サイクルが1つも検証されないまま成功するのを防ぐ。
+    // 「検証した結果、問題が無かった」と「そもそも検証していない」は別物
+    if (
+      filter !== undefined &&
+      !records.some(
+        (record) =>
+          filter === record.id || filter === record.slug || filter === cycleDirName(record),
+      )
+    ) {
+      throw new HikyakuError(
+        `サイクルが見つかりません: ${filter}`,
+        "hikyaku cycle list で一覧を確認してください。",
+      );
+    }
 
     for (const record of records) {
       const name = cycleDirName(record);

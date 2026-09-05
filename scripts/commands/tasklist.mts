@@ -163,6 +163,14 @@ register({
     const pr = flagString(args, "pr");
     if (id === undefined) throw new HikyakuError("--id を指定してください");
     if (pr === undefined) throw new HikyakuError("--pr に PR の URL を指定してください");
+    // PR 列は「非空かどうか」だけで完了判定される。typo をそのまま入れると、
+    // 未マージのビルドが完了扱いになり、依存ビルドが着手可能になってしまう
+    if (!/^https?:\/\/\S+$/.test(pr.trim())) {
+      throw new HikyakuError(
+        `--pr は PR の URL を指定してください: ${JSON.stringify(pr)}`,
+        "PR 列が非空であること自体が完了を意味するため、URL 以外は受け付けません。",
+      );
+    }
 
     const target = ctx.builds.find((build) => build.id === id);
     if (!target) throw new HikyakuError(`${buildDirName(id)} が見つかりません`);

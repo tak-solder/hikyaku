@@ -4,7 +4,14 @@ import { existsSync, writeFileSync } from "node:fs";
 import { flagString, type ParsedArgs } from "./args.mts";
 import { parseBranch, type BranchNaming } from "./branch.mts";
 import { loadConfig, type ResolvedConfig } from "./config.mts";
-import { cycleDir, cycleDirName, cyclesPath, loadCycles, type CycleRecord } from "./cycles.mts";
+import {
+  cycleDir,
+  cycleDirName,
+  cyclesPath,
+  findCycleByKey,
+  loadCycles,
+  type CycleRecord,
+} from "./cycles.mts";
 import { HikyakuError } from "./errors.mts";
 import { currentBranch } from "./git.mts";
 import { readLocalState } from "./local.mts";
@@ -28,10 +35,6 @@ export interface ResolveOptions {
   currentBranch?: string | undefined;
   /** .hikyaku.local に記録されたサイクル */
   local?: string | undefined;
-}
-
-function findRecord(records: CycleRecord[], key: string): CycleRecord | undefined {
-  return records.find((r) => r.id === key || r.slug === key || cycleDirName(r) === key);
 }
 
 /**
@@ -59,7 +62,7 @@ export function resolveCycle(
   }
 
   if (key !== undefined) {
-    const record = findRecord(records, key);
+    const record = findCycleByKey(records, key);
     if (!record) {
       throw new HikyakuError(
         `サイクルが見つかりません: ${key}`,
@@ -72,14 +75,18 @@ export function resolveCycle(
   // 2. 現在のブランチ。close フェーズもあるので status は問わない
   if (options.branch && options.currentBranch !== undefined) {
     const parsed = parseBranch(options.branch, options.currentBranch);
-    const record = parsed?.cycle === undefined ? undefined : findRecord(records, parsed.cycle);
+    const record = parsed?.cycle === undefined ? undefined : findCycleByKey(records, parsed.cycle);
     if (record) return context(hikyakuRoot, record, "branch");
   }
 
-  // 3. ローカルの栞。指す先が active でなければ黙って捨てる
+  // 3. ローカルの栞。指す先が active でなければ黙って捨てる。
+  // ここは active に限って引く（栞の曖昧さでエラーにはしない。無効なら捨てて次へ）
   if (options.local !== undefined) {
-    const record = findRecord(records, options.local);
-    if (record?.status === "active") return context(hikyakuRoot, record, "local");
+    const key = options.local;
+    const record = records.find(
+      (r) => r.status === "active" && (r.id === key || r.slug === key || cycleDirName(r) === key),
+    );
+    if (record) return context(hikyakuRoot, record, "local");
   }
 
   const active = records.filter((r) => r.status === "active");

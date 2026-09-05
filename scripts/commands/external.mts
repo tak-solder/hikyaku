@@ -56,11 +56,15 @@ function relativeRoot(config: ResolvedConfig): string {
  * ビルド一覧と完了状態を毎回ファイルから作り直すので、何度同期しても収束する。
  * 完了の正は tasklist.md の PR 列であって、ここの表示ではない。
  */
-function renderParentBody(config: ResolvedConfig, ctx: CycleContext): string {
+function renderParentBody(
+  config: ResolvedConfig,
+  ctx: CycleContext,
+  builds: BuildRecord[] = ctx.builds,
+): string {
   const rows =
-    ctx.builds.length === 0
+    builds.length === 0
       ? ["（ビルドはまだ分割されていません）"]
-      : ctx.builds.map(
+      : builds.map(
           (build) =>
             `- [${isComplete(build) ? "x" : " "}] ${buildDirName(build.id)} ${build.title}` +
             `${build.issue === "" ? "" : ` — ${build.issue}`}`,
@@ -90,12 +94,13 @@ function renderBuildBody(
   ctx: CycleContext,
   build: BuildRecord,
   issueBody: string,
+  parentRef: string = ctx.record.external,
 ): string {
   const deps =
     build.dependsOn.length > 0
       ? `**依存**: ${build.dependsOn.map(buildDirName).join(", ")}（参考情報。依存判定の正は tasklist.md）`
       : "";
-  const parent = ctx.record.external === "" ? "" : `**親**: ${ctx.record.external}`;
+  const parent = parentRef === "" ? "" : `**親**: ${parentRef}`;
   const source = `${relativeRoot(config)}/cycles/${ctx.name}/${buildDirName(build.id)}/issue.md`;
 
   return [
@@ -112,16 +117,27 @@ function renderBuildBody(
     .join("\n");
 }
 
-function buildProjections(config: ResolvedConfig, ctx: CycleContext): Projection[] {
-  const parent: Projection = {
+function parentProjection(
+  config: ResolvedConfig,
+  ctx: CycleContext,
+  builds: BuildRecord[] = ctx.builds,
+): Projection {
+  return {
     kind: "parent",
     buildId: undefined,
     title: `[${ctx.name}] ${ctx.record.summary || ctx.record.slug}`,
-    body: renderParentBody(config, ctx),
+    body: renderParentBody(config, ctx, builds),
     existing: ctx.record.external,
   };
+}
 
-  const builds = ctx.builds.flatMap((build) => {
+/** 親参照は引数で受ける。初回同期では親を作ってから確定するため */
+function buildProjections(
+  config: ResolvedConfig,
+  ctx: CycleContext,
+  parentRef: string = ctx.record.external,
+): Projection[] {
+  return ctx.builds.flatMap((build) => {
     const issuePath = join(ctx.directory, buildDirName(build.id), "issue.md");
     if (!existsSync(issuePath)) return [];
     return [
@@ -129,14 +145,11 @@ function buildProjections(config: ResolvedConfig, ctx: CycleContext): Projection
         kind: "build" as const,
         buildId: build.id,
         title: `[${ctx.name}] ${buildDirName(build.id)} ${build.title}`,
-        body: renderBuildBody(config, ctx, build, readFileSync(issuePath, "utf8")),
+        body: renderBuildBody(config, ctx, build, readFileSync(issuePath, "utf8"), parentRef),
         existing: build.issue,
       },
     ];
   });
-
-  // 親を先に作る。子の本文が親を参照するため
-  return [parent, ...builds];
 }
 
 /** gh CLI が使えるか */
@@ -219,7 +232,7 @@ register({
       return;
     }
 
-    const projections = buildProjections(config, ctx);
+    const projections = [parentProjection(config, ctx), ...buildProjections(config, ctx)];
     const dryRun = flagBoolean(args, "dry-run");
     const gh = target === "github" && !dryRun ? await hasGh(config.repoRoot) : false;
 
@@ -259,15 +272,10 @@ register({
     }
 
     const results: SyncResult[] = [];
-    let parentRef = ctx.record.external;
     const issueRefs = new Map<string, string>();
 
-    for (const projection of projections) {
-      // 親を作った直後の子は、親参照を本文に含められるよう作り直す
-      const body =
-        projection.kind === "build" && parentRef !== ctx.record.external
-          ? projection.body.replace("**親**: ", `**親**: ${parentRef}`)
-          : projection.body;
+    /** 作成なら参照を返し、更新なら既存の参照を返す。失敗しても止めない */
+    const apply = async (projection: Projection): Promise<string | undefined> => {
       try {
         const number = existingNumber(projection);
         if (number === undefined) {
@@ -279,7 +287,7 @@ register({
               "--title",
               projection.title,
               "--body",
-              body,
+              projection.body,
               ...repoArgs(config.external.githubRepo),
             ],
             { cwd: config.repoRoot, timeout: 30_000 },
@@ -287,21 +295,20 @@ register({
           const url = stdout.trim().split("\n").pop() ?? "";
           const ref = formatRef(url, projection.kind === "parent" ? "親issue" : "issue");
           results.push({ kind: projection.kind, buildId: projection.buildId, action: "created", ref });
-          if (projection.kind === "parent") parentRef = ref;
-          else if (projection.buildId !== undefined) issueRefs.set(projection.buildId, ref);
-        } else {
-          await run(
-            "gh",
-            ["issue", "edit", number, "--body", body, ...repoArgs(config.external.githubRepo)],
-            { cwd: config.repoRoot, timeout: 30_000 },
-          );
-          results.push({
-            kind: projection.kind,
-            buildId: projection.buildId,
-            action: "updated",
-            ref: projection.existing,
-          });
+          return ref;
         }
+        await run(
+          "gh",
+          ["issue", "edit", number, "--body", projection.body, ...repoArgs(config.external.githubRepo)],
+          { cwd: config.repoRoot, timeout: 30_000 },
+        );
+        results.push({
+          kind: projection.kind,
+          buildId: projection.buildId,
+          action: "updated",
+          ref: projection.existing,
+        });
+        return projection.existing;
       } catch (error) {
         const message =
           (error instanceof Error ? error.message.split("\n")[0] : String(error)) ?? String(error);
@@ -314,6 +321,49 @@ register({
           action: "failed",
           ref: message,
         });
+        return undefined;
+      }
+    };
+
+    // 親を先に片づける。子の本文が親を参照するため
+    const parentRef = (await apply(parentProjection(config, ctx))) ?? ctx.record.external;
+
+    // 子の本文は親の参照が確定してから組み立てる。先に全部作ってしまうと、
+    // 初回同期の子本文に親参照が入らず、収束に2回かかる
+    for (const projection of buildProjections(config, ctx, parentRef)) {
+      const ref = await apply(projection);
+      if (ref !== undefined && ref !== "" && projection.buildId !== undefined) {
+        issueRefs.set(projection.buildId, ref);
+      }
+    }
+
+    // 親の本文は子の参照を含む。初回同期では子がまだ無い状態で作っているので、
+    // ここで作り直して 1回の同期で収束させる
+    const parentNumber = refNumber(parentRef);
+    const newRefs = [...issueRefs].filter(
+      ([id, ref]) => ctx.builds.find((build) => build.id === id)?.issue !== ref,
+    );
+    if (newRefs.length > 0 && parentNumber !== undefined) {
+      const withRefs = ctx.builds.map((build) => {
+        const ref = issueRefs.get(build.id);
+        return ref === undefined ? build : { ...build, issue: ref };
+      });
+      try {
+        await run(
+          "gh",
+          [
+            "issue",
+            "edit",
+            parentNumber,
+            "--body",
+            renderParentBody(config, ctx, withRefs),
+            ...repoArgs(config.external.githubRepo),
+          ],
+          { cwd: config.repoRoot, timeout: 30_000 },
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message.split("\n")[0] : String(error);
+        warn(`親の本文更新に失敗しました（次回の同期で収束します）: ${message}`);
       }
     }
 
@@ -324,7 +374,7 @@ register({
       );
       writeFileSync(cyclesPath(config.hikyakuRoot), renderCyclesFile(records), "utf8");
     }
-    if (issueRefs.size > 0) {
+    if (newRefs.length > 0) {
       writeTasklist(
         ctx,
         ctx.builds.map((build) => {

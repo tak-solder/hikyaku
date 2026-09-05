@@ -145,20 +145,28 @@ export function parseGuide(source: string): DocEntry[] {
     );
   }
 
-  return table.rows.map((row) => {
-    const name = (row[0] ?? "").replace(/`/g, "").trim();
-    const rawOwnership = (row[1] ?? "").trim();
-    const ownership = (OWNERSHIP_VALUES as string[]).includes(rawOwnership)
-      ? (rawOwnership as DocOwnership)
-      : "対象外";
-    return {
-      name,
-      ownership,
-      path: ownership === "hikyaku" || ownership === "repo" ? extractPath(row[2] ?? "") : undefined,
-      summary: (row[3] ?? "").trim(),
-      definition: DOC_DEFINITIONS.find((d) => d.name === name),
-    };
-  });
+  return table.rows
+    .filter((row) => row.some((cell) => cell.trim() !== ""))
+    .map((row) => {
+      const name = (row[0] ?? "").replace(/`/g, "").trim();
+      const rawOwnership = (row[1] ?? "").trim();
+      // 未知の値を黙って「対象外」に落とすと、タイプミスひとつで登録済みの
+      // ドキュメントが索引からも昇格対象からも静かに消える。誤りは報告する
+      if (!(OWNERSHIP_VALUES as string[]).includes(rawOwnership)) {
+        throw new HikyakuError(
+          `document-guide.md の管理列が不正です: ${JSON.stringify(rawOwnership)}（${name || "名前なし"}）`,
+          `使用できる値: ${OWNERSHIP_VALUES.join(" | ")}`,
+        );
+      }
+      const ownership = rawOwnership as DocOwnership;
+      return {
+        name,
+        ownership,
+        path: ownership === "hikyaku" || ownership === "repo" ? extractPath(row[2] ?? "") : undefined,
+        summary: (row[3] ?? "").trim(),
+        definition: DOC_DEFINITIONS.find((d) => d.name === name),
+      };
+    });
 }
 
 export function loadGuide(hikyakuRoot: string): DocEntry[] {

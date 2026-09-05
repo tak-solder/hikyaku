@@ -9,6 +9,7 @@ import {
   cycleDir,
   cycleDirName,
   cyclesPath,
+  findCycleByKey,
   loadCycles,
   nextCycleId,
   normalizeSlug,
@@ -31,9 +32,7 @@ function today(): string {
 }
 
 function findCycle(records: CycleRecord[], key: string): CycleRecord {
-  const found = records.find(
-    (record) => record.id === key || record.slug === key || cycleDirName(record) === key,
-  );
+  const found = findCycleByKey(records, key);
   if (!found) {
     throw new HikyakuError(
       `サイクルが見つかりません: ${key}`,

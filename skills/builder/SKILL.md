@@ -90,14 +90,6 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle}
 | **ビルド** | 同一サイクル内の先行ビルドの実績 | 依存ビルドの handoff.md |
 
 - [ ] `cycles/{cycle}/build-{NN}/issue.md` を読む（対象ビルドの定義）
-- [ ] `cycle status` で既存の成果物を確認する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
-```
-
-中断からの再開なら、どこまで進んだかが表示される。既存の成果物を読み込んで途中から再開する。
-
 - [ ] `docs list` で永続ドキュメントの所在を確認し、**今回のビルドに関係するものだけ**を読む
   - `decisions` は採用理由とトレードオフを把握し、**実装中に判断を覆さない**
   - 覆す必要が生じた場合は、覆した ADR・理由・影響範囲を **`handoff.md` に記録する**
@@ -141,6 +133,18 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify build-{NN} {cycle
 **Hikyaku の規則に従う場合、このブランチの存在が「着手中」の印**になるので、作成したら
 早めに push しておくと他セッションとの衝突を避けられる。ブランチを決めたら、成果物を
 コミットする直前にもう一度この確認を行う。
+
+- [ ] `cycle status` で既存の成果物を確認する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
+```
+
+中断からの再開なら、どこまで進んだかが表示される。既存の成果物を読み込んで途中から再開する。
+
+**ブランチを決めたあとに実行する。** 成果物の有無は作業ツリーを見て判定するため、
+デフォルトブランチに居るまま実行すると、前回のセッションが push 済みの成果物が見えない。
+中断からの再開なのに最初からやり直すことになる。
 
 - [ ] セッション名を設定する
 
@@ -294,17 +298,6 @@ learnings / overview / constraints へ昇格させる。**あなたが永続ド�
 
 ### Step 8: PR 作成と完了記録
 
-- [ ] tasklist.md の PR 列を更新する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist done {cycle} \
-  --id {buildID} --pr {PR の URL}
-```
-
-**この変更は必ずこのビルドの PR に同梱する。** 先にデフォルトブランチへ入れると、
-未マージのビルドを完了と誤判定する。PR 列が非空であること自体が「マージ済み = 完了」を
-意味するのは、この同梱が守られているからこそ成立する。
-
 - [ ] 外部連携が有効なら、PR 本文へ入れる参照行を生成する
 
 ```bash
@@ -318,6 +311,21 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref build-{NN} {cycle}
   - 本文の末尾に上の参照行を入れる
   - PR 作成前の承認は取らない。PR はレビューのための提案であって不可逆ではなく、
     ユーザーが `/hikyaku:builder` を実行した時点で PR 作成まで依頼されている
+
+- [ ] tasklist.md の PR 列を更新し、**同じブランチへコミット & push する**
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist done {cycle} \
+  --id {buildID} --pr {PR の URL}
+```
+
+**PR を作ってからでないと URL が無い。** だから PR 作成が先で、PR 列の更新は後になる。
+push した分は同じ PR に載るので、順序が変わっても「PR に同梱する」ことは変わらない。
+
+**この変更は必ずこのビルドの PR に同梱する。** 先にデフォルトブランチへ入れると、
+未マージのビルドを完了と誤判定する。PR 列が非空であること自体が「マージ済み = 完了」を
+意味するのは、この同梱が守られているからこそ成立する。
+
 - [ ] 外部投影が有効な場合は同期を試みる（失敗してもワークフローは止めない）
 
 ```bash

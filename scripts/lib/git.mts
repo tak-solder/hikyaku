@@ -103,3 +103,45 @@ export async function listRemoteBranches(cwd: string): Promise<RemoteBranches> {
     return { names: [], unavailable: message };
   }
 }
+
+export interface FileAtRef {
+  /** ref の tree に存在した内容。取得できなければ undefined */
+  content: string | undefined;
+  /** 実際に読めた ref（origin/main か main か） */
+  ref: string | undefined;
+  /** 取得できなかった場合の理由 */
+  unavailable: string | undefined;
+}
+
+/**
+ * デフォルトブランチの tree からファイルを読む。
+ *
+ * 完了判定（PR 列）は「デフォルトブランチ上で埋まっていること」が条件なので、
+ * 作業ツリーを読んではいけない。ビルドブランチ上では自分の PR 列を埋めた直後の
+ * tasklist が見えるため、未マージのビルドを完了と誤判定し、依存ビルドを
+ * 着手可能として返してしまう。
+ *
+ * origin/{base} を先に見る。ローカルの {base} は fetch していなければ古く、
+ * 他セッションがマージしたビルドを見落とすため。どちらも読めなければ
+ * unavailable を返し、呼び出し元がフォールバックを決める。
+ */
+export async function readFileAtDefaultBranch(
+  cwd: string,
+  base: string,
+  repoRelativePath: string,
+): Promise<FileAtRef> {
+  const errors: string[] = [];
+  for (const ref of [`origin/${base}`, base]) {
+    try {
+      const { stdout } = await run("git", ["show", `${ref}:${repoRelativePath}`], {
+        cwd,
+        timeout: 15_000,
+        maxBuffer: 8 * 1024 * 1024,
+      });
+      return { content: stdout, ref, unavailable: undefined };
+    } catch (error) {
+      errors.push(`${ref}: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}`);
+    }
+  }
+  return { content: undefined, ref: undefined, unavailable: errors.join(" / ") };
+}

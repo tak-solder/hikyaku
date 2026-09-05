@@ -41,7 +41,12 @@ async function main(): Promise<number> {
   }
 
   if (args.positional.length === 0) {
+    // --help は明示的な要求なので stdout・終了コード 0。
     // 引数なしは usage を出して 1（git と同じ挙動）
+    if (flagBoolean(args, "help")) {
+      process.stdout.write(`${renderOverview(pluginVersion())}\n`);
+      return EXIT_OK;
+    }
     process.stderr.write(`${renderOverview(pluginVersion())}\n`);
     return EXIT_ERROR;
   }
