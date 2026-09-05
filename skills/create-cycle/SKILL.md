@@ -135,8 +135,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify plan {NNN}-{slug}
 ```
 
 `ok: true` ならそのまま、`onBaseBranch: true` なら `expected` の名前で作成する。
-`onBaseBranch` が `false` / `null`（既に別の作業ブランチに居る）なら、**ユーザーに尋ねる**。
-Hikyaku の規則に従う / 現在のブランチで作業する / ユーザーが指定する、の3つを提示する。
+`onBaseBranch` が `false` / `null`（既に別の作業ブランチに居る）なら、**必ずユーザーに尋ねる**。
+Hikyaku の規則に従う / 現在のブランチで作業する / 別のブランチを指定する、の3つを提示し、
+**どれが妥当かは示唆しない。** 実行環境が割り当てたブランチだと分かっていても自分で決めない
+（別の作業のブランチに紛れ込んだ状態と、セッションの中からは区別できないため）。
 
 - [ ] 決まったブランチで cycles.md の変更をコミットする
 - [ ] `/hikyaku:planner {NNN}-{slug}` を呼び出す
@@ -154,8 +156,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify create {NNN}-{slu
 ```
 
 `ok: true` ならそのまま、`onBaseBranch: true` なら `expected` の名前で作成する。
-`onBaseBranch` が `false` / `null`（既に別の作業ブランチに居る）なら、**ユーザーに尋ねる**。
-Hikyaku の規則に従う / 現在のブランチで作業する / ユーザーが指定する、の3つを提示する。
+`onBaseBranch` が `false` / `null`（既に別の作業ブランチに居る）なら、**必ずユーザーに尋ねる**。
+Hikyaku の規則に従う / 現在のブランチで作業する / 別のブランチを指定する、の3つを提示し、
+**どれが妥当かは示唆しない。** 実行環境が割り当てたブランチだと分かっていても自分で決めない
+（別の作業のブランチに紛れ込んだ状態と、セッションの中からは区別できないため）。
 
 - [ ] コミットして PR を作成する
 
