@@ -189,7 +189,7 @@ export function renderCyclesFile(records: CycleRecord[]): string {
     "| 列 | 意味 |",
     "| --- | --- |",
     "| `status` | `active` 進行中 / `closed` 永続ドキュメントへの昇格まで完了 / `abandoned` 中止 |",
-    "| `profile` | サイクル作成時に選択した profile（light / saving / standard / strict） |",
+    "| `profile` | サイクル作成時に選択した profile（express / economy / standard / thorough） |",
     "| `hikyaku` | 作成時の Hikyaku バージョン。ディレクトリ構造の解釈に使う。以後更新しない |",
     "| `チケット` | このサイクルの発端になった外部チケット（人が作ったもの） |",
     "| `外部` | Hikyaku が投影した親 issue / 親タスク。可視化のためのビューで、判定には使わない |",

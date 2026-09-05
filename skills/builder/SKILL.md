@@ -168,7 +168,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title build-{NN} {cycle
   - **含めないもの:** 詳細な実装コード、テストコードの実装方法
 - [ ] コミット & push する
 
-- [ ] **`plan_gate` が有効な場合**（strict のみ）、ここで plan.md の承認を得る（G7）
+- [ ] **`plan_gate` が有効な場合**（thorough のみ）、ここで plan.md の承認を得る（G7）
   - それ以外のプロファイルでは Step 3 の最後にまとめて承認する（G8）
 
 - [ ] テストシナリオを **Agent に委任して** `cycles/{cycle}/build-{NN}/test-spec.md` を生成させる
@@ -200,14 +200,14 @@ Agent に渡すフォーマット指定:
 
 - [ ] コミット & push する
 
-- [ ] **`plan_review` が有効な場合**（light / standard / strict）、`doc-reviewer` を起動する（`context: plan`）
+- [ ] **`plan_review` が有効な場合**（express / standard / thorough）、`doc-reviewer` を起動する（`context: plan`）
   - 渡す情報: `plan.md`, `issue.md`, `design-delta.md`, 依存ビルドの `handoff.md`
   - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
 
 - [ ] **plan.md と test-spec.md をまとめてユーザーに提示し、承認を得る（G8）**
   - 承認観点: 実装ステップの妥当性 / 受け入れ基準の網羅性 / 正常系・異常系・境界値のカバー範囲 / 不要なテストの有無
   - この承認は profile の管轄外で、どのプロファイルでも省略しない
-  - strict では G7 で plan を既に承認しているので、ここでは test-spec に焦点を当てる
+  - thorough では G7 で plan を既に承認しているので、ここでは test-spec に焦点を当てる
 
 → 承認を得たら Step 4 へ。フィードバックがあれば反映して承認からやり直す。
 
@@ -238,8 +238,8 @@ Agent に渡すフォーマット指定:
 
 | 設定値 | 挙動 |
 |---|---|
-| `off`（light / saving） | 起動しない |
-| `on`（strict） | 常に起動する |
+| `off`（express / economy） | 起動しない |
+| `on`（thorough） | 常に起動する |
 | `recommended`（standard） | **判定基準に該当する場合のみ、起動するか確認する** |
 
 `recommended` の場合、対象ビルドの `issue.md` と実際の diff を見て、

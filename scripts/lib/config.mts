@@ -21,13 +21,13 @@ import { HikyakuError } from "./errors.mts";
 import { repoRoot } from "./paths.mts";
 import { parseToml, TomlError, type TomlTable, type TomlValue } from "./toml.mts";
 
-export type ProfileName = "light" | "saving" | "standard" | "strict";
+export type ProfileName = "express" | "economy" | "standard" | "thorough";
 export type SecurityReviewMode = "off" | "recommended" | "on";
 export type RetrospectiveMode = "skip" | "prompt" | "auto";
 export type ValidateMode = "manual" | "phase" | "step";
 export type ExternalTarget = "none" | "github" | "asana";
 
-export const PROFILE_NAMES: ProfileName[] = ["light", "saving", "standard", "strict"];
+export const PROFILE_NAMES: ProfileName[] = ["express", "economy", "standard", "thorough"];
 
 /**
  * 承認ゲート。ここに無いゲートは profile の管轄外で、常に有効:
@@ -44,7 +44,7 @@ export interface Gates {
   codebaseSurvey: boolean;
   /** G4 architect: 設計ドキュメント承認 */
   architecture: boolean;
-  /** G7 builder: plan 単独の承認（strict のみ。他は G8 に統合） */
+  /** G7 builder: plan 単独の承認（thorough のみ。他は G8 に統合） */
   plan: boolean;
 }
 
@@ -65,7 +65,7 @@ interface ProfileDefinition {
 
 const PROFILES: Record<ProfileName, ProfileDefinition> = {
   // 人間の時間を節約する。承認は減らすが AI には見させる
-  light: {
+  express: {
     gates: { userStories: false, codebaseSurvey: false, architecture: false, plan: false },
     reviews: {
       userStories: true,
@@ -79,7 +79,7 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
   },
   // AI 実行コストを節約する。中間成果物のレビューを起動しないが人間は見る。
   // code だけは全プロファイルで残す（コードの差分は承認ゲートが拾える粒度を超えるため）
-  saving: {
+  economy: {
     gates: { userStories: true, codebaseSurvey: false, architecture: true, plan: false },
     reviews: {
       userStories: false,
@@ -91,6 +91,7 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
       validate: "manual",
     },
   },
+  // 完成した成果物の単位で、人間も AI も見る
   standard: {
     gates: { userStories: true, codebaseSurvey: false, architecture: true, plan: false },
     reviews: {
@@ -103,7 +104,10 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
       validate: "phase",
     },
   },
-  strict: {
+  // 判定基準が厳しくなるのではなく、チェックポイントが細かくなる。
+  // 完成前の中間状態（codebase-survey だけ / plan だけ / 各ステップ）でも止まり、
+  // 条件付きのもの（security / retrospective）も判断を挟まず常に実行する
+  thorough: {
     gates: { userStories: true, codebaseSurvey: true, architecture: true, plan: true },
     reviews: {
       userStories: true,

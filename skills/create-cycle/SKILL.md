@@ -69,16 +69,16 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active
 ```
 このサイクルの profile を選択してください（.hikyaku.config の設定: standard）
 
-  light     承認ゲート最小、レビューは有効。人間の時間を節約する
+  express   承認ゲート最小、レビューは有効。人間の時間を節約する
             → 小規模・低リスク。問題は PR レビューで拾う
 
-  saving    承認は残し、中間成果物のレビューエージェントを起動しない（コードレビューは残る）
+  economy   承認は残し、中間成果物のレビューエージェントを起動しない（コードレビューは残る）
             → 自分で見るのでレビューは要らない、という場合
 
   standard  全レビュー有効、各フェーズで承認
             → 通常はこれ
 
-  strict    codebase-survey の確認と plan 単独の承認を追加、validate を各ステップで実行
+  thorough  codebase-survey の確認と plan 単独の承認を追加、validate を各ステップで実行
             → 影響範囲が大きい、慎重に進めたい
 ```
 

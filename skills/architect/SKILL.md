@@ -206,7 +206,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active
     ここでは「今回のサイクルで必要な範囲」に留める
 - [ ] **コミット & push する**
 
-- [ ] **`codebase_survey_gate` が有効な場合**（strict のみ）、ユーザーに提示して確認を得る
+- [ ] **`codebase_survey_gate` が有効な場合**（thorough のみ）、ユーザーに提示して確認を得る
 
 → Step 3 へ。
 
@@ -277,10 +277,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active
 
 #### Step 5a: 設計の承認（G4）
 
-- [ ] **`architecture_review` が有効な場合**（light / standard / strict）、`doc-reviewer` を起動する（`context: architecture`）
+- [ ] **`architecture_review` が有効な場合**（express / standard / thorough）、`doc-reviewer` を起動する（`context: architecture`）
   - 渡す情報: `design-delta.md`, `codebase-survey.md`, 今回追記した ADR, `user-stories.md`
   - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
-- [ ] **`architecture_gate` が有効な場合**（saving / standard / strict）、ユーザーに提示して承認を得る
+- [ ] **`architecture_gate` が有効な場合**（economy / standard / thorough）、ユーザーに提示して承認を得る
 
 **承認観点はこれに限定する:**
 
