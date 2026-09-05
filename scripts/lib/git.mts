@@ -7,9 +7,50 @@
  */
 
 import { execFile } from "node:child_process";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 const run = promisify(execFile);
+
+/**
+ * 現在のブランチ名。.git を直接読むので git バイナリに依存しない。
+ * detached HEAD や .git が見つからない場合は undefined。
+ */
+export function currentBranch(repoRootPath: string): string | undefined {
+  const gitDir = resolveGitDir(repoRootPath);
+  if (gitDir === undefined) return undefined;
+
+  const headPath = join(gitDir, "HEAD");
+  if (!existsSync(headPath)) return undefined;
+
+  const ref = /^ref:\s*refs\/heads\/(.+)$/m.exec(readFileSync(headPath, "utf8").trim());
+  return ref?.[1];
+}
+
+/** worktree では .git がファイルで、gitdir: の行が実体を指す */
+function resolveGitDir(repoRootPath: string): string | undefined {
+  const dotGit = join(repoRootPath, ".git");
+  if (!existsSync(dotGit)) return undefined;
+  if (statSync(dotGit).isDirectory()) return dotGit;
+
+  const pointer = /^gitdir:\s*(.+)$/m.exec(readFileSync(dotGit, "utf8"))?.[1]?.trim();
+  if (pointer === undefined) return undefined;
+  return isAbsolute(pointer) ? pointer : resolve(repoRootPath, pointer);
+}
+
+/** パスが git の管理下にあるか（.hikyaku.local の取り違え検出に使う） */
+export async function isTracked(cwd: string, path: string): Promise<boolean> {
+  try {
+    const { stdout } = await run("git", ["ls-files", "--error-unmatch", "--", path], {
+      cwd,
+      timeout: 10_000,
+    });
+    return stdout.trim() !== "";
+  } catch {
+    return false;
+  }
+}
 
 export interface RemoteBranches {
   /** リモートに存在するブランチ名 */

@@ -4,12 +4,12 @@ import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { flagBoolean, flagString } from "../lib/args.mts";
-import { loadConfig, type ExternalTarget } from "../lib/config.mts";
+import { flagBoolean } from "../lib/args.mts";
+import { type ExternalTarget } from "../lib/config.mts";
 import { emit, warn } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { buildDirName, loadTasklist, type BuildRecord } from "../lib/tasklist.mts";
-import { resolveCycle } from "../lib/workspace.mts";
+import { openCycle } from "../lib/workspace.mts";
 
 const run = promisify(execFile);
 
@@ -91,17 +91,18 @@ register({
     "  asana   投影内容を出力する。実際の反映は Asana MCP ツールを持つスキル側が行う",
   ].join("\n"),
   run: async ({ args, operands }) => {
-    const config = loadConfig({ root: flagString(args, "root") });
     const explicit = operands[0];
     const known: ExternalTarget[] = ["none", "github", "asana"];
+    const cycleKey = explicit !== undefined && !(known as string[]).includes(explicit)
+      ? explicit
+      : operands[1];
+
+    const { config, context: ctx } = openCycle(args, cycleKey);
     const target = (
       explicit !== undefined && (known as string[]).includes(explicit)
         ? explicit
         : config.external.target
     ) as ExternalTarget;
-    const cycleKey = explicit !== undefined && !(known as string[]).includes(explicit)
-      ? explicit
-      : operands[1];
 
     if (target === "none") {
       emit({ target, synced: [] }, () =>
@@ -110,7 +111,6 @@ register({
       return;
     }
 
-    const ctx = resolveCycle(config.hikyakuRoot, cycleKey);
     const projections = buildProjections(
       ctx.name,
       ctx.directory,

@@ -1,14 +1,12 @@
 /** next — 着手可能なビルドを返す */
 
-import { flagString } from "../lib/args.mts";
 import { branchName, buildPhase } from "../lib/branch.mts";
-import { loadConfig } from "../lib/config.mts";
 import { listRemoteBranches } from "../lib/git.mts";
 import { deriveState, suggestCommand } from "../lib/phase.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { blockedBuilds, buildDirName, isComplete, readyBuilds } from "../lib/tasklist.mts";
-import { resolveCycle } from "../lib/workspace.mts";
+import { openCycle } from "../lib/workspace.mts";
 
 register({
   name: "next",
@@ -26,8 +24,7 @@ register({
     "「着手中」に見えるため、PR 列が非空のビルドは着手中として扱いません。",
   ].join("\n"),
   run: async ({ args, operands }) => {
-    const config = loadConfig({ root: flagString(args, "root") });
-    const ctx = resolveCycle(config.hikyakuRoot, operands[0]);
+    const { config, context: ctx } = openCycle(args, operands[0]);
     const state = deriveState(ctx.directory, ctx.record, ctx.builds);
 
     const ready = readyBuilds(ctx.builds);

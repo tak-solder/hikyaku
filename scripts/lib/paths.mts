@@ -44,23 +44,21 @@ export function repoRoot(from: string = process.cwd()): string {
 }
 
 /** HIKYAKU_ROOT らしさの判定に使うマーカー */
-const ROOT_MARKERS = ["document-guide.md", "cycles.md", ".hikyaku.config"];
+const ROOT_MARKERS = ["document-guide.md", "cycles.md"];
 
 /**
  * HIKYAKU_ROOT を上方向探索で見つける。
- * document-guide.md か cycles.md を持つディレクトリを優先し、
- * どちらも無い場合に限って .hikyaku.config だけを持つディレクトリを採用する
- * （リポジトリルートの設定ファイルと取り違えないため）。
+ *
+ * 解決経路には使わない（正はリポジトリルートの .hikyaku.config の hikyaku_root）。
+ * 設定が無い / 食い違うときに doctor が候補を示すための診断用。
+ *
+ * .hikyaku.config はマーカーにしない。サイクルディレクトリにも置けるようになったため、
+ * 見つけたものが HIKYAKU_ROOT だとは限らない。
  */
 export function findHikyakuRoot(from: string = process.cwd()): string | undefined {
-  const strong = searchUpward(
-    from,
-    (dir) => existsSync(join(dir, "document-guide.md")) || existsSync(join(dir, "cycles.md")),
+  return searchUpward(from, (dir) =>
+    ROOT_MARKERS.some((marker) => existsSync(join(dir, marker))),
   );
-  if (strong !== undefined) return strong;
-
-  const root = repoRoot(from);
-  return searchUpward(from, (dir) => dir !== root && existsSync(join(dir, ".hikyaku.config")));
 }
 
 /** HIKYAKU_ROOT が実在し、マーカーを持つか検証する */

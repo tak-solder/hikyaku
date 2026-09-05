@@ -3,7 +3,7 @@ name: build-manager
 description: "Hikyaku ビルド管理: ビルドの追加・更新・分割と依存グラフ管理を行う内部スキル。hikyaku:architect / hikyaku:builder から呼び出される。"
 user-invocable: false
 disable-model-invocation: false
-argument-hint: "{HIKYAKU_ROOT} [{cycle}]"
+argument-hint: "[{cycle}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
   version: "2.0.0"
@@ -43,15 +43,16 @@ BP見積もりと分割単位の判断、issue.md の内容の作成、ユーザ
 - [ ] 設定を解決する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config --root {HIKYAKU_ROOT} --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json
 ```
 
-`bp_max`（未設定なら 8）を取得する。
+`bp_max`（未設定なら 8）を取得する。サイクル固有の `.hikyaku.config` があれば
+その値が優先される。HIKYAKU_ROOT は引数では受け取らない（設定から解決される）。
 
 - [ ] 対象サイクルの現状を取得する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist read {cycle} --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist read {cycle}
 ```
 
 → Step 1 へ。
@@ -98,7 +99,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist read {cycle} --root {H
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist add {cycle} \
-  --title "..." --bp 3 --deps 1,2 --root {HIKYAKU_ROOT} --dry-run
+  --title "..." --bp 3 --deps 1,2 --dry-run
 ```
 
 - [ ] 以下をユーザーに提示して承認を得る
@@ -140,7 +141,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist add {cycle} \
 `[external] target` が `none` 以外の場合、書き込み後に投影を試みる。
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external sync {target} {cycle} --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external sync {target} {cycle}
 ```
 
 **投影は片方向で、マスターは常にファイル側。** 失敗してもワークフローは止めず、

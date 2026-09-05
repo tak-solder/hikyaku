@@ -3,7 +3,7 @@ name: architect
 description: "Hikyaku 設計フェーズ: 企画成果物と既存コードを入力に、このサイクルの設計差分（design-delta）とビルド分割を出力する"
 user-invocable: true
 disable-model-invocation: true
-argument-hint: "[{HIKYAKU_ROOT}] [{cycle}]"
+argument-hint: "[{cycle}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
   version: "2.0.0"
@@ -48,11 +48,31 @@ close-cycle が行う。並行サイクルはこの status を見て「決まっ
 ### Step 0: 設定の解決と入力の読み込み
 
 - [ ] `${CLAUDE_PLUGIN_ROOT}/skills/architect/references/templates.md`: 各種テンプレート（必須）
-- [ ] 設定を解決し、対象サイクルの状態を確認する
+- [ ] 設定と対象サイクルを解決する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config --root $ARGUMENTS[0] --json
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle} --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json
+```
+
+HIKYAKU_ROOT は `.hikyaku.config` から解決されるので、引数では受け取らない。
+
+`$ARGUMENTS[0]` でサイクルが指定されていればそれを渡す。省略された場合は
+**現在のブランチ → `.hikyaku.local` → 唯一の進行中サイクル** の順で決まる。
+決められないときは進行中サイクルの一覧を添えてエラーになるので、**ユーザーに尋ねてから**
+指定し直す。推測して進めない（別サイクルへコミットする事故になる）。
+
+出力の `cycle` と `cycleSource` を、作業対象としてユーザーに1行で示す。
+
+- [ ] 対象サイクルを記録する（次回から尋ねられずに済む）
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {cycle}
+```
+
+- [ ] サイクルの状態を確認する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
 ```
 
 中断からの再開の場合、`cycle status` がどこまで進んだかを教えてくれる。
@@ -66,7 +86,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle} --root {HI
 - [ ] **永続ドキュメントを読み込む**
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs list --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs list
 ```
 
 概要欄を見て、**今回のスコープに関係するものだけ**を読む。全部読む必要はない。
@@ -89,7 +109,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs list --root {HIKYAKU_ROOT}
 ### Step 1: 並行サイクルの確認
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active
 ```
 
 **他に走行中のサイクルが無ければこのステップをスキップして Step 2 へ。**
@@ -237,13 +257,13 @@ github/asana のとき外部システムで issue の作成・削除が乱造さ
 承認後に初めて書き込むので、拒否されても外部に何も残らない。
 
 - [ ] 設計に基づいてビルドの論理的な単位（タイトル・スコープ・依存関係）を整理する
-- [ ] `/hikyaku:build-manager {HIKYAKU_ROOT} {cycle}` を呼び出す
+- [ ] `/hikyaku:build-manager {cycle}` を呼び出す
   - 伝える情報: 各ビルドのタイトル・スコープ・依存関係・参照すべき設計ドキュメント
   - build-manager が BP見積もり、tasklist の更新、issue.md の作成、承認までを行う
 - [ ] 検証する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate {cycle} --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate {cycle}
 ```
 
 → 承認を得たら Step 6 へ。フィードバックの内容に応じて対応する:
@@ -252,7 +272,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate {cycle} --root {HIKYAK
 
 ### Step 6: 振り返りと PR
 
-- [ ] `retrospective` 設定に従って `/hikyaku:retrospective {HIKYAKU_ROOT} {cycle} design` を呼び出す
+- [ ] `retrospective` 設定に従って `/hikyaku:retrospective {cycle} design` を呼び出す
 - [ ] PR を作成する（タイトルは `hikyaku pr title architect {cycle}` で生成）
 
 **この PR も速やかにマージすることを想定している。** tasklist.md がデフォルトブランチに
@@ -261,14 +281,14 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate {cycle} --root {HIKYAK
 - [ ] 完了後、次に着手できるビルドを案内する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle} --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle}
 ```
 
 ```
 設計フェーズが完了しました。
 
 BUILDフェーズを開始するには、新しいセッションで以下を実行してください:
-/hikyaku:builder {HIKYAKU_ROOT} {cycle} {buildID}
+/hikyaku:builder {cycle} {buildID}
 
 依存関係のないビルドは並行して進められます。
 ```

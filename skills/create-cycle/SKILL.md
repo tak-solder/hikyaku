@@ -3,7 +3,7 @@ name: create-cycle
 description: "Hikyaku サイクル作成: チケットを起点に新しいサイクルを採番し、profile を選択して cycles.md に登録する。"
 user-invocable: true
 disable-model-invocation: false
-argument-hint: "[{HIKYAKU_ROOT}] [{slug}]"
+argument-hint: "[{slug}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
   version: "2.0.0"
@@ -23,7 +23,7 @@ metadata:
 - [ ] 設定を解決する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config --root {HIKYAKU_ROOT} --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config --json
 ```
 
 未初期化（`document-guide.md` が無い）の場合は `/hikyaku:init` を案内して終了する。
@@ -31,7 +31,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config --root {HIKYAKU_ROOT} --
 - [ ] 進行中のサイクルを確認する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active
 ```
 
 **`completed` のまま放置されているサイクルがあれば警告する**（ブロックはしない）。
@@ -51,7 +51,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active --root {HIK
 - [ ] **チケット**を確認する。ユーザーが提示していなければ尋ねる
   - チケット番号・URL、または「チケット無し」
 - [ ] **slug** を決める（英数字とハイフン。例: `billing`, `user-auth`）
-  - `$ARGUMENTS[1]` があればそれを使う
+  - `$ARGUMENTS[0]` があればそれを使う
   - 無ければチケットの内容から提案し、確認を得る
 - [ ] **一行要約**を書く（cycles.md の索引に載る）
 - [ ] **サイクル間の依存**があれば特定する
@@ -93,7 +93,7 @@ profile は**サイクルの属性**であり、作成時に決まって以後�
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle new {slug} \
   --profile {profile} --ticket "{ticket}" --summary "{要約}" \
-  --depends {依存サイクルID} --root {HIKYAKU_ROOT} --dry-run
+  --depends {依存サイクルID} --dry-run
 ```
 
 - [ ] 内容を確認して実行する（`--dry-run` を外す）
@@ -121,5 +121,5 @@ cycles.md には**作成時の Hikyaku バージョン**も記録される。デ
 サイクル {NNN}-{slug} を作成しました（profile: {profile}）。
 
 企画フェーズを開始するには、新しいセッションで:
-/hikyaku:planner {HIKYAKU_ROOT} {NNN}-{slug}
+/hikyaku:planner {NNN}-{slug}
 ```

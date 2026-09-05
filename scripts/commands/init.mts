@@ -27,17 +27,20 @@ register({
   details: [
     "生成するファイル（既存のものは決して上書きしません）:",
     "",
-    "  リポジトリルート/.hikyaku.config   hikyaku_root を記録する",
-    "  {HIKYAKU_ROOT}/.hikyaku.config     このワークフロー固有の上書き用（全項目コメントアウト）",
+    "  リポジトリルート/.hikyaku.config   設定の唯一のベース。hikyaku_root を記録する",
     "  {HIKYAKU_ROOT}/cycles.md           サイクル索引",
     "  {HIKYAKU_ROOT}/document-guide.md   ドキュメントガイドの雛形（全て『未作成』）",
+    "  {HIKYAKU_ROOT}/.gitignore          .hikyaku.local だけを除外する",
     "",
     "既存の設計ドキュメントを検出して document-guide.md へ登録するのは",
     "/hikyaku:init スキルの役割です（対話が必要なため）。",
     "",
-    "v1 と異なり {HIKYAKU_ROOT}/.gitignore は生成しません。ファイル正へ一本化した結果、",
-    "除外すべきローカルキャッシュが無くなり、サイクル文書はすべてコミット対象になります。",
-    "close-cycle が別セッションで retrospective.md を素材として読むため、除外すると読めません。",
+    "設定を置ける場所はリポジトリルートとサイクルディレクトリの2箇所だけです。",
+    "{HIKYAKU_ROOT}/.hikyaku.config は作りません（読み込まれません）。",
+    "",
+    ".gitignore が除外するのは .hikyaku.local の1行だけです。サイクル文書はすべて",
+    "コミット対象にします。close-cycle が別セッションで retrospective.md を素材として",
+    "読むため、まとめて除外すると読めなくなります。"
   ].join("\n"),
   run: ({ args, operands }) => {
     const root = repoRoot();
@@ -54,13 +57,16 @@ register({
     const dryRun = flagBoolean(args, "dry-run");
 
     const repoConfigPath = join(root, ".hikyaku.config");
-    const repoConfigIssues = inspectRepoConfig(repoConfigPath, rel);
+    const repoConfigIssues = [
+      ...inspectRepoConfig(repoConfigPath, rel),
+      ...inspectStaleWorkspaceConfig(hikyakuRoot),
+    ];
 
     const planned: PlannedFile[] = [
       plan(repoConfigPath, renderRepoConfig(rel)),
-      plan(join(hikyakuRoot, ".hikyaku.config"), renderWorkspaceConfig()),
       plan(cyclesPath(hikyakuRoot), renderCyclesFile([])),
       plan(guidePath(hikyakuRoot), renderGuideScaffold()),
+      plan(join(hikyakuRoot, ".gitignore"), renderGitignore()),
     ];
 
     emit(
@@ -142,6 +148,18 @@ function inspectRepoConfig(path: string, expectedRoot: string): string[] {
 }
 
 /**
+ * v2.0 の初期実装が生成していた中間層の設定を検出する。
+ * 読み込まれなくなったので、置いたままだと設定が黙って無視される。
+ */
+function inspectStaleWorkspaceConfig(hikyakuRoot: string): string[] {
+  const path = join(hikyakuRoot, ".hikyaku.config");
+  if (!existsSync(path)) return [];
+  return [
+    `${path} は読み込まれません。内容をリポジトリルートの .hikyaku.config へ移して削除してください`,
+  ];
+}
+
+/**
  * リポジトリルートの設定。hikyaku_root はここでのみ有効。
  *
  * テーブルの見出し（[branch] など）はコメントアウトしない。見出しごと
@@ -197,16 +215,17 @@ function renderRepoConfig(hikyakuRoot: string): string {
   ].join("\n");
 }
 
-/** HIKYAKU_ROOT 側の上書き設定。hikyaku_root 以外のキーを指定できる */
-function renderWorkspaceConfig(): string {
+/**
+ * HIKYAKU_ROOT の .gitignore。
+ *
+ * 除外するのは作業の栞（.hikyaku.local）だけ。包括パターンは書かない。
+ * サイクル文書はすべてコミット対象で、とくに retrospective.md は close-cycle が
+ * 別セッションから昇格素材として読むため、除外すると読めなくなる。
+ */
+function renderGitignore(): string {
   return [
-    "# このワークフロー固有の設定",
-    "#",
-    "# リポジトリルートの .hikyaku.config をキー単位で上書きします。",
-    "# hikyaku_root はここでは指定できません（リポジトリルートでのみ有効）。",
-    "",
-    '# profile = "standard"',
-    "# bp_max = 8",
+    "# 最後に作業したサイクルを記録するローカル専用ファイル",
+    ".hikyaku.local",
     "",
   ].join("\n");
 }

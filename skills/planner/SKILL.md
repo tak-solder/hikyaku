@@ -3,7 +3,7 @@ name: planner
 description: "Hikyaku 企画フェーズ: チケットと既存の企画ドキュメントを読み込み、そのサイクルのユーザーストーリーとして構造化する"
 user-invocable: true
 disable-model-invocation: true
-argument-hint: "[{HIKYAKU_ROOT}] [{cycle}]"
+argument-hint: "[{cycle}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
   version: "2.0.0"
@@ -34,19 +34,22 @@ AIエージェント協働開発ワークフロー。
 ### ディレクトリ構造
 
 ```
-{HIKYAKU_ROOT}/
-├── .hikyaku.config
-├── document-guide.md          # 永続ドキュメントの所在（必須）
-├── cycles.md                  # サイクル索引（必須）
-├── instruction.md             # ワークフロー独自の指示（任意）
-└── cycles/
-    └── {NNN}-{slug}/
-        ├── planning/          # ← あなたが作る
-        │   ├── questions.md
-        │   └── user-stories.md
-        ├── design/            # ARCHITECT が作る
-        ├── tasklist.md        # ARCHITECT が作る
-        └── build-01/          # BUILD が作る
+リポジトリルート/
+├── .hikyaku.config            # 設定のベース（必須）。hikyaku_root もここ
+└── {HIKYAKU_ROOT}/
+    ├── document-guide.md      # 永続ドキュメントの所在（必須）
+    ├── cycles.md              # サイクル索引（必須）
+    ├── instruction.md         # ワークフロー独自の指示（任意）
+    ├── .hikyaku.local         # 最後に作業したサイクル（git 管理対象外）
+    └── cycles/
+        └── {NNN}-{slug}/
+            ├── .hikyaku.config  # サイクル固有の上書き（任意）
+            ├── planning/        # ← あなたが作る
+            │   ├── questions.md
+            │   └── user-stories.md
+            ├── design/          # ARCHITECT が作る
+            ├── tasklist.md      # ARCHITECT が作る
+            └── build-01/        # BUILD が作る
 ```
 
 **永続ドキュメント（overview / decisions / constraints / learnings / conventions 等）は
@@ -67,20 +70,40 @@ HIKYAKU_ROOT の外にある。** 所在は `document-guide.md` が宣言する�
 ### Step 0: 設定の解決とサイクルの特定
 
 - [ ] `${CLAUDE_PLUGIN_ROOT}/skills/planner/references/templates.md`: 各種テンプレート（必須）
-- [ ] 設定を解決する
+- [ ] 設定と対象サイクルを解決する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config --root $ARGUMENTS[0] --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json
 ```
 
-- **未初期化の場合**（`document-guide.md` が無い）→ `/hikyaku:init` を実行して初期化を代行する
-- **サイクルが未作成の場合** → `/hikyaku:create-cycle` を実行して代行する
+HIKYAKU_ROOT は `.hikyaku.config` から解決されるので、引数では受け取らない。
+
+`$ARGUMENTS[0]` でサイクルが指定されていればそれを渡す。省略された場合は
+**現在のブランチ → `.hikyaku.local` → 唯一の進行中サイクル** の順で決まる。
+決められないときは進行中サイクルの一覧を添えてエラーになるので、**ユーザーに尋ねてから**
+指定し直す。推測して進めない（別サイクルへコミットする事故になる）。
+
+出力の `cycle` と `cycleSource` を、作業対象としてユーザーに1行で示す。
+
+ここで次のエラーが出た場合は代行する。
+
+- **未初期化**（`.hikyaku.config` が無い / `document-guide.md` が無い）
+  → `/hikyaku:init` を実行して初期化を代行する
+- **サイクルが未作成**（「サイクルがまだありません」）
+  → `/hikyaku:create-cycle` を実行して代行する
   - 代行した場合、create-cycle は PR を作らない。成果物が cycles.md の1行だけなので、
     このスキルの PR に畳む
-- [ ] 対象サイクルを特定する
+
+- [ ] 対象サイクルを記録する（次回から尋ねられずに済む）
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle} --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {cycle}
+```
+
+- [ ] サイクルの状態を確認する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
 ```
 
 **中断からの再開の場合**、このコマンドがどこまで進んだかを教えてくれる。
@@ -100,7 +123,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle} --root {HI
 ### Step 1: ブランチ作成
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch name plan {cycle} --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch name plan {cycle}
 ```
 
 返ってきた名前でブランチを作成する。
@@ -166,7 +189,7 @@ profile ごとの有効・無効は Step 0 の `config --json` の `gates` / `re
 
 ### Step 6: 振り返りと PR
 
-- [ ] `retrospective` 設定に従って `/hikyaku:retrospective {HIKYAKU_ROOT} {cycle} planning` を呼び出す
+- [ ] `retrospective` 設定に従って `/hikyaku:retrospective {cycle} planning` を呼び出す
 - [ ] PR を作成する（タイトルは `hikyaku pr title plan {cycle}` で生成）
 
 **このフェーズの PR はドキュメントのみで、速やかにマージすることを想定している。**
@@ -178,5 +201,5 @@ profile ごとの有効・無効は Step 0 の `config --json` の `gates` / `re
 企画フェーズが完了しました。
 
 設計フェーズを開始するには、新しいセッションで以下を実行してください:
-/hikyaku:architect {HIKYAKU_ROOT} {cycle}
+/hikyaku:architect {cycle}
 ```

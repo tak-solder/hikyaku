@@ -88,9 +88,24 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" init --root {HIKYAKU_ROOT}
 
 既存ファイルは決して上書きされない。
 
-**v1 と異なり `.gitignore` は生成しない。** ファイル正へ一本化した結果、除外すべき
-ローカルキャッシュが無くなった。close-cycle は別セッションで `retrospective.md` を
-昇格素材として読むため、除外すると読めなくなる。
+生成するのは次の4つ。
+
+| ファイル | 役割 |
+|---|---|
+| リポジトリルート/`.hikyaku.config` | 設定のベース（必須）。`hikyaku_root` の唯一の宣言先 |
+| `{HIKYAKU_ROOT}/cycles.md` | サイクル索引 |
+| `{HIKYAKU_ROOT}/document-guide.md` | ドキュメントガイドの雛形 |
+| `{HIKYAKU_ROOT}/.gitignore` | `.hikyaku.local` の1行だけ |
+
+**`{HIKYAKU_ROOT}/.hikyaku.config` は作らない。** 設定を置ける場所はリポジトリルートと
+サイクルディレクトリの2箇所だけで、中間層は読み込まれない。
+
+**`.gitignore` が除外するのは `.hikyaku.local`（最後に作業したサイクルを記録する
+ローカル専用ファイル）だけ。** 包括パターンは書かない。close-cycle は別セッションで
+`retrospective.md` を昇格素材として読むため、まとめて除外すると読めなくなる。
+
+既に `{HIKYAKU_ROOT}/.hikyaku.config` がある場合（v2.0 の初期実装が生成していた）は
+警告が出る。内容をリポジトリルートの `.hikyaku.config` へ移して削除するよう案内する。
 
 → Step 4 へ。
 
@@ -130,7 +145,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" init --root {HIKYAKU_ROOT}
 - [ ] 検証する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs validate --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs validate
 ```
 
 → 問題がなければ Step 5 へ。
@@ -140,7 +155,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs validate --root {HIKYAKU_R
 - [ ] 差分を提示する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs link --root {HIKYAKU_ROOT} --dry-run
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs link --dry-run
 ```
 
 - [ ] **ユーザーの承認を得てから**実行する
@@ -158,7 +173,7 @@ AGENTS.md はリポジトリ全体の AI 設定であり、チーム全体に影
 - [ ] ブランチを作成する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch name init --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch name init
 ```
 
 - [ ] コミットして PR を作成する（タイトルは `hikyaku pr title init` で生成）
@@ -169,8 +184,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch name init --root {HIKYAK
 初期化が完了しました。
 
 サイクルを開始するには:
-/hikyaku:create-cycle {HIKYAKU_ROOT} <slug> --profile <name>
+/hikyaku:create-cycle <slug> --profile <name>
 
 または planner が代行します:
-/hikyaku:planner {HIKYAKU_ROOT}
+/hikyaku:planner
 ```

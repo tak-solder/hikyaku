@@ -1,18 +1,24 @@
 /**
  * 設定の解決。
  *
- * 2階層をキー単位でマージする（hikyaku_root を除く）:
- *   リポジトリルート/.hikyaku.config    ← ベース設定
- *   {HIKYAKU_ROOT}/.hikyaku.config      ← このワークフロー固有の上書き
+ * 設定を置ける場所は2箇所だけで、キー単位でマージする:
+ *   リポジトリルート/.hikyaku.config                    ← 必須。ベース設定
+ *   {HIKYAKU_ROOT}/cycles/{NNN}-{slug}/.hikyaku.config  ← 任意。サイクル固有の上書き
+ *
+ * 永続層に関わるキー（hikyaku_root / base_branch / [branch] / [pr] / [external]）は
+ * サイクル側で上書きできない。とくにブランチ名は全サイクル横断で解析するため、
+ * サイクルごとに規則が変わると着手状態の導出が破綻する。
+ *
+ * profile は cycles.md が唯一の正。サイクル設定に書けるようにすると同じ状態が
+ * 2箇所に載り、必ず食い違う。
  *
  * profile は承認ゲートとレビューの既定値をまとめて与える。個別キーで上書きできる。
- * profile はサイクルの属性でもあるため、cycles.md の値を profileOverride で渡せる。
  */
 
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { HikyakuError } from "./errors.mts";
-import { findHikyakuRoot, repoRoot } from "./paths.mts";
+import { repoRoot } from "./paths.mts";
 import { parseToml, TomlError, type TomlTable, type TomlValue } from "./toml.mts";
 
 export type ProfileName = "light" | "saving" | "standard" | "strict";
@@ -142,9 +148,17 @@ export interface LoadOptions {
   root?: string | undefined;
   /** cycles.md のサイクル属性など、config より優先する profile */
   profileOverride?: string | undefined;
-  /** HIKYAKU_ROOT が解決できなくてもエラーにしない（init 用） */
+  /** サイクル固有設定を重ねる場合、そのサイクルのディレクトリ */
+  cycleDir?: string | undefined;
+  /** 設定ファイルや HIKYAKU_ROOT が無くてもエラーにしない（init / doctor 用） */
   allowMissingRoot?: boolean;
 }
+
+/**
+ * サイクル設定で上書きできないキー。いずれもリポジトリ全体の性質を表す。
+ * profile は別メッセージで案内するため含めない。
+ */
+const CYCLE_LOCKED_KEYS = ["hikyaku_root", "base_branch", "branch", "pr", "external"];
 
 function readTable(table: TomlTable, key: string): TomlTable | undefined {
   const value = table[key];
@@ -258,19 +272,60 @@ function mergeTables(base: TomlTable, override: TomlTable): TomlTable {
   return out;
 }
 
+/**
+ * サイクル設定に、サイクル側では決められないキーが無いか検査する。
+ *
+ * 黙って無視すると「設定したのに効かない」という最も気づきにくい壊れ方をするので、
+ * 見つけたらエラーにする。
+ */
+function assertCycleOverridable(table: TomlTable, path: string): void {
+  if (table["profile"] !== undefined) {
+    throw new HikyakuError(
+      `${path}: profile はサイクル設定では指定できません`,
+      [
+        "profile はサイクルの属性で、cycles.md が唯一の正です。",
+        "同じ状態を2箇所に持つと必ず食い違うため、cycles.md 側で変更してください。",
+      ].join("\n"),
+    );
+  }
+
+  const locked = CYCLE_LOCKED_KEYS.filter((key) => table[key] !== undefined);
+  if (locked.length > 0) {
+    throw new HikyakuError(
+      `${path}: サイクル設定では上書きできないキーがあります: ${locked.join(", ")}`,
+      [
+        "これらはリポジトリ全体の性質なので、リポジトリルートの .hikyaku.config で設定してください。",
+        "ブランチ名は全サイクル横断で解析するため、サイクルごとに規則が変わると",
+        "着手状態を導出できなくなります。",
+      ].join("\n"),
+    );
+  }
+}
+
 export function loadConfig(options: LoadOptions = {}): ResolvedConfig {
   const root = repoRoot();
   const sources: string[] = [];
 
   const repoConfigPath = join(root, ".hikyaku.config");
   const repoConfig = loadFile(repoConfigPath);
-  if (repoConfig) sources.push(repoConfigPath);
+  if (repoConfig) {
+    sources.push(repoConfigPath);
+  } else if (options.root === undefined && !options.allowMissingRoot) {
+    // --root で明示された場合は CI やテストからの直接実行とみなして許容する
+    throw new HikyakuError(
+      `リポジトリルートに .hikyaku.config がありません: ${repoConfigPath}`,
+      [
+        "/hikyaku:init を実行して生成してください。",
+        "hikyaku_root はこのファイルでのみ宣言できます。",
+      ].join("\n"),
+    );
+  }
   const legacy = repoConfig ? checkLegacyKeys(repoConfig, repoConfigPath) : {};
 
-  // HIKYAKU_ROOT: --root → config の hikyaku_root（旧 doc_root）→ 上方向探索
+  // HIKYAKU_ROOT: --root → config の hikyaku_root（旧 doc_root）
   const configured =
     (repoConfig ? readString(repoConfig, "hikyaku_root", "config") : undefined) ?? legacy.docRoot;
-  const candidate = options.root ?? configured ?? findHikyakuRoot();
+  const candidate = options.root ?? configured;
 
   if (candidate === undefined) {
     if (options.allowMissingRoot) {
@@ -278,28 +333,38 @@ export function loadConfig(options: LoadOptions = {}): ResolvedConfig {
     }
     throw new HikyakuError("HIKYAKU_ROOT を解決できませんでした", [
       "次のいずれかを指定してください:",
+      "  リポジトリルートの .hikyaku.config に hikyaku_root を設定する（/hikyaku:init が生成します）",
       "  --root <path> で明示する",
-      "  リポジトリルートの .hikyaku.config に hikyaku_root を設定する",
-      "  Hikyaku ワークスペース内で実行する",
     ].join("\n"));
   }
 
   const hikyakuRoot = isAbsolute(candidate) ? candidate : resolve(root, candidate);
 
-  const workspaceConfigPath = join(hikyakuRoot, ".hikyaku.config");
-  const workspaceConfig = loadFile(workspaceConfigPath);
-  if (workspaceConfig) {
-    sources.push(workspaceConfigPath);
-    checkLegacyKeys(workspaceConfig, workspaceConfigPath);
-    // hikyaku_root は HIKYAKU_ROOT 側では指定できない（自己参照になるため）
-    if (workspaceConfig["hikyaku_root"] !== undefined) {
-      throw new HikyakuError(
-        `${workspaceConfigPath}: hikyaku_root はリポジトリルートの設定でのみ有効です`,
-      );
+  // v2.0 の初期実装が生成していた中間層。読まなくなったので、置いたままだと
+  // 「設定したつもりの値が効かない」状態になる。黙って無視せず対処を促す
+  const staleWorkspaceConfig = join(hikyakuRoot, ".hikyaku.config");
+  if (existsSync(staleWorkspaceConfig)) {
+    throw new HikyakuError(
+      `${staleWorkspaceConfig} は読み込まれません`,
+      [
+        "設定を置ける場所はリポジトリルートとサイクルディレクトリの2箇所です。",
+        "内容をリポジトリルートの .hikyaku.config へ移してから、このファイルを削除してください。",
+      ].join("\n"),
+    );
+  }
+
+  let merged: TomlTable = repoConfig ?? {};
+  if (options.cycleDir !== undefined) {
+    const cycleConfigPath = join(options.cycleDir, ".hikyaku.config");
+    const cycleConfig = loadFile(cycleConfigPath);
+    if (cycleConfig) {
+      sources.push(cycleConfigPath);
+      checkLegacyKeys(cycleConfig, cycleConfigPath);
+      assertCycleOverridable(cycleConfig, cycleConfigPath);
+      merged = mergeTables(merged, cycleConfig);
     }
   }
 
-  const merged = workspaceConfig ? mergeTables(repoConfig ?? {}, workspaceConfig) : (repoConfig ?? {});
   return finalize(merged, root, hikyakuRoot, sources, options.profileOverride);
 }
 

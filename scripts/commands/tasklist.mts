@@ -1,7 +1,6 @@
 /** tasklist read / add / update / done — ビルド一覧の操作 */
 
 import { flagBoolean, flagInteger, flagList, flagString } from "../lib/args.mts";
-import { loadConfig } from "../lib/config.mts";
 import { HikyakuError, ValidationError } from "../lib/errors.mts";
 import { emit, table } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
@@ -13,11 +12,10 @@ import {
   validateGraph,
   type BuildRecord,
 } from "../lib/tasklist.mts";
-import { resolveCycle, writeTasklist, type CycleContext } from "../lib/workspace.mts";
+import { openCycle, writeTasklist, type CycleContext } from "../lib/workspace.mts";
 
 function context(args: Parameters<typeof flagString>[0], key: string | undefined): CycleContext {
-  const config = loadConfig({ root: flagString(args, "root") });
-  return resolveCycle(config.hikyakuRoot, key);
+  return openCycle(args, key).context;
 }
 
 /** 変更後のグラフを検証し、問題があれば書き込まずに終了する */

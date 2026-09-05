@@ -3,7 +3,7 @@ name: close-cycle
 description: "Hikyaku サイクル終了: 実装済みの成果を永続ドキュメントへ昇格させ、サイクルを closed にする。"
 user-invocable: true
 disable-model-invocation: true
-argument-hint: "[{HIKYAKU_ROOT}] [{cycle}]"
+argument-hint: "[{cycle}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
   version: "2.0.0"
@@ -43,14 +43,22 @@ metadata:
 - [ ] 設定と document-guide を読み込む
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config --root {HIKYAKU_ROOT} --json
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs list --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs list
+```
+
+HIKYAKU_ROOT は `.hikyaku.config` から解決されるので、引数では受け取らない。
+`$ARGUMENTS[0]` でサイクルが指定されていなければ、**現在のブランチ → `.hikyaku.local`
+→ 唯一の進行中サイクル** の順で決まる。決められないときはユーザーに尋ねる。
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {cycle}
 ```
 
 - [ ] 対象サイクルの状態を確認する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle} --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
 ```
 
 `completed` でない場合はユーザーに確認する。未完了のビルドを残したまま締めるのは、
@@ -66,7 +74,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle} --root {HI
 - [ ] `retrospective` 設定に従って次を呼び出す
 
 ```
-/hikyaku:retrospective {HIKYAKU_ROOT} {cycle} close
+/hikyaku:retrospective {cycle} close
 ```
 
 `retrospective` が `skip` の場合はこのステップを飛ばす。
@@ -147,7 +155,7 @@ ADR:
 - [ ] AGENTS.md の索引を更新する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs link --root {HIKYAKU_ROOT} --dry-run
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs link --dry-run
 ```
 
 新しいドキュメントを追加した場合のみ差分が出る。承認を得てから実行する。
@@ -155,7 +163,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs link --root {HIKYAKU_ROOT}
 - [ ] 検証する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate {cycle} --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate {cycle}
 ```
 
 → Step 6 へ。
@@ -164,7 +172,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate {cycle} --root {HIKYAK
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle close {cycle} \
-  --summary "{一行要約}" --root {HIKYAKU_ROOT}
+  --summary "{一行要約}"
 ```
 
 中止する場合は `--status abandoned` を付ける。
@@ -182,5 +190,5 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle close {cycle} \
 サイクル {cycle} を closed にしました。
 
 次のサイクルを開始するには:
-/hikyaku:create-cycle {HIKYAKU_ROOT} <slug> --profile <name>
+/hikyaku:create-cycle <slug> --profile <name>
 ```

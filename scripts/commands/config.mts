@@ -4,28 +4,46 @@ import { flagString } from "../lib/args.mts";
 import { loadConfig } from "../lib/config.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
+import { describeSource, openCycleIfAny } from "../lib/workspace.mts";
 
 register({
   name: "config",
-  summary: "2階層をマージし profile を展開した設定を表示する",
-  usage: "hikyaku config [--root <path>] [--profile <name>] [--json]",
+  summary: "設定をマージし、対象サイクルの profile を展開して表示する",
+  usage: "hikyaku config [<cycle>] [--root <path>] [--profile <name>] [--json]",
   details: [
-    "設定は次の順にキー単位でマージされます（hikyaku_root を除く）:",
-    "  1. リポジトリルート/.hikyaku.config",
-    "  2. {HIKYAKU_ROOT}/.hikyaku.config",
+    "設定は次の順にキー単位でマージされます:",
+    "  1. リポジトリルート/.hikyaku.config（必須）",
+    "  2. {HIKYAKU_ROOT}/cycles/{NNN}-{slug}/.hikyaku.config（任意）",
+    "",
+    "サイクル側では hikyaku_root / base_branch / [branch] / [pr] / [external] と",
+    "profile を上書きできません（いずれもリポジトリ全体の性質か、cycles.md が正）。",
+    "",
+    "サイクルを省略した場合は、現在のブランチ → .hikyaku.local → 唯一の進行中サイクル",
+    "の順に対象を決めます。決められなければ候補を挙げてエラーにするので、",
+    "ユーザーに尋ねてから指定し直してください。サイクルがまだ1つも無いときは",
+    "リポジトリルートの設定だけを返します（init / create-cycle 用）。",
     "",
     "profile は承認ゲートとレビューの既定値をまとめて与えます。",
     "個別キー（architecture_gate, plan_review など）で上書きできます。",
-    "--profile はサイクルの profile（cycles.md）を渡すために使います。",
+    "--profile は what-if の確認用で、cycles.md の値より優先されます。",
   ].join("\n"),
-  run: ({ args }) => {
-    const config = loadConfig({
-      root: flagString(args, "root"),
-      profileOverride: flagString(args, "profile"),
-    });
+  run: ({ args, operands }) => {
+    const opened = openCycleIfAny(args, operands[0]);
+    const config = opened
+      ? opened.config
+      : loadConfig({
+          root: flagString(args, "root"),
+          profileOverride: flagString(args, "profile"),
+        });
 
-    emit(config, () => {
-      const lines = [
+    emit({ ...config, cycle: opened?.context.name, cycleSource: opened?.context.source }, () => {
+      const lines: string[] = [];
+      if (opened) {
+        lines.push(
+          `cycle        ${opened.context.name}（${describeSource(opened.context.source)}）`,
+        );
+      }
+      lines.push(
         `repoRoot     ${config.repoRoot}`,
         `hikyakuRoot  ${config.hikyakuRoot}`,
         `profile      ${config.profile}`,
@@ -52,7 +70,7 @@ register({
         `branch       ${config.branch.prefix}${config.branch.separator}{cycle}${config.branch.separator}{phase}`,
         `pr.title     ${config.pr.title}`,
         `external     ${config.external.target}`,
-      ];
+      );
       if (config.external.githubRepo) lines.push(`  github_repo  ${config.external.githubRepo}`);
       if (config.external.asanaProjectGid) {
         lines.push(`  asana_project_gid  ${config.external.asanaProjectGid}`);

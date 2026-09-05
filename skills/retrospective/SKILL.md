@@ -3,7 +3,7 @@ name: retrospective
 description: "Hikyaku 振り返り: セッション中のスキル外指示を分析し、改善提案を分類・記録する内部スキル。各フェーズから呼び出される。"
 user-invocable: false
 disable-model-invocation: false
-argument-hint: "{HIKYAKU_ROOT} {cycle} {SUB_DIR}"
+argument-hint: "{cycle} {SUB_DIR}"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
   version: "2.0.0"
@@ -18,11 +18,12 @@ metadata:
 
 ## 引数
 
-- `$ARGUMENTS[0]`: HIKYAKU_ROOT — Hikyaku ワークスペースのルートパス
-- `$ARGUMENTS[1]`: cycle — 対象サイクル（`{NNN}-{slug}`）
-- `$ARGUMENTS[2]`: SUB_DIR — 出力先サブディレクトリ（`planning`, `design`, `build-{NN}`, `close`）
+- `$ARGUMENTS[0]`: cycle — 対象サイクル（`{NNN}-{slug}`）
+- `$ARGUMENTS[1]`: SUB_DIR — 出力先サブディレクトリ（`planning`, `design`, `build-{NN}`, `close`）
 
-出力先: `$ARGUMENTS[0]/cycles/$ARGUMENTS[1]/$ARGUMENTS[2]/retrospective.md`
+HIKYAKU_ROOT は受け取らない。`.hikyaku.config` から解決される。
+
+出力先: `{HIKYAKU_ROOT}/cycles/$ARGUMENTS[0]/$ARGUMENTS[1]/retrospective.md`
 
 ## 2種類の学びを分けること
 
@@ -50,11 +51,11 @@ v1 では retrospective.md が `.gitignore` されていたため、サイクル
 - [ ] 設定を解決する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config --root $ARGUMENTS[0] \
-  --profile {サイクルの profile} --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config $ARGUMENTS[0] --json
 ```
 
-`reviews.retrospective` の値を取得する。profile ごとの既定は
+サイクルの profile は cycles.md から自動で適用される。`reviews.retrospective` の値を取得する。
+profile ごとの既定は
 light / saving が `skip`、standard が `prompt`、strict が `auto`。
 
 設定値に応じて動作を決定する:

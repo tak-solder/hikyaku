@@ -7,8 +7,10 @@ import { promisify } from "node:util";
 import { flagString } from "../lib/args.mts";
 import { loadConfig } from "../lib/config.mts";
 import { ValidationError } from "../lib/errors.mts";
+import { isTracked } from "../lib/git.mts";
+import { LOCAL_FILE, localPath } from "../lib/local.mts";
 import { displayWidth, emit, padDisplay } from "../lib/output.mts";
-import { pluginVersion } from "../lib/paths.mts";
+import { findHikyakuRoot, pluginVersion, repoRoot } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
 
 const run = promisify(execFile);
@@ -70,8 +72,9 @@ register({
   details: [
     "確認する項目:",
     "  - Node.js が v22.18.0 以上か（型剥がしがフラグ無しで動くか）",
-    "  - .hikyaku.config が解析できるか、廃止キーが残っていないか",
+    "  - リポジトリルートの .hikyaku.config があり、解析でき、廃止キーが残っていないか",
     "  - HIKYAKU_ROOT が解決でき、必須ファイルが揃っているか",
+    "  - .hikyaku.local が git 管理下に入っていないか（他人の栞を掴む事故になる）",
     "  - origin に到達できるか（着手中ブランチの検出に使う）",
     "",
     "問題が見つかった場合は終了コード 2 で終了します。",
@@ -81,6 +84,20 @@ register({
       { name: "hikyaku", status: "ok", detail: `v${pluginVersion()}` },
       checkNode(),
     ];
+
+    const root = repoRoot();
+    const repoConfigPath = join(root, ".hikyaku.config");
+    checks.push(
+      existsSync(repoConfigPath)
+        ? { name: ".hikyaku.config", status: "ok", detail: repoConfigPath }
+        : {
+            name: ".hikyaku.config",
+            status: "error",
+            detail:
+              `${repoConfigPath} がありません。設定のベースであり、hikyaku_root の唯一の宣言先です。\n` +
+              "    /hikyaku:init で生成してください。",
+          },
+    );
 
     let hikyakuRoot: string | undefined;
     try {
@@ -103,11 +120,15 @@ register({
     }
 
     if (hikyakuRoot === undefined) {
+      const found = findHikyakuRoot();
       checks.push({
         name: "HIKYAKU_ROOT",
         status: "warn",
         detail:
-          "解決できません。/hikyaku:init で初期化するか、--root で指定してください。",
+          found === undefined
+            ? "解決できません。/hikyaku:init で初期化するか、--root で指定してください。"
+            : `解決できません。${found} がワークスペースらしく見えます。\n` +
+              `    .hikyaku.config に hikyaku_root を設定してください。`,
       });
     } else if (!existsSync(hikyakuRoot)) {
       checks.push({
@@ -129,6 +150,21 @@ register({
               },
         );
       }
+    }
+
+    if (hikyakuRoot !== undefined && existsSync(localPath(hikyakuRoot))) {
+      const tracked = await isTracked(root, localPath(hikyakuRoot));
+      checks.push(
+        tracked
+          ? {
+              name: LOCAL_FILE,
+              status: "warn",
+              detail:
+                "git 管理下に入っています。コミットすると他メンバーの栞を掴むことになります。\n" +
+                "    git rm --cached で外し、{HIKYAKU_ROOT}/.gitignore に追加してください。",
+            }
+          : { name: LOCAL_FILE, status: "ok", detail: "git 管理対象外" },
+      );
     }
 
     checks.push(await checkGit());

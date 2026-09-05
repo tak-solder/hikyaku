@@ -3,7 +3,7 @@ name: builder
 description: "Hikyaku 実装フェーズ: 1ビルド = 1セッションでコード実装から PR 作成までを完結させる"
 user-invocable: true
 disable-model-invocation: true
-argument-hint: "[{HIKYAKU_ROOT}] [{cycle}] [{buildID}]"
+argument-hint: "[{cycle}] [{buildID}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
   version: "2.0.0"
@@ -39,19 +39,34 @@ close-cycle がそれを素材として昇格させる。
 
 - [ ] `${CLAUDE_PLUGIN_ROOT}/skills/builder/references/templates.md`: 各種テンプレート（必須）
 - [ ] `${CLAUDE_PLUGIN_ROOT}/skills/builder/references/retry-policy.md`: リトライ方針（必須）
-- [ ] 設定を解決する
+- [ ] 設定と対象サイクルを解決する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config --root $ARGUMENTS[0] --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json
+```
+
+HIKYAKU_ROOT は `.hikyaku.config` から解決されるので、引数では受け取らない。
+
+`$ARGUMENTS[0]` でサイクルが指定されていればそれを渡す。省略された場合は
+**現在のブランチ → `.hikyaku.local` → 唯一の進行中サイクル** の順で決まる。
+決められないときは進行中サイクルの一覧を添えてエラーになるので、**ユーザーに尋ねてから**
+指定し直す。推測して進めない（別サイクルへコミットする事故になる）。
+
+出力の `cycle` と `cycleSource` を、作業対象としてユーザーに1行で示す。
+
+- [ ] 対象サイクルを記録する（次回から尋ねられずに済む）
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {cycle}
 ```
 
 - [ ] 対象ビルドを決める
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle} --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle}
 ```
 
-`$ARGUMENTS[2]` で buildID が指定されていればそれを使う。省略された場合、
+`$ARGUMENTS[1]` で buildID が指定されていればそれを使う。省略された場合、
 `next` が返した**着手可能なビルド**から選ぶ。
 
 **依存関係のあるビルドは、先行ビルドがデフォルトブランチにマージ済みであることが必須。**
@@ -78,7 +93,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle} --root {HIKYAKU_RO
 - [ ] `cycle status` で既存の成果物を確認する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle} --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
 ```
 
 中断からの再開なら、どこまで進んだかが表示される。既存の成果物を読み込んで途中から再開する。
@@ -95,7 +110,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle} --root {HI
 ### Step 2: ブランチ作成
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch name build-{NN} {cycle} --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch name build-{NN} {cycle}
 ```
 
 返ってきた名前でブランチを作成する。**このブランチの存在が「着手中」の印**になるので、
@@ -246,7 +261,7 @@ learnings / overview / constraints へ昇格させる。**あなたが永続ド�
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist done {cycle} \
-  --id {buildID} --pr {PR の URL} --root {HIKYAKU_ROOT}
+  --id {buildID} --pr {PR の URL}
 ```
 
 **この変更は必ずこのビルドの PR に同梱する。** 先にデフォルトブランチへ入れると、
@@ -259,7 +274,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist done {cycle} \
 - [ ] 外部投影が有効な場合は同期を試みる（失敗してもワークフローは止めない）
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external sync {target} {cycle} --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external sync {target} {cycle}
 ```
 
 **注意:** このビルドに依存する後続ビルドは、**この PR がマージされてから**開始すること。
@@ -270,11 +285,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external sync {target} {cycle} 
 
 ### Step 9: 振り返り
 
-- [ ] `retrospective` 設定に従って `/hikyaku:retrospective {HIKYAKU_ROOT} {cycle} build-{NN}` を呼び出す
+- [ ] `retrospective` 設定に従って `/hikyaku:retrospective {cycle} build-{NN}` を呼び出す
 - [ ] 完了後、次の状況を案内する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle} --root {HIKYAKU_ROOT}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle}
 ```
 
 全ビルドが完了していれば、close-cycle を案内する。
@@ -284,11 +299,11 @@ Build {NN} が完了しました。
 
 （未完了のビルドがある場合）
 次のビルドを開始するには、新しいセッションで:
-/hikyaku:builder {HIKYAKU_ROOT} {cycle} {次のbuildID}
+/hikyaku:builder {cycle} {次のbuildID}
 
 （全ビルドが完了した場合）
 サイクルを締めるには、新しいセッションで:
-/hikyaku:close-cycle {HIKYAKU_ROOT} {cycle}
+/hikyaku:close-cycle {cycle}
 
 実装は完了していますが、永続ドキュメントへの昇格がまだです。
 この状態が続くと、他サイクルが古い overview を「実装済みの現実」として
@@ -299,7 +314,7 @@ Build {NN} が完了しました。
 
 ## ビルド管理（実装中のスコープ変更）
 
-実装中に以下が判明した場合、`/hikyaku:build-manager {HIKYAKU_ROOT} {cycle}` を呼び出す。
+実装中に以下が判明した場合、`/hikyaku:build-manager {cycle}` を呼び出す。
 
 - **Step 3 後** — issue.md のスコープが実際には BP 超過 → ビルドの分割
 - **Step 4 中** — 想定外の複雑さや未定義の依存 → ビルドの追加・更新
@@ -320,4 +335,4 @@ Build {NN} が完了しました。
   - `cycles/{cycle}/design/design-delta.md` — 設計レベルの変更があった場合
   - **永続ドキュメントは更新しない。** 昇格が必要な内容は handoff.md に記録する
 - [ ] Push する
-- [ ] `/hikyaku:retrospective {HIKYAKU_ROOT} {cycle} build-{NN}` を呼び出す（既に retrospective.md があれば追記モードで動作する）
+- [ ] `/hikyaku:retrospective {cycle} build-{NN}` を呼び出す（既に retrospective.md があれば追記モードで動作する）

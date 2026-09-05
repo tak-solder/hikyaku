@@ -17,6 +17,7 @@ import {
 } from "../lib/cycles.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { listRemoteBranches } from "../lib/git.mts";
+import { localPath, readLocalState, writeLocalState } from "../lib/local.mts";
 import { deriveState, suggestCommand } from "../lib/phase.mts";
 import { emit, table } from "../lib/output.mts";
 import { pluginVersion } from "../lib/paths.mts";
@@ -142,6 +143,63 @@ register({
     mkdirSync(join(directory, "planning"), { recursive: true });
     mkdirSync(join(directory, "design"), { recursive: true });
     writeFileSync(cyclesPath(config.hikyakuRoot), renderCyclesFile([...records, record]), "utf8");
+  },
+});
+
+register({
+  name: "cycle use",
+  summary: "このチェックアウトで作業するサイクルを記録する",
+  usage: "hikyaku cycle use <id|slug> [--root <path>] [--dry-run]",
+  writes: true,
+  details: [
+    "{HIKYAKU_ROOT}/.hikyaku.local に記録します。git 管理対象外なので、",
+    "他のメンバーには影響しません。",
+    "",
+    "サイクル省略時の対象決定は 現在のブランチ → この記録 → 唯一の進行中サイクル",
+    "の順です。チーム開発では「最後にコミットされたサイクル」が他メンバーのもので",
+    "あることが普通なので、リポジトリ側からは導出せずここに記録します。",
+    "",
+    "これはワークフローの状態ではなく作業の栞です。読むのは対象サイクルの決定だけで、",
+    "next / validate / cycle status など判断に使う処理は参照しません。消しても支障は",
+    "ありません（次にどのサイクルで作業するかを尋ねられるだけです）。",
+  ].join("\n"),
+  run: ({ args, operands }) => {
+    const config = loadConfig({ root: flagString(args, "root") });
+    const key = operands[0];
+    if (key === undefined) {
+      throw new HikyakuError(
+        "サイクルを指定してください",
+        "例: hikyaku cycle use 002-billing",
+      );
+    }
+
+    const record = findCycle(loadCycles(config.hikyakuRoot), key);
+    const name = cycleDirName(record);
+    const path = localPath(config.hikyakuRoot);
+    // 壊れた栞に上書きできないと、復旧手段が無くなる。読めなければ無視して上書きする
+    let previous: string | undefined;
+    try {
+      previous = readLocalState(config.hikyakuRoot).cycle;
+    } catch {
+      previous = undefined;
+    }
+    const dryRun = flagBoolean(args, "dry-run");
+
+    emit({ cycle: name, previous, path, dryRun }, () => {
+      const lines = [
+        `作業サイクルを ${name} に設定します${previous ? `（前回: ${previous}）` : ""}`,
+        `記録先: ${relative(config.repoRoot, path)}`,
+      ];
+      if (record.status !== "active") {
+        lines.push(
+          `⚠ このサイクルは ${record.status} です。省略時の対象には選ばれません（active のみ）。`,
+        );
+      }
+      if (dryRun) lines.push("", "(--dry-run のため書き込んでいません)");
+      return lines.join("\n");
+    });
+
+    if (!dryRun) writeLocalState(config.hikyakuRoot, name);
   },
 });
 
