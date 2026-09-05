@@ -131,7 +131,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {NNN}-{slug}
 `create` ブランチは作らず、最初から plan のブランチで作業して PLAN の PR に畳む。
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch name plan {NNN}-{slug}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify plan {NNN}-{slug}
 ```
 
 - [ ] 返ってきた名前でブランチを作成し、cycles.md の変更をコミットする
@@ -146,7 +146,6 @@ planner は Step 1 で同じブランチ名を検証するので、ブランチ�
 - [ ] ブランチを作成し、命名規則どおりか確認する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch name create {NNN}-{slug}
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify create {NNN}-{slug}
 ```
 

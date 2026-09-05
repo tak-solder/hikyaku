@@ -123,20 +123,14 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
 ### Step 1: ブランチとセッション名
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch name plan {cycle}
-```
-
-返ってきた名前でブランチを作成する（既にあれば切り替える）。
-
-- [ ] ブランチが命名規則どおりか確認する
-
-```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify plan {cycle}
 ```
 
-終了コード 2 なら、表示された切り替えコマンドでブランチを移ってから続ける。
-**エージェントが用意した別のブランチの上では作業しない。** 成果物をコミットする
-直前にも、もう一度この確認を行う。
+`branch verify` は不一致のとき**期待するブランチ名と切り替えコマンド**を返す（終了コード 2）。
+フェーズの冒頭では一致しないのが普通なので、返ってきたコマンドでブランチを作成（既にあれば
+切り替え）してから、もう一度実行して一致を確認する。
+**エージェントが用意した別のブランチの上では作業しない。**
+成果物をコミットする直前にも、もう一度この確認を行う。
 
 - [ ] セッション名を設定する
 

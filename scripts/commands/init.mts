@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { flagBoolean, flagString } from "../lib/args.mts";
 import { PROFILE_NAMES } from "../lib/config.mts";
+import { LOCAL_FILE } from "../lib/local.mts";
 import { cyclesPath, renderCyclesFile } from "../lib/cycles.mts";
 import { guidePath } from "../lib/docs.mts";
 import { HikyakuError } from "../lib/errors.mts";
@@ -15,8 +16,13 @@ import { renderGuideScaffold } from "./docs.mts";
 interface PlannedFile {
   path: string;
   content: string;
-  /** 既に存在する場合は生成をスキップする（冪等性のため既存は決して上書きしない） */
-  status: "create" | "skip";
+  /**
+   * create 生成 / skip 既存のため何もしない / append 既存の末尾へ追記
+   *
+   * 既存ファイルの内容は決して書き換えない。append は .gitignore だけの例外で、
+   * 1行足すだけ（既存行の削除・整理はしない）。
+   */
+  status: "create" | "skip" | "append";
 }
 
 register({
@@ -30,7 +36,7 @@ register({
     "  リポジトリルート/.hikyaku.config   設定の唯一のベース。hikyaku_root を記録する",
     "  {HIKYAKU_ROOT}/cycles.md           サイクル索引",
     "  {HIKYAKU_ROOT}/document-guide.md   ドキュメントガイドの雛形（全て『未作成』）",
-    "  {HIKYAKU_ROOT}/.gitignore          .hikyaku.local だけを除外する",
+    "  {HIKYAKU_ROOT}/.gitignore          .hikyaku.local だけを除外する（既存があれば追記）",
     "",
     "既存の設計ドキュメントを検出して document-guide.md へ登録するのは",
     "/hikyaku:init スキルの役割です（対話が必要なため）。",
@@ -60,13 +66,14 @@ register({
     const repoConfigIssues = [
       ...inspectRepoConfig(repoConfigPath, rel),
       ...inspectStaleWorkspaceConfig(hikyakuRoot),
+      ...inspectGitignore(join(hikyakuRoot, ".gitignore")),
     ];
 
     const planned: PlannedFile[] = [
       plan(repoConfigPath, renderRepoConfig(rel)),
       plan(cyclesPath(hikyakuRoot), renderCyclesFile([])),
       plan(guidePath(hikyakuRoot), renderGuideScaffold()),
-      plan(join(hikyakuRoot, ".gitignore"), renderGitignore()),
+      planGitignore(join(hikyakuRoot, ".gitignore")),
     ];
 
     emit(
@@ -79,14 +86,19 @@ register({
       () => {
         const lines = [`HIKYAKU_ROOT: ${rel}`, ""];
         for (const file of planned) {
-          const mark = file.status === "create" ? "+" : "=";
-          const note = file.status === "create" ? "生成" : "既存のため変更しません";
+          const mark = file.status === "skip" ? "=" : "+";
+          const note =
+            file.status === "create"
+              ? "生成"
+              : file.status === "append"
+                ? `${LOCAL_FILE} の除外を追記`
+                : "既存のため変更しません";
           lines.push(`${mark} ${relative(root, file.path).padEnd(40)} ${note}`);
         }
         if (repoConfigIssues.length > 0) {
           lines.push(
             "",
-            "⚠ 既存の .hikyaku.config に対応が必要です（このコマンドは既存ファイルを書き換えません）:",
+            "⚠ 既存ファイルに対応が必要です（このコマンドは既存の記述を書き換えません）:",
             ...repoConfigIssues.map((issue) => `  - ${issue}`),
           );
         }
@@ -110,6 +122,53 @@ register({
 
 function plan(path: string, content: string): PlannedFile {
   return { path, content, status: existsSync(path) ? "skip" : "create" };
+}
+
+/** .gitignore に .hikyaku.local が入っているか */
+function ignoresLocal(source: string): boolean {
+  return source
+    .split("\n")
+    .some((line) => line.trim() === LOCAL_FILE || line.trim() === `/${LOCAL_FILE}`);
+}
+
+/**
+ * .gitignore だけは既存があっても追記する。
+ *
+ * skip にすると、v1 から移行したリポジトリ（v1 は {DOC_ROOT}/.gitignore を生成していた）で
+ * .hikyaku.local が永久に追跡対象のままになる。作業の栞がコミットされると、
+ * 他メンバーの栞を掴む事故になる。追記するのは1行だけで、既存行には手を出さない。
+ */
+function planGitignore(path: string): PlannedFile {
+  if (!existsSync(path)) return { path, content: renderGitignore(), status: "create" };
+
+  const source = readFileSync(path, "utf8");
+  if (ignoresLocal(source)) return { path, content: source, status: "skip" };
+
+  const separator = source === "" || source.endsWith("\n") ? "" : "\n";
+  return { path, content: `${source}${separator}\n${renderGitignore()}`, status: "append" };
+}
+
+/**
+ * v1 が生成した .gitignore の除外設定を検出する。
+ *
+ * v1 は retrospective.md / test-spec.md / design-questions.md を除外していた。
+ * v2 では close-cycle が別セッションで retrospective.md を昇格素材として読むため、
+ * 除外されたままだと学びが永久に昇格しない。init は既存行を消さないので、報告する。
+ */
+function inspectGitignore(path: string): string[] {
+  if (!existsSync(path)) return [];
+  const stale = ["retrospective.md", "test-spec.md", "design-questions.md", "build-", "questions.md"];
+  const lines = readFileSync(path, "utf8")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !line.startsWith("#") && line !== LOCAL_FILE)
+    .filter((line) => stale.some((entry) => line.includes(entry)));
+  if (lines.length === 0) return [];
+  return [
+    `${path}: v1 の除外設定が残っています（${lines.join(", ")}）。` +
+      "v2 ではサイクル文書をすべてコミット対象にします。とくに retrospective.md を" +
+      "除外したままだと close-cycle が昇格素材として読めません。削除を検討してください",
+  ];
 }
 
 /**

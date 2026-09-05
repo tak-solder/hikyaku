@@ -36,45 +36,32 @@ function cycleFor(args: ParsedArgs, phase: Phase, operand: string | undefined): 
 }
 
 register({
-  name: "branch name",
-  summary: "命名規則からブランチ名を生成する",
-  usage: "hikyaku branch name <phase> [<cycle>] [--root <path>]",
+  name: "branch verify",
+  summary: "今いるブランチを命名規則と突き合わせ、期待するブランチ名を返す",
+  usage: "hikyaku branch verify <phase> [<cycle>] [--root <path>] [--json]",
   details: [
     "  {prefix}{separator}{cycle}{separator}{phase}",
     "",
     "init はサイクルに属さないため {prefix}{separator}init になります。",
     "",
-    "ブランチ名は着手状態の導出に解析されるため、構造は固定です。",
-    "prefix と separator は [branch] で設定できますが、separator に空文字は指定できません",
-    "（サイクルとフェーズを切り出せなくなるため）。",
+    "**生成と検証を兼ねます。** 不一致のときは期待するブランチ名と切り替えコマンドを",
+    "返すので、ブランチの作成にもこのコマンドを使ってください。名前を生成するだけの",
+    "コマンドを別に持つと、生成しただけで確認しないまま作業する余地が残ります。",
     "",
-    "separator を \"-\" にしても解析できるのは、フェーズが閉じた集合だからです。",
-    "prefix を前から、フェーズを後ろから剥がせばサイクルが残ります。",
-  ].join("\n"),
-  run: ({ args, operands }) => {
-    const config = loadConfig({ root: flagString(args, "root") });
-    const phase = requirePhase(operands[0]);
-    const cycle = cycleFor(args, phase, operands[1]);
-    const name = branchName(config.branch, phase, cycle);
-    emit({ branch: name, phase, cycle }, () => name);
-  },
-});
-
-register({
-  name: "branch verify",
-  summary: "今いるブランチが命名規則に沿っているか確認する",
-  usage: "hikyaku branch verify <phase> [<cycle>] [--root <path>] [--json]",
-  details: [
-    "生成（branch name）と対になる検証です。命名を生成できても検証していないと、",
-    "エージェントが用意した別のブランチの上で作業してしまう事故を防げません。",
-    "",
-    "各フェーズの冒頭と、成果物を書き出す直前に実行してください。",
+    "各フェーズの冒頭と、成果物をコミットする直前に実行してください。冒頭では",
+    "**一致しないのが普通**です（まだそのブランチに居ないため）。",
     "",
     "  一致            終了コード 0",
     "  不一致 / 別命名  終了コード 2。期待するブランチ名と切り替えコマンドを表示",
     "",
     "終了コード 2 は「実行したが問題が見つかった」なので、実行できなかった場合",
     "（終了コード 1）と区別して扱えます。",
+    "",
+    "ブランチ名は着手状態の導出に解析されるため、構造は固定です。",
+    "prefix と separator は [branch] で設定できますが、separator に空文字は指定できません",
+    "（サイクルとフェーズを切り出せなくなるため）。separator を \"-\" にしても解析できるのは、",
+    "フェーズが閉じた集合だからです。prefix を前から、フェーズを後ろから剥がせば",
+    "サイクルが残ります。",
     "",
     "サイクルを省略すると通常の解決に委ねますが、現在のブランチも判断材料に",
     "使うため、フェーズのサイクルが分かっている場合は明示してください。",
@@ -100,7 +87,10 @@ register({
           ? "現在のブランチは Hikyaku の命名規則に沿っていません。"
           : `現在のブランチは ${parsed.cycle ?? "-"} の ${parsed.phase} を指しています。`,
       );
-      lines.push("", `切り替え: git switch ${expected} || git switch -c ${expected}`);
+      lines.push(
+        "",
+        `作成 / 切り替え: git switch ${expected} || git switch -c ${expected}`,
+      );
       return lines.join("\n");
     });
 

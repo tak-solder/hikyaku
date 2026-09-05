@@ -104,6 +104,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" init --root {HIKYAKU_ROOT}
 ローカル専用ファイル）だけ。** 包括パターンは書かない。close-cycle は別セッションで
 `retrospective.md` を昇格素材として読むため、まとめて除外すると読めなくなる。
 
+`.gitignore` は既にある場合も**1行だけ追記する**（既存行には手を出さない）。v1 は
+`{DOC_ROOT}/.gitignore` を生成していたため、スキップすると `.hikyaku.local` が
+永久に追跡対象のままになる。v1 の除外設定（`retrospective.md` など）が残っていれば
+警告が出るので、ユーザーに削除を提案する。
+
 既に `{HIKYAKU_ROOT}/.hikyaku.config` がある場合（v2.0 の初期実装が生成していた）は
 警告が出る。内容をリポジトリルートの `.hikyaku.config` へ移して削除するよう案内する。
 
@@ -173,7 +178,6 @@ AGENTS.md はリポジトリ全体の AI 設定であり、チーム全体に影
 - [ ] ブランチを作成し、命名規則どおりか確認する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch name init
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify init
 ```
 

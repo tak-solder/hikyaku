@@ -35,7 +35,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **ブランチ命名規則**: `{prefix}{separator}{cycle}{separator}{phase}`。着手状態の導出に解析するため構造は固定で、`prefix` と `separator` のみ設定可能
 
 - **サイクル固有の設定（`{HIKYAKU_ROOT}/cycles/{NNN}-{slug}/.hikyaku.config`）**: そのサイクルだけキー単位で上書きする。`hikyaku_root` / `base_branch` / `[branch]` / `[pr]` / `[session]` / `[external]` はリポジトリ全体の性質なので上書きできず、`profile` は `cycles.md` が唯一の正なので指定できない（いずれも黙って無視せずエラーにする）
-- **`hikyaku branch verify`**: 今いるブランチが命名規則に沿っているかを確認する。生成（`branch name`）はあっても検証が無く、エージェントが用意した別ブランチの上で作業してしまう事故を防げなかった。一致で `0`、不一致・別命名で `2` を返し、切り替えコマンドを提示する
+- **`hikyaku branch verify`**: 今いるブランチを命名規則と突き合わせる。一致で `0`、不一致・別命名で `2` を返し、**期待するブランチ名と切り替えコマンド**を提示する
+  - 生成と検証を1コマンドに兼ねている。名前を生成するだけのコマンドを別に持つと、生成しただけで確認しないまま作業する余地が残るため（エージェントが用意した別ブランチの上で作業してしまう事故が実際に起きた）
 - **`[session] title`**: セッション名のテンプレート。変数は `[pr]` と共通で、空文字なら変更しない。`hikyaku session title` が生成する
 - **`.hikyaku.local`**: このチェックアウトで最後に作業したサイクルを記録する（git 管理対象外）。チーム開発では「最後にコミットされたサイクル」が他メンバーのものになるため、これだけはリポジトリから導出できない。読むのは対象サイクルの決定だけで、判断に使う処理からは参照しない。`hikyaku cycle use` で記録する
 - **外部システムへの親 issue**: サイクルに1つの親（tasklist へのリンクとビルド一覧）と、各ビルドの子を投影する。親が無ければ先に作るのでどのフェーズから同期しても収束するが、既定の生成タイミングは PLAN の PR 作成直前
@@ -51,7 +52,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **`create-cycle` から PLAN へそのまま続けられるようにした**: 既定は「続ける」。続ける場合は `create` ブランチを作らず PLAN のブランチで作業し、PR を1本に畳む（成果物が `cycles.md` の1行だけであり、planner が代行する場合の前例に揃えた）
 - **gh CLI が無い場合も投影内容を返すようにした**: 警告して終わるのをやめ、`reason: "gh-not-found"` とともに投影内容を出す。スキル側が GitHub MCP ツールで適用し、`cycle link` / `tasklist link` で記録する。スクリプトから外部 API を呼ばない Asana 経路と同じ形に揃えた
 - **`tasklist.md` の `PR` 列を issue 列と同じ `[#12](URL)` 形式に整えるようにした**: 生の URL のままだと表が横に伸びて読めなくなるため。完了判定は「非空かどうか」の一点なので、表記の変更が判定に影響することはない
-- **`{HIKYAKU_ROOT}/.gitignore` を1行だけで復活させた**: 除外するのは `.hikyaku.local` のみ。v2 でいったん廃止したのは「除外すべきローカルキャッシュが無くなった」ためで、それが1つできたので前提が変わった。包括パターンは書かない（`retrospective.md` を巻き込むと close-cycle が読めなくなる）
+- **`{HIKYAKU_ROOT}/.gitignore` を1行だけで復活させた**: 除外するのは `.hikyaku.local` のみ。既にファイルがある場合も1行だけ追記する（v1 が生成した `.gitignore` があるとスキップされ、栞が永久に追跡対象のままになるため）。v1 の除外設定が残っていれば警告する。v2 でいったん廃止したのは「除外すべきローカルキャッシュが無くなった」ためで、それが1つできたので前提が変わった。包括パターンは書かない（`retrospective.md` を巻き込むと close-cycle が読めなくなる）
 - **サイクル構造**: `{HIKYAKU_ROOT}/cycles/{NNN}-{slug}/` にサイクル単位でまとめる。永続ドキュメントは HIKYAKU_ROOT の外に置き、`document-guide.md` から参照する
 - **`DOC_ROOT` → `HIKYAKU_ROOT`**: 永続ドキュメントが外に出た以上、残りを DOC_ROOT と呼ぶのは実態と合わないため
 - **状態を保存せず導出する**: 保存するのは `cycles.md` の `status` 3値のみ。フェーズはファイルの存在から、着手中はブランチの存在から、完了は `tasklist.md` の `PR` 列から導出する

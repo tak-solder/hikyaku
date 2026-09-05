@@ -310,7 +310,7 @@ next / validate
 docs      list / validate / link / scaffold
 cycle     new / use / link / list / status / close
 tasklist  read / add / update / link / done
-branch    name / verify
+branch    verify
 pr        title
 session   title
 external  sync / ref

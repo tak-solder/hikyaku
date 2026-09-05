@@ -107,12 +107,12 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs list
 - [ ] ブランチを作成し、命名規則どおりか確認する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch name architect {cycle}
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify architect {cycle}
 ```
 
-`branch name` が返した名前でブランチを作成（既にあれば切り替え）してから `branch verify` を実行する。
-終了コード 2 なら、表示された切り替えコマンドでブランチを移ってから続ける。
+`branch verify` は不一致のとき**期待するブランチ名と切り替えコマンド**を返す（終了コード 2）。
+フェーズの冒頭では一致しないのが普通なので、返ってきたコマンドでブランチを作成（既にあれば
+切り替え）してから、もう一度実行して一致を確認する。
 **エージェントが用意した別のブランチの上では作業しない。** 成果物をコミットする直前にも、
 もう一度この確認を行う。
 
