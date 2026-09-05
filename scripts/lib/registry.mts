@@ -77,7 +77,7 @@ export function renderOverview(version: string): string {
     "",
     "グローバルオプション:",
     "  --root <path>      HIKYAKU_ROOT を明示指定する",
-    "  --profile <name>   profile を上書きする（light | saving | standard | strict）",
+    "  --profile <name>   profile を上書きする（express | economy | standard | thorough）",
     "  --json             機械可読な JSON で出力する",
     "  --dry-run          書き込みを行わず、何が起きるかだけを表示する",
     "  --help             ヘルプを表示する",

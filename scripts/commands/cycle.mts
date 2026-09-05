@@ -48,7 +48,7 @@ register({
   usage: "hikyaku cycle new <slug> --profile <name> [--ticket <ref>] [--depends 001,002] [--dry-run]",
   writes: true,
   details: [
-    "--profile は必須です。サイクルの厳格さは作成時に明示的に選ぶ必要があります",
+    "--profile は必須です。サイクルの進め方は作成時に明示的に選ぶ必要があります",
     `（${PROFILE_NAMES.join(" | ")}）。config の profile は推奨値の提示にすぎず、`,
     "無条件には採用しません。",
     "",
@@ -64,7 +64,7 @@ register({
     const config = loadConfig({ root: flagString(args, "root") });
     const rawSlug = operands[0];
     if (rawSlug === undefined) {
-      throw new HikyakuError("slug を指定してください", "例: hikyaku cycle new billing --profile light");
+      throw new HikyakuError("slug を指定してください", "例: hikyaku cycle new billing --profile express");
     }
 
     const profile = flagString(args, "profile");
@@ -72,12 +72,12 @@ register({
       throw new HikyakuError(
         "--profile を指定してください",
         [
-          "サイクルの厳格さは作成時に明示的に選ぶ必要があります。",
+          "サイクルの進め方は作成時に明示的に選ぶ必要があります。",
           "",
-          "  light     承認ゲート最小・レビューは有効。人間の時間を節約する",
-          "  saving    承認は残しレビューを落とす。AI 実行コストを節約する",
+          "  express   承認ゲート最小・レビューは有効。人間の時間を節約する",
+          "  economy   承認は残しレビューを落とす。AI 実行コストを節約する",
           "  standard  全レビュー有効・各フェーズで承認",
-          "  strict    codebase-survey の確認を追加、validate を各ステップで実行",
+          "  thorough  codebase-survey の確認を追加、validate を各ステップで実行",
         ].join("\n"),
       );
     }

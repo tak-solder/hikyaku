@@ -275,23 +275,33 @@ profile は**サイクルの属性**です。`create-cycle` で必ず明示的�
 
 |  | 人間の承認回数 | AIレビュー |
 |---|---|---|
-| **light** | **少** | 有 |
-| **saving** | 多 | **コードのみ** |
+| **express** | **少** | 有 |
+| **economy** | 多 | **コードのみ** |
 | **standard** | 多 | 有 |
-| **strict** | 最多 | 全部 |
+| **thorough** | 最多 | 全部 |
 
-- **light** = 人間の時間を節約する（承認は減らすが AI には見させる）
-- **saving** = AI 実行コストを節約する（中間成果物のレビューを起動しないが人間は見る）
+- **express** = 人間の時間を節約する（承認は減らすが AI には見させる）
+- **economy** = AI 実行コストを節約する（中間成果物のレビューを起動しないが人間は見る）
+
+express と economy は「何を省くか」が違うだけの兄弟です。品質の担保を **AI に寄せる**のが
+express、**人間に寄せる**のが economy で、どちらも担保そのものは手放しません。
+
+**thorough は判定基準が厳しくなるわけではありません。** standard で不合格になるものが
+thorough で通る、という関係ではなく、変わるのは**チェックポイントの細かさ**です。standard は
+完成した成果物の単位で（user-stories / 設計ドキュメント / plan + test-spec）、必要なときに
+確認します。thorough はその手前の作りかけの段階でも止まり（codebase-survey だけ、plan だけ、
+各ステップごと）、やるかどうかの判断を挟まず常に実行します。手戻りの巻き戻し幅が、
+フェーズ単位からステップ単位になると考えてください。
 
 **`code_review` はどのプロファイルでも行います。** 中間成果物（user-stories / 設計 /
 plan）のレビューは人間の承認で代替できますが、コードは差分が大きく、人間の承認ゲートが
-拾える粒度を超えるためです。saving で省くのはこの中間成果物のレビューです。
+拾える粒度を超えるためです。economy で省くのはこの中間成果物のレビューです。
 
 「承認少 + レビュー無」の組み合わせは意図的に用意していません。
 
 ### 承認ゲート
 
-| # | フェーズ | ゲート | light | saving | standard | strict |
+| # | フェーズ | ゲート | express | economy | standard | thorough |
 |---|---|---|---|---|---|---|
 | G1 | planner | user-stories 承認 | ✗ | ✓ | ✓ | ✓ |
 | G2 | architect | codebase-survey 確認 | ✗ | ✗ | ✗ | ✓ |
@@ -304,7 +314,7 @@ plan）のレビューは人間の承認で代替できますが、コードは�
 
 ### レビュー
 
-| レビュー | light | saving | standard | strict |
+| レビュー | express | economy | standard | thorough |
 |---|---|---|---|---|
 | user_stories_review | ✓ | ✗ | ✓ | ✓ |
 | architecture_review | ✓ | ✗ | ✓ | ✓ |

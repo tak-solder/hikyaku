@@ -56,7 +56,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config $ARGUMENTS[0] --json
 
 サイクルの profile は cycles.md から自動で適用される。`reviews.retrospective` の値を取得する。
 profile ごとの既定は
-light / saving が `skip`、standard が `prompt`、strict が `auto`。
+express / economy が `skip`、standard が `prompt`、thorough が `auto`。
 
 設定値に応じて動作を決定する:
 - `skip`: 振り返りをスキップし、呼び出し元に制御を返す
