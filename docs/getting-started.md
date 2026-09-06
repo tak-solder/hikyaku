@@ -1,0 +1,140 @@
+# Getting Started
+
+インストールから最初の1サイクルを締めるまでを通します。既存のリポジトリに導入する想定で、途中で分岐はありません。プロファイルや設定を選ぶ判断は、ひととおり回してからで間に合うので、まず1周してください。
+
+## 前提
+
+Node.js v22.18.0 以上が必要です。Hikyaku のスクリプトは TypeScript のまま Node で直接実行するため、型剥がしがフラグ無しで有効になるバージョンが要ります。実行時依存はゼロなので、`npm install` もビルドも不要です。
+
+```bash
+node --version
+```
+
+## 1. インストール
+
+```bash
+claude plugin marketplace add tak-solder/hikyaku
+claude plugin install hikyaku@hikyaku
+```
+
+ローカルのチェックアウトから試すこともできます。
+
+```bash
+claude --plugin-dir /path/to/hikyaku
+```
+
+インストールするとスキルが `hikyaku:` 名前空間付きで呼び出せるようになります（`/hikyaku:planner` など）。環境を確認します。
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" doctor
+```
+
+## 2. ワークスペースを初期化する
+
+導入するリポジトリで実行します。1リポジトリにつき1回だけです。
+
+```
+/hikyaku:init
+```
+
+このスキルのゴールは `document-guide.md` を作ることです。これは「どの永続ドキュメントが、どこに、誰の管理で存在するか」を宣言する唯一の場所で、存在しなければ Hikyaku は動きません。
+
+対話で3つを決めます。HIKYAKU_ROOT をどこにするか（推奨は `docs/hikyaku`）、リポジトリに既にある設計ドキュメントをどの論理名に割り当てるか、AGENTS.md へ索引を書き込んでよいか。
+
+既存ドキュメントは `repo` 管理として登録します。Hikyaku は追記するだけで形式には手を出さないので、`AD-N` 形式の ADR も、独自テンプレートの設計メモもそのまま使い続けられます。該当するものが無い論理名は「未作成」で登録され、必要になったときに作られます。
+
+書き込まれるのは次の4つです。既存ファイルが上書きされることはありません。
+
+```
+リポジトリルート/.hikyaku.config   設定のベース。hikyaku_root の唯一の宣言先
+{HIKYAKU_ROOT}/cycles.md           サイクル索引
+{HIKYAKU_ROOT}/document-guide.md   ドキュメントガイド
+{HIKYAKU_ROOT}/.gitignore          .hikyaku.local の1行だけ
+```
+
+最後に PR が作られます。この PR はマージしてから次へ進んでください。
+
+## 3. サイクルを作る
+
+```
+/hikyaku:create-cycle billing
+```
+
+チケット（番号か URL、無ければ「チケット無し」）と一行要約を聞かれ、続いてプロファイルを選びます。`.hikyaku.config` に既定値があっても、ここでは必ず明示的に選ばせます。迷ったら `standard` です。
+
+- `express` — 承認は要件と実装直前だけ。設計案は AI の推奨を採用する
+- `economy` — 承認は残し、中間成果物のレビューエージェントを起動しない
+- `standard` — 全レビュー有効、各フェーズで承認
+- `thorough` — チェックポイントを細かくする
+
+違いは [プロファイル](configuration/profiles.md) にあります。選んだ値は `cycles.md` に記録され、以後そのサイクルの属性になります。
+
+作成後「このまま企画フェーズに進みますか？」と聞かれます。進むとブランチと PR が PLAN のものに畳まれるので、PR は増えません。
+
+## 4. PLAN — 企画
+
+```
+/hikyaku:planner
+```
+
+チケットや企画メモを読み込み、そのサイクルのユーザーストーリーに構造化します。インプットの場所は聞かれるので、自分で探させないように渡してください。
+
+読み取った内容の要約が提示されたら、認識のズレをここで潰します。そのあと質問ラウンドが来るので答えます。最後に `user-stories.md` が提示され、承認を求められます。この承認はどのプロファイルでも省略されません。
+
+成果物は `planning/questions.md` と `planning/user-stories.md`、そして PR です。**この PR は速やかにマージしてください。** デフォルトブランチに入っていない情報は、他のサイクルからも次のフェーズからも見えません。
+
+## 5. ARCHITECT — 設計
+
+新しいセッションを開いて実行します。フェーズごとにセッションを分けるのは、コンテキストを使い切らないためです。
+
+```
+/hikyaku:architect
+```
+
+既存コードの調査はサブエージェントに委任され、設計判断に必要なファイルだけを本セッションが読みます。トレードオフが非自明な判断は複数案が提示され、選択を求められます（express では推奨案が自動採用されます）。選んだ案は ADR に記録されます。
+
+続いてビルド分割です。BP を見積もり、1セッションに収まる単位へ割ります。tasklist と issue.md の差分が提示されるので、承認します。
+
+成果物は `design/design-delta.md`、`design/codebase-survey.md`、`tasklist.md`、`build-{NN}/issue.md`、そして PR です。**この PR もマージしてから次へ進んでください。** `tasklist.md` がデフォルトブランチに無いと、builder が依存ビルドの完了を判定できません。
+
+## 6. BUILD — 実装
+
+ビルド1つにつき1セッションです。
+
+```
+/hikyaku:builder
+```
+
+対象ビルドは自動で決まります（明示するなら `/hikyaku:builder 001-billing 2`）。実装計画とテストシナリオが提示されたら承認します。ここも省略されません。
+
+そのあとは実装、ローカル検証、コードレビュー、申し送りの作成、PR 作成と進みます。レビュー指摘には「今修正する」「新しいビルドにして後で対応」「そのまま進める」から選んで答えます。
+
+依存関係のないビルドは並行して進められます。依存があるビルドは、先行ビルドの PR がマージされてから着手してください。次に何ができるかは次のコマンドで分かります。
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next
+```
+
+全ビルドが完了するまで、新しいセッションで `/hikyaku:builder` を繰り返します。
+
+## 7. CLOSE — サイクル終了
+
+```
+/hikyaku:close-cycle
+```
+
+各ビルドの `handoff.md` と振り返りから昇格候補が抽出され、昇格先ごとに提示されます。何を昇格させ、何を捨てるかを選んで承認してください。この取捨選択は人間の判断で、どのプロファイルでも省略されません。
+
+承認された内容が永続ドキュメントへ書き込まれ、ADR の status が `accepted` から `implemented` に更新され、サイクルが `closed` になります。最後に PR が作られます。
+
+これで1周です。次のサイクルは `/hikyaku:create-cycle` から始めます。2周目以降は `overview` があるので、architect の既存コード調査が差分だけになり、コストが下がります。
+
+## 次に読むもの
+
+回してみて引っかかった点に応じて選んでください。
+
+- 承認が多い / 少ないと感じた → [プロファイル](configuration/profiles.md)
+- ブランチ名や PR タイトルを変えたい → [.hikyaku.config](configuration/config-file.md)
+- GitHub の issue と連動させたい → [外部システムへの投影](configuration/external.md)
+- 複数のサイクルを同時に回したい → [複数サイクルの並行運用](operations/multi-cycle.md)
+- エラーが出た → [トラブルシューティング](operations/troubleshooting.md)
