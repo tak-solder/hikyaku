@@ -105,7 +105,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" doctor
 └── docs/hikyaku/              # HIKYAKU_ROOT
     ├── document-guide.md      # 永続ドキュメントの所在を宣言（必須）
     ├── cycles.md              # サイクル索引（必須）
-    ├── instruction.md         # ワークフロー独自の指示（任意）
+    ├── instructions.md        # ワークフロー独自の指示（任意）
     ├── .hikyaku.local         # 最後に作業したサイクル（git 管理対象外）
     ├── .gitignore             # .hikyaku.local の1行だけ
     └── cycles/
@@ -408,7 +408,7 @@ BP は、AIエージェントとの1セッション（20万トークン目安）
 ## インストラクションの優先順位
 
 1. **リポジトリ全体のインストラクション**（AGENTS.md, CLAUDE.md 等）
-2. **ワークフロー用インストラクション**（`{HIKYAKU_ROOT}/instruction.md`）
+2. **ワークフロー用インストラクション**（`{HIKYAKU_ROOT}/instructions.md`）
 3. **スキルの説明**（各 SKILL.md）
 
 ## プラグイン構成

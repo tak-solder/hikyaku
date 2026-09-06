@@ -75,7 +75,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle}
 **依存関係がないビルドは並行実行できる。** `next` が「着手中」と表示したビルドは、
 他セッションが作業している可能性がある。選ぶ前にユーザーに確認する。
 
-- [ ] `{HIKYAKU_ROOT}/instruction.md` を読む（存在する場合のみ）
+- [ ] `{HIKYAKU_ROOT}/instructions.md` を読む（存在する場合のみ）
 
 → Step 1 へ。
 

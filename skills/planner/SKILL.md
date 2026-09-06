@@ -39,7 +39,7 @@ AIエージェント協働開発ワークフロー。
 └── {HIKYAKU_ROOT}/
     ├── document-guide.md      # 永続ドキュメントの所在（必須）
     ├── cycles.md              # サイクル索引（必須）
-    ├── instruction.md         # ワークフロー独自の指示（任意）
+    ├── instructions.md        # ワークフロー独自の指示（任意）
     ├── .hikyaku.local         # 最後に作業したサイクル（git 管理対象外）
     └── cycles/
         └── {NNN}-{slug}/
@@ -100,13 +100,13 @@ HIKYAKU_ROOT は `.hikyaku.config` から解決されるので、引数では受
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {cycle}
 ```
 
-- [ ] `{HIKYAKU_ROOT}/instruction.md` を読む（存在する場合のみ）
+- [ ] `{HIKYAKU_ROOT}/instructions.md` を読む（存在する場合のみ）
 - [ ] サイクルの `profile` を確認し、以降のゲートとレビューの有無を決める
 
 インストラクションは次の優先順で適用する。上位が下位と矛盾する場合は上位を優先する。
 
 1. リポジトリ全体のインストラクション（AGENTS.md, CLAUDE.md 等）
-2. ワークフロー独自のインストラクション（`{HIKYAKU_ROOT}/instruction.md`）
+2. ワークフロー独自のインストラクション（`{HIKYAKU_ROOT}/instructions.md`）
 3. このスキルの説明（SKILL.md）
 
 → Step 1 へ。

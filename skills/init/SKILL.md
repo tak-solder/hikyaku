@@ -112,6 +112,16 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" init --root {HIKYAKU_ROOT}
 既に `{HIKYAKU_ROOT}/.hikyaku.config` がある場合（v2.0 の初期実装が生成していた）は
 警告が出る。内容をリポジトリルートの `.hikyaku.config` へ移して削除するよう案内する。
 
+- [ ] 改名されたファイルが旧名のまま残っていないか確認する
+
+| 旧名 | 新名 |
+|---|---|
+| `{HIKYAKU_ROOT}/instruction.md` | `{HIKYAKU_ROOT}/instructions.md` |
+
+`git mv` で改名する。**中身の変換は不要**で、そのまま使える。v2 は新しい名前しか
+読まないので、旧名のまま残すと**読み込まれていないことに誰も気づけない**。
+`hikyaku validate` も残存を検出する。
+
 → Step 4 へ。
 
 ### Step 4: 既存ドキュメントの検出と登録

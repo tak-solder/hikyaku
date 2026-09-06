@@ -94,7 +94,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs list
 `tech-stack` / `db-schema` / `interfaces` は俯瞰の手がかりとして読むが、
 **コードと矛盾したら常にコードを正とする**（勝手に直さず、handoff に記録する）。
 
-- [ ] `{HIKYAKU_ROOT}/instruction.md` を読む（存在する場合のみ）
+- [ ] `{HIKYAKU_ROOT}/instructions.md` を読む（存在する場合のみ）
 
 - [ ] ブランチを作成し、命名規則どおりか確認する
 

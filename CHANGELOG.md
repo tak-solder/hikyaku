@@ -64,6 +64,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **`{HIKYAKU_ROOT}/.gitignore` は `.hikyaku.local` の1行だけになった**: 既にファイルがある場合も1行だけ追記する（v1 が生成した `.gitignore` があるとスキップされ、栞が永久に追跡対象のままになるため）。v1 の除外設定が残っていれば警告する。包括パターンは書かない（`retrospective.md` を巻き込むと close-cycle が読めなくなる）
 - **サイクル構造**: `{HIKYAKU_ROOT}/cycles/{NNN}-{slug}/` にサイクル単位でまとめる。永続ドキュメントは HIKYAKU_ROOT の外に置き、`document-guide.md` から参照する
 - **`DOC_ROOT` → `HIKYAKU_ROOT`**: 永続ドキュメントが外に出た以上、残りを DOC_ROOT と呼ぶのは実態と合わないため
+- **`{HIKYAKU_ROOT}/instruction.md` → `instructions.md`**: 他のファイル名に合わせて複数形にした。中身の変換は不要で、`git mv` で改名するだけ。`/hikyaku:init` が移行時に案内し、`hikyaku validate` も旧名の残存を検出する（旧名のまま置くと読み込まれなくなるが、黙って無視すると気づけないため）
 - **状態を保存せず導出する**: 保存するのは `cycles.md` の `status` 3値のみ。フェーズはファイルの存在から、着手中はブランチの存在から、完了は `tasklist.md` の `PR` 列から導出する
   - **ビルドに `status` 列を持たせない**。`PR` 列の更新は当該ビルドの PR に同梱されるため、デフォルトブランチ上で PR 列が埋まっていること自体がマージ済みを意味する。status 列を別に持つと「status は done だが PR 列が空」という嘘の状態が作れてしまう
   - **完了判定はデフォルトブランチの tree から読む**。作業ツリーを見ると、ビルドブランチ上では `tasklist done` した直後の自分の PR 列が見えてしまい、未マージのビルドを完了とみなして依存ビルドを着手可能にしてしまう（ビルドの一覧は作業ツリーのまま。まだマージされていない tasklist の追加分も候補に出すため）

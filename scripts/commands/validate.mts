@@ -16,12 +16,16 @@ interface Problem {
   message: string;
 }
 
+/** HIKYAKU_ROOT 直下で改名したファイル。[旧名, 新名] */
+const RENAMED_FILES: [string, string][] = [["instruction.md", "instructions.md"]];
+
 register({
   name: "validate",
   summary: "document-guide・cycles.md・各 tasklist の整合性をまとめて検証する",
   usage: "hikyaku validate [<cycle>] [--root <path>] [--json]",
   details: [
     "検証する内容:",
+    "  - 読み込まれなくなった旧名のファイルが残っていないか",
     "  - document-guide.md のパスが実在するか（docs validate と同じ）",
     "  - cycles.md の依存先サイクルが存在するか、循環していないか",
     "  - 各サイクルのディレクトリが存在するか",
@@ -36,6 +40,19 @@ register({
   run: ({ args, operands }) => {
     const config = loadConfig({ root: flagString(args, "root") });
     const problems: Problem[] = [];
+
+    // 旧名のまま置かれていると、スキルが読まなくなったことに誰も気づけない。
+    // 「設定したのに効かない」という最も気づきにくい壊れ方なので、黙って無視しない
+    for (const [stale, current] of RENAMED_FILES) {
+      if (!existsSync(join(config.hikyakuRoot, stale))) continue;
+      const hint = existsSync(join(config.hikyakuRoot, current))
+        ? `${current} が既にあります。旧名のファイルは削除してください`
+        : `git mv で ${current} へ改名してください`;
+      problems.push({
+        scope: stale,
+        message: `${current} に改名されました。この名前では読み込まれません。${hint}`,
+      });
+    }
 
     for (const problem of validateGuide(loadGuide(config.hikyakuRoot), config.repoRoot)) {
       problems.push({ scope: `document-guide/${problem.entry}`, message: problem.message });
