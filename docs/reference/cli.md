@@ -6,22 +6,23 @@
 
 ## 実行方法
 
-スキルの中からは Claude Code がプラグインの位置を解決するため、設定は要りません。自分のシェルから叩く場合はパスが必要です。
-
-プラグインは `~/.claude/plugins/cache/{marketplace}/{plugin}/{version}/` に展開され、**バージョンを上げるとパスが変わります**。次の関数を `~/.zshrc` や `~/.bashrc` に入れておくと、更新に追随します。
+スキルの中からは Claude Code がプラグインの位置を解決するため、設定は要りません。自分のシェルから叩く場合はパスが必要です。次の関数を `~/.zshrc` や `~/.bashrc` に入れてください。
 
 ```bash
 hikyaku() {
   local dir
-  dir=$(ls -d "$HOME"/.claude/plugins/cache/hikyaku/hikyaku/*/ 2>/dev/null | sort -V | tail -1)
+  dir=$(claude plugin list --json |
+    node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).find(p=>p.id.startsWith("hikyaku@"))?.installPath ?? ""')
   [ -n "$dir" ] || { echo "hikyaku プラグインが見つかりません" >&2; return 1; }
-  node "${dir}scripts/hikyaku.mts" "$@"
+  node "$dir/scripts/hikyaku.mts" "$@"
 }
 ```
 
 以降、このドキュメントのコマンドはすべて `hikyaku <command>` の形で書きます。
 
-インストール先を直接知りたい場合は `claude plugin list --json` の `installPath` を見てください。リポジトリを clone して使うこともできます（[CI での検証](../operations/ci.md) はこの形です）。
+**インストール先を推測せず、`claude plugin list --json` の `installPath` から引いてください。** プラグインは `~/.claude/plugins/cache/{marketplace}/{plugin}/{version}/` に展開されますが、更新しても古いバージョンのディレクトリは残り、ディレクトリ名はバージョン番号とは限りません（コミットハッシュや `unknown` になることがあります）。パスを固定で書いたり、最新らしきディレクトリを選んだりすると、実際に有効なものとは別のバージョンを叩くことになります。
+
+リポジトリを clone して使うこともできます（[CI での検証](../operations/ci.md) はこの形です）。
 
 ```bash
 node /path/to/hikyaku/scripts/hikyaku.mts <command>
