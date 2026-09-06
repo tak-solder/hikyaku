@@ -75,26 +75,22 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {cycle}
 
 いずれも無ければ `/hikyaku:planner` を先に実行するよう案内して終了する。
 
-- [ ] **永続ドキュメントを読み込む**
+- [ ] **読むべきドキュメントの候補を取得する**
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs list
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context architect {cycle}
 ```
 
-概要欄を見て、**今回のスコープに関係するものだけ**を読む。全部読む必要はない。
+**概要欄を見て、今回のスコープに関係するものだけを読む。全部読む必要はない。**
 概要欄があるのはそのためで、パスだけでは全部読むしかなくなる。
+`context` が返すのは候補と理由までで、**絞るのはあなたの仕事**。
 
-- `overview` — 実装済みの現実。Step 2 の差分調査の基準になる
-- `constraints` — 既に確定している非機能要件。再度質問しないため
-- `decisions` — 過去の設計判断。**採用理由とトレードオフを把握し、実装中に覆さない**
-- `learnings` — 既知の落とし穴
-- `conventions` — 規約（AGENTS.md にマップされていることが多い）
+- `overview` は Step 2 の差分調査の基準になる。**未作成なら差分ではなく全体を調査する**
+- `decisions` は**採用理由とトレードオフを把握し、実装中に覆さない**
 
 `repo` 管理のドキュメントは**既存形式が正**。参考として読むが、形式には手を出さない。
 `tech-stack` / `db-schema` / `interfaces` は俯瞰の手がかりとして読むが、
 **コードと矛盾したら常にコードを正とする**（勝手に直さず、handoff に記録する）。
-
-- [ ] `{HIKYAKU_ROOT}/instructions.md` を読む（存在する場合のみ）
 
 - [ ] ブランチを作成し、命名規則どおりか確認する
 

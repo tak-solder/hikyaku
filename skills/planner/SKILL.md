@@ -100,7 +100,16 @@ HIKYAKU_ROOT は `.hikyaku.config` から解決されるので、引数では受
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {cycle}
 ```
 
-- [ ] `{HIKYAKU_ROOT}/instructions.md` を読む（存在する場合のみ）
+- [ ] 読むべきドキュメントの候補を取得する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context plan {cycle}
+```
+
+企画では**永続ドキュメントをほとんど読まない**。実装済みの現実を前提に置く場面では
+ないため、返るのは `constraints`（確定済みの非機能要件を再度質問しないため）と
+`glossary`（語を既存の定義に揃えるため）だけ。
+
 - [ ] サイクルの `profile` を確認し、以降のゲートとレビューの有無を決める
 
 インストラクションは次の優先順で適用する。上位が下位と矛盾する場合は上位を優先する。
@@ -173,7 +182,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title plan {cycle}
 - [ ] cycles.md に記録された**チケット**を確認する
 - [ ] ユーザーが指定したドキュメント（企画書、仕様メモ、Issue、Slack抜粋など）を読み込む
   - 指定がない場合はユーザーにインプットの場所を確認する。自分で探索しない
-- [ ] `document-guide.md` を読み、**`constraints` が登録されていれば読む**
+- [ ] Step 0 の `context` が `constraints` を返していれば読む
   - 既に確定している非機能要件を再度質問しないため
 
 → Step 3 へ。

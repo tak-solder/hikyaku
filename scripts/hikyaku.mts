@@ -27,6 +27,7 @@ import "./commands/init.mts";
 import "./commands/cycle.mts";
 import "./commands/tasklist.mts";
 import "./commands/next.mts";
+import "./commands/context.mts";
 import "./commands/validate.mts";
 import "./commands/external.mts";
 import "./commands/naming.mts";

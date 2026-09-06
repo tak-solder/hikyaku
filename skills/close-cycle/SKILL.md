@@ -48,8 +48,12 @@ metadata:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs list
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context close {cycle}
 ```
+
+`context` は昇格先の所在と、素材（全ビルドの `handoff.md` / `design-delta.md`）を
+まとめて返す。**末尾の「未作成」は昇格先の候補**で、そこへ昇格させるなら新規作成に
+なるため G10 で併せて承認を得る。
 
 HIKYAKU_ROOT は `.hikyaku.config` から解決されるので、引数では受け取らない。
 `$ARGUMENTS[0]` でサイクルが指定されていなければ、**現在のブランチ → `.hikyaku.local`

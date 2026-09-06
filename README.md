@@ -351,7 +351,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" <command> [--root <path>] [--js
 
 ```
 doctor / config / version / init / help
-next / validate
+next / validate / context
 docs      list / validate / link / scaffold
 cycle     new / use / link / list / status / close
 tasklist  read / add / update / link / done
@@ -363,6 +363,8 @@ external  sync / ref
 
 - **書き込みコマンドはすべて `--dry-run` に対応**します。承認は常に呼び出し元のスキルが取り、スクリプトは「何が起きるか」を返す責務だけを持ちます
 - 終了コード: `0` 成功 / `1` エラー / `2` 検証失敗
+
+`context <phase> [<cycle>]` は、そのフェーズで読むべきドキュメントの候補を返します。フェーズごとの「何を読むか」を各 SKILL.md に書くと4箇所に同じ表が載って必ず食い違うため、対応はここが唯一の正です。**返すのは候補と理由までで、絞り込みはしません** —— どれが今回のスコープに関係するかは概要欄を読んで判断することで、それはスキル（LLM）の仕事です。`build-NN` では `tasklist.md` の依存グラフから先行ビルドの `handoff.md` も辿ります（手で辿ると漏れるため）。
 
 ### CI での利用
 

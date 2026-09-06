@@ -75,27 +75,32 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle}
 **依存関係がないビルドは並行実行できる。** `next` が「着手中」と表示したビルドは、
 他セッションが作業している可能性がある。選ぶ前にユーザーに確認する。
 
-- [ ] `{HIKYAKU_ROOT}/instructions.md` を読む（存在する場合のみ）
-
 → Step 1 へ。
 
 ### Step 1: コンテキスト復元
 
-以下の順で読み込む。**3層に分かれていることを意識する。**
+- [ ] 読むべきドキュメントの候補を取得する
 
-| 層 | 何を表すか | 読むもの |
-|---|---|---|
-| **永続** | 実装済みの現実（他サイクルの成果も含む） | overview / constraints / decisions / learnings / conventions |
-| **サイクル** | このサイクルが作ろうとしている差分 | design-delta.md / codebase-survey.md |
-| **ビルド** | 同一サイクル内の先行ビルドの実績 | 依存ビルドの handoff.md |
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context build-{NN} {cycle}
+```
 
-- [ ] `cycles/{cycle}/build-{NN}/issue.md` を読む（対象ビルドの定義）
-- [ ] `docs list` で永続ドキュメントの所在を確認し、**今回のビルドに関係するものだけ**を読む
+返るものは**3層に分かれている**。どの層の話をしているかを意識して読む。
+
+| 層 | 何を表すか |
+|---|---|
+| **永続** | 実装済みの現実（他サイクルの成果も含む） |
+| **サイクル** | このサイクルが作ろうとしている差分 |
+| **ビルド** | 同一サイクル内の先行ビルドの実績（依存ビルドの `handoff.md`） |
+
+**依存ビルドの `handoff.md` は `context` が tasklist.md の依存グラフから辿る。**
+自分で辿らない。直接依存する分だけが返るので、全ビルド分を読むことにはならない。
+
+- [ ] 概要欄を見て、**今回のビルドに関係するものだけ**を読む
+  - `issue.md`（対象ビルドの定義）と `design-delta.md` は必ず読む
   - `decisions` は採用理由とトレードオフを把握し、**実装中に判断を覆さない**
   - 覆す必要が生じた場合は、覆した ADR・理由・影響範囲を **`handoff.md` に記録する**
     （ADR 自体の更新は close-cycle が行う。あなたは永続ドキュメントを書き換えない）
-- [ ] `cycles/{cycle}/design/design-delta.md` を読む
-- [ ] **依存ビルドの `handoff.md` を読む**（直接依存するビルドの分のみ。全ビルド分は読まない）
 
 → Step 2 へ。
 
