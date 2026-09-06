@@ -36,6 +36,10 @@ metadata:
 | builder | ✗ |
 | **close-cycle** | **✓（唯一）** |
 
+`{HIKYAKU_ROOT}/instructions.md` も同じ扱いで、**書き換えるのは close-cycle だけ**。
+永続ドキュメントではないが、走行中の他サイクルの planner / architect が読むため、
+フェーズ途中で書き換えると前提が途中で変わる。
+
 ## 作業ステップ
 
 ### Step 0: 読み込みと完了確認
@@ -137,7 +141,13 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title close {cycle}
   - `cycles/{cycle}/build-*/handoff.md` — **全ビルドの申し送り**
   - `cycles/{cycle}/*/retrospective.md` — 振り返り（存在する場合）
   - `document-guide.md` — 昇格先の所在
+- [ ] **retrospective.md からは「リポジトリ固有の学び（L-N）」と、対象が `doc:` の
+      改善提案だけを拾わせる**
+  - `workflow` は本セッションが直接捌く。`記録のみ` は読ませる必要がない
+  - ビルドが10本あれば retrospective.md は12ファイルになる。委任してコンテキストを
+    守る意味が、渡す量を絞らないと消える
 - [ ] エージェントには「候補リスト」だけを返させ、本文の執筆は本セッションで行う
+- [ ] `workflow` 分類の改善提案は、本セッションが各 retrospective.md から直接読む
 
 → Step 3 へ。
 
@@ -145,13 +155,22 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title close {cycle}
 
 抽出された候補を、昇格先ごとに整理する。
 
-| 昇格先 | 何を昇格させるか |
-|---|---|
-| **overview** | アーキテクチャに影響した変更。責務・境界・データフローの変化 |
-| **learnings** | handoff / retrospective から拾った**再現条件が明確な**落とし穴 |
-| **constraints** | 実装中に判明した新たな制約（数値で書けるもの） |
-| **ADR** | `status: accepted` → `implemented` に更新 |
-| **document-guide** | このサイクルで新規作成したドキュメントの行を更新 |
+| 昇格先 | 何を昇格させるか | 主な素材 |
+|---|---|---|
+| **overview** | アーキテクチャに影響した変更。責務・境界・データフローの変化 | design-delta / handoff |
+| **learnings** | **再現条件が明確な**落とし穴 | handoff / retrospective の L-N |
+| **constraints** | 実装中に判明した新たな制約（数値で書けるもの） | handoff |
+| **conventions ほか規約系** | 以後の書き方・進め方の取り決め | retrospective の `doc:` 分類 |
+| **`instructions.md`** | このリポジトリで Hikyaku を回すときの手順・前提 | retrospective の `workflow` 分類 |
+| **ADR** | `status: accepted` → `implemented` に更新 | design |
+| **document-guide** | このサイクルで新規作成したドキュメントの行を更新 | — |
+
+`doc:` 分類の論理名は `document-guide.md` が正。**そこに無い論理名は昇格先にしない**
+（勝手にドキュメントを作らない）。`未作成` で登録されている論理名へ昇格させる場合は、
+新規作成することになるので G10 でその旨も承認を得る。
+
+**同じ提案が複数フェーズの retrospective.md に出ていたら、1件に束ねて出典を全部残す。**
+言われた回数は優先度そのものなので、束ねるときに落とさない。
 
 **昇格させないもの:**
 
@@ -159,8 +178,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title close {cycle}
   これらはコードが正で、書いた瞬間に腐り、しかも腐っていることに誰も気づけない。
   代わりに**「正がどこにあるか」のポインタ**を書く（`スキーマの正は db/migrations/`）
 - `learnings` に**一般的なプログラミング知識**や**曖昧な注意**（「気をつける」だけ）を書かない
-- `learnings` に **Hikyaku スキル自体への改善提案**を書かない（retrospective 側の管轄）
+- `learnings` に**以後の取り決め**を書かない（それは `conventions` か `instructions.md`）。
+  `learnings` は踏んだ地雷の記録で、取り決めではない
 - `constraints` に**実現方法**を書かない（それは ADR か overview）
+- `instructions.md` に**このリポジトリに固有でないこと**を書かない。一般的な進め方は
+  各スキルが既に持っている
 
 **`repo` 管理のドキュメントには形式を強制しない。** 既存形式に合わせて追記するだけで、
 既存記述の削除・整理はしない。既存 ADR に status 欄が無くて実装状態が分からない
@@ -180,11 +202,18 @@ overview に昇格:
 learnings に昇格:
   + 請求バッチのテストは並列実行で落ちる（build-03 で判明、2026-09-01）
 
+conventions（AGENTS.md）に昇格:
+  + マイグレーションは1PR1ファイルに保つ（design#R-1, build-02#R-3 の2件）
+
+instructions.md に反映:
+  + 環境変数を足したら .env.example にも同じキーを足す（build-01#R-2）
+
 ADR:
   ~ 20260825-payment-provider.md: accepted → implemented
 
 昇格させないもの（参考）:
   - handoff にあった「invoices テーブルを追加」→ マイグレーションが正のため書かない
+  - build-03#R-1「テストは1ファイル1クラス」→ conventions に既に同じ記述があるため書かない
 ```
 
 この承認は **profile の管轄外で、どのプロファイルでも省略しない**。
@@ -196,6 +225,8 @@ ADR:
 ### Step 5: 書き込み
 
 - [ ] 承認された内容を永続ドキュメントへ書き込む
+- [ ] `workflow` 分類が承認されていれば `{HIKYAKU_ROOT}/instructions.md` へ追記する
+  （無ければ新規作成する）
 - [ ] `document-guide.md` を更新する（新規作成したドキュメントの管理列とパス列）
 - [ ] AGENTS.md の索引を更新する
 

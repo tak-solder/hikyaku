@@ -64,6 +64,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **`{HIKYAKU_ROOT}/.gitignore` は `.hikyaku.local` の1行だけになった**: 既にファイルがある場合も1行だけ追記する（v1 が生成した `.gitignore` があるとスキップされ、栞が永久に追跡対象のままになるため）。v1 の除外設定が残っていれば警告する。包括パターンは書かない（`retrospective.md` を巻き込むと close-cycle が読めなくなる）
 - **サイクル構造**: `{HIKYAKU_ROOT}/cycles/{NNN}-{slug}/` にサイクル単位でまとめる。永続ドキュメントは HIKYAKU_ROOT の外に置き、`document-guide.md` から参照する
 - **`DOC_ROOT` → `HIKYAKU_ROOT`**: 永続ドキュメントが外に出た以上、残りを DOC_ROOT と呼ぶのは実態と合わないため
+- **振り返りの改善提案に行き先を与えた**: 分類を `doc:{論理名}` / `workflow` / `記録のみ` の3つにし、close-cycle が `conventions` などの永続ドキュメントか `instructions.md` へ反映する。従来は `skill:` / `repo:` / `workflow:` / `記録のみ` の4分類だったが、実際に適用するステップがどこにも無く、closed になったサイクルのディレクトリに沈んでいた
+  - **`skill:`（Hikyaku スキル自体への改善提案）を廃止した**。Hikyaku の手順に穴があると思える場合も、このリポジトリで埋めるなら `workflow` に落とす。`instructions.md` はインストラクションの優先順位で SKILL.md より上位にあり、スキルを上書きするための正規の場所
+  - **`repo:{ファイル名}` を `doc:{論理名}` にした**。パス直指定をやめ、`document-guide.md` が宣言する論理名で指す。`document-guide.md` に無い論理名は使わない（勝手にドキュメントを作らない）
+  - **R-N と L-N の軸を「提案か、事実か」に整理した**。以後の取り決めは R-N、踏んだ地雷は L-N（`learnings` 行き）。`overview` / `constraints` に載る事実は従来どおり `handoff.md` が担い、昇格の経路を二重に持たない
+  - **close-cycle が retrospective.md から拾う範囲を絞った**。サブエージェントに渡すのは L-N と `doc:` 分類だけで、`workflow` は本セッションが直接捌く。ビルドが10本あれば retrospective.md は12ファイルになり、絞らないと委任の意味が消える
+  - **同じ提案が複数フェーズで出ていたら1件に束ね、出典を全部残す**。言われた回数は優先度そのものなので落とさない
 - **`{HIKYAKU_ROOT}/instruction.md` → `instructions.md`**: 他のファイル名に合わせて複数形にした。中身の変換は不要で、`git mv` で改名するだけ。`/hikyaku:init` が移行時に案内し、`hikyaku validate` も旧名の残存を検出する（旧名のまま置くと読み込まれなくなるが、黙って無視すると気づけないため）
 - **状態を保存せず導出する**: 保存するのは `cycles.md` の `status` 3値のみ。フェーズはファイルの存在から、着手中はブランチの存在から、完了は `tasklist.md` の `PR` 列から導出する
   - **ビルドに `status` 列を持たせない**。`PR` 列の更新は当該ビルドの PR に同梱されるため、デフォルトブランチ上で PR 列が埋まっていること自体がマージ済みを意味する。status 列を別に持つと「status は done だが PR 列が空」という嘘の状態が作れてしまう

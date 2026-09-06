@@ -87,6 +87,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" doctor
 実装済みの成果を**永続ドキュメントへ昇格**させ、サイクルを締めます。
 
 - `handoff.md` / `retrospective.md` から昇格候補を抽出（サブエージェントに委任）
+- 昇格先は永続ドキュメントと `instructions.md`。振り返りの改善提案もここで反映される
 - 昇格内容の取捨選択はユーザーが承認する
 - ADR の `status` を `accepted` → `implemented` に更新
 - **成果物**: 永続ドキュメントの更新, `cycles.md` の更新, PR
@@ -392,7 +393,7 @@ BP は、AIエージェントとの1セッション（20万トークン目安）
 ユーザーが直接呼び出すものではなく、各フェーズのスキルが自動的に呼び出します。
 
 - **`build-manager`** — BP見積もりと分割単位の判断、issue.md の作成、承認。tasklist.md の更新はスクリプトが行う
-- **`retrospective`** — 振り返り。Hikyaku スキルへの改善提案と、リポジトリ固有の学び（close-cycle が `learnings` へ昇格させる）を分けて記録する
+- **`retrospective`** — 振り返り。以後の取り決め（改善提案）と、踏んだ地雷（リポジトリ固有の学び）を分けて記録する。どちらも close-cycle が永続ドキュメントか `instructions.md` へ反映する
 
 ## エージェント
 
