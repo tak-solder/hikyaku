@@ -31,17 +31,27 @@ export const PROFILE_NAMES: ProfileName[] = ["express", "economy", "standard", "
 
 /**
  * 承認ゲート。ここに無いゲートは profile の管轄外で、常に有効:
- *   G3  設計案の選択（architect）
  *   G6  tasklist / issue 変更承認（build-manager）
  *   G8  plan + test-spec 承認（builder）
  *   G10 永続ドキュメント昇格の承認（close-cycle）
  * profile で外せるのは「確認」であって「同意」ではない。
  */
 export interface Gates {
-  /** G1 planner: user-stories 承認 */
+  /**
+   * G1 planner: user-stories 承認。
+   * どのプロファイルでも on。要件の合意は後段の承認では代替できない
+   * （設計も plan も「その要件で正しいか」を前提に置くため）。
+   */
   userStories: boolean;
   /** G2 architect: codebase-survey 確認 */
   codebaseSurvey: boolean;
+  /**
+   * G3 architect: 設計案の選択。
+   * off にすると AI が推奨案をそのまま採用する。express だけが off で、
+   * 要件（G1）を人間が握っているなら、その先の trade-off は推奨に委ねても
+   * 引き返せる、という判断による。採用理由と退けた案は ADR に残る。
+   */
+  designChoice: boolean;
   /** G4 architect: 設計ドキュメント承認 */
   architecture: boolean;
   /** G7 builder: plan 単独の承認（thorough のみ。他は G8 に統合） */
@@ -64,51 +74,78 @@ interface ProfileDefinition {
 }
 
 const PROFILES: Record<ProfileName, ProfileDefinition> = {
-  // 人間の時間を節約する。承認は減らすが AI には見させる
+  // 人間の時間を節約する。承認は減らすが AI には見させる。
+  // 人間が握るのは要件（G1）だけで、その先の設計判断は AI の推奨に委ねる。
+  // 委ねるぶん、security と retrospective は AI 側で回して担保を戻す
   express: {
-    gates: { userStories: false, codebaseSurvey: false, architecture: false, plan: false },
-    reviews: {
+    gates: {
       userStories: true,
-      architecture: true,
-      plan: true,
-      code: true,
-      security: "off",
-      retrospective: "skip",
-      validate: "manual",
-    },
-  },
-  // AI 実行コストを節約する。中間成果物のレビューを起動しないが人間は見る。
-  // code だけは全プロファイルで残す（コードの差分は承認ゲートが拾える粒度を超えるため）
-  economy: {
-    gates: { userStories: true, codebaseSurvey: false, architecture: true, plan: false },
-    reviews: {
-      userStories: false,
+      codebaseSurvey: false,
+      designChoice: false,
       architecture: false,
       plan: false,
-      code: true,
-      security: "off",
-      retrospective: "skip",
-      validate: "manual",
     },
-  },
-  // 完成した成果物の単位で、人間も AI も見る
-  standard: {
-    gates: { userStories: true, codebaseSurvey: false, architecture: true, plan: false },
     reviews: {
       userStories: true,
       architecture: true,
       plan: true,
       code: true,
       security: "recommended",
-      retrospective: "prompt",
+      retrospective: "auto",
+      validate: "manual",
+    },
+  },
+  // AI 実行コストを節約する。中間成果物のレビューを起動しないが人間は見る。
+  // code だけは全プロファイルで残す（コードの差分は承認ゲートが拾える粒度を超えるため）。
+  // security も落とさない（節約の対象にしてよい観点ではないため、既定は recommended）
+  economy: {
+    gates: {
+      userStories: true,
+      codebaseSurvey: false,
+      designChoice: true,
+      architecture: true,
+      plan: false,
+    },
+    reviews: {
+      userStories: false,
+      architecture: false,
+      plan: false,
+      code: true,
+      security: "recommended",
+      retrospective: "skip",
+      validate: "manual",
+    },
+  },
+  // 完成した成果物の単位で、人間も AI も見る
+  standard: {
+    gates: {
+      userStories: true,
+      codebaseSurvey: false,
+      designChoice: true,
+      architecture: true,
+      plan: false,
+    },
+    reviews: {
+      userStories: true,
+      architecture: true,
+      plan: true,
+      code: true,
+      security: "recommended",
+      retrospective: "auto",
       validate: "phase",
     },
   },
   // 判定基準が厳しくなるのではなく、チェックポイントが細かくなる。
   // 完成前の中間状態（codebase-survey だけ / plan だけ / 各ステップ）でも止まり、
-  // 条件付きのもの（security / retrospective）も判断を挟まず常に実行する
+  // 条件付きの security も該当判定を挟まず常に実行する
   thorough: {
-    gates: { userStories: true, codebaseSurvey: true, architecture: true, plan: true },
+    gates: {
+      userStories: true,
+      codebaseSurvey: true,
+      designChoice: true,
+      architecture: true,
+      plan: true,
+    },
     reviews: {
       userStories: true,
       architecture: true,
@@ -391,6 +428,7 @@ function finalize(
     userStories: readBoolean(merged, "user_stories_gate", "config") ?? preset.gates.userStories,
     codebaseSurvey:
       readBoolean(merged, "codebase_survey_gate", "config") ?? preset.gates.codebaseSurvey,
+    designChoice: readBoolean(merged, "design_choice_gate", "config") ?? preset.gates.designChoice,
     architecture: readBoolean(merged, "architecture_gate", "config") ?? preset.gates.architecture,
     plan: readBoolean(merged, "plan_gate", "config") ?? preset.gates.plan,
   };

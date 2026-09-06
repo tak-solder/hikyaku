@@ -164,10 +164,12 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" doctor
 
 ### 承認ゲートは「確認」と「同意」を分ける
 
-profile で省略できるのは**確認**だけです。次の2つは**人間にしか下せない判断**なので、どのプロファイルでも省略しません。
+profile で省略できるのは原則として**確認**だけです。次の2つは**人間にしか下せない判断**なので、どのプロファイルでも省略しません。
 
-- **設計案の選択**（architect）— トレードオフの選択
+- **要件の合意**（planner）— user-stories が「何を作るか」の唯一の合意点で、後段の承認では代替できない
 - **永続ドキュメント昇格の承認**（close-cycle）— 何を昇格させるかの取捨選択
+
+**設計案の選択**（architect）も本来は同じ性質ですが、express だけは外せます。要件を人間が握っている以上、その先のトレードオフは推奨に委ねても引き返せるという判断です。省いた場合も採用理由と退けた案は ADR と PR 本文に残ります。
 
 ## 設定ファイル（`.hikyaku.config`）
 
@@ -297,20 +299,28 @@ thorough で通る、という関係ではなく、変わるのは**チェック
 plan）のレビューは人間の承認で代替できますが、コードは差分が大きく、人間の承認ゲートが
 拾える粒度を超えるためです。economy で省くのはこの中間成果物のレビューです。
 
+**`security_review` もどのプロファイルでも `off` にはしません。** 「承認を減らしたから」
+「実行コストを削ったから」で落としてよい観点ではないためです。既定は `recommended`
+（判定基準に該当したときだけ起動を確認）で、thorough だけが該当判定を挟まず `on`。
+明示的に切りたい場合は個別キー `security_review = "off"` で上書きできます。
+
 「承認少 + レビュー無」の組み合わせは意図的に用意していません。
 
 ### 承認ゲート
 
 | # | フェーズ | ゲート | express | economy | standard | thorough |
 |---|---|---|---|---|---|---|
-| G1 | planner | user-stories 承認 | ✗ | ✓ | ✓ | ✓ |
+| G1 | planner | **user-stories 承認** | ✓ | ✓ | ✓ | ✓ |
 | G2 | architect | codebase-survey 確認 | ✗ | ✗ | ✗ | ✓ |
-| G3 | architect | **設計案の選択** | ✓ | ✓ | ✓ | ✓ |
+| G3 | architect | 設計案の選択 | ✗ | ✓ | ✓ | ✓ |
 | G4 | architect | 設計ドキュメント承認 | ✗ | ✓ | ✓ | ✓ |
 | G6 | build-manager | tasklist / issue 変更承認 | ✓ | ✓ | ✓ | ✓ |
 | G7 | builder | plan 単独の承認 | ✗ | ✗ | ✗ | ✓ |
 | G8 | builder | plan + test-spec 承認 | ✓ | ✓ | ✓ | ✓ |
 | G10 | close-cycle | **永続ドキュメント昇格の承認** | ✓ | ✓ | ✓ | ✓ |
+
+express は「要件（G1）と実装直前（G8）だけ人間が見て、その間は AI に任せる」という形です。
+G3 を外しても採用理由と退けた案は ADR に残り、PR 本文にも出るので、判断を後から追えなくなることはありません。
 
 ### レビュー
 
@@ -320,11 +330,15 @@ plan）のレビューは人間の承認で代替できますが、コードは�
 | architecture_review | ✓ | ✗ | ✓ | ✓ |
 | plan_review | ✓ | ✗ | ✓ | ✓ |
 | code_review | ✓ | ✓ | ✓ | ✓ |
-| security_review | off | off | 推奨時のみ確認 | on |
-| retrospective | skip | skip | prompt | auto |
+| security_review | 推奨時のみ確認 | 推奨時のみ確認 | 推奨時のみ確認 | on |
+| retrospective | auto | skip | auto | auto |
 | validate | 手動のみ | 手動のみ | 各フェーズ末 | 各ステップ |
 
-個別キー（`architecture_gate`, `plan_review` など）で profile の既定値を上書きできます。
+`retrospective` を economy だけ `skip` にしているのは、振り返りがサブエージェントの
+実行コストそのものだからです。承認を省く express では逆に、改善の材料をセッション内から
+自動で拾い上げる必要があります。
+
+個別キー（`design_choice_gate`, `architecture_gate`, `plan_review`, `security_review` など）で profile の既定値を上書きできます。
 
 ## CLI
 

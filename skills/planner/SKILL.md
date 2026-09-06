@@ -218,12 +218,14 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title plan {cycle}
   - 渡す情報: `cycles/{cycle}/planning/user-stories.md`, `planning/questions.md`
   - 出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/agents/doc-reviewer.md` を参照
   - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
-- [ ] **`user_stories_gate` が有効な場合**（economy / standard / thorough）、ユーザーに提示して承認を得る
-  - `express` ではこのゲートを省略する。問題は PR レビューで拾う想定
+- [ ] **ユーザーに提示して承認を得る（G1）**
+  - このゲートは**どのプロファイルでも省略しない**。要件の合意は後段の承認では
+    代替できない（設計も plan も「その要件で正しいか」を前提に置くため）
+  - `user_stories_gate` を個別キーで `false` にした場合のみ省略する
 
 profile ごとの有効・無効は Step 0 の `config --json` の `gates` / `reviews` を見る。
 
-→ 承認を得たら（または express で省略したら）Step 6 へ。
+→ 承認を得たら Step 6 へ。
 
 ### Step 6: 振り返りと PR
 

@@ -69,8 +69,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active
 ```
 このサイクルの profile を選択してください（.hikyaku.config の設定: standard）
 
-  express   承認ゲート最小、レビューは有効。人間の時間を節約する
-            → 小規模・低リスク。問題は PR レビューで拾う
+  express   承認は要件（user-stories）と plan + test-spec だけ。設計案は AI の推奨を採用する
+            → 人間の時間を節約する。要件だけ握って先は任せたい場合
 
   economy   承認は残し、中間成果物のレビューエージェントを起動しない（コードレビューは残る）
             → 自分で見るのでレビューは要らない、という場合

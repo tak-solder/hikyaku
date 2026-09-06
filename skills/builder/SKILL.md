@@ -238,9 +238,9 @@ Agent に渡すフォーマット指定:
 
 | 設定値 | 挙動 |
 |---|---|
-| `off`（express / economy） | 起動しない |
+| `off`（既定では該当なし。個別キーで明示したときだけ） | 起動しない |
 | `on`（thorough） | 常に起動する |
-| `recommended`（standard） | **判定基準に該当する場合のみ、起動するか確認する** |
+| `recommended`（express / economy / standard） | **判定基準に該当する場合のみ、起動するか確認する** |
 
 `recommended` の場合、対象ビルドの `issue.md` と実際の diff を見て、
 `[review.security].triggers` に該当するか判定する。`config --json` の

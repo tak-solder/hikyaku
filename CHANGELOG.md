@@ -33,6 +33,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   - **express** は人間の時間を節約（承認を減らすが AI には見させる）、**economy** は AI 実行コストを節約（サブエージェントを起動しないが人間は見る）という別の軸。品質の担保を AI に寄せるか人間に寄せるかの違いで、どちらも担保そのものは手放さない
   - **thorough** は判定基準が厳しくなるのではなく、チェックポイントが細かくなる。standard が完成した成果物の単位で必要なときに確認するのに対し、thorough は完成前の中間状態でも止まり、判断を挟まず常に実行する
   - 「承認少 + レビュー無」の組み合わせは意図的に用意していない
+  - **G1（user-stories 承認）はどのプロファイルでも省略しない**。要件の合意は後段の承認では代替できない（設計も plan も「その要件で正しいか」を前提に置くため）
+  - **G3（設計案の選択）は profile 管轄に移し、express でのみ外れる**（AI の推奨案をそのまま採用する）。要件を人間が握っているなら、その先の trade-off は推奨に委ねても引き返せるという判断による。省いた場合も採用理由と退けた案は ADR と PR 本文に残る。個別キーは `design_choice_gate`
+  - **`security_review` はどのプロファイルでも `off` にしない**。既定は `recommended`（判定基準に該当したときだけ起動を確認）で、thorough だけが該当判定を挟まず `on`。承認や実行コストの削減で落としてよい観点ではないため。切りたい場合は個別キーで明示する
+  - **`retrospective` は economy だけ `skip`**、他は `auto`。振り返りはサブエージェントの実行コストそのものなので、コスト節約軸の economy でのみ落とす。承認を省く express では逆に、改善の材料を自動で拾い上げる必要がある
 - **`cycle-scanner` エージェント**: 走行中の他サイクルの `design-delta.md` を読み、重複を報告する（軽量モデル）
 - **`[review.security].triggers`**: security_review を推奨する判定基準を自然言語で記述できる。機微情報の定義はプロダクトごとに異なり、Hikyaku 側で列挙できないため
 - **ブランチ命名規則**: `{prefix}{separator}{cycle}{separator}{phase}`。着手状態の導出に解析するため構造は固定で、`prefix` と `separator` のみ設定可能
