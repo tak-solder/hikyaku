@@ -1,8 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "hikyaku",
-  "version": "1.0.0",
-  "description": "PLAN → ARCHITECT → BUILD の3フェーズで構成される、AIエージェント協働開発ワークフロー",
+  "version": "2.0.0",
+  "description": "PLAN → ARCHITECT → BUILD → CLOSE の4フェーズで構成される、AIエージェント協働開発ワークフロー",
   "author": {
     "name": "tak-solder",
     "url": "https://github.com/tak-solder"
@@ -16,6 +16,7 @@
     "planning",
     "architect",
     "builder",
+    "multi-cycle",
     "japanese"
   ]
 }

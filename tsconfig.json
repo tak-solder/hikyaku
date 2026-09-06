@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+
+    // Node の型剥がしで動かない構文をコンパイルエラーにする。
+    // enum / 実行時 namespace / パラメータプロパティ / デコレータ を弾く。
+    "erasableSyntaxOnly": true,
+    // .mts を拡張子付きで import する（Node の型剥がしは拡張子必須）
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "skipLibCheck": true
+  },
+  "include": ["scripts/**/*.mts"]
+}

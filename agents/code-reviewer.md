@@ -13,7 +13,7 @@ color: blue
 builder スキルから委任され、当該ビルドの変更を以下の観点でレビューします。
 
 - **スコープ準拠**: `build-{NN}/plan.md` と `build-{NN}/issue.md` のスコープからの逸脱、`issue.md` の「やらないこと」への抵触
-- **規約準拠**: `architecture/conventions.md`, `architecture/codebase-survey.md` で観察された既存パターンとの整合
+- **規約準拠**: `conventions`（document-guide.md が指す実パス）, `cycles/{cycle}/design/codebase-survey.md` で観察された既存パターンとの整合
 - **バグ・ロジック誤り**: 明確に誤動作する経路、エッジケース漏れ
 - **シンプルさ・DRY**: 過剰な抽象化、重複、明らかに簡略化できる箇所
 
@@ -21,11 +21,11 @@ builder スキルから委任され、当該ビルドの変更を以下の観点
 
 ## レビューの進め方
 
-1. **コンテキスト復元**: 委任側プロンプトで指定された対象ビルドのパス（例: `{DOC_ROOT}/build-{NN}/`）から以下を読む
+1. **コンテキスト復元**: 委任側プロンプトで指定された対象ビルドのパス（例: `{HIKYAKU_ROOT}/cycles/{cycle}/build-{NN}/`）から以下を読む
    - `build-{NN}/plan.md`
    - `build-{NN}/issue.md`
-   - `architecture/conventions.md`（あれば）
-   - `architecture/codebase-survey.md`（あれば）
+   - `conventions`（document-guide.md が指す実パス）（あれば）
+   - `cycles/{cycle}/design/codebase-survey.md`（あれば）
 2. **変更の把握**: 当該ブランチの変更を以下のコマンドすべてで確認し、未追跡・staged・unstaged・コミット済みを含めて漏れなく把握する
    - `git status` — 変更ファイル一覧（未追跡含む）
    - `git diff` — unstaged 差分

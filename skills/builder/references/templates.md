@@ -17,7 +17,7 @@ issue.md のスコープ定義・受け入れ基準をソースオブトゥル�
 
 ## クラス設計
 
-（メソッドシグネチャを含む。architecture/interfaces.md で定義済みのものは差分のみ記載）
+（メソッドシグネチャを含む。`interfaces` が登録されていれば、そこに定義済みのものは差分のみ記載）
 
 ## 非機能要件
 
@@ -29,7 +29,7 @@ issue.md のスコープ定義・受け入れ基準をソースオブトゥル�
 
 ## BP見積もり
 
-見積結果が6BP以上となった場合、`/hikyaku:build-manager {DOC_ROOT}`を呼び出してビルド分割を検討すること
+見積結果が6BP以上となった場合、`/hikyaku:build-manager {cycle}`を呼び出してビルド分割を検討すること
 
 - architectフェーズ段階: 〇BP 
 - builderフェーズ段階: 〇BP
@@ -58,14 +58,14 @@ issue.md のスコープ定義・受け入れ基準をソースオブトゥル�
 
 ## handoff.md（申し送り）
 
-後続ビルドのセッションがコンテキストを復元するためのドキュメント。設計ドキュメント（architecture/）に反映済みの情報は重複して書かない。
+後続ビルドのセッションがコンテキストを復元するためのドキュメント。design-delta.md や永続ドキュメントに反映済みの情報は重複して書かない。
 
 ```markdown
 # Build {NN}: {ビルド名} 申し送り
 
 ## 公開インターフェース
 
-後続ビルドが使うインターフェースのうち、architecture/interfaces.md に反映済みのものは省略し、差分・補足のみ記載する。
+後続ビルドが使うインターフェースのうち、永続ドキュメントの `interfaces` に反映済みのものは省略し、差分・補足のみ記載する。
 
 - `ClassName.method(args): ReturnType` — 用途・補足
 - `functionName(args): ReturnType` — 用途・補足

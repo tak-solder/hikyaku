@@ -41,9 +41,9 @@ jobs:
           done
           echo "All versions are unified: $first"
 
-      - name: Check version bump if skills, agents, or plugin manifest changed
+      - name: Check version bump if skills, agents, scripts, or plugin manifest changed
         run: |
-          # Check if current/skills/, current/agents/, or .claude-plugin/ has changes compared to base.
+          # Check if current/skills/, current/agents/, current/scripts/, or .claude-plugin/ has changes compared to base.
           # For agents/: treat one-sided absence (initial add or full directory removal) as "changed",
           # since `diff -rq` errors out (and `2>/dev/null` discards it) when one side is missing.
           if [ -d current/agents ] && [ -d base/agents ]; then
@@ -55,8 +55,15 @@ jobs:
           fi
           changed=$(diff -rq current/skills/ base/skills/ 2>/dev/null || true)
           plugin_changed=$(diff -rq current/.claude-plugin/ base/.claude-plugin/ 2>/dev/null || true)
-          if [ -z "$changed" ] && [ -z "$agents_changed" ] && [ -z "$plugin_changed" ]; then
-            echo "No changes in skills/, agents/, or .claude-plugin/ — skipping version bump check."
+          if [ -d current/scripts ] && [ -d base/scripts ]; then
+            scripts_changed=$(diff -rq current/scripts/ base/scripts/ 2>/dev/null || true)
+          elif [ -d current/scripts ] || [ -d base/scripts ]; then
+            scripts_changed="scripts/ directory presence changed between base and current"
+          else
+            scripts_changed=""
+          fi
+          if [ -z "$changed" ] && [ -z "$agents_changed" ] && [ -z "$plugin_changed" ] && [ -z "$scripts_changed" ]; then
+            echo "No changes in skills/, agents/, scripts/, or .claude-plugin/ — skipping version bump check."
             exit 0
           fi
 
@@ -72,6 +79,10 @@ jobs:
             echo "Changed files in .claude-plugin/:"
             echo "$plugin_changed"
           fi
+          if [ -n "$scripts_changed" ]; then
+            echo "Changed files in scripts/:"
+            echo "$scripts_changed"
+          fi
 
           # Extract current version from plugin.json (single source of truth, already verified unified)
           current=$(jq -r '.version' current/.claude-plugin/plugin.json)
@@ -81,7 +92,7 @@ jobs:
           echo "Current version: $current"
 
           if [ "$current" = "$base" ]; then
-            echo "::error::skills/, agents/, or .claude-plugin/ has changes but version was not bumped. Please update the version in all SKILL.md files and plugin.json."
+            echo "::error::skills/, agents/, scripts/, or .claude-plugin/ has changes but version was not bumped. Please update the version in all SKILL.md files and plugin.json."
             exit 1
           fi
 

@@ -3,33 +3,73 @@ name: retrospective
 description: "Hikyaku 振り返り: セッション中のスキル外指示を分析し、改善提案を分類・記録する内部スキル。各フェーズから呼び出される。"
 user-invocable: false
 disable-model-invocation: false
-argument-hint: "{DOC_ROOT} {SUB_DIR}"
+argument-hint: "{cycle} {SUB_DIR}"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "1.0.0"
+  version: "2.0.0"
 ---
 
 # Hikyaku Retrospective
 
 セッション全体を振り返り、改善提案を分類・記録する。
 
-**このスキルは hikyaku:planner / hikyaku:architect / hikyaku:builder からモデル呼び出しで使用される内部スキルです。**
+**このスキルは hikyaku:planner / hikyaku:architect / hikyaku:builder / hikyaku:close-cycle からモデル呼び出しで使用される内部スキルです。**
 ユーザーが直接呼び出すことは想定していません。hikyaku ワークフロー以外のコンテキストから呼び出された場合は、その旨をユーザーに伝えて終了してください。
 
 ## 引数
 
-- `$ARGUMENTS[0]`: DOC_ROOT — ワークフロードキュメントのルートパス
-- `$ARGUMENTS[1]`: SUB_DIR — 振り返りファイルを出力するサブディレクトリ（`planning`, `architecture`, `build-{NN}`）
+- `$ARGUMENTS[0]`: cycle — 対象サイクル（`{NNN}-{slug}`）
+- `$ARGUMENTS[1]`: SUB_DIR — 出力先サブディレクトリ（`planning`, `design`, `build-{NN}`, `close`）
 
-出力先: `$ARGUMENTS[0]/$ARGUMENTS[1]/retrospective.md`
+HIKYAKU_ROOT は受け取らない。`.hikyaku.config` から解決される。
+
+出力先: `{HIKYAKU_ROOT}/cycles/$ARGUMENTS[0]/$ARGUMENTS[1]/retrospective.md`
+
+## 2種類を分けること
+
+振り返りには性質の異なる2種類が混ざる。**分けて記録する。**
+
+| 種類 | 何か | 行き先 |
+|---|---|---|
+| **改善提案**（R-N） | 以後の取り決め。「次からこう書く / こう進める」 | close-cycle が `conventions` などの永続ドキュメントか `instructions.md` へ反映する |
+| **リポジトリ固有の学び**（L-N） | 踏んだ地雷。再現条件が明確な落とし穴 | close-cycle が `learnings` へ昇格させる |
+
+**軸は「提案か、事実か」。** 提案は R-N、踏んだ地雷は L-N。R-N に `doc:learnings` は
+指定しない（落とし穴は L-N で書く）。
+
+L-N には次を書く。書けないものは L-N にしない。
+
+- **再現条件が明確**であること（「なんとなく遅い」ではなく「N=1000 でタイムアウトする」）
+- どのビルドで、いつ判明したか
+
+一般的なプログラミング知識や、「気をつける」だけの曖昧な注意は書かない。
+
+v1 では retrospective.md が `.gitignore` されていたため、サイクルをまたいで学びが
+蓄積しなかった。v2 ではコミット対象になり、close-cycle が素材として読む。
+
+## 事実の昇格は handoff.md が担う
+
+`overview` / `constraints` に載るような**事実**（新しい制約が判明した、責務が動いた）は
+`handoff.md` に書く。振り返りで扱うのは**提案（R-N）と落とし穴（L-N）**だけで、
+昇格の経路を二重に持たない。
 
 ## 作業ステップ
 
 ### Step 0: 設定の確認
 
-- [ ] リポジトリルートの `.hikyaku.config` を読み込む（存在する場合のみ）
-- [ ] `$ARGUMENTS[0]/.hikyaku.config` が存在する場合は読み込み、`doc_root` を除くキーをリポジトリルートの設定にキー単位で上書きする
-  - `retrospective` の設定値を取得する（未設定の場合は `prompt`）
+- [ ] 設定を解決する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config $ARGUMENTS[0] --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs list
+```
+
+`docs list` は Step 4 で `doc:` の論理名を選ぶために使う。**そこに無い論理名は使わない。**
+
+サイクルの profile は cycles.md から自動で適用される。`reviews.retrospective` の値を取得する。
+profile ごとの既定は
+economy だけが `skip`、express / standard / thorough は `auto`。
+振り返りはサブエージェントの実行コストそのものなので、コスト節約軸の economy でのみ落とす。
 
 設定値に応じて動作を決定する:
 - `skip`: 振り返りをスキップし、呼び出し元に制御を返す
@@ -51,8 +91,9 @@ metadata:
 
 - [ ] SUB_DIR からどのフェーズの振り返りかを判定する
   - `planning` → 企画フェーズ（ヘッダー: `企画フェーズ 振り返り`）
-  - `architecture` → 設計フェーズ（ヘッダー: `設計フェーズ 振り返り`）
+  - `design` → 設計フェーズ（ヘッダー: `設計フェーズ 振り返り`）
   - `build-{NN}` → 実装フェーズ（ヘッダー: `Build {NN}: {ビルド名} 振り返り`、issue.md からビルド名を取得）
+  - `close` → サイクル終了フェーズ（ヘッダー: `サイクル終了 振り返り`）
 - [ ] 出力先に既に `retrospective.md` が存在するか確認する（存在する場合は追記モード）
 
 → Step 3 へ。
@@ -71,20 +112,21 @@ metadata:
 - [ ] Step 3 で洗い出した内容から改善提案を作成する
 - [ ] 各提案について、以下の判断フローに従って対象を分類する
 
+**分類先はこのリポジトリの中だけにある。** 「どのファイルに書くか」ではなく
+「**どの論理名のドキュメントに書くか**」で指す。所在を宣言しているのは
+`document-guide.md` だけで、パスはそこから引く。
+
 **判断フロー:**
 
 ```
-Q1: この改善は、Hikyaku を別のリポジトリで使っても同じく必要か？
-  → Yes → 対象: skill:{該当スキル名}
+Q1: 以後の書き方・進め方の取り決めか（規約・テスト方針・レビュー観点）？
+  → Yes → 対象: doc:{document-guide の論理名}
   → No ↓
-Q2: この改善は、Hikyaku 以外の AI 作業（通常のコーディング等）にも適用されるか？
-  → Yes → 対象: repo:{ファイル名}
+Q2: このリポジトリで Hikyaku を回すときの手順・前提か（複数フェーズに効く）？
+  → Yes → 対象: workflow
   → No ↓
-Q3: この改善は、このリポジトリの Hikyaku ワークフロー全体（複数フェーズ）に適用されるか？
-  → Yes → 対象: workflow:instruction.md
-  → No ↓
-Q4: 今後、同様の状況が再発する可能性があるか？
-  → Yes → Q1〜Q3 を再検討（スコープの見誤りの可能性がある）
+Q3: 今後、同様の状況が再発する可能性があるか？
+  → Yes → Q1〜Q2 を再検討（スコープの見誤りの可能性がある）
   → No → 対象: 記録のみ
 ```
 
@@ -92,15 +134,19 @@ Q4: 今後、同様の状況が再発する可能性があるか？
 
 | 対象 | 意味 | 具体案の記述内容 |
 |------|------|---------------|
-| `skill:{スキル名}` | Hikyaku スキル自体の修正 | 修正対象のスキル名とファイルパス（SKILL.md / references/ 等）を明記し、変更内容の文面案を書く |
-| `repo:{ファイル名}` | リポジトリのインストラクション修正 | 対象ファイル名（CLAUDE.md, AGENTS.md 等）を明記し、追記内容の文面案を書く |
-| `workflow:instruction.md` | ワークフロー固有のインストラクション修正 | `instruction.md` に追記する内容の文面案を書く |
+| `doc:{論理名}` | 規約系の永続ドキュメントの修正（`conventions` / `test-strategy` / `security-model` など） | 論理名を明記し、追記内容の文面案を書く。**パスは書かない**（`document-guide.md` が正） |
+| `workflow` | `{HIKYAKU_ROOT}/instructions.md` の修正 | 追記する内容の文面案を書く |
 | `記録のみ` | 一回限りの事象で一般化できない | 記録理由を簡潔に書く |
 
+**Hikyaku の手順そのものに穴があると思える場合も、この3つに落とす。**
+このリポジトリで埋めるなら `workflow` に書く。`instructions.md` は
+インストラクションの優先順位で SKILL.md より上位にあり、**スキルを上書きするための
+正規の場所**なので、迂回ではない。どちらにも落ちないものは `記録のみ`。
+
 **判断に迷ったときの指針:**
-- コーディング規約・テスト方針・PR作成ルールなど → 多くの場合 `repo:`
-- 特定の技術スタック・ドメイン知識 → 多くの場合 `workflow:`
-- ワークフローの手順・テンプレート・判断基準 → 多くの場合 `skill:`
+- コーディング規約・テスト方針・PR 作成ルール → 多くの場合 `doc:conventions`（または `doc:test-strategy`）
+- フェーズの進め方・このリポジトリ固有の前提・技術スタックの癖 → 多くの場合 `workflow`
+- `doc:` の論理名が `document-guide.md` に無い → **勝手に作らない。** `workflow` に寄せるか `記録のみ`
 
 → Step 5 へ。
 
@@ -129,7 +175,27 @@ Q4: 今後、同様の状況が再発する可能性があるか？
 - **具体案**: （対象ファイルに追記・修正する内容の文面案）
 
 ### R-2: ...
+
+## リポジトリ固有の学び（L-N）
+
+（close-cycle が `learnings` へ昇格させる素材。無ければ「なし」）
+
+### L-1: （一行で言い切れる見出し）
+- **再現条件**: （「N=1000 でタイムアウトする」のように具体的に。「なんとなく遅い」は書かない）
+- **影響**: （何が起きるか、どこまで波及するか）
+- **回避策**: （分かっていれば）
+- **判明したビルド**: build-{NN}
+- **判明日**: YYYY-MM-DD
+
+### L-2: ...
 ```
+
+**「改善提案」と「リポジトリ固有の学び」を必ず分けること。** 前者は以後の取り決めで
+`conventions` などか `instructions.md` へ、後者は踏んだ地雷で `learnings` へ行く。
+どちらも close-cycle が読むので、節が無いと素材収集で拾うものが無くなる。
+
+再現条件が具体的に書けないものは L-N にしない。一般的なプログラミング知識や
+「気をつける」だけの曖昧な注意も対象外。
 
 フェーズヘッダーは Step 2 で判定したものを使う（例: `企画フェーズ 振り返り`, `Build 01: {ビルド名} 振り返り`）。
 
@@ -152,6 +218,10 @@ Q4: 今後、同様の状況が再発する可能性があるか？
 - **優先度**: Must / Should / Could
 - **対象**: （分類から選択）
 - **具体案**: （対象ファイルに追記・修正する内容の文面案）
+
+### リポジトリ固有の学び（L-N）
+
+（なければ「なし」。形式は新規作成時の L-N と同じ）
 ```
 
 - [ ] 振り返りをユーザーに提示し、呼び出し元に制御を返す
@@ -162,3 +232,7 @@ Q4: 今後、同様の状況が再発する可能性があるか？
 - 「スキル外で受けた指示」が最重要のインプット。ユーザーが追加で指示したことは、スキルに欠けている情報の証拠
 - 具体案は、そのまま適用できるレベルの具体性で書く
 - 改善提案がなければ「改善提案なし」と記載する
+- **L-N は再現条件で判定する。** 具体的に書けないものは書かない。close-cycle が
+  そのまま `learnings` へ昇格させるため、曖昧なものを入れると永続ドキュメントが濁る
+- **同じ提案が前のフェーズの retrospective.md にもあれば、その旨を書く。**
+  言われた回数は優先度そのものなので、close-cycle が束ねるときの材料になる
