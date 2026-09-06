@@ -41,6 +41,7 @@
 
 - **同じ表を2箇所に置かないでください。** 用語集は `docs/concepts.md`、profile とゲートの表は `docs/configuration/profiles.md`、フェーズごとに読むドキュメントの対応は `hikyaku context`（`scripts/commands/context.mts`）が唯一の正です
 - **CLI の引数リファレンスは `hikyaku help` が正です。** `docs/reference/cli.md` と SKILL.md には「いつ、なぜ使うか」だけを書いてください
+- **`${CLAUDE_PLUGIN_ROOT}` を `docs/` に書かないでください。** この変数は Claude Code がスキルやフックを実行するときにしか定義されず、ユーザーのシェルでは空になります。SKILL.md の中でのみ使い、`docs/` のコマンド例は `hikyaku <command>`（[実行方法](docs/reference/cli.md#実行方法) のシェル関数）で書きます
 - **`docs/` は人間が読むため、文章を基本にしてください。** 箇条書きは並列な列挙に限り、説明・理由・因果は段落で書きます。太字は数カ所に絞り、「本章では〜」のような予告文は書きません。SKILL.md・エージェント定義・このファイルは AI 向けなので対象外で、トリガー精度と機械可読性を優先します
 - 挙動を変えたら、対応する `docs/` の記述も同じ PR で直してください
 

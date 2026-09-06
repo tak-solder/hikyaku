@@ -41,8 +41,8 @@ GitHub のクローズキーワードは `#12` か URL しか解釈しないた�
 スクリプトから外部 API を呼ぶのは GitHub の `gh` CLI 経由だけです。`gh` が無い場合も投影内容は返ります（`applied: false` / `reason: "gh-not-found"`）。その場合はスキル側が GitHub MCP ツールで適用し、参照を記録します。
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle link 002-billing --external {親issueのURL}
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist link 002-billing --id 3 --issue {子issueのURL}
+hikyaku cycle link 002-billing --external {親issueのURL}
+hikyaku tasklist link 002-billing --id 3 --issue {子issueのURL}
 ```
 
 Asana も同じ形です。スクリプトは投影内容を出力するだけで、反映は Asana MCP ツールを持つスキル側が行います。
@@ -54,7 +54,7 @@ Asana も同じ形です。スクリプトは投影内容を出力するだけ�
 ## 手動で同期する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external sync 002-billing --dry-run
+hikyaku external sync 002-billing --dry-run
 ```
 
 通常はスキルが呼ぶので、手で実行するのは投影が抜けたときの復旧くらいです。

@@ -69,7 +69,7 @@ HIKYAKU_ROOT の外に置きます。HIKYAKU_ROOT にはサイクルの成果物
 ## AGENTS.md への索引
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs link --dry-run
+hikyaku docs link --dry-run
 ```
 
 AGENTS.md（無ければ CLAUDE.md）に、マーカーで囲んだ索引ブロックを冪等に書き込みます。
@@ -90,7 +90,7 @@ AGENTS.md（無ければ CLAUDE.md）に、マーカーで囲んだ索引ブロ�
 ## 検証
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs validate
+hikyaku docs validate
 ```
 
 論理名が既知で重複していないか、`hikyaku` / `repo` の行のパスが実在するか、必要な行が揃っているか、`対象外` の行に理由が書かれているかを検証します。問題があれば終了コード 2 で終わります。

@@ -25,8 +25,10 @@ claude plugin install hikyaku@hikyaku
 **Node.js v22.18.0 以上が必要です。** スクリプトは TypeScript のまま Node で直接実行します（型剥がしがフラグ無しで有効になる最小バージョンです）。実行時依存はゼロで、`npm install` もビルドも不要です。
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" doctor
+node --version
 ```
+
+環境が要件を満たしているかは `/hikyaku:init` が最初に確認します。CLI を自分のシェルからも叩きたい場合は [実行方法](docs/reference/cli.md#実行方法) を参照してください。
 
 ## 使い始める
 
@@ -39,7 +41,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" doctor
       ↓
 /hikyaku:planner         → 何を作るか（planning/）
       ↓
-/hikyaku:architect       → どう作るか、どう割るか（design/ + tasklist.md）
+/hikyaku:architect       → どう作るか、どう割るか（design/ + tasklist.md + build-NN/issue.md）
       ↓
 /hikyaku:builder         → 実装 → PR（依存が無ければ並行実行可）
       ↓

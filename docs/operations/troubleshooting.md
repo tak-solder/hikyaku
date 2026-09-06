@@ -3,9 +3,11 @@
 ## まず実行するもの
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" doctor
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate
+hikyaku doctor
+hikyaku validate
 ```
+
+（`hikyaku` はシェル関数です。未定義なら [実行方法](../reference/cli.md#実行方法) を先に済ませてください）
 
 `doctor` は実行環境（Node のバージョン、設定ファイル、HIKYAKU_ROOT、origin への到達性）を、`validate` はファイルの整合性（ドキュメントガイドのパス、サイクル依存、tasklist の依存グラフ、issue.md の存在）を見ます。どちらも問題があれば終了コード 2 で終わります。
 

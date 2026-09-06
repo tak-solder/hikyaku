@@ -23,11 +23,9 @@ claude plugin install hikyaku@hikyaku
 claude --plugin-dir /path/to/hikyaku
 ```
 
-インストールするとスキルが `hikyaku:` 名前空間付きで呼び出せるようになります（`/hikyaku:planner` など）。環境を確認します。
+インストールするとスキルが `hikyaku:` 名前空間付きで呼び出せるようになります（`/hikyaku:planner` など）。環境が要件を満たしているかは、次の `/hikyaku:init` が最初に確認します。
 
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" doctor
-```
+CLI を自分のシェルからも叩きたい場合は、[実行方法](reference/cli.md#実行方法) の関数を先に定義しておいてください。このガイドで `hikyaku` から始まるコマンドは、その関数を前提にしています。スキルを使うだけなら不要です。
 
 ## 2. ワークスペースを初期化する
 
@@ -112,7 +110,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" doctor
 依存関係のないビルドは並行して進められます。依存があるビルドは、先行ビルドの PR がマージされてから着手してください。次に何ができるかは次のコマンドで分かります。
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next
+hikyaku next
 ```
 
 全ビルドが完了するまで、新しいセッションで `/hikyaku:builder` を繰り返します。

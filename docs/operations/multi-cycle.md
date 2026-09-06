@@ -26,7 +26,7 @@ slug は全履歴で一意ではありません（`closed` になった slug は
 「自分が最後に触ったサイクル」だけはリポジトリから導出できません。チーム開発では、最後にコミットされたサイクルが他メンバーのものであることが普通だからです。これを `{HIKYAKU_ROOT}/.hikyaku.local` に記録します。git 管理対象外なので、他のメンバーには影響しません。
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use 002-billing
+hikyaku cycle use 002-billing
 ```
 
 これはワークフローの状態ではなく作業の栞です。読むのは対象サイクルの決定だけで、`next` / `validate` / `cycle status` など判断に使う処理は参照しません。消えても、次にどのサイクルで作業するかを尋ねられるだけです。
@@ -34,7 +34,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use 002-billing
 ## 状態を見る
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active
+hikyaku cycle list --active
 ```
 
 状態は保存されておらず、ファイルから導出されます。
@@ -58,7 +58,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active
 ## 並行ビルド
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next 002-billing
+hikyaku next 002-billing
 ```
 
 依存するビルドがすべて完了しているビルドが返ります。複数返った場合、それらは並行して進められます。
@@ -70,7 +70,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next 002-billing
 ## 中断と再開
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status 002-billing
+hikyaku cycle status 002-billing
 ```
 
 ブランチ上の成果物の有無から、どこまで進んだかを割り出します。必須成果物と条件付き成果物を区別するので、条件付きのものが無くても未完了とは限りません。

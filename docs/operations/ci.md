@@ -25,9 +25,15 @@
 
 `--branch` にタグを指定して固定してください。Hikyaku を更新するタイミングを CI 側で制御できます。進行中のサイクルがある状態でメジャーバージョンを跨ぐと、ディレクトリ構造の解釈が変わる可能性があります。
 
-## 環境変数を使わない
+## 追加の設定は要らない
 
-`validate` は `.hikyaku.config` から HIKYAKU_ROOT を解決するので、追加の設定は要りません。リポジトリのルートで実行してください。別の場所から実行する場合は `--root` で明示します。
+`validate` はリポジトリルートの `.hikyaku.config` から HIKYAKU_ROOT を解決するので、環境変数の設定は不要です。**リポジトリのルートで実行してください**（設定ファイルを起点に探すため）。
+
+`.hikyaku.config` を置かない構成なら、`--root <HIKYAKU_ROOT>` で HIKYAKU_ROOT を直接渡せます。これは実行場所ではなくワークスペースの位置を指すオプションです。
+
+```bash
+node /tmp/hikyaku/scripts/hikyaku.mts validate --root docs/hikyaku
+```
 
 ## 結果を機械的に扱う
 

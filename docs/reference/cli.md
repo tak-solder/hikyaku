@@ -2,11 +2,32 @@
 
 決定的な処理はすべてスクリプトが担います。スキルが自動的に呼ぶため手で実行する場面は限られますが、状態の確認と検証は直接呼ぶ価値があります。
 
+各コマンドの引数と挙動は `hikyaku help <command>` が持ちます。ここには「いつ、なぜ使うか」だけを書きます。
+
+## 実行方法
+
+スキルの中からは Claude Code がプラグインの位置を解決するため、設定は要りません。自分のシェルから叩く場合はパスが必要です。
+
+プラグインは `~/.claude/plugins/cache/{marketplace}/{plugin}/{version}/` に展開され、**バージョンを上げるとパスが変わります**。次の関数を `~/.zshrc` や `~/.bashrc` に入れておくと、更新に追随します。
+
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" <command> [options]
+hikyaku() {
+  local dir
+  dir=$(ls -d "$HOME"/.claude/plugins/cache/hikyaku/hikyaku/*/ 2>/dev/null | sort -V | tail -1)
+  [ -n "$dir" ] || { echo "hikyaku プラグインが見つかりません" >&2; return 1; }
+  node "${dir}scripts/hikyaku.mts" "$@"
+}
 ```
 
-各コマンドの引数と挙動は `hikyaku help <command>` が持ちます。ここには「いつ、なぜ使うか」だけを書きます。
+以降、このドキュメントのコマンドはすべて `hikyaku <command>` の形で書きます。
+
+インストール先を直接知りたい場合は `claude plugin list --json` の `installPath` を見てください。リポジトリを clone して使うこともできます（[CI での検証](../operations/ci.md) はこの形です）。
+
+```bash
+node /path/to/hikyaku/scripts/hikyaku.mts <command>
+```
+
+**`${CLAUDE_PLUGIN_ROOT}` はシェルでは使えません。** これは Claude Code がスキルやフックを実行するときにだけ定義される変数で、SKILL.md の中でのみ有効です。
 
 ## グローバルオプション
 

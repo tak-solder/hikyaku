@@ -148,8 +148,8 @@ target = "none"                 # none | github | asana
 マージ結果とプロファイルの展開結果は `config` で確認できます。
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config 002-billing
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config 002-billing --profile thorough
+hikyaku config 002-billing
+hikyaku config 002-billing --profile thorough
 ```
 
 `--profile` は what-if の確認用で、`cycles.md` の値より優先されます（設定ファイルは書き換えません）。
