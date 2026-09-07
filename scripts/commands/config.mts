@@ -62,6 +62,7 @@ register({
         "レビュー:",
         `  user_stories_review  ${onOff(config.reviews.userStories)}`,
         `  architecture_review  ${onOff(config.reviews.architecture)}`,
+        `  tasklist_review      ${onOff(config.reviews.tasklist)}`,
         `  plan_review          ${onOff(config.reviews.plan)}`,
         `  code_review          ${onOff(config.reviews.code)}`,
         `  security_review      ${config.reviews.security}`,

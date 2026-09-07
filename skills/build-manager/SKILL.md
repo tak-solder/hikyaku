@@ -6,7 +6,7 @@ disable-model-invocation: false
 argument-hint: "[{cycle}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.0.0"
+  version: "2.1.0"
 ---
 
 # Hikyaku Build Manager
@@ -18,7 +18,7 @@ metadata:
 
 ## あなたの責務
 
-BP見積もりと分割単位の判断、issue.md の内容の作成、ユーザー承認を行う。
+BP見積もりと分割単位の判断、issue.md の内容の作成、レビュー、ユーザー承認を行う。
 
 `tasklist.md` の行の更新・依存グラフの再生成・循環依存の検証はスクリプトが行う。
 自分で `tasklist.md` を書き換えてはいけない。
@@ -91,7 +91,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist read {cycle}
 
 → Step 3 へ。
 
-### Step 3: 差分の取得とユーザー承認（G6）
+### Step 3: 差分の取得・レビューとユーザー承認（G6）
 
 **承認前に書き込みを行わない。** `--dry-run` で差分だけを取得する。
 
@@ -102,12 +102,21 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist add {cycle} \
   --title "..." --bp 3 --deps 1,2 --dry-run
 ```
 
+- [ ] **`tasklist_review` が有効な場合**（express / standard / thorough）、`doc-reviewer` を起動する（`context: tasklist`）
+  - **この時点ではまだファイルに書き込まれていない。** `--dry-run` の出力（変更後の一覧・依存グラフ）と issue.md の本文をプロンプトに直接含めて渡す
+  - 参照として渡す: `cycles/{cycle}/design/design-delta.md`（存在する場合）,
+    `${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/bp-guide.md`
+  - 明確な不整合・BP見積もりの乖離は反映する（主観的な指摘は無視してよい）。
+    反映が必要な場合は Step 1 からやり直す
+
 - [ ] 以下をユーザーに提示して承認を得る
   - **tasklist の変更差分** — スクリプトが返した一覧
   - **依存グラフの変更** — スクリプトが返した Mermaid グラフ
   - **issue.md の内容** — 新規作成なら全文、更新なら変更箇所
+  - **（doc-reviewer を起動した場合）レビュー結果とその対応**
 
 この承認（G6）は profile の管轄外で、どのプロファイルでも省略しない。
+`tasklist_review` の有無に関わらず、この承認自体は必ず行う。
 
 → 承認を得たら Step 4 へ。フィードバックがあれば反映して Step 1 からやり直す。
 

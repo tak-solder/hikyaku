@@ -297,7 +297,7 @@ thorough で通る、という関係ではなく、変わるのは**チェック
 フェーズ単位からステップ単位になると考えてください。
 
 **`code_review` はどのプロファイルでも行います。** 中間成果物（user-stories / 設計 /
-plan）のレビューは人間の承認で代替できますが、コードは差分が大きく、人間の承認ゲートが
+tasklist・issue / plan）のレビューは人間の承認で代替できますが、コードは差分が大きく、人間の承認ゲートが
 拾える粒度を超えるためです。economy で省くのはこの中間成果物のレビューです。
 
 **`security_review` もどのプロファイルでも `off` にはしません。** 「承認を減らしたから」
@@ -329,6 +329,7 @@ G3 を外しても採用理由と退けた案は ADR に残り、PR 本文にも
 |---|---|---|---|---|
 | user_stories_review | ✓ | ✗ | ✓ | ✓ |
 | architecture_review | ✓ | ✗ | ✓ | ✓ |
+| tasklist_review | ✓ | ✗ | ✓ | ✓ |
 | plan_review | ✓ | ✗ | ✓ | ✓ |
 | code_review | ✓ | ✓ | ✓ | ✓ |
 | security_review | 推奨時のみ確認 | 推奨時のみ確認 | 推奨時のみ確認 | on |
@@ -339,7 +340,7 @@ G3 を外しても採用理由と退けた案は ADR に残り、PR 本文にも
 実行コストそのものだからです。承認を省く express では逆に、改善の材料をセッション内から
 自動で拾い上げる必要があります。
 
-個別キー（`design_choice_gate`, `architecture_gate`, `plan_review`, `security_review` など）で profile の既定値を上書きできます。
+個別キー（`design_choice_gate`, `architecture_gate`, `tasklist_review`, `plan_review`, `security_review` など）で profile の既定値を上書きできます。
 
 ## CLI
 
@@ -394,7 +395,7 @@ BP は、AIエージェントとの1セッション（20万トークン目安）
 
 ユーザーが直接呼び出すものではなく、各フェーズのスキルが自動的に呼び出します。
 
-- **`build-manager`** — BP見積もりと分割単位の判断、issue.md の作成、承認。tasklist.md の更新はスクリプトが行う
+- **`build-manager`** — BP見積もりと分割単位の判断、issue.md の作成、レビュー、承認。tasklist.md の更新はスクリプトが行う
 - **`retrospective`** — 振り返り。以後の取り決め（改善提案）と、踏んだ地雷（リポジトリ固有の学び）を分けて記録する。どちらも close-cycle が永続ドキュメントか `instructions.md` へ反映する
 
 ## エージェント

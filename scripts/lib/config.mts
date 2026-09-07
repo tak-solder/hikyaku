@@ -61,6 +61,7 @@ export interface Gates {
 export interface Reviews {
   userStories: boolean;
   architecture: boolean;
+  tasklist: boolean;
   plan: boolean;
   code: boolean;
   security: SecurityReviewMode;
@@ -88,6 +89,7 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
     reviews: {
       userStories: true,
       architecture: true,
+      tasklist: true,
       plan: true,
       code: true,
       security: "recommended",
@@ -109,6 +111,7 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
     reviews: {
       userStories: false,
       architecture: false,
+      tasklist: false,
       plan: false,
       code: true,
       security: "recommended",
@@ -128,6 +131,7 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
     reviews: {
       userStories: true,
       architecture: true,
+      tasklist: true,
       plan: true,
       code: true,
       security: "recommended",
@@ -149,6 +153,7 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
     reviews: {
       userStories: true,
       architecture: true,
+      tasklist: true,
       plan: true,
       code: true,
       security: "on",
@@ -437,6 +442,7 @@ function finalize(
     userStories: readBoolean(merged, "user_stories_review", "config") ?? preset.reviews.userStories,
     architecture:
       readBoolean(merged, "architecture_review", "config") ?? preset.reviews.architecture,
+    tasklist: readBoolean(merged, "tasklist_review", "config") ?? preset.reviews.tasklist,
     plan: readBoolean(merged, "plan_review", "config") ?? preset.reviews.plan,
     code: readBoolean(merged, "code_review", "config") ?? preset.reviews.code,
     security:

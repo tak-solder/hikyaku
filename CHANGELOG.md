@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.1.0]
+
+### Added
+
+- **`tasklist_review`**: build-manager が `tasklist.md` / `issue.md` を書き込む前に `doc-reviewer` を起動できるようにした（`context: tasklist`）
+  - これまで build-manager の成果物（BP見積もり・ビルド分割・issue.md）は他の中間成果物（user-stories / 設計 / plan）と異なり、AIレビューを経ずユーザー承認（G6）のみで書き込まれていた
+  - BP見積もり乖離 / design-delta網羅漏れ / スコープ重複 / 検証不能な受け入れ基準 / 依存関係の不備を証拠ベースで報告する
+  - 既定値は `plan_review` などと同じ（express / standard / thorough で有効、economy で無効）。個別キー `tasklist_review` で上書きできる
+  - build-manager は承認前にファイルへ書き込まないため、レビュー対象は `tasklist add --dry-run` の出力と issue.md 本文をプロンプトに直接含めて渡す（既存の `architecture_review` / `plan_review` はファイル書き込み後にレビューする点が異なる）
+
+### Changed
+
+- 影響を受けるユーザー: build-manager が動く profile（express / standard / thorough）で、tasklist・issue.md 作成時に `doc-reviewer` の起動が1回増える。互換性への影響はなく、`tasklist_review = false` で従来どおり無効化できる
+
 ## [2.0.0]
 
 複数サイクルの並行実行、ファイル正への一本化、決定的な処理のスクリプト化を軸とした大規模改修。
