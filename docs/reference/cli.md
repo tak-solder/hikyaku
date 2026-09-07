@@ -1,0 +1,127 @@
+# CLI リファレンス
+
+決定的な処理はすべてスクリプトが担います。スキルが自動的に呼ぶため手で実行する場面は限られますが、状態の確認と検証は直接呼ぶ価値があります。
+
+各コマンドの引数と挙動は `hikyaku help <command>` が持ちます。ここには「いつ、なぜ使うか」だけを書きます。
+
+## 実行方法
+
+スキルの中からは Claude Code がプラグインの位置を解決するため、設定は要りません。自分のシェルから叩く場合はパスが必要です。次の関数を `~/.zshrc` や `~/.bashrc` に入れてください。
+
+```bash
+hikyaku() {
+  local dir
+  dir=$(claude plugin list --json |
+    node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).find(p=>p.id.startsWith("hikyaku@"))?.installPath ?? ""')
+  [ -n "$dir" ] || { echo "hikyaku プラグインが見つかりません" >&2; return 1; }
+  node "$dir/scripts/hikyaku.mts" "$@"
+}
+```
+
+以降、このドキュメントのコマンドはすべて `hikyaku <command>` の形で書きます。
+
+**インストール先を推測せず、`claude plugin list --json` の `installPath` から引いてください。** プラグインは `~/.claude/plugins/cache/{marketplace}/{plugin}/{version}/` に展開されますが、更新しても古いバージョンのディレクトリは残り、ディレクトリ名はバージョン番号とは限りません（コミットハッシュや `unknown` になることがあります）。パスを固定で書いたり、最新らしきディレクトリを選んだりすると、実際に有効なものとは別のバージョンを叩くことになります。
+
+リポジトリを clone して使うこともできます（[CI での検証](../operations/ci.md) はこの形です）。
+
+```bash
+node /path/to/hikyaku/scripts/hikyaku.mts <command>
+```
+
+**`${CLAUDE_PLUGIN_ROOT}` はシェルでは使えません。** これは Claude Code がスキルやフックを実行するときにだけ定義される変数で、SKILL.md の中でのみ有効です。
+
+## グローバルオプション
+
+| オプション | 意味 |
+|---|---|
+| `--root <path>` | HIKYAKU_ROOT を明示指定する |
+| `--profile <name>` | profile を上書きする（what-if の確認用） |
+| `--json` | 機械可読な JSON で出力する |
+| `--dry-run` | 書き込みを行わず、何が起きるかだけを表示する |
+| `--help` | ヘルプを表示する |
+
+書き込みコマンドはすべて `--dry-run` に対応します。承認は常に呼び出し元のスキルが取り、スクリプトは「何が起きるか」を返す責務だけを持ちます。
+
+## 終了コード
+
+| コード | 意味 |
+|---|---|
+| `0` | 成功 |
+| `1` | エラー（実行できなかった） |
+| `2` | 検証失敗（実行したが問題が見つかった） |
+
+## 状態を見る
+
+| コマンド | いつ使うか |
+|---|---|
+| `next [<cycle>]` | 次に着手できるビルドを知りたいとき。複数返れば並行実行できる |
+| `cycle list [--active]` | 走行中のサイクルを見渡したいとき |
+| `cycle status <cycle>` | 中断からの再開点を知りたいとき。ブランチを切り替えてから実行する |
+| `tasklist read [<cycle>]` | ビルドの一覧と完了状況を見たいとき |
+| `config [<cycle>]` | 設定のマージ結果とプロファイルの展開結果を確認したいとき |
+
+## 検証する
+
+| コマンド | いつ使うか |
+|---|---|
+| `doctor` | 環境が動く状態かを確認したいとき。導入直後と、動かないとき |
+| `validate [<cycle>]` | ファイルの整合性を確認したいとき。[CI](../operations/ci.md) から呼ぶと効く |
+| `docs validate` | ドキュメントガイドのパスだけを確認したいとき |
+
+## ドキュメント
+
+| コマンド | いつ使うか |
+|---|---|
+| `docs list` | 登録されている永続ドキュメントの一覧と管理主体を見たいとき |
+| `docs link` | ドキュメントを追加・移動したあと、AGENTS.md の索引を再生成するとき |
+| `docs scaffold` | ガイドの雛形が欲しいとき（通常は `init` が呼ぶ） |
+| `context <phase> [<cycle>]` | そのフェーズで読むべきドキュメントの候補を知りたいとき |
+
+`context` はフェーズ→論理名の対応の唯一の正です。各 SKILL.md に「何を読むか」を書くと4箇所に同じ表が載って必ず食い違うため、ここに集約しています。返すのは候補と理由までで、絞り込みはしません。どれが今回のスコープに関係するかは概要欄を読んで判断することで、それはスキル（LLM）の仕事です。
+
+`build-NN` では `tasklist.md` の依存グラフから先行ビルドの `handoff.md` も辿ります（手で辿ると漏れるため）。
+
+## サイクル
+
+| コマンド | いつ使うか |
+|---|---|
+| `cycle new <slug> --profile <name>` | サイクルを作るとき（通常は `create-cycle` が呼ぶ） |
+| `cycle use <cycle>` | このチェックアウトの作業サイクルを記録するとき |
+| `cycle close <cycle>` | サイクルを `closed` にするとき（通常は `close-cycle` が呼ぶ） |
+| `cycle link <cycle> --external <url>` | 外部システムの親 issue の参照を手で記録するとき |
+
+## ビルド
+
+| コマンド | いつ使うか |
+|---|---|
+| `tasklist add` | ビルドを追加するとき（通常は `build-manager` が呼ぶ） |
+| `tasklist update` | 既存ビルドのタイトル・BP・依存を変えるとき |
+| `tasklist done --id <n> --pr <url>` | ビルドの完了を記録するとき。当該ビルドの PR に同梱する |
+| `tasklist link --id <n> --issue <url>` | 子 issue の参照を手で記録するとき |
+
+ビルドの分割に専用コマンドはありません。「元ビルドの `update` + 新ビルドの `add`」で表現します。
+
+## 命名
+
+| コマンド | いつ使うか |
+|---|---|
+| `branch verify <phase> [<cycle>]` | 今いるブランチが規則どおりか確認するとき。各フェーズの冒頭とコミット直前 |
+| `pr title <phase> [<cycle>]` | PR タイトルを生成するとき |
+| `session title <phase> [<cycle>]` | セッション名を生成するとき |
+
+`branch verify` は生成と検証を兼ねています。名前を生成するだけのコマンドを別に持つと、生成しただけで確認しないまま作業する余地が残るためです。
+
+## 外部連携
+
+| コマンド | いつ使うか |
+|---|---|
+| `external sync [<target>] [<cycle>]` | 投影が抜けたときに同期し直すとき |
+| `external ref <phase> [<cycle>]` | PR 本文に入れる参照行を生成するとき |
+
+## セットアップ
+
+| コマンド | いつ使うか |
+|---|---|
+| `init --root <path>` | 雛形を生成するとき（通常は `/hikyaku:init` が呼ぶ） |
+| `version` | プラグインのバージョンを確認するとき |
+| `help [<command>]` | 引数と挙動を調べるとき |
