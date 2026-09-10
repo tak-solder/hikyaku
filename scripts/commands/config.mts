@@ -15,8 +15,8 @@ register({
     "  1. リポジトリルート/.hikyaku.config（必須）",
     "  2. {HIKYAKU_ROOT}/cycles/{NNN}-{slug}/.hikyaku.config（任意）",
     "",
-    "サイクル側では hikyaku_root / base_branch / [branch] / [pr] / [external] と",
-    "profile を上書きできません（いずれもリポジトリ全体の性質か、cycles.md が正）。",
+    "サイクル側で上書きできないのは hikyaku_root と profile だけです",
+    "（前者はワークスペースの所在そのもの、後者は cycles.md が唯一の正）。",
     "",
     "サイクルを省略した場合は、現在のブランチ → .hikyaku.local → 唯一の進行中サイクル",
     "の順に対象を決めます。決められなければ候補を挙げてエラーにするので、",
@@ -71,6 +71,7 @@ register({
         "",
         `branch       ${config.branch.prefix}${config.branch.separator}{cycle}${config.branch.separator}{phase}`,
         `pr.title     ${config.pr.title}`,
+        `session      ${config.session.title === "" ? "(変更しない)" : config.session.title}`,
         `external     ${config.external.target}`,
       );
       if (config.external.githubRepo) lines.push(`  github_repo  ${config.external.githubRepo}`);

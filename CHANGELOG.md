@@ -6,20 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 各エントリには「何が変わったか」と「利用者に必要な対応」を書きます。設計判断の経緯は issue と `docs/` を参照してください。
 
-## [2.1.0]
-
-### Added
-
-- **`tasklist_review`**: build-manager が `tasklist.md` / `issue.md` を書き込む前に `doc-reviewer` を起動できるようにした（`context: tasklist`）
-  - これまで build-manager の成果物（BP見積もり・ビルド分割・issue.md）は他の中間成果物（user-stories / 設計 / plan）と異なり、AIレビューを経ずユーザー承認（G6）のみで書き込まれていた
-  - BP見積もり乖離 / design-delta網羅漏れ / スコープ重複 / 検証不能な受け入れ基準 / 依存関係の不備を証拠ベースで報告する
-  - 既定値は `plan_review` などと同じ（express / standard / thorough で有効、economy で無効）。個別キー `tasklist_review` で上書きできる
-  - build-manager は承認前にファイルへ書き込まないため、レビュー対象は `tasklist add --dry-run` の出力と issue.md 本文をプロンプトに直接含めて渡す（既存の `architecture_review` / `plan_review` はファイル書き込み後にレビューする点が異なる）
-
-### Changed
-
-- 影響を受けるユーザー: build-manager が動く profile（express / standard / thorough）で、tasklist・issue.md 作成時に `doc-reviewer` の起動が1回増える。互換性への影響はなく、`tasklist_review = false` で従来どおり無効化できる
-
 ## [2.0.0]
 
 複数サイクルの並行実行、ファイル正への一本化、決定的な処理のスクリプト化を軸とした大規模改修。設計の経緯と判断理由は [issue #26](https://github.com/tak-solder/hikyaku/issues/26) に記録している。
@@ -36,7 +22,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **profile（express / economy / standard / thorough）**: 承認ゲートとレビューの量をサイクル単位で選べる。`cycles.md` に記録され、作成後は変わらない（→ [プロファイル](docs/configuration/profiles.md)）
   - G1（user-stories 承認）/ G6（tasklist 変更）/ G8（plan + test-spec）/ G10（永続ドキュメント昇格）はどの profile でも省略しない
   - `code_review` も全 profile で実行する。`security_review` の既定は `recommended` で、`off` にはしない
-- **サイクル固有の設定（`{HIKYAKU_ROOT}/cycles/{NNN}-{slug}/.hikyaku.config`）**: そのサイクルだけキー単位で上書きする。`hikyaku_root` / `base_branch` / `[branch]` / `[pr]` / `[session]` / `[external]` / `profile` は指定するとエラーになる
+- **サイクル固有の設定（`{HIKYAKU_ROOT}/cycles/{NNN}-{slug}/.hikyaku.config`）**: そのサイクルだけキー単位で上書きする。`base_branch` / `[branch]` / `[pr]` / `[session]` / `[external]` も対象で、サイクルごとに向かうブランチ・ブランチ命名規則・PR タイトル・セッション名・外部投影先を変えられる
+  - 指定するとエラーになるのは `hikyaku_root`（ワークスペースの所在そのもので、サイクル設定をどこから読むかが決まらなくなる）と `profile`（`cycles.md` が唯一の正）だけ
+  - 対象サイクルをブランチ名から決める処理は、サイクルを1件ずつ、そのサイクル自身の `[branch]` で解析して照合する。他サイクルの規則で偶然解析できても、取り出したサイクル名が一致しなければ採用しない
+  - サイクルごとに `[branch]` を変えると、古い名前のブランチはそのサイクルのものと見なされなくなる（対象サイクルの明示を求められる）。既にブランチを切ってある状態で変えるときはブランチ名も揃える
+- **`tasklist_review`**: build-manager が `tasklist.md` / `issue.md` を書き込む前に `doc-reviewer` を起動する（`context: tasklist`）
+  - BP見積もり乖離 / design-delta網羅漏れ / スコープ重複 / 検証不能な受け入れ基準 / 依存関係の不備を証拠ベースで報告する
+  - 既定値は `plan_review` などと同じ（express / standard / thorough で有効、economy で無効）。個別キー `tasklist_review` で上書きできる
+  - build-manager は承認前にファイルへ書き込まないため、レビュー対象は `tasklist add --dry-run` の出力と issue.md 本文をプロンプトに直接含めて渡す（`architecture_review` / `plan_review` はファイル書き込み後にレビューする点が異なる）
 - **`hikyaku context <phase> [<cycle>]`**: そのフェーズで読むべきドキュメントの候補を返す。フェーズ→論理名の対応はこのコマンドが唯一の正
 - **ブランチ命名規則と `hikyaku branch verify`**: `{prefix}{separator}{cycle}{separator}{phase}`。今いるブランチを規則と突き合わせ、不一致なら期待する名前と切り替えコマンドを返す
 - **`[session] title`**: セッション名のテンプレート。空文字なら変更しない

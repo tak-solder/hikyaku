@@ -5,9 +5,12 @@
  *   リポジトリルート/.hikyaku.config                    ← 必須。ベース設定
  *   {HIKYAKU_ROOT}/cycles/{NNN}-{slug}/.hikyaku.config  ← 任意。サイクル固有の上書き
  *
- * 永続層に関わるキー（hikyaku_root / base_branch / [branch] / [pr] / [external]）は
- * サイクル側で上書きできない。とくにブランチ名は全サイクル横断で解析するため、
- * サイクルごとに規則が変わると着手状態の導出が破綻する。
+ * サイクル側で上書きできないのは hikyaku_root だけ。ワークスペースの所在が
+ * サイクルごとに変わると、そのサイクル設定自体をどこから読むかが決まらない。
+ *
+ * [branch] もサイクル側で上書きできる。ブランチ名は全サイクル横断で解析するが、
+ * 「どの規則で解析するか」はサイクルごとに引ける（cycleBranchNaming）。
+ * 解析する側はサイクルを1件ずつ、そのサイクル自身の規則で照合する。
  *
  * profile は cycles.md が唯一の正。サイクル設定に書けるようにすると同じ状態が
  * 2箇所に載り、必ず食い違う。
@@ -17,6 +20,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
+import type { BranchNaming } from "./branch.mts";
 import { HikyakuError } from "./errors.mts";
 import { repoRoot } from "./paths.mts";
 import { parseToml, TomlError, type TomlTable, type TomlValue } from "./toml.mts";
@@ -175,6 +179,11 @@ export const DEFAULT_BRANCH_PREFIX = "hikyaku";
 export const DEFAULT_BRANCH_SEPARATOR = "/";
 export const DEFAULT_BP_MAX = 8;
 
+const DEFAULT_NAMING: BranchNaming = {
+  prefix: DEFAULT_BRANCH_PREFIX,
+  separator: DEFAULT_BRANCH_SEPARATOR,
+};
+
 export interface ResolvedConfig {
   repoRoot: string;
   hikyakuRoot: string;
@@ -184,7 +193,7 @@ export interface ResolvedConfig {
   bpMax: number;
   gates: Gates;
   reviews: Reviews;
-  branch: { prefix: string; separator: string };
+  branch: BranchNaming;
   pr: { title: string };
   /** セッション名のテンプレート。空文字なら変更しない */
   session: { title: string };
@@ -206,10 +215,15 @@ export interface LoadOptions {
 }
 
 /**
- * サイクル設定で上書きできないキー。いずれもリポジトリ全体の性質を表す。
+ * サイクル設定で上書きできないキー。
+ *
+ * hikyaku_root はワークスペースそのものの所在で、サイクル設定を読む前に確定して
+ * いなければならない。サイクルごとに動かせるようにすると、そのサイクル設定を
+ * どこから読むかが決まらない（自己参照になる）。
+ *
  * profile は別メッセージで案内するため含めない。
  */
-const CYCLE_LOCKED_KEYS = ["hikyaku_root", "base_branch", "branch", "pr", "session", "external"];
+const CYCLE_LOCKED_KEYS = ["hikyaku_root"];
 
 function readTable(table: TomlTable, key: string): TomlTable | undefined {
   const value = table[key];
@@ -260,6 +274,18 @@ function readEnum<T extends string>(
     );
   }
   return value as T;
+}
+
+/** [branch] を fallback に重ねる。サイクル設定でも同じ規則で読むため関数に切り出す */
+function readBranchNaming(table: TomlTable | undefined, fallback: BranchNaming): BranchNaming {
+  const separator = readString(table, "separator", "[branch]") ?? fallback.separator;
+  if (separator === "") {
+    throw new HikyakuError(
+      "[branch].separator に空文字は指定できません",
+      "空文字にするとブランチ名からサイクルとフェーズを解析できなくなります。",
+    );
+  }
+  return { prefix: readString(table, "prefix", "[branch]") ?? fallback.prefix, separator };
 }
 
 function loadFile(path: string): TomlTable | undefined {
@@ -345,9 +371,9 @@ function assertCycleOverridable(table: TomlTable, path: string): void {
     throw new HikyakuError(
       `${path}: サイクル設定では上書きできないキーがあります: ${locked.join(", ")}`,
       [
-        "これらはリポジトリ全体の性質なので、リポジトリルートの .hikyaku.config で設定してください。",
-        "ブランチ名は全サイクル横断で解析するため、サイクルごとに規則が変わると",
-        "着手状態を導出できなくなります。",
+        "hikyaku_root はワークスペースの所在そのものなので、リポジトリルートの",
+        ".hikyaku.config でのみ宣言できます。サイクルごとに動かせるようにすると、",
+        "そのサイクル設定をどこから読むかが決まりません。",
       ].join("\n"),
     );
   }
@@ -419,6 +445,22 @@ export function loadConfig(options: LoadOptions = {}): ResolvedConfig {
   return finalize(merged, root, hikyakuRoot, sources, options.profileOverride);
 }
 
+/**
+ * そのサイクルのブランチ命名規則だけを引く。
+ *
+ * サイクルの解決にはブランチ名の解析が要り、ブランチ名の解析には命名規則が要る。
+ * その命名規則をサイクル側で上書きできるので、loadConfig（サイクルが決まっている
+ * 前提）では循環する。ここは [branch] だけをサイクル設定から読んで先に決める。
+ *
+ * 設定ファイルが無ければベースの規則をそのまま返すので、既定では全サイクルが
+ * 同じ規則になる。
+ */
+export function cycleBranchNaming(base: ResolvedConfig, cycleDirectory: string): BranchNaming {
+  const table = loadFile(join(cycleDirectory, ".hikyaku.config"));
+  if (table === undefined) return base.branch;
+  return readBranchNaming(readTable(table, "branch"), base.branch);
+}
+
 function finalize(
   merged: TomlTable,
   root: string,
@@ -455,15 +497,6 @@ function finalize(
       readEnum(merged, "validate", ["manual", "phase", "step"], "config") ?? preset.reviews.validate,
   };
 
-  const branchTable = readTable(merged, "branch");
-  const separator = readString(branchTable, "separator", "[branch]") ?? DEFAULT_BRANCH_SEPARATOR;
-  if (separator === "") {
-    throw new HikyakuError(
-      "[branch].separator に空文字は指定できません",
-      "空文字にするとブランチ名からサイクルとフェーズを解析できなくなります。",
-    );
-  }
-
   const securityTable = readTable(readTable(merged, "review") ?? {}, "security");
   const externalTable = readTable(merged, "external");
 
@@ -475,10 +508,7 @@ function finalize(
     bpMax: readInteger(merged, "bp_max", "config") ?? DEFAULT_BP_MAX,
     gates,
     reviews,
-    branch: {
-      prefix: readString(branchTable, "prefix", "[branch]") ?? DEFAULT_BRANCH_PREFIX,
-      separator,
-    },
+    branch: readBranchNaming(readTable(merged, "branch"), DEFAULT_NAMING),
     pr: { title: readString(readTable(merged, "pr"), "title", "[pr]") ?? DEFAULT_PR_TITLE },
     session: {
       title:

@@ -61,6 +61,8 @@ register({
     "依存グラフが2次元になって破綻するため、扱いません。",
   ].join("\n"),
   run: ({ args, operands }) => {
+    // サイクルディレクトリはこのコマンドが作る。まだサイクル設定は存在しえないので
+    // 表示するブランチ名はベースの規則で組み立てる
     const config = loadConfig({ root: flagString(args, "root") });
     const rawSlug = operands[0];
     if (rawSlug === undefined) {
@@ -315,14 +317,18 @@ register({
     "着手可能・待機の判定には影響しません。",
   ].join("\n"),
   run: async ({ args, operands }) => {
-    const config = loadConfig({ root: flagString(args, "root") });
+    const root = flagString(args, "root");
+    const base = loadConfig({ root });
     const key = operands[0];
     if (key === undefined) throw new HikyakuError("サイクルを指定してください");
 
-    const records = loadCycles(config.hikyakuRoot);
+    const records = loadCycles(base.hikyakuRoot);
     const record = findCycle(records, key);
     const name = cycleDirName(record);
-    const directory = cycleDir(config.hikyakuRoot, record);
+    const directory = cycleDir(base.hikyakuRoot, record);
+    // [branch] はサイクル側で上書きできるので、着手中ブランチの絞り込みには
+    // そのサイクルの設定を使う。ベースの規則で絞ると1件も当たらない
+    const config = loadConfig({ root, cycleDir: directory });
     const builds = loadTasklist(directory);
     const state = deriveState(directory, record, builds);
 
