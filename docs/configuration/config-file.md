@@ -46,6 +46,39 @@ github_repo = "acme/backport"
 
 この例では `separator` を書いていないので、ルートの値がそのまま使われます。マージはキー単位なので、テーブルを丸ごと書き直す必要はありません。
 
+## サイクル作成時に決める
+
+サイクルごとに変えたいが、値は作るときまで決まらない、という場合があります。ベースブランチや外部システムの投影先が典型で、ルート設定に固定値を書いても意味がなく、かといって毎回サイクルディレクトリに手でファイルを置くのも忘れます。
+
+ルート設定でそのキーの値を `"ask"` にすると、`create-cycle` がユーザーに尋ね、答えをそのサイクルの `.hikyaku.config` に記録します。
+
+```toml
+base_branch = "ask"    # サイクル作成時に尋ねる
+
+[branch]
+prefix = "hikyaku"     # 固定。尋ねない
+
+[external]
+target = "ask"         # サイクル作成時に尋ねる
+```
+
+尋ねるかどうかを別のテーブルで宣言せず、そのキー自身の値として書きます。「何が入るか」と「誰が決めるか」が1行に並ぶので、設定ファイルを読めばどちらも分かります。**明示的な値と、未設定（既定値）は尋ねません。** 尋ねるのは `"ask"` と書いたときだけです。
+
+`"ask"` を書けるのは次の6つで、リポジトリルートの `.hikyaku.config` でのみ意味を持ちます。サイクル設定に書くとエラーになります（サイクルが存在する時点で、尋ねる相手もタイミングもないため）。
+
+| キー | `create-cycle` に渡すオプション |
+|---|---|
+| `base_branch` | `--base-branch <name>` |
+| `[branch] prefix` | `--branch-prefix <text>` |
+| `[branch] separator` | `--branch-separator <text>` |
+| `[pr] title` | `--pr-title <template>` |
+| `[session] title` | `--session-title <template>` |
+| `[external] target` | `--external <none\|github\|asana>` / `--external-repo` / `--external-project` |
+
+**値としては未設定と同じに倒れます。** `hikyaku cycle new` をスキルを通さず直接叩いて値を渡さなくても、エラーにはならず既定値でサイクルが成立します。尋ねる相手が居ないだけで設定は壊れない、という扱いです。答えなかったキーは `hikyaku config <cycle>` に「未回答・既定値」として出ます。
+
+`"ask"` はこの用途に予約された値なので、ブランチ名やテンプレートとして文字列 `ask` そのものを使うことはできません。
+
 ## 全体
 
 ```toml

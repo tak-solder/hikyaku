@@ -3,7 +3,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { flagBoolean, flagString } from "../lib/args.mts";
-import { PROFILE_NAMES } from "../lib/config.mts";
+import { ASK, PROFILE_NAMES } from "../lib/config.mts";
 import { LOCAL_FILE } from "../lib/local.mts";
 import { cyclesPath, renderCyclesFile } from "../lib/cycles.mts";
 import { guidePath } from "../lib/docs.mts";
@@ -232,6 +232,11 @@ function renderRepoConfig(hikyakuRoot: string): string {
     "#",
     "# ドキュメントの所在は document-guide.md が唯一の宣言先です。",
     "# このファイルには振る舞いの設定だけを書きます。",
+    "#",
+    "# base_branch / [branch] / [pr] / [session] / [external] は、サイクルごとに",
+    "# {HIKYAKU_ROOT}/cycles/{NNN}-{slug}/.hikyaku.config で上書きできます。",
+    `# 値を "${ASK}" にすると、そのキーは create-cycle が尋ねてサイクル側に記録します。`,
+    "# 明示した値と未設定（既定）は尋ねません。",
     "",
     `hikyaku_root = "${hikyakuRoot}"`,
     "",
@@ -241,6 +246,7 @@ function renderRepoConfig(hikyakuRoot: string): string {
     "",
     "# PR のベースブランチ（未設定ならリポジトリのデフォルトブランチを自動検出）",
     '# base_branch = "main"',
+    `# base_branch = "${ASK}"   # サイクル作成時に尋ねる`,
     "",
     "# ビルド分割の BP 上限",
     "# bp_max = 8",
@@ -273,6 +279,7 @@ function renderRepoConfig(hikyakuRoot: string): string {
     "# 外部システムへは冪等な片方向投影のみを行います。マスターは常にファイル側です。",
     "[external]",
     '# target = "none"        # none | github | asana',
+    `# target = "${ASK}"         # サイクル作成時に尋ねる`,
     '# github_repo = "owner/repo"',
     '# asana_project_gid = "..."',
     "",

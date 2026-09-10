@@ -2,9 +2,16 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { flagBoolean, flagList, flagString } from "../lib/args.mts";
+import { flagBoolean, flagList, flagString, type ParsedArgs } from "../lib/args.mts";
 import { branchName } from "../lib/branch.mts";
-import { loadConfig, PROFILE_NAMES, type ProfileName } from "../lib/config.mts";
+import {
+  ASK,
+  loadConfig,
+  PROFILE_NAMES,
+  type AskKey,
+  type ExternalTarget,
+  type ProfileName,
+} from "../lib/config.mts";
 import {
   cycleDir,
   cycleDirName,
@@ -42,15 +49,161 @@ function findCycle(records: CycleRecord[], key: string): CycleRecord {
   return found;
 }
 
+/** create-cycle 時に決めた値。サイクルの .hikyaku.config に書き出す */
+interface Decided {
+  baseBranch: string | undefined;
+  branchPrefix: string | undefined;
+  branchSeparator: string | undefined;
+  prTitle: string | undefined;
+  sessionTitle: string | undefined;
+  externalTarget: ExternalTarget | undefined;
+  externalGithubRepo: string | undefined;
+  externalAsanaProjectGid: string | undefined;
+}
+
+/** どのキーも渡されていなければ何も書かない */
+function hasAnyDecision(decided: Decided): boolean {
+  return Object.values(decided).some((value) => value !== undefined);
+}
+
+function readDecided(args: ParsedArgs): Decided {
+  const separator = flagString(args, "branch-separator");
+  if (separator === "") {
+    throw new HikyakuError(
+      "--branch-separator に空文字は指定できません",
+      "空文字にするとブランチ名からサイクルとフェーズを解析できなくなります。",
+    );
+  }
+
+  const target = flagString(args, "external");
+  if (target !== undefined && target !== "none" && target !== "github" && target !== "asana") {
+    throw new HikyakuError(
+      `--external の値が不正です: ${target}`,
+      "使用できる値: none | github | asana",
+    );
+  }
+
+  return {
+    baseBranch: flagString(args, "base-branch"),
+    branchPrefix: flagString(args, "branch-prefix"),
+    branchSeparator: separator,
+    prTitle: flagString(args, "pr-title"),
+    sessionTitle: flagString(args, "session-title"),
+    externalTarget: target,
+    externalGithubRepo: flagString(args, "external-repo"),
+    externalAsanaProjectGid: flagString(args, "external-project"),
+  };
+}
+
+/** TOML の基本文字列。テンプレートに引用符が入りうるのでエスケープする */
+function tomlString(value: string): string {
+  const escaped = value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n");
+  return `"${escaped}"`;
+}
+
+function renderCycleConfig(cycleName: string, decided: Decided): string {
+  const lines = [
+    `# ${cycleName} の設定（作成時に決めた分）`,
+    "#",
+    "# リポジトリルートの .hikyaku.config にキー単位で重なります。",
+    "# ここに書かなかったキーはルートの値のままです。",
+    "",
+  ];
+  if (decided.baseBranch !== undefined) {
+    lines.push(`base_branch = ${tomlString(decided.baseBranch)}`, "");
+  }
+  if (decided.branchPrefix !== undefined || decided.branchSeparator !== undefined) {
+    lines.push("[branch]");
+    if (decided.branchPrefix !== undefined) {
+      lines.push(`prefix = ${tomlString(decided.branchPrefix)}`);
+    }
+    if (decided.branchSeparator !== undefined) {
+      lines.push(`separator = ${tomlString(decided.branchSeparator)}`);
+    }
+    lines.push("");
+  }
+  if (decided.prTitle !== undefined) {
+    lines.push("[pr]", `title = ${tomlString(decided.prTitle)}`, "");
+  }
+  if (decided.sessionTitle !== undefined) {
+    lines.push("[session]", `title = ${tomlString(decided.sessionTitle)}`, "");
+  }
+  if (
+    decided.externalTarget !== undefined ||
+    decided.externalGithubRepo !== undefined ||
+    decided.externalAsanaProjectGid !== undefined
+  ) {
+    lines.push("[external]");
+    if (decided.externalTarget !== undefined) {
+      lines.push(`target = ${tomlString(decided.externalTarget)}`);
+    }
+    if (decided.externalGithubRepo !== undefined) {
+      lines.push(`github_repo = ${tomlString(decided.externalGithubRepo)}`);
+    }
+    if (decided.externalAsanaProjectGid !== undefined) {
+      lines.push(`asana_project_gid = ${tomlString(decided.externalAsanaProjectGid)}`);
+    }
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
+/** ask のまま残っているキーを、スキルが尋ねられる形で並べる */
+function describeAsk(keys: AskKey[]): string[] {
+  if (keys.length === 0) return [];
+  return [
+    "",
+    `作成時に決めるキー（ルート設定が "${ASK}"）:`,
+    ...keys.map((key) => `  ${key.padEnd(17)} ${ASK_FLAGS[key]}`),
+    "",
+    "ユーザーに尋ねてから、上のオプションを付けて実行し直してください。",
+    "渡さなかったキーは既定値のままになります。",
+  ];
+}
+
+/** ask のキーごとに「もう決まったか」を見る */
+const ANSWERED: Record<AskKey, (decided: Decided) => boolean> = {
+  base_branch: (d) => d.baseBranch !== undefined,
+  "branch.prefix": (d) => d.branchPrefix !== undefined,
+  "branch.separator": (d) => d.branchSeparator !== undefined,
+  "pr.title": (d) => d.prTitle !== undefined,
+  "session.title": (d) => d.sessionTitle !== undefined,
+  "external.target": (d) => d.externalTarget !== undefined,
+};
+
+const ASK_FLAGS: Record<AskKey, string> = {
+  base_branch: "--base-branch <name>",
+  "branch.prefix": "--branch-prefix <text>",
+  "branch.separator": "--branch-separator <text>",
+  "pr.title": "--pr-title <template>",
+  "session.title": "--session-title <template>",
+  "external.target": "--external <none|github|asana> [--external-repo <owner/repo>]",
+};
+
 register({
   name: "cycle new",
   summary: "サイクルを採番してディレクトリを作り、cycles.md に追記する",
-  usage: "hikyaku cycle new <slug> --profile <name> [--ticket <ref>] [--depends 001,002] [--dry-run]",
+  usage:
+    "hikyaku cycle new <slug> --profile <name> [--ticket <ref>] [--depends 001,002]\n" +
+    "                           [--base-branch <name>] [--branch-prefix <text>] [--branch-separator <text>]\n" +
+    "                           [--pr-title <template>] [--session-title <template>]\n" +
+    "                           [--external <none|github|asana>] [--external-repo <owner/repo>]\n" +
+    "                           [--external-project <gid>] [--dry-run]",
   writes: true,
   details: [
     "--profile は必須です。サイクルの進め方は作成時に明示的に選ぶ必要があります",
     `（${PROFILE_NAMES.join(" | ")}）。config の profile は推奨値の提示にすぎず、`,
     "無条件には採用しません。",
+    "",
+    `ルート設定の値が "${ASK}" のキーは「作成時に決める」という宣言です。`,
+    "--dry-run の出力に対象キーと対応するオプションが並ぶので、ユーザーに尋ねてから",
+    "渡し直してください。渡された値は {サイクル}/.hikyaku.config に書き出します。",
+    "",
+    `渡さなくてもエラーにはしません。"${ASK}" は値としては未設定と同じに倒れるので、`,
+    "既定値でサイクルが成立します（スキルを通さず直接叩いた場合に壊れないため）。",
     "",
     "slug は英数字とハイフンに正規化されます。ブランチ名の解析を壊さないためです。",
     "",
@@ -90,6 +243,7 @@ register({
       );
     }
 
+    const decided = readDecided(args);
     const slug = normalizeSlug(rawSlug);
     const records = loadCycles(config.hikyakuRoot);
     if (records.some((record) => record.slug === slug && record.status === "active")) {
@@ -116,36 +270,68 @@ register({
       summary: flagString(args, "summary") ?? "",
     };
 
+    const name = cycleDirName(record);
     const directory = cycleDir(config.hikyakuRoot, record);
     const dryRun = flagBoolean(args, "dry-run");
     const active = records.filter((r) => r.status === "active");
 
-    emit({ cycle: record, directory, dryRun, activeCycles: active.map((r) => cycleDirName(r)) }, () => {
-      const lines = [
-        `サイクル ${cycleDirName(record)} を作成します`,
-        "",
-        `  profile   ${record.profile}`,
-        `  hikyaku   ${record.hikyaku}`,
-        `  チケット  ${record.ticket || "—"}`,
-        `  依存      ${dependsOn.length > 0 ? dependsOn.join(", ") : "—"}`,
-        `  ディレクトリ  ${relative(config.repoRoot, directory)}`,
-        `  ブランチ  ${branchName(config.branch, "create", cycleDirName(record))}`,
-      ];
-      if (active.length > 0) {
-        lines.push(
+    // 決めた値はまだファイルに無いので、表示するブランチ名にはここで重ねる
+    const naming = {
+      prefix: decided.branchPrefix ?? config.branch.prefix,
+      separator: decided.branchSeparator ?? config.branch.separator,
+    };
+    const remaining = config.askAtCreate.filter((key) => !ANSWERED[key](decided));
+    const cycleConfig = hasAnyDecision(decided) ? renderCycleConfig(name, decided) : undefined;
+    const cycleConfigPath = join(directory, ".hikyaku.config");
+
+    emit(
+      {
+        cycle: record,
+        directory,
+        dryRun,
+        activeCycles: active.map((r) => cycleDirName(r)),
+        askAtCreate: remaining,
+        cycleConfig:
+          cycleConfig === undefined
+            ? null
+            : { path: relative(config.repoRoot, cycleConfigPath), content: cycleConfig },
+      },
+      () => {
+        const lines = [
+          `サイクル ${name} を作成します`,
           "",
-          "他に進行中のサイクルがあります。設計の重複に注意してください:",
-          ...active.map((r) => `  - ${cycleDirName(r)}（${r.summary || "要約なし"}）`),
-        );
-      }
-      if (dryRun) lines.push("", "(--dry-run のため書き込んでいません)");
-      return lines.join("\n");
-    });
+          `  profile   ${record.profile}`,
+          `  hikyaku   ${record.hikyaku}`,
+          `  チケット  ${record.ticket || "—"}`,
+          `  依存      ${dependsOn.length > 0 ? dependsOn.join(", ") : "—"}`,
+          `  ディレクトリ  ${relative(config.repoRoot, directory)}`,
+          `  ブランチ  ${branchName(naming, "create", name)}`,
+        ];
+        if (cycleConfig !== undefined) {
+          lines.push(
+            "",
+            `${relative(config.repoRoot, cycleConfigPath)} に書き出します:`,
+            ...cycleConfig.split("\n").map((line) => `  ${line}`),
+          );
+        }
+        lines.push(...describeAsk(remaining));
+        if (active.length > 0) {
+          lines.push(
+            "",
+            "他に進行中のサイクルがあります。設計の重複に注意してください:",
+            ...active.map((r) => `  - ${cycleDirName(r)}（${r.summary || "要約なし"}）`),
+          );
+        }
+        if (dryRun) lines.push("", "(--dry-run のため書き込んでいません)");
+        return lines.join("\n");
+      },
+    );
 
     if (dryRun) return;
 
     mkdirSync(join(directory, "planning"), { recursive: true });
     mkdirSync(join(directory, "design"), { recursive: true });
+    if (cycleConfig !== undefined) writeFileSync(cycleConfigPath, cycleConfig, "utf8");
     writeFileSync(cyclesPath(config.hikyakuRoot), renderCyclesFile([...records, record]), "utf8");
   },
 });

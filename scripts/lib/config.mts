@@ -16,6 +16,9 @@
  * 2箇所に載り、必ず食い違う。
  *
  * profile は承認ゲートとレビューの既定値をまとめて与える。個別キーで上書きできる。
+ *
+ * ルート設定の値が "ask" のキーは「create-cycle 時に決める」という宣言で、
+ * 値としては未設定と同じに倒す（→ ASK）。
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -184,6 +187,33 @@ const DEFAULT_NAMING: BranchNaming = {
   separator: DEFAULT_BRANCH_SEPARATOR,
 };
 
+/**
+ * 「このキーは create-cycle 時に決める」を表す設定値。
+ *
+ * 尋ねるかどうかを別テーブルで宣言せず、そのキー自身の値として書く。
+ * 「何が入るか」と「誰が決めるか」が1行に並ぶので、設定ファイルを読めば
+ * どちらも分かる。明示的な値と未設定（既定）は、どちらも尋ねない。
+ */
+export const ASK = "ask";
+
+/** create-cycle 時に決められるキー。表示順もこの並び */
+export type AskKey =
+  | "base_branch"
+  | "branch.prefix"
+  | "branch.separator"
+  | "pr.title"
+  | "session.title"
+  | "external.target";
+
+export const ASK_KEYS: AskKey[] = [
+  "base_branch",
+  "branch.prefix",
+  "branch.separator",
+  "pr.title",
+  "session.title",
+  "external.target",
+];
+
 export interface ResolvedConfig {
   repoRoot: string;
   hikyakuRoot: string;
@@ -199,6 +229,12 @@ export interface ResolvedConfig {
   session: { title: string };
   security: { triggers: string };
   external: { target: ExternalTarget; githubRepo?: string; asanaProjectGid?: string };
+  /**
+   * "ask" のまま値が決まっていないキー。create-cycle が尋ねる対象。
+   * サイクル設定を重ねた結果ここに残っていれば、そのサイクルは未回答で
+   * 既定値のまま動いている
+   */
+  askAtCreate: AskKey[];
   /** 読み込んだ設定ファイルのパス（デバッグ用） */
   sources: string[];
 }
@@ -259,33 +295,77 @@ function readInteger(table: TomlTable | undefined, key: string, where: string): 
   return value;
 }
 
-function readEnum<T extends string>(
-  table: TomlTable | undefined,
-  key: string,
+function checkEnum<T extends string>(
+  value: string | undefined,
   allowed: T[],
   where: string,
 ): T | undefined {
-  const value = readString(table, key, where);
   if (value === undefined) return undefined;
   if (!(allowed as string[]).includes(value)) {
     throw new HikyakuError(
-      `${where}.${key} の値が不正です: ${value}`,
+      `${where} の値が不正です: ${value}`,
       `使用できる値: ${allowed.join(" | ")}`,
     );
   }
   return value as T;
 }
 
+function readEnum<T extends string>(
+  table: TomlTable | undefined,
+  key: string,
+  allowed: T[],
+  where: string,
+): T | undefined {
+  return checkEnum(readString(table, key, where), allowed, `${where}.${key}`);
+}
+
+/**
+ * "ask" を「未設定」として読み、尋ねるべきキーとして記録する。
+ *
+ * 値を既定へ倒すので、スキルを通さず CLI を直接叩いても壊れない。
+ * 尋ねる相手が居ないだけで、設定は既定として成立する。
+ */
+function readAskable(
+  table: TomlTable | undefined,
+  key: string,
+  where: string,
+  askKey: AskKey,
+  asked: AskKey[],
+): string | undefined {
+  const value = readString(table, key, where);
+  if (value === undefined) return undefined;
+  if (value !== ASK) return value;
+  asked.push(askKey);
+  return undefined;
+}
+
+/** ドット記法（branch.prefix）で値を引く。ask の検査にだけ使う */
+function readDotted(table: TomlTable, key: AskKey): TomlValue | undefined {
+  let current: TomlValue | undefined = table;
+  for (const part of key.split(".")) {
+    if (typeof current !== "object" || current === null || Array.isArray(current)) return undefined;
+    current = (current as TomlTable)[part];
+  }
+  return current;
+}
+
 /** [branch] を fallback に重ねる。サイクル設定でも同じ規則で読むため関数に切り出す */
-function readBranchNaming(table: TomlTable | undefined, fallback: BranchNaming): BranchNaming {
-  const separator = readString(table, "separator", "[branch]") ?? fallback.separator;
+function readBranchNaming(
+  table: TomlTable | undefined,
+  fallback: BranchNaming,
+  asked: AskKey[],
+): BranchNaming {
+  const separator =
+    readAskable(table, "separator", "[branch]", "branch.separator", asked) ?? fallback.separator;
   if (separator === "") {
     throw new HikyakuError(
       "[branch].separator に空文字は指定できません",
       "空文字にするとブランチ名からサイクルとフェーズを解析できなくなります。",
     );
   }
-  return { prefix: readString(table, "prefix", "[branch]") ?? fallback.prefix, separator };
+  const prefix =
+    readAskable(table, "prefix", "[branch]", "branch.prefix", asked) ?? fallback.prefix;
+  return { prefix, separator };
 }
 
 function loadFile(path: string): TomlTable | undefined {
@@ -362,6 +442,19 @@ function assertCycleOverridable(table: TomlTable, path: string): void {
       [
         "profile はサイクルの属性で、cycles.md が唯一の正です。",
         "同じ状態を2箇所に持つと必ず食い違うため、cycles.md 側で変更してください。",
+      ].join("\n"),
+    );
+  }
+
+  // "ask" は「作成時に決める」の宣言。サイクルが存在する時点で尋ねる相手も
+  // タイミングも無く、書いても既定に倒れるだけの無言の no-op になる
+  const asked = ASK_KEYS.filter((key) => readDotted(table, key) === ASK);
+  if (asked.length > 0) {
+    throw new HikyakuError(
+      `${path}: サイクル設定に "${ASK}" は書けません: ${asked.join(", ")}`,
+      [
+        `"${ASK}" は「create-cycle 時に決める」という宣言なので、リポジトリルートの`,
+        ".hikyaku.config でのみ意味を持ちます。サイクル設定には決まった値を書いてください。",
       ].join("\n"),
     );
   }
@@ -458,7 +551,7 @@ export function loadConfig(options: LoadOptions = {}): ResolvedConfig {
 export function cycleBranchNaming(base: ResolvedConfig, cycleDirectory: string): BranchNaming {
   const table = loadFile(join(cycleDirectory, ".hikyaku.config"));
   if (table === undefined) return base.branch;
-  return readBranchNaming(readTable(table, "branch"), base.branch);
+  return readBranchNaming(readTable(table, "branch"), base.branch, []);
 }
 
 function finalize(
@@ -500,28 +593,47 @@ function finalize(
   const securityTable = readTable(readTable(merged, "review") ?? {}, "security");
   const externalTable = readTable(merged, "external");
 
+  // "ask" のまま残ったキーを集める。ASK_KEYS の並びで返したいので、
+  // 読み取り順ではなく最後に並べ替える
+  const asked: AskKey[] = [];
+  const branch = readBranchNaming(readTable(merged, "branch"), DEFAULT_NAMING, asked);
+  const baseBranch = readAskable(merged, "base_branch", "config", "base_branch", asked);
+  const prTitle = readAskable(readTable(merged, "pr"), "title", "[pr]", "pr.title", asked);
+  const sessionTitle = readAskable(
+    readTable(merged, "session"),
+    "title",
+    "[session]",
+    "session.title",
+    asked,
+  );
+  const externalTarget = readAskable(
+    externalTable,
+    "target",
+    "[external]",
+    "external.target",
+    asked,
+  );
+
   return {
     repoRoot: root,
     hikyakuRoot,
     profile,
-    baseBranch: readString(merged, "base_branch", "config"),
+    baseBranch,
     bpMax: readInteger(merged, "bp_max", "config") ?? DEFAULT_BP_MAX,
     gates,
     reviews,
-    branch: readBranchNaming(readTable(merged, "branch"), DEFAULT_NAMING),
-    pr: { title: readString(readTable(merged, "pr"), "title", "[pr]") ?? DEFAULT_PR_TITLE },
-    session: {
-      title:
-        readString(readTable(merged, "session"), "title", "[session]") ?? DEFAULT_SESSION_TITLE,
-    },
+    branch,
+    pr: { title: prTitle ?? DEFAULT_PR_TITLE },
+    session: { title: sessionTitle ?? DEFAULT_SESSION_TITLE },
     security: {
       triggers: readString(securityTable, "triggers", "[review.security]") ?? DEFAULT_SECURITY_TRIGGERS,
     },
     external: {
-      target: readEnum(externalTable, "target", ["none", "github", "asana"], "[external]") ?? "none",
+      target: checkEnum(externalTarget, ["none", "github", "asana"], "[external].target") ?? "none",
       githubRepo: readString(externalTable, "github_repo", "[external]"),
       asanaProjectGid: readString(externalTable, "asana_project_gid", "[external]"),
     },
+    askAtCreate: ASK_KEYS.filter((key) => asked.includes(key)),
     sources,
   };
 }

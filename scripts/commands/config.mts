@@ -26,6 +26,9 @@ register({
     "profile は承認ゲートとレビューの既定値をまとめて与えます。",
     "個別キー（architecture_gate, plan_review など）で上書きできます。",
     "--profile は what-if の確認用で、cycles.md の値より優先されます。",
+    "",
+    'ルート設定の値が "ask" のキーは「create-cycle 時に決める」という宣言です。',
+    "値としては未設定と同じに倒れるので、サイクルが答えていなければ既定値になります。",
   ].join("\n"),
   run: ({ args, operands }) => {
     const opened = openCycleIfAny(args, operands[0]);
@@ -77,6 +80,14 @@ register({
       if (config.external.githubRepo) lines.push(`  github_repo  ${config.external.githubRepo}`);
       if (config.external.asanaProjectGid) {
         lines.push(`  asana_project_gid  ${config.external.asanaProjectGid}`);
+      }
+      if (config.askAtCreate.length > 0) {
+        lines.push(
+          "",
+          opened
+            ? `作成時に決めるキー（このサイクルは未回答・既定値）: ${config.askAtCreate.join(", ")}`
+            : `作成時に決めるキー: ${config.askAtCreate.join(", ")}`,
+        );
       }
       lines.push(
         "",
