@@ -3,7 +3,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { flagBoolean, flagString } from "../lib/args.mts";
-import { ASK, PROFILE_NAMES } from "../lib/config.mts";
+import { ASK_KEYS, PROFILE_NAMES } from "../lib/config.mts";
 import { LOCAL_FILE } from "../lib/local.mts";
 import { cyclesPath, renderCyclesFile } from "../lib/cycles.mts";
 import { guidePath } from "../lib/docs.mts";
@@ -235,10 +235,14 @@ function renderRepoConfig(hikyakuRoot: string): string {
     "#",
     "# base_branch / [branch] / [pr] / [session] / [external] は、サイクルごとに",
     "# {HIKYAKU_ROOT}/cycles/{NNN}-{slug}/.hikyaku.config で上書きできます。",
-    `# 値を "${ASK}" にすると、そのキーは create-cycle が尋ねてサイクル側に記録します。`,
-    "# 明示した値と未設定（既定）は尋ねません。",
     "",
     `hikyaku_root = "${hikyakuRoot}"`,
+    "",
+    "# サイクル作成時に create-cycle が尋ねるキー。答えはそのサイクルの",
+    "# .hikyaku.config に記録されます。下に書いた値は、尋ねるときの既定として",
+    "# 提示されます（profile と同じで、config は推奨、決めるのは作成時）。",
+    `# 指定できるキー: ${ASK_KEYS.join(" | ")}`,
+    '# ask = ["base_branch", "external.target"]',
     "",
     "# サイクル作成時に提示する profile の既定値。",
     "# 無条件には採用されず、create-cycle が必ず明示的な選択を求めます。",
@@ -246,7 +250,6 @@ function renderRepoConfig(hikyakuRoot: string): string {
     "",
     "# PR のベースブランチ（未設定ならリポジトリのデフォルトブランチを自動検出）",
     '# base_branch = "main"',
-    `# base_branch = "${ASK}"   # サイクル作成時に尋ねる`,
     "",
     "# ビルド分割の BP 上限",
     "# bp_max = 8",
@@ -279,7 +282,6 @@ function renderRepoConfig(hikyakuRoot: string): string {
     "# 外部システムへは冪等な片方向投影のみを行います。マスターは常にファイル側です。",
     "[external]",
     '# target = "none"        # none | github | asana',
-    `# target = "${ASK}"         # サイクル作成時に尋ねる`,
     '# github_repo = "owner/repo"',
     '# asana_project_gid = "..."',
     "",

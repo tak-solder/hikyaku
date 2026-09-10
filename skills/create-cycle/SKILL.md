@@ -1,6 +1,6 @@
 ---
 name: create-cycle
-description: "Hikyaku サイクル作成: チケットを起点に新しいサイクルを採番し、profile と、ルート設定で ask と宣言されたキー（base_branch / ブランチ規則 / PR タイトル / セッション名 / 外部投影先）を決めて cycles.md に登録する。"
+description: "Hikyaku サイクル作成: チケットを起点に新しいサイクルを採番し、profile と、ルート設定の ask に並んだキー（base_branch / ブランチ規則 / PR タイトル / セッション名 / 外部投影先）を決めて cycles.md に登録する。"
 user-invocable: true
 disable-model-invocation: false
 argument-hint: "[{slug}]"
@@ -98,9 +98,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle new {slug} \
 
 - [ ] 出力の `askAtCreate` が空でなければ、そのキーをユーザーに尋ねる
 
-ルート設定で `"ask"` と宣言されたキーは、**このサイクルの値をここで決める**という
-意味なので、勝手に既定値で通さない。出力に各キーと対応するオプションが並ぶので、
-1つずつ尋ねてから、オプションを付けて `--dry-run` をやり直す。
+ルート設定の `ask` に並んでいるキーは、**このサイクルの値をここで決める**という
+意味なので、勝手に既定で通さない。出力に各キーの既定値と対応するオプションが
+並ぶので、1つずつ尋ねてから、オプションを付けて `--dry-run` をやり直す。
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle new {slug} \
@@ -108,11 +108,12 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle new {slug} \
   --base-branch {回答} --external {回答} --external-repo {回答} --dry-run
 ```
 
-尋ねるときは、**既定値をそのまま採る選択肢も必ず提示する**。何を答えても
-そのサイクルの `.hikyaku.config` に記録され、以後そのサイクルの全フェーズで使われる。
+尋ねるときは、**出力の既定値をそのまま採る選択肢も必ず提示する**。profile と同じで、
+ルート設定の値は推奨の提示にすぎない。何を答えてもそのサイクルの `.hikyaku.config`
+に記録され、以後そのサイクルの全フェーズで使われる。
 
-`askAtCreate` が空なら、この確認は飛ばす。ルート設定が明示している、あるいは
-未設定（既定）のキーは、サイクルごとに決めるものではない。
+`askAtCreate` が空なら、この確認は飛ばす。`ask` に並んでいないキーは、
+サイクルごとに決めるものではない。
 
 - [ ] 内容を確認して実行する（`--dry-run` を外す）
 

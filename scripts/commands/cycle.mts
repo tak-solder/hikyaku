@@ -5,12 +5,12 @@ import { join, relative } from "node:path";
 import { flagBoolean, flagList, flagString, type ParsedArgs } from "../lib/args.mts";
 import { branchName } from "../lib/branch.mts";
 import {
-  ASK,
   loadConfig,
   PROFILE_NAMES,
   type AskKey,
   type ExternalTarget,
   type ProfileName,
+  type ResolvedConfig,
 } from "../lib/config.mts";
 import {
   cycleDir,
@@ -151,18 +151,30 @@ function renderCycleConfig(cycleName: string, decided: Decided): string {
   return lines.join("\n");
 }
 
-/** ask のまま残っているキーを、スキルが尋ねられる形で並べる */
-function describeAsk(keys: AskKey[]): string[] {
+/** まだ答えていないキーを、スキルが尋ねられる形で並べる */
+function describeAsk(keys: AskKey[], config: ResolvedConfig): string[] {
   if (keys.length === 0) return [];
-  return [
-    "",
-    `作成時に決めるキー（ルート設定が "${ASK}"）:`,
-    ...keys.map((key) => `  ${key.padEnd(17)} ${ASK_FLAGS[key]}`),
+  const lines = ["", "作成時に決めるキー（ルート設定の ask）:"];
+  for (const key of keys) {
+    lines.push(`  ${key.padEnd(17)} ${ASK_FLAGS[key]}`, `${" ".repeat(19)} 既定: ${ASK_DEFAULT[key](config)}`);
+  }
+  lines.push(
     "",
     "ユーザーに尋ねてから、上のオプションを付けて実行し直してください。",
-    "渡さなかったキーは既定値のままになります。",
-  ];
+    "既定のままで良ければ渡さなくて構いません（既定値で作成されます）。",
+  );
+  return lines;
 }
+
+/** 尋ねるときに提示する既定。ルート設定の値、無ければ組み込みの既定 */
+const ASK_DEFAULT: Record<AskKey, (config: ResolvedConfig) => string> = {
+  base_branch: (c) => c.baseBranch ?? "(自動検出)",
+  "branch.prefix": (c) => c.branch.prefix,
+  "branch.separator": (c) => c.branch.separator,
+  "pr.title": (c) => c.pr.title,
+  "session.title": (c) => (c.session.title === "" ? "(セッション名を変更しない)" : c.session.title),
+  "external.target": (c) => c.external.target,
+};
 
 /** ask のキーごとに「もう決まったか」を見る */
 const ANSWERED: Record<AskKey, (decided: Decided) => boolean> = {
@@ -198,12 +210,12 @@ register({
     `（${PROFILE_NAMES.join(" | ")}）。config の profile は推奨値の提示にすぎず、`,
     "無条件には採用しません。",
     "",
-    `ルート設定の値が "${ASK}" のキーは「作成時に決める」という宣言です。`,
-    "--dry-run の出力に対象キーと対応するオプションが並ぶので、ユーザーに尋ねてから",
+    "ルート設定の ask に並べたキーは「作成時に決める」という宣言です。--dry-run の",
+    "出力に対象キー・既定値・対応するオプションが並ぶので、ユーザーに尋ねてから",
     "渡し直してください。渡された値は {サイクル}/.hikyaku.config に書き出します。",
     "",
-    `渡さなくてもエラーにはしません。"${ASK}" は値としては未設定と同じに倒れるので、`,
-    "既定値でサイクルが成立します（スキルを通さず直接叩いた場合に壊れないため）。",
+    "渡さなくてもエラーにはしません。ルート設定の値（無ければ組み込みの既定）が",
+    "そのまま使われます。スキルを通さず直接叩いた場合に壊れないためです。",
     "",
     "slug は英数字とハイフンに正規化されます。ブランチ名の解析を壊さないためです。",
     "",
@@ -314,7 +326,7 @@ register({
             ...cycleConfig.split("\n").map((line) => `  ${line}`),
           );
         }
-        lines.push(...describeAsk(remaining));
+        lines.push(...describeAsk(remaining, config));
         if (active.length > 0) {
           lines.push(
             "",

@@ -27,8 +27,8 @@ register({
     "個別キー（architecture_gate, plan_review など）で上書きできます。",
     "--profile は what-if の確認用で、cycles.md の値より優先されます。",
     "",
-    'ルート設定の値が "ask" のキーは「create-cycle 時に決める」という宣言です。',
-    "値としては未設定と同じに倒れるので、サイクルが答えていなければ既定値になります。",
+    "ルート設定の ask に並べたキーは create-cycle が尋ねます。答えはそのサイクルの",
+    ".hikyaku.config に記録されるので、答えていなければルート設定の値のままです。",
   ].join("\n"),
   run: ({ args, operands }) => {
     const opened = openCycleIfAny(args, operands[0]);
@@ -85,7 +85,7 @@ register({
         lines.push(
           "",
           opened
-            ? `作成時に決めるキー（このサイクルは未回答・既定値）: ${config.askAtCreate.join(", ")}`
+            ? `作成時に決めるキー（このサイクルは未回答・上の値のまま）: ${config.askAtCreate.join(", ")}`
             : `作成時に決めるキー: ${config.askAtCreate.join(", ")}`,
         );
       }

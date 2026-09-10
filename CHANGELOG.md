@@ -26,11 +26,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   - 指定するとエラーになるのは `hikyaku_root`（ワークスペースの所在そのもので、サイクル設定をどこから読むかが決まらなくなる）と `profile`（`cycles.md` が唯一の正）だけ
   - 対象サイクルをブランチ名から決める処理は、サイクルを1件ずつ、そのサイクル自身の `[branch]` で解析して照合する。他サイクルの規則で偶然解析できても、取り出したサイクル名が一致しなければ採用しない
   - サイクルごとに `[branch]` を変えると、古い名前のブランチはそのサイクルのものと見なされなくなる（対象サイクルの明示を求められる）。既にブランチを切ってある状態で変えるときはブランチ名も揃える
-- **`"ask"`（サイクル作成時に決める）**: ルート設定でキーの値を `"ask"` にすると、`create-cycle` がその値をユーザーに尋ね、答えをそのサイクルの `.hikyaku.config` に記録する。ベースブランチや外部投影先のように「サイクルごとに変えたいが、値は作るときまで決まらない」ものを扱う
-  - 対象は `base_branch` / `[branch] prefix` / `[branch] separator` / `[pr] title` / `[session] title` / `[external] target` の6つ。リポジトリルートでのみ意味を持ち、サイクル設定に書くとエラーになる
-  - 尋ねるかどうかを別テーブルで宣言せず、そのキー自身の値として書く。明示的な値と未設定（既定値）は尋ねない
-  - 値としては未設定と同じに倒れるので、`hikyaku cycle new` を直接叩いて答えを渡さなくてもエラーにはならず、既定値でサイクルが成立する
-  - `cycle new` に `--base-branch` / `--branch-prefix` / `--branch-separator` / `--pr-title` / `--session-title` / `--external` / `--external-repo` / `--external-project` を追加した。`--dry-run` は書き出す `.hikyaku.config` の内容と、まだ答えていないキーを表示する
+- **`ask`（サイクル作成時に決める）**: ルート設定の `ask` にキー名を並べると、`create-cycle` がその値をユーザーに尋ね、答えをそのサイクルの `.hikyaku.config` に記録する。ベースブランチや外部投影先のように「サイクルごとに変えたいが、値は作るときまで決まらない」ものを扱う
+  - 指定できるのは `base_branch` / `branch.prefix` / `branch.separator` / `pr.title` / `session.title` / `external.target` の6つ。リポジトリルートでのみ意味を持ち、サイクル設定に書くとエラーになる。書き間違えたキー名もエラーにする
+  - `profile` と同じ考え方で、設定ファイルの値は尋ねるときの既定として提示するだけ。値そのものは「尋ねる」の合図にしない（`base_branch = "ask"` のような番兵にすると、`ask` という名前のブランチと区別できないため）
+  - 答えなくてもエラーにはならず、ルート設定の値がそのまま使われる。答えていないキーは `hikyaku config <cycle>` に「未回答」として出る
+  - `cycle new` に `--base-branch` / `--branch-prefix` / `--branch-separator` / `--pr-title` / `--session-title` / `--external` / `--external-repo` / `--external-project` を追加した。`--dry-run` は書き出す `.hikyaku.config` の内容と、まだ答えていないキー・その既定値・渡し方を表示する
 - **`tasklist_review`**: build-manager が `tasklist.md` / `issue.md` を書き込む前に `doc-reviewer` を起動する（`context: tasklist`）
   - BP見積もり乖離 / design-delta網羅漏れ / スコープ重複 / 検証不能な受け入れ基準 / 依存関係の不備を証拠ベースで報告する
   - 既定値は `plan_review` などと同じ（express / standard / thorough で有効、economy で無効）。個別キー `tasklist_review` で上書きできる

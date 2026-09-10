@@ -50,34 +50,31 @@ github_repo = "acme/backport"
 
 サイクルごとに変えたいが、値は作るときまで決まらない、という場合があります。ベースブランチや外部システムの投影先が典型で、ルート設定に固定値を書いても意味がなく、かといって毎回サイクルディレクトリに手でファイルを置くのも忘れます。
 
-ルート設定でそのキーの値を `"ask"` にすると、`create-cycle` がユーザーに尋ね、答えをそのサイクルの `.hikyaku.config` に記録します。
+ルート設定の `ask` にキー名を並べると、`create-cycle` がその値をユーザーに尋ね、答えをそのサイクルの `.hikyaku.config` に記録します。
 
 ```toml
-base_branch = "ask"    # サイクル作成時に尋ねる
+ask = ["base_branch", "external.target"]
 
-[branch]
-prefix = "hikyaku"     # 固定。尋ねない
+base_branch = "main"    # 尋ねるときの既定として提示される
 
 [external]
-target = "ask"         # サイクル作成時に尋ねる
+target = "none"         # 同上
 ```
 
-尋ねるかどうかを別のテーブルで宣言せず、そのキー自身の値として書きます。「何が入るか」と「誰が決めるか」が1行に並ぶので、設定ファイルを読めばどちらも分かります。**明示的な値と、未設定（既定値）は尋ねません。** 尋ねるのは `"ask"` と書いたときだけです。
+`profile` と同じ考え方です。設定ファイルに書いた値は推奨として提示されるだけで、採用するかどうかは作成時に決めます。**値そのものは「尋ねる」の合図にはしません。** `base_branch = "ask"` のような番兵にすると、`ask` という名前のブランチと区別できなくなるためです。宣言を分けたおかげで、値のほうは既定の提示として使えます。
 
-`"ask"` を書けるのは次の6つで、リポジトリルートの `.hikyaku.config` でのみ意味を持ちます。サイクル設定に書くとエラーになります（サイクルが存在する時点で、尋ねる相手もタイミングもないため）。
+`ask` に書けるのは次の6つで、リポジトリルートの `.hikyaku.config` でのみ意味を持ちます。サイクル設定に書くとエラーです（サイクルが存在する時点で、尋ねる相手もタイミングもないため）。書き間違えたキー名もエラーにします。黙って捨てると、尋ねるはずのキーが尋ねられないまま気づけません。
 
 | キー | `create-cycle` に渡すオプション |
 |---|---|
 | `base_branch` | `--base-branch <name>` |
-| `[branch] prefix` | `--branch-prefix <text>` |
-| `[branch] separator` | `--branch-separator <text>` |
-| `[pr] title` | `--pr-title <template>` |
-| `[session] title` | `--session-title <template>` |
-| `[external] target` | `--external <none\|github\|asana>` / `--external-repo` / `--external-project` |
+| `branch.prefix` | `--branch-prefix <text>` |
+| `branch.separator` | `--branch-separator <text>` |
+| `pr.title` | `--pr-title <template>` |
+| `session.title` | `--session-title <template>` |
+| `external.target` | `--external <none\|github\|asana>` / `--external-repo` / `--external-project` |
 
-**値としては未設定と同じに倒れます。** `hikyaku cycle new` をスキルを通さず直接叩いて値を渡さなくても、エラーにはならず既定値でサイクルが成立します。尋ねる相手が居ないだけで設定は壊れない、という扱いです。答えなかったキーは `hikyaku config <cycle>` に「未回答・既定値」として出ます。
-
-`"ask"` はこの用途に予約された値なので、ブランチ名やテンプレートとして文字列 `ask` そのものを使うことはできません。
+**答えなくても壊れません。** `hikyaku cycle new` をスキルを通さず直接叩いて値を渡さなくても、エラーにはならずルート設定の値がそのまま使われます。答えていないキーは `hikyaku config <cycle>` に「未回答」として出ます。
 
 ## 全体
 
