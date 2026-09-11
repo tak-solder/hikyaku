@@ -3,7 +3,7 @@
 import { existsSync, writeFileSync } from "node:fs";
 import { flagString, type ParsedArgs } from "./args.mts";
 import { parseBranch, type BranchNaming } from "./branch.mts";
-import { loadConfig, type ResolvedConfig } from "./config.mts";
+import { cycleBranchNaming, loadConfig, type ResolvedConfig } from "./config.mts";
 import {
   cycleDir,
   cycleDirName,
@@ -29,8 +29,11 @@ export interface CycleContext {
 }
 
 export interface ResolveOptions {
-  /** ブランチ名の解析に使う命名規則 */
-  branch?: BranchNaming | undefined;
+  /**
+   * サイクルごとのブランチ命名規則。[branch] はサイクル側で上書きできるため、
+   * 1つの規則ではなくレコードを受け取る関数で受け取る
+   */
+  branchNaming?: ((record: CycleRecord) => BranchNaming) | undefined;
   /** 現在のブランチ名 */
   currentBranch?: string | undefined;
   /** .hikyaku.local に記録されたサイクル */
@@ -73,9 +76,8 @@ export function resolveCycle(
   }
 
   // 2. 現在のブランチ。close フェーズもあるので status は問わない
-  if (options.branch && options.currentBranch !== undefined) {
-    const parsed = parseBranch(options.branch, options.currentBranch);
-    const record = parsed?.cycle === undefined ? undefined : findCycleByKey(records, parsed.cycle);
+  if (options.branchNaming && options.currentBranch !== undefined) {
+    const record = matchBranch(records, options.currentBranch, options.branchNaming);
     if (record) return context(hikyakuRoot, record, "branch");
   }
 
@@ -107,6 +109,45 @@ export function resolveCycle(
       "",
       "どのサイクルで作業するかをユーザーに尋ね、引数で指定し直してください。",
       "選んだサイクルは hikyaku cycle use で記録すると、次回から尋ねずに済みます。",
+    ].join("\n"),
+  );
+}
+
+/**
+ * 現在のブランチがどのサイクルのものかを決める。
+ *
+ * 命名規則がサイクルごとに違いうるので、「1つの規則で解析して名前を引く」ことが
+ * できない。代わりにサイクルを1件ずつ、そのサイクル自身の規則で解析して、
+ * 解析結果が自分を指しているかを見る。他サイクルの規則で偶然解析できても、
+ * 取り出したサイクル名が一致しなければ弾かれるので誤検出しない。
+ *
+ * slug は全履歴で一意ではないので複数当たりうる。findCycleByKey と同じく
+ * active を採り、それでも決まらなければ推測せず候補を挙げて尋ねる。
+ */
+function matchBranch(
+  records: CycleRecord[],
+  name: string,
+  namingFor: (record: CycleRecord) => BranchNaming,
+): CycleRecord | undefined {
+  const matched = records.filter((record) => {
+    const parsed = parseBranch(namingFor(record), name);
+    if (parsed?.cycle === undefined) return false;
+    return (
+      parsed.cycle === record.id ||
+      parsed.cycle === record.slug ||
+      parsed.cycle === cycleDirName(record)
+    );
+  });
+  if (matched.length <= 1) return matched[0];
+
+  const active = matched.filter((record) => record.status === "active");
+  if (active.length === 1) return active[0];
+
+  throw new HikyakuError(
+    `現在のブランチが複数のサイクルに一致します: ${name}`,
+    [
+      "サイクルを引数で明示してください:",
+      ...matched.map((record) => `  ${cycleDirName(record)}（${record.status}）`),
     ].join("\n"),
   );
 }
@@ -147,7 +188,7 @@ export function openCycle(args: ParsedArgs, key: string | undefined): OpenedCycl
   const root = flagString(args, "root");
   const base = loadConfig({ root });
   const ctx = resolveCycle(base.hikyakuRoot, key, {
-    branch: base.branch,
+    branchNaming: (record) => cycleBranchNaming(base, cycleDir(base.hikyakuRoot, record)),
     currentBranch: currentBranch(base.repoRoot),
     local: readLocalState(base.hikyakuRoot).cycle,
   });

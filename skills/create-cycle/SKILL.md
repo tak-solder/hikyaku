@@ -1,12 +1,12 @@
 ---
 name: create-cycle
-description: "Hikyaku サイクル作成: チケットを起点に新しいサイクルを採番し、profile を選択して cycles.md に登録する。"
+description: "Hikyaku サイクル作成: チケットを起点に新しいサイクルを採番し、profile と、ルート設定の ask に並んだキー（base_branch / ブランチ規則 / PR タイトル / セッション名 / 外部投影先）を決めて cycles.md に登録する。"
 user-invocable: true
 disable-model-invocation: false
 argument-hint: "[{slug}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.1.0"
+  version: "2.0.0"
 ---
 
 # Hikyaku Create Cycle
@@ -96,9 +96,29 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle new {slug} \
   --depends {依存サイクルID} --dry-run
 ```
 
+- [ ] 出力の `askAtCreate` が空でなければ、そのキーをユーザーに尋ねる
+
+ルート設定の `ask` に並んでいるキーは、**このサイクルの値をここで決める**という
+意味なので、勝手に既定で通さない。出力に各キーの既定値と対応するオプションが
+並ぶので、1つずつ尋ねてから、オプションを付けて `--dry-run` をやり直す。
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle new {slug} \
+  --profile {profile} --ticket "{ticket}" --summary "{要約}" \
+  --base-branch {回答} --external {回答} --external-repo {回答} --dry-run
+```
+
+尋ねるときは、**出力の既定値をそのまま採る選択肢も必ず提示する**。profile と同じで、
+ルート設定の値は推奨の提示にすぎない。何を答えてもそのサイクルの `.hikyaku.config`
+に記録され、以後そのサイクルの全フェーズで使われる。
+
+`askAtCreate` が空なら、この確認は飛ばす。`ask` に並んでいないキーは、
+サイクルごとに決めるものではない。
+
 - [ ] 内容を確認して実行する（`--dry-run` を外す）
 
-スクリプトが採番し、ディレクトリを作り、cycles.md に追記する。
+スクリプトが採番し、ディレクトリを作り、cycles.md に追記する。決めた値があれば
+`{サイクル}/.hikyaku.config` も書き出す。
 cycles.md には**作成時の Hikyaku バージョン**も記録される。ディレクトリ構造や
 ファイル形式は作成時に決まるため、後からそれを解釈するのに必要になる。
 

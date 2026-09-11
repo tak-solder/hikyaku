@@ -15,8 +15,8 @@ register({
     "  1. リポジトリルート/.hikyaku.config（必須）",
     "  2. {HIKYAKU_ROOT}/cycles/{NNN}-{slug}/.hikyaku.config（任意）",
     "",
-    "サイクル側では hikyaku_root / base_branch / [branch] / [pr] / [external] と",
-    "profile を上書きできません（いずれもリポジトリ全体の性質か、cycles.md が正）。",
+    "サイクル側で上書きできないのは hikyaku_root と profile だけです",
+    "（前者はワークスペースの所在そのもの、後者は cycles.md が唯一の正）。",
     "",
     "サイクルを省略した場合は、現在のブランチ → .hikyaku.local → 唯一の進行中サイクル",
     "の順に対象を決めます。決められなければ候補を挙げてエラーにするので、",
@@ -26,6 +26,9 @@ register({
     "profile は承認ゲートとレビューの既定値をまとめて与えます。",
     "個別キー（architecture_gate, plan_review など）で上書きできます。",
     "--profile は what-if の確認用で、cycles.md の値より優先されます。",
+    "",
+    "ルート設定の ask に並べたキーは create-cycle が尋ねます。答えはそのサイクルの",
+    ".hikyaku.config に記録されるので、答えていなければルート設定の値のままです。",
   ].join("\n"),
   run: ({ args, operands }) => {
     const opened = openCycleIfAny(args, operands[0]);
@@ -71,11 +74,20 @@ register({
         "",
         `branch       ${config.branch.prefix}${config.branch.separator}{cycle}${config.branch.separator}{phase}`,
         `pr.title     ${config.pr.title}`,
+        `session      ${config.session.title === "" ? "(変更しない)" : config.session.title}`,
         `external     ${config.external.target}`,
       );
       if (config.external.githubRepo) lines.push(`  github_repo  ${config.external.githubRepo}`);
       if (config.external.asanaProjectGid) {
         lines.push(`  asana_project_gid  ${config.external.asanaProjectGid}`);
+      }
+      if (config.askAtCreate.length > 0) {
+        lines.push(
+          "",
+          opened
+            ? `作成時に決めるキー（このサイクルは未回答・上の値のまま）: ${config.askAtCreate.join(", ")}`
+            : `作成時に決めるキー: ${config.askAtCreate.join(", ")}`,
+        );
       }
       lines.push(
         "",

@@ -3,7 +3,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { flagBoolean, flagString } from "../lib/args.mts";
-import { PROFILE_NAMES } from "../lib/config.mts";
+import { ASK_KEYS, PROFILE_NAMES } from "../lib/config.mts";
 import { LOCAL_FILE } from "../lib/local.mts";
 import { cyclesPath, renderCyclesFile } from "../lib/cycles.mts";
 import { guidePath } from "../lib/docs.mts";
@@ -232,8 +232,17 @@ function renderRepoConfig(hikyakuRoot: string): string {
     "#",
     "# ドキュメントの所在は document-guide.md が唯一の宣言先です。",
     "# このファイルには振る舞いの設定だけを書きます。",
+    "#",
+    "# base_branch / [branch] / [pr] / [session] / [external] は、サイクルごとに",
+    "# {HIKYAKU_ROOT}/cycles/{NNN}-{slug}/.hikyaku.config で上書きできます。",
     "",
     `hikyaku_root = "${hikyakuRoot}"`,
+    "",
+    "# サイクル作成時に create-cycle が尋ねるキー。答えはそのサイクルの",
+    "# .hikyaku.config に記録されます。下に書いた値は、尋ねるときの既定として",
+    "# 提示されます（profile と同じで、config は推奨、決めるのは作成時）。",
+    `# 指定できるキー: ${ASK_KEYS.join(" | ")}`,
+    '# ask = ["base_branch", "external.target"]',
     "",
     "# サイクル作成時に提示する profile の既定値。",
     "# 無条件には採用されず、create-cycle が必ず明示的な選択を求めます。",

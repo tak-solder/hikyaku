@@ -2,7 +2,7 @@
 
 import { flagString, type ParsedArgs } from "../lib/args.mts";
 import { branchName, isPhase, parseBranch, renderPrTitle, type Phase } from "../lib/branch.mts";
-import { loadConfig } from "../lib/config.mts";
+import { loadConfig, type ResolvedConfig } from "../lib/config.mts";
 import { HikyakuError, ValidationError } from "../lib/errors.mts";
 import { currentBranch, defaultBranch } from "../lib/git.mts";
 import { emit } from "../lib/output.mts";
@@ -25,14 +25,27 @@ function requirePhase(raw: string | undefined): Phase {
   return raw;
 }
 
+interface Scope {
+  /** サイクル固有設定を重ねた設定。init ではリポジトリルートの設定 */
+  config: ResolvedConfig;
+  cycle: string | undefined;
+}
+
 /**
- * 対象サイクルを決める。init はサイクルに属さないので undefined を返す。
- * 明示指定が無ければ通常の解決（ブランチ → 栞 → 唯一の active）に委ねる。
+ * 対象サイクルと、そのサイクルの設定を決める。
+ * init はサイクルに属さないのでリポジトリルートの設定だけを使う。
+ *
+ * 明示指定があっても解決を通す。[branch] / [pr] / [session] はサイクル側で
+ * 上書きできるため、サイクルディレクトリを特定しないと名前を組み立てられない。
+ * 引数を ID や slug で渡されたときにディレクトリ名へ正規化されるのも、
+ * 解決を通す副次的な効果（`002` から `002-billing` のブランチ名が出る）。
  */
-function cycleFor(args: ParsedArgs, phase: Phase, operand: string | undefined): string | undefined {
-  if (phase === "init") return undefined;
-  if (operand !== undefined) return operand;
-  return openCycle(args, undefined).context.name;
+function scopeFor(args: ParsedArgs, phase: Phase, operand: string | undefined): Scope {
+  if (phase === "init") {
+    return { config: loadConfig({ root: flagString(args, "root") }), cycle: undefined };
+  }
+  const opened = openCycle(args, operand);
+  return { config: opened.config, cycle: opened.context.name };
 }
 
 register({
@@ -79,13 +92,15 @@ register({
     "フェーズが閉じた集合だからです。prefix を前から、フェーズを後ろから剥がせば",
     "サイクルが残ります。",
     "",
+    "[branch] はサイクル設定でも上書きできます。期待するブランチ名は対象サイクルの",
+    "設定で組み立てるため、サイクルごとに prefix が違っていても正しい名前が出ます。",
+    "",
     "サイクルを省略すると通常の解決に委ねますが、現在のブランチも判断材料に",
     "使うため、フェーズのサイクルが分かっている場合は明示してください。",
   ].join("\n"),
   run: ({ args, operands }) => {
-    const config = loadConfig({ root: flagString(args, "root") });
     const phase = requirePhase(operands[0]);
-    const cycle = cycleFor(args, phase, operands[1]);
+    const { config, cycle } = scopeFor(args, phase, operands[1]);
     const expected = branchName(config.branch, phase, cycle);
     const actual = currentBranch(config.repoRoot);
     const parsed = actual === undefined ? undefined : parseBranch(config.branch, actual);
@@ -157,9 +172,8 @@ register({
     "PR タイトルは表示専用で解析されないため、テンプレートは自由に組み立てられます。",
   ].join("\n"),
   run: ({ args, operands }) => {
-    const config = loadConfig({ root: flagString(args, "root") });
     const phase = requirePhase(operands[0]);
-    const cycle = cycleFor(args, phase, operands[1]);
+    const { config, cycle } = scopeFor(args, phase, operands[1]);
     const buildId = /^build-(\d+)$/.exec(phase)?.[1];
     const title = renderPrTitle(config.pr.title, {
       cycle,
@@ -189,17 +203,16 @@ register({
     "使えなければスキップ」で扱います。",
   ].join("\n"),
   run: ({ args, operands }) => {
-    const config = loadConfig({ root: flagString(args, "root") });
     const phase = requirePhase(operands[0]);
+    const { config, cycle } = scopeFor(args, phase, operands[1]);
 
     if (config.session.title === "") {
-      emit({ title: undefined, phase, disabled: true }, () =>
+      emit({ title: undefined, phase, cycle, disabled: true }, () =>
         "[session] title が空のため、セッション名は変更しません。",
       );
       return;
     }
 
-    const cycle = cycleFor(args, phase, operands[1]);
     const buildId = /^build-(\d+)$/.exec(phase)?.[1];
     const title = renderPrTitle(config.session.title, {
       cycle,

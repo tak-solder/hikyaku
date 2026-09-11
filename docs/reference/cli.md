@@ -111,6 +111,8 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 
 `branch verify` は生成と検証を兼ねています。名前を生成するだけのコマンドを別に持つと、生成しただけで確認しないまま作業する余地が残るためです。
 
+3つとも対象サイクルの設定でテンプレートを展開します。`[branch]` / `[pr]` / `[session]` は[サイクルごとに変えられる](../configuration/config-file.md#サイクルごとに変える)ため、`init` を除いてサイクルの特定が必要です。ID や slug で渡してもディレクトリ名に解決されるので、`002` からも `hikyaku/002-billing/plan` が返ります。
+
 ## 外部連携
 
 | コマンド | いつ使うか |
