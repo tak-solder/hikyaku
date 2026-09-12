@@ -107,7 +107,7 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 |---|---|
 | `branch verify <phase> [<cycle>]` | 今いるブランチが規則どおりか確認するとき。各フェーズの冒頭とコミット直前 |
 | `pr title <phase> [<cycle>]` | PR タイトルを生成するとき |
-| `pr base <phase> [<cycle>]` | PR のマージ先を決めるとき。PR を作る直前 |
+| `pr base <phase> [<cycle>]` | PR のマージ先を決めるとき。PR を作る直前。`--ref` でローカルに解決できる ref（レビューの差分基準）を返す |
 | `session title <phase> [<cycle>]` | セッション名を生成するとき |
 
 `branch verify` は生成と検証を兼ねています。名前を生成するだけのコマンドを別に持つと、生成しただけで確認しないまま作業する余地が残るためです。

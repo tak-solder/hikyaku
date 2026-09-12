@@ -112,6 +112,11 @@ async function stackParent(
     }
   }
 
+  // 取り込み済みを1つも除外できないなら、スタック元を推測しない。
+  // この状態で祖先を拾うと、既にマージ済みのブランチや無関係のブランチへ
+  // PR を向けることになる。デフォルトブランチへフォールバックするほうが安全
+  if (views.mergedIds === undefined && baseRefs.length === 0) return undefined;
+
   return nearestAncestorBranch(config.repoRoot, candidates, baseRefs);
 }
 
@@ -164,6 +169,11 @@ register({
     "",
     "サイクルを省略すると通常の解決に委ねますが、現在のブランチも判断材料に",
     "使うため、フェーズのサイクルが分かっている場合は明示してください。",
+    "",
+    "stackedOn / prBase は「先行フェーズのブランチの上に積んでいるか」の**目安**です。",
+    "このコマンドはネットワークへ行かないため、リモートで先行 PR がマージされた直後は",
+    "まだスタック中と見えることがあります。**PR の base として正なのは pr base** で、",
+    "そちらは必要ならリモート追跡参照を更新します。",
   ].join("\n"),
   run: async ({ args, operands }) => {
     const phase = requirePhase(operands[0]);
@@ -287,7 +297,7 @@ register({
 register({
   name: "pr base",
   summary: "PR のマージ先ブランチを返す（スタックしていればスタック元）",
-  usage: "hikyaku pr base <phase> [<cycle>] [--no-fetch] [--root <path>] [--json]",
+  usage: "hikyaku pr base <phase> [<cycle>] [--ref] [--no-fetch] [--root <path>] [--json]",
   details: [
     "通常はデフォルトブランチを返します。先行フェーズのブランチから積んでいる",
     "（スタックしている）場合は、そのブランチを返します。",
@@ -304,7 +314,21 @@ register({
     "積んだままデフォルトブランチへ PR を作ると、先行ビルドの差分まで含んだ PR に",
     "なります。**PR を作る直前に実行してください。**",
     "",
-    "レビューの差分基準（git merge-base <base> HEAD）にも同じ値を使います。",
+    "**--ref を付けるとローカルで解決できる ref を返します。** PR の base に渡すのは",
+    "ブランチ名ですが、git merge-base や git diff に渡すには解決できる ref が要ります。",
+    "リモート追跡参照しか無いブランチを名前のまま渡すと解決に失敗し、コミット済み",
+    "差分が空になります。レビューの差分基準にはこちらを使ってください。",
+    "",
+    "  hikyaku pr base build-01 002-billing         → hikyaku/002-billing/build-01",
+    "  hikyaku pr base build-01 002-billing --ref   → origin/hikyaku/002-billing/build-01",
+    "",
+    "**PR の base として正なのはこのコマンドです。** branch verify の stackedOn は",
+    "ネットワークへ行かないため（毎フェーズの冒頭とコミット直前に走るため）、",
+    "リモートで先行 PR がマージされた直後は古い可能性があります。あちらは目安、",
+    "PR を作るときはこちらを使ってください。",
+    "",
+    "マージ状況を確認できない（デフォルトブランチの tasklist も base の ref も",
+    "読めない）場合は、スタック元を推測せずデフォルトブランチを返します。",
   ].join("\n"),
   run: async ({ args, operands }) => {
     const phase = requirePhase(operands[0]);
@@ -322,6 +346,10 @@ register({
       missingOnRemote = remote.unavailable === undefined && !remote.names.includes(stacked.name);
     }
 
+    // PR の base に使う名前と、ローカルの git 操作に使う ref は別物。
+    // リモート追跡参照しか無いブランチ名をそのまま git merge-base に渡すと解決に失敗する
+    const localRef = prBase === undefined ? undefined : await resolvableRef(config.repoRoot, prBase);
+
     if (prBase === undefined) {
       throw new HikyakuError(
         "PR のマージ先を決められません",
@@ -329,9 +357,12 @@ register({
       );
     }
 
+    const wantRef = flagBoolean(args, "ref");
+
     emit(
       {
         base: prBase,
+        ref: localRef ?? null,
         stackedOn: stacked?.name ?? null,
         stackedOnMissingOnRemote: missingOnRemote,
         baseBranch: base ?? null,
@@ -339,8 +370,9 @@ register({
         cycle,
       },
       () => {
-        if (stacked === undefined) return prBase;
-        const lines = [prBase, `（スタック元です。デフォルトブランチ ${base ?? "?"} ではありません）`];
+        const head = wantRef ? (localRef ?? prBase) : prBase;
+        if (stacked === undefined) return head;
+        const lines = [head, `（スタック元です。デフォルトブランチ ${base ?? "?"} ではありません）`];
         if (missingOnRemote) {
           lines.push(
             "",
@@ -393,3 +425,17 @@ register({
     emit({ title, phase, cycle }, () => title);
   },
 });
+
+/**
+ * ローカルで解決できる ref に直す。
+ *
+ * PR の base に渡すのはブランチ名（origin/ を付けない）だが、git merge-base や
+ * git diff に渡すには解決できる ref が要る。リモート追跡参照しか無いブランチを
+ * 名前のまま渡すと解決に失敗し、コミット済み差分のレビューが空になる。
+ */
+async function resolvableRef(repoRoot: string, branch: string): Promise<string | undefined> {
+  if ((await localSha(repoRoot, branch)) !== undefined) return branch;
+  const tracking = `origin/${branch}`;
+  if ((await localSha(repoRoot, tracking)) !== undefined) return tracking;
+  return undefined;
+}

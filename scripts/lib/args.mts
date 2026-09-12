@@ -16,6 +16,8 @@ const BOOLEAN_FLAGS = new Set([
   "active",
   "all",
   "verbose",
+  "no-fetch",
+  "ref",
 ]);
 
 export interface ParsedArgs {

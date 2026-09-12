@@ -93,7 +93,7 @@ CLI を自分のシェルからも叩きたい場合は、[実行方法](referen
 
 続いてビルド分割です。BP を見積もり、1セッションに収まる単位へ割ります。tasklist と issue.md の差分が提示されるので、承認します。
 
-成果物は `design/design-delta.md`、`design/codebase-survey.md`、`tasklist.md`、`build-{NN}/issue.md`、そして PR です。**この PR もマージしてから次へ進んでください。** `tasklist.md` がデフォルトブランチに無いと、builder が依存ビルドの完了を判定できません。
+成果物は `design/design-delta.md`、`design/codebase-survey.md`、`tasklist.md`、`build-{NN}/issue.md`、そして PR です。**この PR もマージしてから次へ進んでください。** `tasklist.md` がデフォルトブランチに無いと、他のサイクルからも外からもこのサイクルの進捗が見えません。
 
 ## 6. BUILD — 実装
 
