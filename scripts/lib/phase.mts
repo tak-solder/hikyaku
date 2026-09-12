@@ -37,6 +37,8 @@ export interface CycleState {
   /** 次に作るべき必須成果物。undefined ならフェーズの成果物は揃っている */
   resumeAt: string | undefined;
   builds: BuildRecord[];
+  /** このツリーでは完了しているが、まだデフォルトブランチに入っていないビルド */
+  mergePending: string[];
 }
 
 interface ArtifactSpec {
@@ -87,9 +89,15 @@ export function deriveState(
   cycleDirectory: string,
   record: CycleRecord,
   builds: BuildRecord[],
+  mergedIds?: Set<string> | undefined,
 ): CycleState {
+  const mergePending =
+    mergedIds === undefined
+      ? []
+      : builds.filter((build) => isComplete(build) && !mergedIds.has(build.id)).map((b) => b.id);
+
   if (record.status === "closed" || record.status === "abandoned") {
-    return { phase: record.status, artifacts: [], resumeAt: undefined, builds };
+    return { phase: record.status, artifacts: [], resumeAt: undefined, builds, mergePending };
   }
 
   const planArtifacts = resolve(cycleDirectory, PLAN_ARTIFACTS);
@@ -99,6 +107,7 @@ export function deriveState(
       artifacts: planArtifacts,
       resumeAt: firstMissing(planArtifacts),
       builds,
+      mergePending,
     };
   }
 
@@ -109,25 +118,40 @@ export function deriveState(
       artifacts: architectArtifacts,
       resumeAt: firstMissing(architectArtifacts) ?? "tasklist.md（ビルドが1件も登録されていません）",
       builds,
+      mergePending,
     };
   }
 
-  const incomplete = builds.filter((build) => !isComplete(build));
-  if (incomplete.length === 0) {
+  // 「サイクルが完了したか」はリポジトリ全体の問いなので、デフォルトブランチで
+  // マージ済みかを見る。builds（HEAD 基準）の PR 列で代用すると、最後のビルドで
+  // tasklist done した直後に completed と出て close-cycle を勧めてしまう。
+  // mergedIds が undefined（base を読めない）なら completed とは言わない。
+  // close-cycle は永続ドキュメントへの昇格なので、誤って勧めるほうが害が大きい。
+  if (
+    mergedIds !== undefined &&
+    builds.length > 0 &&
+    builds.every((build) => mergedIds.has(build.id))
+  ) {
     // 実装は終わっているが、永続ドキュメントへの昇格がまだ。
     // この期間に他サイクルが古い overview を「実装済みの現実」として読む危険がある
-    return { phase: "completed", artifacts: [], resumeAt: undefined, builds };
+    return { phase: "completed", artifacts: [], resumeAt: undefined, builds, mergePending };
   }
+
+  // 中断点の特定は「いま手元で何をしているか」というツリーローカルの問いなので、
+  // HEAD 基準の builds を使う。ここで base 基準を使うと、マージ待ちで完了済みの
+  // 先行ビルドが「未完了」に混ざり、スタック中に中断点が古いビルドへ戻る。
+  const incomplete = builds.filter((build) => !isComplete(build));
 
   // 着手済みの（＝成果物が1つでもある）ビルドがあれば、その中断点を返す
   for (const build of incomplete) {
     const artifacts = resolve(cycleDirectory, buildArtifacts(build.id));
     if (artifacts.some((artifact) => artifact.present)) {
-      return { phase: "building", artifacts, resumeAt: firstMissing(artifacts), builds };
+      return { phase: "building", artifacts, resumeAt: firstMissing(artifacts), builds, mergePending };
     }
   }
 
-  return { phase: "building", artifacts: [], resumeAt: undefined, builds };
+  // 未完了が1件も無ければ、このツリーでは全部できていてマージ待ち
+  return { phase: "building", artifacts: [], resumeAt: undefined, builds, mergePending };
 }
 
 /**

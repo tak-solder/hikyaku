@@ -30,7 +30,7 @@ builder スキルから委任され、当該ビルドの変更を以下の観点
    - `git status` — 変更ファイル一覧（未追跡含む）
    - `git diff` — unstaged 差分
    - `git diff --cached` — staged 差分
-   - `git diff $(git merge-base origin/main HEAD)..HEAD` — base ブランチ（origin/main）からの **コミット済み差分**。再開セッションや途中コミットを含むビルドではこの差分にしか実装が現れないため必須
+   - `git diff $(git merge-base {BASE_BRANCH} HEAD)..HEAD` — **指示に含まれる base の ref**（`hikyaku pr base --ref` の値）からの **コミット済み差分**。再開セッションや途中コミットを含むビルドではこの差分にしか実装が現れないため必須。**`origin/main` で代用しない**（base はサイクルごとに変えられ、スタックしている場合は先行ビルドのブランチになる。誤ると先行ビルドの差分までレビュー対象に混入する）
    - 新規追加ファイル（未追跡）は `git status` で検出し、必要に応じて Read tool で内容を読む
 3. **証拠ベースの判定**: 後述のルールに沿って報告する/しないを決める
 

@@ -1,9 +1,14 @@
 /**
  * git への問い合わせ。
  *
- * 着手中の検出にだけリモートを使う。着手可能・待機の判定は
- * main 上の tasklist.md の PR 列だけで行うため、リモートに到達できなくても
- * ワークフローは止まらない。
+ * 着手可能・待機の判定の入力は **HEAD の tasklist.md**（readFileAtRef で読む）。
+ * PR 列の更新は実装と同じコミットに同梱されるため、HEAD で PR 列が非空である
+ * ことがそのまま実装が履歴に在ることを意味する。**作業ツリーは読まない**
+ * （未コミットの PR 列を「実装が在る」と数えてしまう）。
+ *
+ * リモートを見るのは「マージ済みかどうかのラベル付け」「着手中の検出」
+ * 「スタック元の導出」だけ。リモートに到達できなくてもワークフローは止まらず、
+ * 到達できないことで着手可否が変わることもない。
  */
 
 import { execFile } from "node:child_process";
@@ -12,6 +17,24 @@ import { isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 const run = promisify(execFile);
+
+type RunResult = { ok: true; stdout: string } | { ok: false; message: string };
+
+/**
+ * git を実行し、成否を値で返す。
+ *
+ * **終了コードだけで判断する。** fatal メッセージは locale 依存なので、
+ * 文字列の一致で場合分けしてはいけない（LANG が日本語の環境で壊れる）。
+ */
+async function tryGit(cwd: string, argv: string[], timeout = 15_000): Promise<RunResult> {
+  try {
+    const { stdout } = await run("git", argv, { cwd, timeout, maxBuffer: 8 * 1024 * 1024 });
+    return { ok: true, stdout };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, message: message.split("\n")[0] ?? message };
+  }
+}
 
 /**
  * 現在のブランチ名。.git を直接読むので git バイナリに依存しない。
@@ -67,63 +90,153 @@ function resolveGitDir(repoRootPath: string): string | undefined {
 
 /** パスが git の管理下にあるか（.hikyaku.local の取り違え検出に使う） */
 export async function isTracked(cwd: string, path: string): Promise<boolean> {
-  try {
-    const { stdout } = await run("git", ["ls-files", "--error-unmatch", "--", path], {
-      cwd,
-      timeout: 10_000,
-    });
-    return stdout.trim() !== "";
-  } catch {
-    return false;
-  }
+  const result = await tryGit(cwd, ["ls-files", "--error-unmatch", "--", path], 10_000);
+  return result.ok && result.stdout.trim() !== "";
+}
+
+/** ローカルに保存されている ref のコミット SHA。リモートへは問い合わせない */
+export async function localSha(cwd: string, ref: string): Promise<string | undefined> {
+  const result = await tryGit(cwd, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
+  if (!result.ok) return undefined;
+  const sha = result.stdout.trim();
+  return sha === "" ? undefined : sha;
 }
 
 export interface RemoteBranches {
   /** リモートに存在するブランチ名 */
   names: string[];
+  /** ブランチ名 → 先端 SHA。ローカルの追跡参照が古いかの判定に使う */
+  tips: Map<string, string>;
   /** 取得できなかった場合の理由（着手中の表示だけが落ちる） */
   unavailable: string | undefined;
 }
 
 export async function listRemoteBranches(cwd: string): Promise<RemoteBranches> {
-  try {
-    const { stdout } = await run("git", ["ls-remote", "--heads", "origin"], {
-      cwd,
-      timeout: 15_000,
-      maxBuffer: 8 * 1024 * 1024,
-    });
-    const names = stdout
-      .split("\n")
-      .map((line) => line.split("\t")[1] ?? "")
-      .filter((ref) => ref.startsWith("refs/heads/"))
-      .map((ref) => ref.slice("refs/heads/".length));
-    return { names, unavailable: undefined };
-  } catch (error) {
-    const message = error instanceof Error ? error.message.split("\n")[0] : String(error);
-    return { names: [], unavailable: message };
+  const result = await tryGit(cwd, ["ls-remote", "--heads", "origin"]);
+  if (!result.ok) return { names: [], tips: new Map(), unavailable: result.message };
+
+  const tips = new Map<string, string>();
+  for (const line of result.stdout.split("\n")) {
+    const [sha = "", ref = ""] = line.split("\t");
+    if (!ref.startsWith("refs/heads/")) continue;
+    tips.set(ref.slice("refs/heads/".length), sha);
   }
+  return { names: [...tips.keys()], tips, unavailable: undefined };
 }
 
+/**
+ * ローカルの追跡参照がリモートの先端より古いか。
+ *
+ * `git show origin/{base}:...` はネットワークへ行かず、最後に fetch した時点の
+ * ローカルコピーを読む。コンテナがスナップショットを再利用した環境では、
+ * この写しだけが数日前を指したまま残ることがある。**判定には使わないが**、
+ * マージ済みラベルが古く見える理由として提示する。
+ */
+export interface BaseFreshness {
+  /** リモートの先端（ls-remote に到達できなければ undefined） */
+  remote: string | undefined;
+  /** ローカルの origin/{base} */
+  local: string | undefined;
+  /** 一致しないと分かった場合だけ true。判断できなければ undefined */
+  stale: boolean | undefined;
+}
+
+export async function baseFreshness(
+  cwd: string,
+  base: string,
+  remoteTip: string | undefined,
+): Promise<BaseFreshness> {
+  const local = await localSha(cwd, `origin/${base}`);
+  if (remoteTip === undefined || local === undefined) {
+    return { remote: remoteTip, local, stale: undefined };
+  }
+  return { remote: remoteTip, local, stale: remoteTip !== local };
+}
+
+/** ref の tree にファイルが在ったかどうかの3状態 */
+export type FileAtRefState = "found" | "absent" | "unreadable";
+
 export interface FileAtRef {
-  /** ref の tree に存在した内容。取得できなければ undefined */
+  /**
+   * found      … 読めた
+   * absent     … **ref は在るがファイルが無い**。「完了しているビルドは0件」と確定できる
+   * unreadable … ref 自体が無い / 読めない。本当に不明
+   */
+  state: FileAtRefState;
+  /** found のときの内容 */
   content: string | undefined;
-  /** 実際に読めた ref（origin/main か main か） */
+  /** 実際に見た ref（origin/main か main か） */
   ref: string | undefined;
-  /** 取得できなかった場合の理由 */
+  /** その ref の短縮 SHA */
+  sha: string | undefined;
+  /** その ref のコミット日時（ISO 8601） */
+  committedAt: string | undefined;
+  /** unreadable のときの理由 */
   unavailable: string | undefined;
+}
+
+/**
+ * ref の tree からファイルを読む。
+ *
+ * **「ファイルが無い」と「ref が読めない」を分ける。** 前者は確定情報で、
+ * 「その断面にはまだ無い」を意味する。後者だけが本当の不明で、呼び出し元の
+ * 縮退が要る。両方を同じ失敗に潰すと、まだ出ていないだけの状態を
+ * 「読めなかった」と誤解し、作業ツリーへ縮退して嘘を拾う。
+ *
+ * 判定は終了コードで行う。fatal メッセージは locale 依存なので、
+ * 文字列の一致で場合分けしてはいけない。
+ */
+export async function readFileAtRef(
+  cwd: string,
+  ref: string,
+  repoRelativePath: string,
+): Promise<FileAtRef> {
+  const miss = (unavailable: string): FileAtRef => ({
+    state: "unreadable",
+    content: undefined,
+    ref: undefined,
+    sha: undefined,
+    committedAt: undefined,
+    unavailable,
+  });
+
+  if ((await localSha(cwd, ref)) === undefined) return miss(`${ref}: ref がありません`);
+
+  const meta = await commitMeta(cwd, ref);
+  const exists = await tryGit(cwd, ["cat-file", "-e", `${ref}:${repoRelativePath}`]);
+  if (!exists.ok) {
+    return {
+      state: "absent",
+      content: undefined,
+      ref,
+      sha: meta?.sha,
+      committedAt: meta?.committedAt,
+      unavailable: undefined,
+    };
+  }
+
+  const shown = await tryGit(cwd, ["show", `${ref}:${repoRelativePath}`]);
+  if (!shown.ok) return miss(`${ref}: ${shown.message}`);
+
+  return {
+    state: "found",
+    content: shown.stdout,
+    ref,
+    sha: meta?.sha,
+    committedAt: meta?.committedAt,
+    unavailable: undefined,
+  };
 }
 
 /**
  * デフォルトブランチの tree からファイルを読む。
  *
- * 完了判定（PR 列）は「デフォルトブランチ上で埋まっていること」が条件なので、
- * 作業ツリーを読んではいけない。ビルドブランチ上では自分の PR 列を埋めた直後の
- * tasklist が見えるため、未マージのビルドを完了と誤判定し、依存ビルドを
- * 着手可能として返してしまう。
+ * origin/{base} を先に見る。ローカルの {base} は fetch していなければ古い。
+ * ただし origin/{base} も「最後に fetch した時点のローカルコピー」であって
+ * リモートそのものではないので、鮮度は baseFreshness で別に見る。
  *
- * origin/{base} を先に見る。ローカルの {base} は fetch していなければ古く、
- * 他セッションがマージしたビルドを見落とすため。どちらも読めなければ
- * unavailable を返し、呼び出し元がフォールバックを決める。
+ * 「ファイルが無い（absent）」を見つけた時点で確定として返す。origin/{base} に
+ * 無いものはマージされていない、が答えなので、ローカルの {base} へは進まない。
  */
 export async function readFileAtDefaultBranch(
   cwd: string,
@@ -131,17 +244,146 @@ export async function readFileAtDefaultBranch(
   repoRelativePath: string,
 ): Promise<FileAtRef> {
   const errors: string[] = [];
+
   for (const ref of [`origin/${base}`, base]) {
-    try {
-      const { stdout } = await run("git", ["show", `${ref}:${repoRelativePath}`], {
-        cwd,
-        timeout: 15_000,
-        maxBuffer: 8 * 1024 * 1024,
-      });
-      return { content: stdout, ref, unavailable: undefined };
-    } catch (error) {
-      errors.push(`${ref}: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}`);
+    const result = await readFileAtRef(cwd, ref, repoRelativePath);
+    if (result.state !== "unreadable") return result;
+    if (result.unavailable !== undefined) errors.push(result.unavailable);
+  }
+
+  return {
+    state: "unreadable",
+    content: undefined,
+    ref: undefined,
+    sha: undefined,
+    committedAt: undefined,
+    unavailable: errors.join(" / "),
+  };
+}
+
+/**
+ * base のリモート追跡参照だけを更新する。
+ *
+ * 作業ツリーにもローカルの {base} にも触らない。**着手判定はこの ref を見ないので、
+ * fetch の成否で着手できるかが変わることはない。** 変わるのは「マージ済み」の
+ * ラベル、completed の判定、pr base の取り込み除外の精度だけ。
+ *
+ * 明示 refspec を使う。`git fetch origin main` が追跡参照まで更新するかは
+ * 設定依存なので、更新したい ref を書く。
+ */
+export async function fetchBaseRef(
+  cwd: string,
+  base: string,
+): Promise<{ ok: boolean; message: string | undefined }> {
+  const result = await tryGit(
+    cwd,
+    ["fetch", "--quiet", "origin", `+refs/heads/${base}:refs/remotes/origin/${base}`],
+    30_000,
+  );
+  return { ok: result.ok, message: result.ok ? undefined : result.message };
+}
+
+interface CommitMeta {
+  sha: string;
+  committedAt: string;
+}
+
+async function commitMeta(cwd: string, ref: string): Promise<CommitMeta | undefined> {
+  const result = await tryGit(cwd, ["show", "-s", "--format=%h%x09%cI", ref]);
+  if (!result.ok) return undefined;
+  const [sha = "", committedAt = ""] = result.stdout.trim().split("\t");
+  return sha === "" ? undefined : { sha, committedAt };
+}
+
+export interface KnownBranch {
+  /** 解決に使う ref（リモート追跡参照があればそちら） */
+  ref: string;
+  /** ブランチ名（origin/ を剥がしたもの） */
+  name: string;
+}
+
+/**
+ * ローカルのブランチとリモート追跡参照を列挙する。ネットワークへは行かない。
+ *
+ * 同名がローカルとリモートの両方にあればリモート追跡参照を採る。
+ * PR の base に使うのはリモート側のブランチだから。
+ */
+export async function listKnownBranches(cwd: string): Promise<KnownBranch[]> {
+  const result = await tryGit(cwd, [
+    "for-each-ref",
+    "--format=%(refname:short)",
+    "refs/heads",
+    "refs/remotes/origin",
+  ]);
+  if (!result.ok) return [];
+
+  const found = new Map<string, string>();
+  for (const raw of result.stdout.split("\n")) {
+    const short = raw.trim();
+    if (short === "" || short === "origin/HEAD") continue;
+    if (short.startsWith("origin/")) {
+      found.set(short.slice("origin/".length), short);
+    } else if (!found.has(short)) {
+      found.set(short, short);
     }
   }
-  return { content: undefined, ref: undefined, unavailable: errors.join(" / ") };
+  return [...found].map(([name, ref]) => ({ name, ref }));
+}
+
+/** ancestor が descendant の履歴に含まれているか */
+export async function isAncestor(
+  cwd: string,
+  ancestorRef: string,
+  descendantRef: string,
+): Promise<boolean> {
+  const result = await tryGit(cwd, ["merge-base", "--is-ancestor", ancestorRef, descendantRef]);
+  return result.ok;
+}
+
+/**
+ * 候補のうち、HEAD の履歴に含まれていて**最も近い**ものを返す。
+ *
+ * スタック（デフォルトブランチへマージせず、先行ビルドのブランチから積む）の
+ * 検出に使う。状態を保存せず、ブランチの祖先関係から導出する。
+ *
+ * **既に base に取り込まれている候補は除く。** マージ済みのブランチも HEAD の
+ * 祖先になるため、除かないと「main から切っただけ」をスタックと誤判定する。
+ * base 側は origin/{base} とローカル {base} の両方を見る。片方が古くても
+ * もう片方が取り込みを知っていれば誤判定を避けられる。
+ *
+ * 近さは HEAD までのコミット数で測る。build-01 → build-02 → build-03 と
+ * 積んだとき、build-03 から見れば build-01 も祖先だが、PR の base にすべきは
+ * 直前の build-02 だけ。
+ */
+export async function nearestAncestorBranch(
+  cwd: string,
+  candidates: KnownBranch[],
+  baseRefs: string[],
+  head = "HEAD",
+): Promise<KnownBranch | undefined> {
+  let nearest: { branch: KnownBranch; distance: number } | undefined;
+
+  for (const candidate of candidates) {
+    if (!(await isAncestor(cwd, candidate.ref, head))) continue;
+
+    let merged = false;
+    for (const baseRef of baseRefs) {
+      if (await isAncestor(cwd, candidate.ref, baseRef)) {
+        merged = true;
+        break;
+      }
+    }
+    if (merged) continue;
+
+    const counted = await tryGit(cwd, ["rev-list", "--count", `${candidate.ref}..${head}`]);
+    if (!counted.ok) continue;
+    const distance = Number.parseInt(counted.stdout.trim(), 10);
+    if (!Number.isInteger(distance)) continue;
+
+    if (nearest === undefined || distance < nearest.distance) {
+      nearest = { branch: candidate, distance };
+    }
+  }
+
+  return nearest?.branch;
 }
