@@ -54,7 +54,7 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 
 | コマンド | いつ使うか |
 |---|---|
-| `next [<cycle>]` | 次に着手できるビルドを知りたいとき。複数返れば並行実行できる |
+| `next [<cycle>]` | 次に着手できるビルドを知りたいとき。複数返れば並行実行できる。判定は**いま居る作業ツリー**が基準 |
 | `cycle list [--active]` | 走行中のサイクルを見渡したいとき |
 | `cycle status <cycle>` | 中断からの再開点を知りたいとき。ブランチを切り替えてから実行する |
 | `tasklist read [<cycle>]` | ビルドの一覧と完了状況を見たいとき |
@@ -107,11 +107,14 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 |---|---|
 | `branch verify <phase> [<cycle>]` | 今いるブランチが規則どおりか確認するとき。各フェーズの冒頭とコミット直前 |
 | `pr title <phase> [<cycle>]` | PR タイトルを生成するとき |
+| `pr base <phase> [<cycle>]` | PR のマージ先を決めるとき。PR を作る直前 |
 | `session title <phase> [<cycle>]` | セッション名を生成するとき |
 
 `branch verify` は生成と検証を兼ねています。名前を生成するだけのコマンドを別に持つと、生成しただけで確認しないまま作業する余地が残るためです。
 
-3つとも対象サイクルの設定でテンプレートを展開します。`[branch]` / `[pr]` / `[session]` は[サイクルごとに変えられる](../configuration/config-file.md#サイクルごとに変える)ため、`init` を除いてサイクルの特定が必要です。ID や slug で渡してもディレクトリ名に解決されるので、`002` からも `hikyaku/002-billing/plan` が返ります。
+`pr base` は通常デフォルトブランチを返しますが、先行フェーズのブランチから積んでいる（スタックしている）場合はそのブランチを返します。スタックしているかどうかは状態として保存せず、同じサイクルの Hikyaku ブランチのうち「HEAD の履歴に含まれていて、まだデフォルトブランチに取り込まれていない、最も近いもの」として導出します。積んだままデフォルトブランチへ PR を作ると先行ビルドの差分まで含んだ PR になるため、PR の作成直前とレビューの差分基準にこの値を使います。
+
+`branch verify` / `pr title` / `session title` は対象サイクルの設定でテンプレートを展開します。`[branch]` / `[pr]` / `[session]` は[サイクルごとに変えられる](../configuration/config-file.md#サイクルごとに変える)ため、`init` を除いてサイクルの特定が必要です。ID や slug で渡してもディレクトリ名に解決されるので、`002` からも `hikyaku/002-billing/plan` が返ります。
 
 ## 外部連携
 

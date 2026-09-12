@@ -4,7 +4,14 @@ import { flagString, type ParsedArgs } from "../lib/args.mts";
 import { branchName, isPhase, parseBranch, renderPrTitle, type Phase } from "../lib/branch.mts";
 import { loadConfig, type ResolvedConfig } from "../lib/config.mts";
 import { HikyakuError, ValidationError } from "../lib/errors.mts";
-import { currentBranch, defaultBranch } from "../lib/git.mts";
+import {
+  currentBranch,
+  defaultBranch,
+  listKnownBranches,
+  localSha,
+  nearestAncestorBranch,
+  type KnownBranch,
+} from "../lib/git.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { openCycle } from "../lib/workspace.mts";
@@ -46,6 +53,41 @@ function scopeFor(args: ParsedArgs, phase: Phase, operand: string | undefined): 
   }
   const opened = openCycle(args, operand);
   return { config: opened.config, cycle: opened.context.name };
+}
+
+/**
+ * スタック元のブランチを導出する。
+ *
+ * デフォルトブランチへマージせず、先行フェーズのブランチから積んだ場合、
+ * PR の base はデフォルトブランチではなくそのブランチになる。状態は保存せず、
+ * 「同じサイクルの Hikyaku ブランチのうち、HEAD の祖先で、まだ base に
+ * 取り込まれていない、最も近いもの」として導出する。
+ *
+ * 積んでいなければ undefined を返す（＝PR の base はデフォルトブランチ）。
+ */
+async function stackParent(
+  config: ResolvedConfig,
+  cycle: string | undefined,
+  phase: Phase,
+  base: string | undefined,
+): Promise<KnownBranch | undefined> {
+  if (cycle === undefined) return undefined;
+
+  const candidates = (await listKnownBranches(config.repoRoot)).filter((branch) => {
+    if (branch.name === base) return false;
+    const parsed = parseBranch(config.branch, branch.name);
+    return parsed !== undefined && parsed.cycle === cycle && parsed.phase !== phase;
+  });
+  if (candidates.length === 0) return undefined;
+
+  const baseRefs: string[] = [];
+  if (base !== undefined) {
+    for (const ref of [`origin/${base}`, base]) {
+      if ((await localSha(config.repoRoot, ref)) !== undefined) baseRefs.push(ref);
+    }
+  }
+
+  return nearestAncestorBranch(config.repoRoot, candidates, baseRefs);
 }
 
 register({
@@ -98,7 +140,7 @@ register({
     "サイクルを省略すると通常の解決に委ねますが、現在のブランチも判断材料に",
     "使うため、フェーズのサイクルが分かっている場合は明示してください。",
   ].join("\n"),
-  run: ({ args, operands }) => {
+  run: async ({ args, operands }) => {
     const phase = requirePhase(operands[0]);
     const { config, cycle } = scopeFor(args, phase, operands[1]);
     const expected = branchName(config.branch, phase, cycle);
@@ -110,8 +152,28 @@ register({
     // base が分からなければ true/false のどちらとも言えない。推測せず null で返す
     const onBaseBranch = base === undefined || actual === undefined ? null : actual === base;
 
-    emit({ ok, expected, actual, phase, cycle, parsed, baseBranch: base ?? null, onBaseBranch }, () => {
-      if (ok) return `✓ ${actual}`;
+    const stacked = await stackParent(config, cycle, phase, base);
+    const prBase = stacked?.name ?? base;
+
+    emit(
+      {
+        ok,
+        expected,
+        actual,
+        phase,
+        cycle,
+        parsed,
+        baseBranch: base ?? null,
+        onBaseBranch,
+        stackedOn: stacked?.name ?? null,
+        prBase: prBase ?? null,
+      },
+      () => {
+      if (ok) {
+        return stacked === undefined
+          ? `✓ ${actual}`
+          : `✓ ${actual}\nスタック元: ${stacked.name}（PR の base はこのブランチ）`;
+      }
 
       const lines = [
         `期待するブランチ: ${expected}`,
@@ -141,8 +203,18 @@ register({
         "",
         `Hikyaku の規則に従う場合: git switch ${expected} || git switch -c ${expected}`,
       );
+
+      if (parsed !== undefined && cycle !== undefined && parsed.cycle === cycle && actual !== undefined) {
+        lines.push(
+          "",
+          `同じサイクルの ${parsed.phase} のブランチに居ます。ここから ${expected} を切ると、`,
+          "先行フェーズの成果を取り込んだ**スタック**になります。デフォルトブランチへ",
+          `マージされていなくても着手できますが、PR の base は ${actual} になります。`,
+        );
+      }
       return lines.join("\n");
-    });
+      },
+    );
 
     if (!ok) {
       throw new ValidationError([
@@ -182,6 +254,52 @@ register({
       title: flagString(args, "build-title"),
     });
     emit({ title, phase, cycle }, () => title);
+  },
+});
+
+register({
+  name: "pr base",
+  summary: "PR のマージ先ブランチを返す（スタックしていればスタック元）",
+  usage: "hikyaku pr base <phase> [<cycle>] [--root <path>] [--json]",
+  details: [
+    "通常はデフォルトブランチを返します。先行フェーズのブランチから積んでいる",
+    "（スタックしている）場合は、そのブランチを返します。",
+    "",
+    "スタック元は状態として保存せず、ブランチの祖先関係から導出します。同じサイクルの",
+    "Hikyaku ブランチのうち、HEAD の履歴に含まれていて、**まだ base に取り込まれて",
+    "いない**、最も近いものがスタック元です。マージ済みのブランチも HEAD の祖先に",
+    "なるため、取り込み済みを除かないと「デフォルトブランチから切っただけ」を",
+    "スタックと誤判定します。",
+    "",
+    "  stackedOn: null    積んでいない。PR の base はデフォルトブランチ",
+    "  stackedOn: <name>  積んでいる。PR の base はそのブランチ",
+    "",
+    "積んだままデフォルトブランチへ PR を作ると、先行ビルドの差分まで含んだ PR に",
+    "なります。**PR を作る直前に実行してください。**",
+    "",
+    "レビューの差分基準（git merge-base <base> HEAD）にも同じ値を使います。",
+  ].join("\n"),
+  run: async ({ args, operands }) => {
+    const phase = requirePhase(operands[0]);
+    const { config, cycle } = scopeFor(args, phase, operands[1]);
+    const base = config.baseBranch ?? defaultBranch(config.repoRoot);
+    const stacked = await stackParent(config, cycle, phase, base);
+    const prBase = stacked?.name ?? base;
+
+    if (prBase === undefined) {
+      throw new HikyakuError(
+        "PR のマージ先を決められません",
+        "base_branch を設定するか、origin/HEAD が解決できる状態にしてください。",
+      );
+    }
+
+    emit(
+      { base: prBase, stackedOn: stacked?.name ?? null, baseBranch: base ?? null, phase, cycle },
+      () =>
+        stacked === undefined
+          ? prBase
+          : `${prBase}\n（スタック元です。デフォルトブランチ ${base ?? "?"} ではありません）`,
+    );
   },
 });
 
