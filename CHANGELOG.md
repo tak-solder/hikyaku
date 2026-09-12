@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 各エントリには「何が変わったか」と「利用者に必要な対応」を書きます。設計判断の経緯は issue と `docs/` を参照してください。
 
+## [2.1.0]
+
+builder（Step 3）の `doc-reviewer` レビューの実行タイミングを変更した。
+
+### Changed
+
+- **`builder` Step 3 の `plan_review` タイミング**: `express` / `standard` では、`doc-reviewer` を plan.md 作成直後（`context: plan`）と test-spec.md 作成後（`context: test-spec`、新設）の2回に分けて起動するようにした。以前は test-spec.md 作成後に `context: plan` のレビューをまとめて1回だけ起動しており、test-spec.md 自体はレビューされていなかった。`thorough` は G7（plan単独の人間承認）が plan.md 単独の確認を兼ねるため、`doc-reviewer` は従来どおり test-spec.md 作成後の `context: plan` にまとめて実行する（挙動変更なし）
+- **`doc-reviewer` に `context: test-spec` を追加**: test-spec.md の受け入れ基準網羅漏れ・実装ステップ網羅漏れ・境界値/異常系の欠落・Given/When/Then の具体性不足・重複シナリオを証拠ベースで報告する
+
+### Migration
+
+互換性への影響はない。`express` / `standard` プロファイルのサイクルでは、次回の builder 実行から `doc-reviewer` が2回起動するようになる（実行コストが微増する）。`economy`（`plan_review` 無効）と `thorough`（挙動維持）は影響を受けない。
+
 ## [2.0.0]
 
 複数サイクルの並行実行、ファイル正への一本化、決定的な処理のスクリプト化を軸とした大規模改修。設計の経緯と判断理由は [issue #26](https://github.com/tak-solder/hikyaku/issues/26) に記録している。
