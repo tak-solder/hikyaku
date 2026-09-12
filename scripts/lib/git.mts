@@ -172,17 +172,67 @@ export interface FileAtRef {
 }
 
 /**
- * デフォルトブランチの tree からファイルを読む。
+ * ref の tree からファイルを読む。
  *
  * **「ファイルが無い」と「ref が読めない」を分ける。** 前者は確定情報で、
- * 「このサイクルはまだデフォルトブランチに出ていない = 完了0件」を意味する。
- * 後者だけが本当の不明で、呼び出し元の縮退が要る。両方を同じ失敗に潰すと、
- * architect の PR が未マージなだけの状態で作業ツリーへ縮退し、
- * ビルドブランチ上の自分の PR 列を「マージ済み」として拾ってしまう。
+ * 「その断面にはまだ無い」を意味する。後者だけが本当の不明で、呼び出し元の
+ * 縮退が要る。両方を同じ失敗に潰すと、まだ出ていないだけの状態を
+ * 「読めなかった」と誤解し、作業ツリーへ縮退して嘘を拾う。
+ *
+ * 判定は終了コードで行う。fatal メッセージは locale 依存なので、
+ * 文字列の一致で場合分けしてはいけない。
+ */
+export async function readFileAtRef(
+  cwd: string,
+  ref: string,
+  repoRelativePath: string,
+): Promise<FileAtRef> {
+  const miss = (unavailable: string): FileAtRef => ({
+    state: "unreadable",
+    content: undefined,
+    ref: undefined,
+    sha: undefined,
+    committedAt: undefined,
+    unavailable,
+  });
+
+  if ((await localSha(cwd, ref)) === undefined) return miss(`${ref}: ref がありません`);
+
+  const meta = await commitMeta(cwd, ref);
+  const exists = await tryGit(cwd, ["cat-file", "-e", `${ref}:${repoRelativePath}`]);
+  if (!exists.ok) {
+    return {
+      state: "absent",
+      content: undefined,
+      ref,
+      sha: meta?.sha,
+      committedAt: meta?.committedAt,
+      unavailable: undefined,
+    };
+  }
+
+  const shown = await tryGit(cwd, ["show", `${ref}:${repoRelativePath}`]);
+  if (!shown.ok) return miss(`${ref}: ${shown.message}`);
+
+  return {
+    state: "found",
+    content: shown.stdout,
+    ref,
+    sha: meta?.sha,
+    committedAt: meta?.committedAt,
+    unavailable: undefined,
+  };
+}
+
+/**
+ * デフォルトブランチの tree からファイルを読む。
  *
  * origin/{base} を先に見る。ローカルの {base} は fetch していなければ古い。
  * ただし origin/{base} も「最後に fetch した時点のローカルコピー」であって
  * リモートそのものではないので、鮮度は baseFreshness で別に見る。
+ *
+ * 「ファイルが無い（absent）」を見つけた時点で確定として返す。origin/{base} に
+ * 無いものはマージされていない、が答えなので、ローカルの {base} へは進まない。
  */
 export async function readFileAtDefaultBranch(
   cwd: string,
@@ -192,38 +242,9 @@ export async function readFileAtDefaultBranch(
   const errors: string[] = [];
 
   for (const ref of [`origin/${base}`, base]) {
-    if ((await localSha(cwd, ref)) === undefined) {
-      errors.push(`${ref}: ref がありません`);
-      continue;
-    }
-
-    const meta = await commitMeta(cwd, ref);
-    const exists = await tryGit(cwd, ["cat-file", "-e", `${ref}:${repoRelativePath}`]);
-    if (!exists.ok) {
-      return {
-        state: "absent",
-        content: undefined,
-        ref,
-        sha: meta?.sha,
-        committedAt: meta?.committedAt,
-        unavailable: undefined,
-      };
-    }
-
-    const shown = await tryGit(cwd, ["show", `${ref}:${repoRelativePath}`]);
-    if (!shown.ok) {
-      errors.push(`${ref}: ${shown.message}`);
-      continue;
-    }
-
-    return {
-      state: "found",
-      content: shown.stdout,
-      ref,
-      sha: meta?.sha,
-      committedAt: meta?.committedAt,
-      unavailable: undefined,
-    };
+    const result = await readFileAtRef(cwd, ref, repoRelativePath);
+    if (result.state !== "unreadable") return result;
+    if (result.unavailable !== undefined) errors.push(result.unavailable);
   }
 
   return {
@@ -234,6 +255,28 @@ export async function readFileAtDefaultBranch(
     committedAt: undefined,
     unavailable: errors.join(" / "),
   };
+}
+
+/**
+ * base のリモート追跡参照だけを更新する。
+ *
+ * 作業ツリーにもローカルの {base} にも触らない。**着手判定はこの ref を見ないので、
+ * fetch の成否で着手できるかが変わることはない。** 変わるのは「マージ済み」の
+ * ラベル、completed の判定、pr base の取り込み除外の精度だけ。
+ *
+ * 明示 refspec を使う。`git fetch origin main` が追跡参照まで更新するかは
+ * 設定依存なので、更新したい ref を書く。
+ */
+export async function fetchBaseRef(
+  cwd: string,
+  base: string,
+): Promise<{ ok: boolean; message: string | undefined }> {
+  const result = await tryGit(
+    cwd,
+    ["fetch", "--quiet", "origin", `+refs/heads/${base}:refs/remotes/origin/${base}`],
+    30_000,
+  );
+  return { ok: result.ok, message: result.ok ? undefined : result.message };
 }
 
 interface CommitMeta {

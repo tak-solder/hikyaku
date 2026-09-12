@@ -31,8 +31,9 @@ import { emit, table } from "../lib/output.mts";
 import { pluginVersion } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
 import { formatRef } from "../lib/refs.mts";
-import { isComplete, loadTasklist } from "../lib/tasklist.mts";
-import { openCycle } from "../lib/workspace.mts";
+import { buildDirName, isComplete, loadTasklist } from "../lib/tasklist.mts";
+import { resolveViews, sectionNote } from "../lib/views.mts";
+import { openCycle, type CycleContext } from "../lib/workspace.mts";
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
@@ -458,27 +459,52 @@ register({
     "  planning      user-stories.md が無い",
     "  architecting  user-stories.md はあるが tasklist.md（またはビルド）が無い",
     "  building      未完了のビルドがある",
-    "  completed     全ビルドが完了。だが永続ドキュメントへの昇格がまだ",
+    "  completed     **全ビルドがデフォルトブランチにマージ済み**。だが昇格がまだ",
     "  closed        cycles.md に記録された status",
+    "",
+    "ビルド列は「マージ済み / 全体」です。このツリーでは完了しているがまだ",
+    "マージされていないビルドがあれば (+n) が付きます（スタック中など）。",
+    "デフォルトブランチを読めない場合は ?/全体 になります。",
+    "",
+    "**ネットワークへは行きません。** リモート追跡参照をそのまま読むため、",
+    "最後に fetch した時点より後のマージは反映されません。1つのサイクルを",
+    "詳しく見るときは cycle status を使ってください。",
   ].join("\n"),
-  run: ({ args }) => {
-    const config = loadConfig({ root: flagString(args, "root") });
+  run: async ({ args }) => {
+    const root = flagString(args, "root");
+    const config = loadConfig({ root });
     const records = loadCycles(config.hikyakuRoot);
     const onlyActive = flagBoolean(args, "active");
 
-    const rows = records
-      .filter((record) => !onlyActive || record.status === "active")
-      .map((record) => {
-        const directory = cycleDir(config.hikyakuRoot, record);
-        const builds = loadTasklist(directory);
-        const state = deriveState(directory, record, builds);
-        const done = builds.filter(isComplete).length;
-        return {
-          record,
-          phase: state.phase,
-          progress: builds.length > 0 ? `${done}/${builds.length}` : "—",
-        };
-      });
+    const rows = await Promise.all(
+      records
+        .filter((record) => !onlyActive || record.status === "active")
+        .map(async (record) => {
+          const directory = cycleDir(config.hikyakuRoot, record);
+          // base_branch はサイクル側で上書きできるので、そのサイクルの設定で読む
+          const cycleConfig = loadConfig({ root, cycleDir: directory });
+          const ctx: CycleContext = {
+            record,
+            name: cycleDirName(record),
+            directory,
+            builds: loadTasklist(directory),
+            source: "explicit",
+          };
+          const views = await resolveViews(cycleConfig, ctx, { fetch: false });
+          const state = deriveState(directory, record, views.builds, views.mergedIds);
+          const total = views.builds.length;
+          const merged =
+            views.mergedIds === undefined
+              ? "?"
+              : String(views.builds.filter((b) => views.mergedIds?.has(b.id)).length);
+          const pending = state.mergePending.length > 0 ? ` (+${state.mergePending.length})` : "";
+          return {
+            record,
+            phase: state.phase,
+            progress: total > 0 ? `${merged}/${total}${pending}` : "—",
+          };
+        }),
+    );
 
     emit(
       { cycles: rows.map((row) => ({ ...row.record, phase: row.phase, progress: row.progress })) },
@@ -503,7 +529,7 @@ register({
 register({
   name: "cycle status",
   summary: "1つのサイクルの状態と、中断していればその再開点を表示する",
-  usage: "hikyaku cycle status <id|slug> [--root <path>] [--json]",
+  usage: "hikyaku cycle status <id|slug> [--no-fetch] [--root <path>] [--json]",
   details: [
     "ブランチ上の成果物の有無から「どこまで進んだか」を割り出します。",
     "成果物が1つできるごとにコミット & push されていることが前提です",
@@ -513,6 +539,11 @@ register({
     "",
     "着手中のブランチは origin から取得します。到達できない場合は表示が落ちるだけで、",
     "着手可能・待機の判定には影響しません。",
+    "",
+    "中断点は **HEAD の tasklist.md** で未完了のビルドから割り出します。",
+    "デフォルトブランチ基準にすると、マージ待ちで完了済みの先行ビルドが未完了に",
+    "混ざり、スタック中に中断点が古いビルドへ戻ります。",
+    "completed かどうかだけはリポジトリ全体の問いなので、デフォルトブランチを見ます。",
   ].join("\n"),
   run: async ({ args, operands }) => {
     const root = flagString(args, "root");
@@ -527,10 +558,22 @@ register({
     // [branch] はサイクル側で上書きできるので、着手中ブランチの絞り込みには
     // そのサイクルの設定を使う。ベースの規則で絞ると1件も当たらない
     const config = loadConfig({ root, cycleDir: directory });
-    const builds = loadTasklist(directory);
-    const state = deriveState(directory, record, builds);
 
     const remote = await listRemoteBranches(config.repoRoot);
+    const ctx: CycleContext = {
+      record,
+      name,
+      directory,
+      builds: loadTasklist(directory),
+      source: "explicit",
+    };
+    const views = await resolveViews(config, ctx, {
+      remoteTips: remote.tips,
+      fetch: !flagBoolean(args, "no-fetch"),
+    });
+    const builds = views.builds;
+    const state = deriveState(directory, record, builds, views.mergedIds);
+
     const prefix = branchName(config.branch, "plan", name).replace(/plan$/, "");
     const inProgress = remote.names.filter((branchRef) => branchRef.startsWith(prefix));
 
@@ -541,6 +584,14 @@ register({
         resumeAt: state.resumeAt,
         artifacts: state.artifacts,
         branches: inProgress,
+        mergePending: state.mergePending,
+        readiness: { source: views.head.source, ref: views.head.ref ?? null, sha: views.head.sha ?? null },
+        merged: {
+          source: views.base.source,
+          ref: views.base.ref ?? null,
+          sha: views.base.sha ?? null,
+          ids: views.mergedIds === undefined ? null : [...views.mergedIds],
+        },
         remoteUnavailable: remote.unavailable,
         suggestion: suggestCommand(state.phase, name),
       },
@@ -561,8 +612,16 @@ register({
         }
 
         if (builds.length > 0) {
-          const done = builds.filter(isComplete).length;
-          lines.push("", `  ビルド: ${done}/${builds.length} 完了`);
+          const merged =
+            views.mergedIds === undefined
+              ? "?"
+              : String(builds.filter((b) => views.mergedIds?.has(b.id)).length);
+          lines.push("", `  ビルド: ${merged}/${builds.length} マージ済み`);
+          if (state.mergePending.length > 0) {
+            lines.push(
+              `    このツリーでは完了・マージ待ち: ${state.mergePending.map(buildDirName).join(", ")}`,
+            );
+          }
         }
 
         if (remote.unavailable !== undefined) {
@@ -570,6 +629,13 @@ register({
         } else if (inProgress.length > 0) {
           lines.push("", "  着手中のブランチ:", ...inProgress.map((b) => `    ${b}`));
         }
+
+        lines.push(
+          "",
+          `  ${sectionNote("判定", views.head, " の PR 列（未コミットの変更は数えません）")}`,
+          `  ${sectionNote("マージ状況", views.base, " の PR 列")}`,
+        );
+        if (views.fetched) lines.push(`    origin/${views.baseBranch} を更新しました`);
 
         lines.push(
           "",

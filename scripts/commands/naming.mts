@@ -1,6 +1,6 @@
 /** branch name / branch verify / pr title / session title — 命名規則の適用 */
 
-import { flagString, type ParsedArgs } from "../lib/args.mts";
+import { flagBoolean, flagString, type ParsedArgs } from "../lib/args.mts";
 import { branchName, isPhase, parseBranch, renderPrTitle, type Phase } from "../lib/branch.mts";
 import { loadConfig, type ResolvedConfig } from "../lib/config.mts";
 import { HikyakuError, ValidationError } from "../lib/errors.mts";
@@ -8,13 +8,16 @@ import {
   currentBranch,
   defaultBranch,
   listKnownBranches,
+  listRemoteBranches,
   localSha,
   nearestAncestorBranch,
   type KnownBranch,
 } from "../lib/git.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
-import { openCycle } from "../lib/workspace.mts";
+import { normalizeBuildId } from "../lib/tasklist.mts";
+import { resolveViews } from "../lib/views.mts";
+import { openCycle, type CycleContext } from "../lib/workspace.mts";
 
 function requirePhase(raw: string | undefined): Phase {
   if (raw === undefined) {
@@ -36,6 +39,8 @@ interface Scope {
   /** サイクル固有設定を重ねた設定。init ではリポジトリルートの設定 */
   config: ResolvedConfig;
   cycle: string | undefined;
+  /** init 以外では対象サイクル。スタック元の導出に使う */
+  context: CycleContext | undefined;
 }
 
 /**
@@ -49,10 +54,10 @@ interface Scope {
  */
 function scopeFor(args: ParsedArgs, phase: Phase, operand: string | undefined): Scope {
   if (phase === "init") {
-    return { config: loadConfig({ root: flagString(args, "root") }), cycle: undefined };
+    return { config: loadConfig({ root: flagString(args, "root") }), cycle: undefined, context: undefined };
   }
   const opened = openCycle(args, operand);
-  return { config: opened.config, cycle: opened.context.name };
+  return { config: opened.config, cycle: opened.context.name, context: opened.context };
 }
 
 /**
@@ -63,20 +68,40 @@ function scopeFor(args: ParsedArgs, phase: Phase, operand: string | undefined): 
  * 「同じサイクルの Hikyaku ブランチのうち、HEAD の祖先で、まだ base に
  * 取り込まれていない、最も近いもの」として導出する。
  *
+ * 取り込み済みの判定は2つ併用する。
+ *
+ *   祖先関係      git merge-base --is-ancestor で base に含まれるか
+ *   base の PR 列  そのビルドの PR 列がデフォルトブランチで非空か
+ *
+ * 後者が要るのは、**squash merge / rebase merge ではマージ済みでも
+ * ブランチの先端が base の祖先にならない**ため。どれだけ fetch しても
+ * 祖先関係は false のままなので、Hikyaku 自身の完了の定義で補う。
+ *
  * 積んでいなければ undefined を返す（＝PR の base はデフォルトブランチ）。
  */
 async function stackParent(
   config: ResolvedConfig,
-  cycle: string | undefined,
+  context: CycleContext | undefined,
   phase: Phase,
   base: string | undefined,
+  options: { fetch: boolean },
 ): Promise<KnownBranch | undefined> {
-  if (cycle === undefined) return undefined;
+  if (context === undefined) return undefined;
+
+  const views = await resolveViews(config, context, { fetch: options.fetch });
 
   const candidates = (await listKnownBranches(config.repoRoot)).filter((branch) => {
     if (branch.name === base) return false;
     const parsed = parseBranch(config.branch, branch.name);
-    return parsed !== undefined && parsed.cycle === cycle && parsed.phase !== phase;
+    if (parsed === undefined || parsed.cycle !== context.name || parsed.phase === phase) {
+      return false;
+    }
+    // マージ済みのビルドは、祖先関係に関わらずスタック元にならない
+    const buildId = /^build-(\d+)$/.exec(parsed.phase)?.[1];
+    if (buildId !== undefined && views.mergedIds?.has(normalizeBuildId(buildId)) === true) {
+      return false;
+    }
+    return true;
   });
   if (candidates.length === 0) return undefined;
 
@@ -142,7 +167,7 @@ register({
   ].join("\n"),
   run: async ({ args, operands }) => {
     const phase = requirePhase(operands[0]);
-    const { config, cycle } = scopeFor(args, phase, operands[1]);
+    const { config, cycle, context } = scopeFor(args, phase, operands[1]);
     const expected = branchName(config.branch, phase, cycle);
     const actual = currentBranch(config.repoRoot);
     const parsed = actual === undefined ? undefined : parseBranch(config.branch, actual);
@@ -152,7 +177,9 @@ register({
     // base が分からなければ true/false のどちらとも言えない。推測せず null で返す
     const onBaseBranch = base === undefined || actual === undefined ? null : actual === base;
 
-    const stacked = await stackParent(config, cycle, phase, base);
+    // ここは毎フェーズの冒頭とコミット直前に走るので fetch しない。
+    // PR の base として正なのは pr base（そちらは必要なら追跡参照を更新する）
+    const stacked = await stackParent(config, context, phase, base, { fetch: false });
     const prBase = stacked?.name ?? base;
 
     emit(
@@ -260,7 +287,7 @@ register({
 register({
   name: "pr base",
   summary: "PR のマージ先ブランチを返す（スタックしていればスタック元）",
-  usage: "hikyaku pr base <phase> [<cycle>] [--root <path>] [--json]",
+  usage: "hikyaku pr base <phase> [<cycle>] [--no-fetch] [--root <path>] [--json]",
   details: [
     "通常はデフォルトブランチを返します。先行フェーズのブランチから積んでいる",
     "（スタックしている）場合は、そのブランチを返します。",
@@ -281,10 +308,19 @@ register({
   ].join("\n"),
   run: async ({ args, operands }) => {
     const phase = requirePhase(operands[0]);
-    const { config, cycle } = scopeFor(args, phase, operands[1]);
+    const { config, cycle, context } = scopeFor(args, phase, operands[1]);
     const base = config.baseBranch ?? defaultBranch(config.repoRoot);
-    const stacked = await stackParent(config, cycle, phase, base);
+    const stacked = await stackParent(config, context, phase, base, {
+      fetch: !flagBoolean(args, "no-fetch"),
+    });
     const prBase = stacked?.name ?? base;
+
+    // スタック元がリモートに無ければ PR は作れない（マージ後に削除された等）
+    let missingOnRemote = false;
+    if (stacked !== undefined) {
+      const remote = await listRemoteBranches(config.repoRoot);
+      missingOnRemote = remote.unavailable === undefined && !remote.names.includes(stacked.name);
+    }
 
     if (prBase === undefined) {
       throw new HikyakuError(
@@ -294,11 +330,27 @@ register({
     }
 
     emit(
-      { base: prBase, stackedOn: stacked?.name ?? null, baseBranch: base ?? null, phase, cycle },
-      () =>
-        stacked === undefined
-          ? prBase
-          : `${prBase}\n（スタック元です。デフォルトブランチ ${base ?? "?"} ではありません）`,
+      {
+        base: prBase,
+        stackedOn: stacked?.name ?? null,
+        stackedOnMissingOnRemote: missingOnRemote,
+        baseBranch: base ?? null,
+        phase,
+        cycle,
+      },
+      () => {
+        if (stacked === undefined) return prBase;
+        const lines = [prBase, `（スタック元です。デフォルトブランチ ${base ?? "?"} ではありません）`];
+        if (missingOnRemote) {
+          lines.push(
+            "",
+            `! ${stacked.name} は origin にありません。マージ後に削除された可能性があります。`,
+            "  この名前では PR を作れません。ローカルに古い追跡参照が残っていないか",
+            "  確認してください（git fetch --prune origin）。",
+          );
+        }
+        return lines.join("\n");
+      },
     );
   },
 });

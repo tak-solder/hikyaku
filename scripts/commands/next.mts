@@ -1,15 +1,8 @@
 /** next — 着手可能なビルドを返す */
 
-import { relative } from "node:path";
+import { flagBoolean } from "../lib/args.mts";
 import { branchName, buildPhase } from "../lib/branch.mts";
-import type { ResolvedConfig } from "../lib/config.mts";
-import {
-  baseFreshness,
-  defaultBranch,
-  listRemoteBranches,
-  readFileAtDefaultBranch,
-  type BaseFreshness,
-} from "../lib/git.mts";
+import { listRemoteBranches } from "../lib/git.mts";
 import { deriveState, suggestCommand } from "../lib/phase.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
@@ -17,36 +10,40 @@ import {
   blockedBuilds,
   buildDirName,
   isComplete,
-  parseTasklist,
   readyBuilds,
-  tasklistPath,
   type BuildRecord,
 } from "../lib/tasklist.mts";
-import { openCycle, type CycleContext } from "../lib/workspace.mts";
+import { resolveViews, sectionNote, type TasklistViews } from "../lib/views.mts";
+import { openCycle } from "../lib/workspace.mts";
 
 register({
   name: "next",
   summary: "着手可能なビルドを返す（複数返る場合は並行実行できる）",
-  usage: "hikyaku next [<cycle>] [--root <path>] [--json]",
+  usage: "hikyaku next [<cycle>] [--no-fetch] [--root <path>] [--json]",
   details: [
     "答える問いは「依存ビルドがマージされたか」ではなく、",
-    "**「依存ビルドの成果が、いま居る作業ツリーに在るか」** です。",
-    "マージは成果がツリーに入る経路の1つで、先行ビルドのブランチから積む",
-    "（スタックする）のがもう1つです。どちらでも着手できます。",
+    "**「依存ビルドの成果が、いま居るブランチの履歴に在るか」** です。",
+    "マージは成果が履歴に入る経路の1つで、先行ビルドのブランチから積む",
+    "（スタックする）のがもう1つです。**どちらでも着手できます。**",
     "",
-    "判定は作業ツリーの tasklist.md の PR 列で行います。PR 列の更新は当該ビルドの",
-    "実装と同じブランチに同梱されるため、**作業ツリーで PR 列が非空であること自体が、",
-    "その実装が自分のツリーの履歴に在ることを意味します**。マージで入ってきた場合も、",
-    "スタックで積んだ場合も同じです。",
+    "tasklist.md を3つの断面で読み、buildID で突き合わせます。",
+    "",
+    "  一覧・依存グラフ   作業ツリー    まだコミットしていない追加分も候補に出すため",
+    "  PR 列（着手判定）  HEAD          「実装が自分の履歴に在る」ことの確認",
+    "  PR 列（マージ済み） origin/{base} 依存のラベルと、サイクルが完了したかの判定",
+    "",
+    "PR 列の更新は実装と同じコミットに同梱されるため、**HEAD で PR 列が非空で",
+    "あること自体が、その実装が自分の履歴に在ることを意味します**。作業ツリーを",
+    "読むと未コミットの編集まで数えてしまうため、HEAD を見ます。",
     "",
     "縮退は常に安全側に倒れます。デフォルトブランチに居て先行ビルドが未マージなら",
     "PR 列は空なので待機中になり、手元に無いコードの上に実装を始めることはありません。",
-    "ネットワークにもリモート追跡参照にも依存しないため、古い origin/{base} で",
-    "判定が変わることもありません。",
+    "**着手判定は HEAD までで閉じるので、ネットワークにもリモート追跡参照にも",
+    "依存しません。**",
     "",
-    "デフォルトブランチの tasklist.md は「マージ済みかどうか」のラベル付けと、",
-    "フェーズ判定（サイクルが完了したか）にだけ使います。読めなくても",
-    "着手可能・待機の判定には影響しません。",
+    "origin/{base} がリモートの先端と食い違う場合だけ、その追跡参照を1本",
+    "更新します（作業ツリーにもローカルの {base} にも触りません）。失敗しても",
+    "警告するだけで、着手可能・待機の判定は変わりません。--no-fetch で無効にできます。",
     "",
     "着手中の表示には origin のブランチ一覧を使いますが、これも判定には影響しません。",
     "マージ後にブランチを削除しない設定のリポジトリでは残存ブランチが「着手中」に",
@@ -55,17 +52,18 @@ register({
   run: async ({ args, operands }) => {
     const { config, context: ctx } = openCycle(args, operands[0]);
 
-    // 着手可能・待機は作業ツリーで判定する。これが「このツリーから着手できるか」の答え
-    const builds = ctx.builds;
+    const remote = await listRemoteBranches(config.repoRoot);
+    const views = await resolveViews(config, ctx, {
+      remoteTips: remote.tips,
+      fetch: !flagBoolean(args, "no-fetch"),
+    });
+
+    // 一覧は作業ツリー、PR 列は HEAD。これが「このツリーから着手できるか」の答え
+    const builds = views.builds;
     const ready = readyBuilds(builds);
     const blocked = blockedBuilds(builds);
 
-    const remote = await listRemoteBranches(config.repoRoot);
-    const merged = await mergedView(config, ctx, remote.tips);
-
-    // フェーズ判定だけは base の tasklist を使う。作業ツリーを渡すと、最後のビルドで
-    // tasklist done した直後に「completed」と出て close-cycle を勧めてしまう
-    const state = deriveState(ctx.directory, ctx.record, merged.builds);
+    const state = deriveState(ctx.directory, ctx.record, builds, views.mergedIds);
 
     const branchFor = (build: BuildRecord): string =>
       branchName(config.branch, buildPhase(build.id), ctx.name);
@@ -76,10 +74,10 @@ register({
     // 待機中のビルドにブランチがあるなら、他セッションが積んで作業している可能性がある
     const blockedWithBranch = blocked.filter((build) => hasBranch(build));
 
-    // 依存が作業ツリーにしか無い＝スタックしている
-    const stacked = ready.some((build) =>
-      build.dependsOn.some((dep) => !merged.mergedIds.has(dep)),
-    );
+    // 依存が HEAD には在るが base には無い＝スタックしている
+    const stacked =
+      views.mergedIds !== undefined &&
+      ready.some((build) => build.dependsOn.some((dep) => !views.mergedIds?.has(dep)));
 
     emit(
       {
@@ -89,21 +87,20 @@ register({
         inProgress: inProgress.map((b) => b.id),
         blocked: blocked.map((b) => b.id),
         blockedWithBranch: blockedWithBranch.map((b) => b.id),
+        mergePending: state.mergePending,
         stacked,
-        readiness: { source: "worktree", path: merged.relativePath },
+        list: { source: "worktree", path: views.relativePath },
+        readiness: sectionJson(views.head),
         merged: {
-          source: merged.source,
-          ref: merged.ref ?? null,
-          sha: merged.sha ?? null,
-          committedAt: merged.committedAt ?? null,
-          ids: [...merged.mergedIds],
-          unavailable: merged.unavailable ?? null,
+          ...sectionJson(views.base),
+          ids: views.mergedIds === undefined ? null : [...views.mergedIds],
         },
         base: {
-          branch: merged.base ?? null,
-          stale: merged.freshness.stale ?? null,
-          remote: merged.freshness.remote ?? null,
-          local: merged.freshness.local ?? null,
+          branch: views.baseBranch ?? null,
+          stale: views.freshness.stale ?? null,
+          remote: views.freshness.remote ?? null,
+          local: views.freshness.local ?? null,
+          fetched: views.fetched,
         },
         remoteUnavailable: remote.unavailable,
       },
@@ -115,7 +112,11 @@ register({
             `このサイクルはまだビルド段階ではありません。`,
             "",
             `  ${suggestCommand(state.phase, ctx.name)}`,
+            "",
+            sectionNote("判定", views.head, " の PR 列（未コミットの変更は数えません）"),
+            sectionNote("マージ状況", views.base, " の PR 列"),
           );
+          if (views.fetched) lines.push(`  origin/${views.baseBranch} を更新しました`);
           return lines.join("\n");
         }
 
@@ -124,9 +125,7 @@ register({
           lines.push("  （なし）");
         } else {
           for (const build of available) {
-            lines.push(
-              `  ${buildDirName(build.id)}  ${build.title}${dependencyNote(build, merged)}`,
-            );
+            lines.push(`  ${buildDirName(build.id)}  ${build.title}${dependencyNote(build, views)}`);
           }
         }
 
@@ -152,25 +151,44 @@ register({
           }
         }
 
-        lines.push("", `判定: 作業ツリーの ${merged.relativePath}`, mergedSourceNote(merged));
+        if (ready.length === 0 && blocked.length === 0 && state.mergePending.length > 0) {
+          lines.push(
+            "",
+            `このツリーの全ビルドは完了しています。マージ待ち: ${state.mergePending
+              .map(buildDirName)
+              .join(", ")}`,
+            "  マージされると close-cycle に進めます。",
+          );
+        }
+
+        lines.push(
+          "",
+          sectionNote("判定", views.head, " の PR 列（未コミットの変更は数えません）"),
+          `  一覧と依存グラフは作業ツリーの ${views.relativePath} から`,
+          sectionNote("マージ状況", views.base, " の PR 列"),
+        );
+
+        if (views.fetched) {
+          lines.push(`  origin/${views.baseBranch} を更新しました`);
+        }
 
         if (stacked) {
           lines.push(
             "",
             "! 依存ビルドがデフォルトブランチに入っていません（スタック）。",
-            "  成果はこのツリーに在るので着手できますが、**PR の base はデフォルトブランチ",
-            "  ではなくスタック元のブランチ**になります。",
+            "  成果はこのツリーに在るので着手できますが、**PR の base はデフォルト",
+            "  ブランチではなくスタック元のブランチ**になります。",
             `  base は hikyaku pr base build-NN ${ctx.name} で確認してください。`,
           );
         }
 
-        if (merged.freshness.stale === true) {
+        if (views.freshness.stale === true) {
           lines.push(
             "",
-            `! ローカルの origin/${merged.base} はリモートより古いようです` +
-              `（リモート: ${short(merged.freshness.remote)} / 手元: ${short(merged.freshness.local)}）。`,
+            `! ローカルの origin/${views.baseBranch} がリモートより古いままです` +
+              `（リモート: ${short(views.freshness.remote)} / 手元: ${short(views.freshness.local)}）。`,
             "  マージ済みラベルが古く見えます。着手可能・待機の判定には影響しません。",
-            `  git fetch origin ${merged.base} で更新できます。`,
+            `  git fetch origin ${views.baseBranch} で更新できます。`,
           );
         }
 
@@ -188,141 +206,27 @@ register({
   },
 });
 
-/** マージ済みラベルとフェーズ判定に使う、デフォルトブランチ側の見え方 */
-interface MergedView {
-  /** フェーズ判定に渡すビルド（PR 列は base 由来） */
-  builds: BuildRecord[];
-  /** base 上で PR 列が埋まっている＝マージ済みのビルド */
-  mergedIds: Set<string>;
-  /**
-   * ref      … base の tasklist を読めた
-   * absent   … base に tasklist がまだ無い（＝マージ済み0件と確定）
-   * worktree … base を読めず、フェーズ判定も作業ツリーに縮退した
-   */
-  source: "ref" | "absent" | "worktree";
-  base: string | undefined;
-  ref: string | undefined;
-  sha: string | undefined;
-  committedAt: string | undefined;
-  unavailable: string | undefined;
-  freshness: BaseFreshness;
-  /** 判定に使った作業ツリーの tasklist（リポジトリ相対） */
-  relativePath: string;
-}
-
-/**
- * デフォルトブランチ側の tasklist を読む。
- *
- * **着手可能・待機の判定には使わない。** 使うのはマージ済みラベルと、
- * 「サイクルが完了したか」というリポジトリ全体の問い（フェーズ判定）だけ。
- * ここが古くても読めなくても、着手可能の判定は変わらない。
- *
- * base に tasklist が無い（architect の PR がまだマージされていない）場合は
- * 「マージ済み0件」と確定できるので、作業ツリーへ縮退しない。縮退すると
- * ビルドブランチ上の自分の PR 列を「マージ済み」として拾ってしまう。
- */
-async function mergedView(
-  config: ResolvedConfig,
-  ctx: CycleContext,
-  remoteTips: Map<string, string>,
-): Promise<MergedView> {
-  const relativePath = relative(config.repoRoot, tasklistPath(ctx.directory));
-  const base = config.baseBranch ?? defaultBranch(config.repoRoot);
-
-  const fallback = (unavailable: string, freshness: BaseFreshness): MergedView => ({
-    builds: ctx.builds,
-    mergedIds: new Set(ctx.builds.filter(isComplete).map((b) => b.id)),
-    source: "worktree",
-    base,
-    ref: undefined,
-    sha: undefined,
-    committedAt: undefined,
-    unavailable,
-    freshness,
-    relativePath,
-  });
-
-  if (base === undefined) {
-    return fallback("デフォルトブランチを特定できません", {
-      remote: undefined,
-      local: undefined,
-      stale: undefined,
-    });
-  }
-
-  const freshness = await baseFreshness(config.repoRoot, base, remoteTips.get(base));
-  const file = await readFileAtDefaultBranch(config.repoRoot, base, relativePath);
-
-  if (file.state === "unreadable") {
-    return fallback(file.unavailable ?? "デフォルトブランチを読めません", freshness);
-  }
-
-  if (file.state === "absent") {
-    return {
-      builds: ctx.builds.map((build) => ({ ...build, pr: "" })),
-      mergedIds: new Set(),
-      source: "absent",
-      base,
-      ref: file.ref,
-      sha: file.sha,
-      committedAt: file.committedAt,
-      unavailable: undefined,
-      freshness,
-      relativePath,
-    };
-  }
-
-  let mergedPr: Map<string, string>;
-  try {
-    mergedPr = new Map(parseTasklist(file.content ?? "").map((build) => [build.id, build.pr]));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return fallback(message.split("\n")[0] ?? message, freshness);
-  }
-
-  const mergedIds = new Set(
-    [...mergedPr].filter(([, pr]) => pr !== "").map(([id]) => id),
-  );
-
-  return {
-    builds: ctx.builds.map((build) => ({ ...build, pr: mergedPr.get(build.id) ?? "" })),
-    mergedIds,
-    source: "ref",
-    base,
-    ref: file.ref,
-    sha: file.sha,
-    committedAt: file.committedAt,
-    unavailable: undefined,
-    freshness,
-    relativePath,
-  };
-}
-
 /** 依存が「マージ済み」か「このツリーにしか無い（スタック）」かを添える */
-function dependencyNote(build: BuildRecord, merged: MergedView): string {
+function dependencyNote(build: BuildRecord, views: TasklistViews): string {
   if (build.dependsOn.length === 0) return "  依存: なし";
 
   const labelled = build.dependsOn.map((dep) => {
-    if (merged.source === "worktree") return buildDirName(dep);
-    return merged.mergedIds.has(dep)
+    if (views.mergedIds === undefined) return buildDirName(dep);
+    return views.mergedIds.has(dep)
       ? `${buildDirName(dep)}（マージ済み）`
       : `${buildDirName(dep)}（このツリーに含まれる）`;
   });
   return `  依存: ${labelled.join(", ")}`;
 }
 
-function mergedSourceNote(merged: MergedView): string {
-  const stamp = merged.committedAt === undefined ? "" : `, ${merged.committedAt.slice(0, 10)}`;
-  const at = `${merged.ref}（${merged.sha ?? "?"}${stamp}）`;
-
-  if (merged.source === "ref") return `マージ状況: ${at} の tasklist.md より`;
-  if (merged.source === "absent") {
-    return `マージ状況: ${at} に tasklist.md がまだありません（マージ済み0件として扱いました）`;
-  }
-  return (
-    `マージ状況: 不明（${merged.unavailable}）。` +
-    "マージ済みラベルとフェーズ判定だけが作業ツリー基準に縮退しています"
-  );
+function sectionJson(section: TasklistViews["head"]): Record<string, unknown> {
+  return {
+    source: section.source,
+    ref: section.ref ?? null,
+    sha: section.sha ?? null,
+    committedAt: section.committedAt ?? null,
+    unavailable: section.unavailable ?? null,
+  };
 }
 
 function short(sha: string | undefined): string {
