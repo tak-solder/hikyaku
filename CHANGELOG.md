@@ -12,12 +12,12 @@ builder（Step 3）の `doc-reviewer` レビューの実行タイミングを変
 
 ### Changed
 
-- **`builder` Step 3 の `plan_review` タイミング**: `express` / `standard` では、`doc-reviewer` を plan.md 作成直後（`context: plan`）と test-spec.md 作成後（`context: test-spec`、新設）の2回に分けて起動するようにした。以前は test-spec.md 作成後に `context: plan` のレビューをまとめて1回だけ起動しており、test-spec.md 自体はレビューされていなかった。`thorough` は G7（plan単独の人間承認）が plan.md 単独の確認を兼ねるため、`doc-reviewer` は従来どおり test-spec.md 作成後の `context: plan` にまとめて実行する（挙動変更なし）
+- **`builder` Step 3 の `plan_review` タイミング**: `plan_review` が有効な全プロファイル（express / standard / thorough）で、`doc-reviewer` を plan.md 作成直後（`context: plan`）と test-spec.md 作成後（`context: test-spec`、新設）の2回に分けて起動するようにした。以前は test-spec.md 作成後に `context: plan` のレビューをまとめて1回だけ起動しており、test-spec.md 自体はレビューされていなかった。`thorough` の G7（plan単独の人間承認）は、この新しい `context: plan` レビューの直後・test-spec.md 作成前に移動した
 - **`doc-reviewer` に `context: test-spec` を追加**: test-spec.md の受け入れ基準網羅漏れ・実装ステップ網羅漏れ・境界値/異常系の欠落・Given/When/Then の具体性不足・重複シナリオを証拠ベースで報告する
 
 ### Migration
 
-互換性への影響はない。`express` / `standard` プロファイルのサイクルでは、次回の builder 実行から `doc-reviewer` が2回起動するようになる（実行コストが微増する）。`economy`（`plan_review` 無効）と `thorough`（挙動維持）は影響を受けない。
+互換性への影響はない。`plan_review` が有効なプロファイル（express / standard / thorough）のサイクルでは、次回の builder 実行から `doc-reviewer` が2回起動するようになる（実行コストが微増する）。`economy`（`plan_review` 無効）は影響を受けない。
 
 ## [2.0.0]
 

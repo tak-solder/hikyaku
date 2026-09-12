@@ -206,13 +206,12 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title build-{NN} {cycle
   - **含めないもの:** 詳細な実装コード、テストコードの実装方法
 - [ ] コミット & push する
 
-- [ ] **`plan_gate` が有効な場合**（thorough のみ）、ここで plan.md の承認を得る（G7）
-  - それ以外のプロファイルでは Step 3 の最後にまとめて承認する（G8）
-
-- [ ] **`plan_review` が有効かつ thorough 以外の場合**（express / standard）、ここで `doc-reviewer` を起動し plan.md をレビューする（`context: plan`）
+- [ ] **`plan_review` が有効な場合**（express / standard / thorough）、ここで `doc-reviewer` を起動し plan.md をレビューする（`context: plan`）
   - 渡す情報: `plan.md`, `issue.md`, `design-delta.md`, 依存ビルドの `handoff.md`
   - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
-  - **thorough では行わない**: plan.md のレビューは test-spec.md 作成後にまとめて行う（下記）
+
+- [ ] **`plan_gate` が有効な場合**（thorough のみ）、ここで plan.md の承認を得る（G7）
+  - それ以外のプロファイルでは Step 3 の最後にまとめて承認する（G8）
 
 - [ ] テストシナリオを **Agent に委任して** `cycles/{cycle}/build-{NN}/test-spec.md` を生成させる
   - 洗い出し過程のコンテキスト消費を避けるため、メインセッションでは直接作成しない
@@ -243,11 +242,9 @@ Agent に渡すフォーマット指定:
 
 - [ ] コミット & push する
 
-- [ ] **`plan_review` が有効な場合**、`doc-reviewer` を起動する
-  - **thorough**: `context: plan` で plan.md をレビューする
-    - 渡す情報: `plan.md`, `issue.md`, `design-delta.md`, 依存ビルドの `handoff.md`
-  - **express / standard**: `context: test-spec` で test-spec.md をレビューする（plan.md のレビューは上で完了済みなのでここでは行わない）
-    - 渡す情報: `test-spec.md`, `plan.md`, `issue.md`, `design-delta.md`
+- [ ] **`plan_review` が有効な場合**（express / standard / thorough）、ここで `doc-reviewer` を起動し test-spec.md をレビューする（`context: test-spec`）
+  - 渡す情報: `test-spec.md`, `plan.md`, `issue.md`, `design-delta.md`
+  - plan.md のレビューは上で完了済みなので、ここでは行わない
   - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
 
 - [ ] **plan.md と test-spec.md をまとめてユーザーに提示し、承認を得る（G8）**

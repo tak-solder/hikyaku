@@ -48,11 +48,9 @@ builder は永続ドキュメントを読むだけです。実装中に設計と
 
 `plan.md` には依存パッケージの選定、クラス設計（メソッドシグネチャ）、非機能要件を書きます。詳細な実装コードやテストコードの書き方は書きません。
 
-`thorough` では `plan.md` 単独でいったん承認が入ります（G7）。他のプロファイルでは次の承認にまとめられます。
+`doc-reviewer` によるレビューが有効なプロファイル（express / standard / thorough）では、`plan.md` の完成直後に `context: plan` でレビューが入ります。`thorough` では、その直後に `plan.md` 単独の人間承認も入ります（G7）。他のプロファイルでは人間の承認は次のゲートにまとめられます。
 
-`doc-reviewer` によるレビューが有効なプロファイル（express / standard / thorough）では、`plan.md` と `test-spec.md` それぞれの完成直後にレビューが入ります。`express` / `standard` は `plan.md` 作成直後に `context: plan` でレビューし、`test-spec.md` 作成後に `context: test-spec` でレビューします。`thorough` は G7 の人間承認が `plan.md` 単独の確認を兼ねるため、`doc-reviewer` によるレビューは `test-spec.md` 作成後に `context: plan` でまとめて行います。
-
-テストシナリオの洗い出しはサブエージェントに委任され、`test-spec.md` として返ります。Given/When/Then の形式で、正常系・異常系・境界値を具体的な値で書きます。
+テストシナリオの洗い出しはサブエージェントに委任され、`test-spec.md` として返ります。Given/When/Then の形式で、正常系・異常系・境界値を具体的な値で書きます。`test-spec.md` の完成直後には、`doc-reviewer` によるレビューがどのプロファイルでも同じ位置（`context: test-spec`）で入ります。
 
 `plan.md` と `test-spec.md` がまとめて提示され、承認を求められます（G8）。**このゲートはどのプロファイルでも省略されません。** 観点は実装ステップの妥当性、受け入れ基準の網羅性、テストのカバー範囲、不要なテストの有無です。
 
