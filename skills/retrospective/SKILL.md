@@ -112,23 +112,14 @@ economy だけが `skip`、express / standard / thorough は `auto`。
 - [ ] 実績の指標を集計する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr base $ARGUMENTS[1] $ARGUMENTS[0] --ref
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" bp actual $ARGUMENTS[1] $ARGUMENTS[0]
 ```
 
-返った ref を `{BASE_REF}` として、差分を集計する。`{HIKYAKU_ROOT}` は `config --json` の
-`hikyakuRoot`（リポジトリルートからの相対パス）を使う。
-
-```bash
-MB=$(git merge-base {BASE_REF} HEAD)
-git diff --numstat "$MB"..HEAD -- . ":(exclude){HIKYAKU_ROOT}" |
-  awk '{added+=$1; files+=1} END {printf "変更ファイル数 %d / 追加行数 %d\n", files, added}'
-git diff --name-only --diff-filter=A "$MB"..HEAD -- . ":(exclude){HIKYAKU_ROOT}" | wc -l
-```
+新規ファイル数・変更ファイル数・追加行数・削除行数が返る。比較の起点は `pr base` と
+同じ導出（スタックしていればスタック元）で、ワークスペース配下のワークフロー成果物は
+除かれる。
 
 **数えるのはコマンドの仕事で、あなたの仕事ではない。** 差分を目で見て概算しない。
-
-`{HIKYAKU_ROOT}` 配下を除外するのは、plan.md や handoff.md などのワークフロー成果物が
-実装行数に混ざると、見積もりの指標（実装コードの規模）と比較できなくなるため。
 
 - [ ] 集計値を bp-guide.md のベースBP表に当てはめ、**実績BP** を求める
   - 参照: `${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/bp-guide.md`
@@ -137,9 +128,9 @@ git diff --name-only --diff-filter=A "$MB"..HEAD -- . ":(exclude){HIKYAKU_ROOT}"
   - 変更ファイル数は影響ファイル数そのものではない（読んだだけのファイルは差分に出ない）。
     実装中に実際に読み込んだ範囲を踏まえて判断する
 
-`pr base` が解決できない、または merge-base が取れない場合（Hikyaku の規則外のブランチで
-作業した場合など）は、**実測をスキップして見積もりだけ記録し、実績欄に「実測不可」と書く。**
-推測値で埋めない。
+`bp actual` がエラーになる場合（Hikyaku の規則外のブランチで作業して base を解決できない、
+履歴が浅くて merge-base が取れない等）は、**実測をスキップして見積もりだけ記録し、
+実績欄に「実測不可」と書く。** 推測値で埋めない。
 
 → Step 4 へ。
 

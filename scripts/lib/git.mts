@@ -387,3 +387,79 @@ export async function nearestAncestorBranch(
 
   return nearest?.branch;
 }
+
+export interface DiffStats {
+  /** 比較の起点（merge-base のコミット SHA） */
+  mergeBase: string;
+  /** 差分に現れたファイル数（リネームは1件） */
+  changedFiles: number;
+  /** 新規追加されたファイル数 */
+  newFiles: number;
+  addedLines: number;
+  deletedLines: number;
+  /** 行数を数えられないファイル数（バイナリ）。addedLines には含まれない */
+  binaryFiles: number;
+}
+
+/**
+ * base から HEAD までの差分を数える。
+ *
+ * BP の実績を測るために使う。**数えるのはここの仕事で、LLM の仕事ではない。**
+ * 差分を目で見た概算は、見積もりと突き合わせる意味を失わせる。
+ *
+ * `..HEAD` ではなく merge-base からの差分を見るのは、base 側が先に進んでいても
+ * このブランチが加えた分だけを数えるため。
+ *
+ * excludePaths はリポジトリルートからの相対パス。ワークフロー成果物
+ * （plan.md / handoff.md など）を除くために使う。見積もりの指標は実装コードの
+ * 規模なので、ドキュメントが混ざると比較できなくなる。
+ *
+ * base の ref を解決できない場合は undefined（= 実測不可）。推測値は返さない。
+ */
+export async function diffStats(
+  cwd: string,
+  baseRef: string,
+  excludePaths: string[] = [],
+  head = "HEAD",
+): Promise<DiffStats | undefined> {
+  const found = await tryGit(cwd, ["merge-base", baseRef, head]);
+  if (!found.ok) return undefined;
+  const mergeBase = found.stdout.trim();
+  if (mergeBase === "") return undefined;
+
+  const pathspec = ["--", ".", ...excludePaths.map((path) => `:(exclude)${path}`)];
+
+  const numstat = await tryGit(cwd, ["diff", "--numstat", `${mergeBase}..${head}`, ...pathspec]);
+  if (!numstat.ok) return undefined;
+
+  let changedFiles = 0;
+  let addedLines = 0;
+  let deletedLines = 0;
+  let binaryFiles = 0;
+
+  for (const line of numstat.stdout.split("\n")) {
+    if (line.trim() === "") continue;
+    const [added = "", deleted = ""] = line.split("\t");
+    changedFiles += 1;
+    // バイナリは "-\t-\t<path>"。0 として足すと「変更なし」に見えるので分けて数える
+    if (added === "-" || deleted === "-") {
+      binaryFiles += 1;
+      continue;
+    }
+    addedLines += Number.parseInt(added, 10) || 0;
+    deletedLines += Number.parseInt(deleted, 10) || 0;
+  }
+
+  const created = await tryGit(cwd, [
+    "diff",
+    "--name-only",
+    "--diff-filter=A",
+    `${mergeBase}..${head}`,
+    ...pathspec,
+  ]);
+  const newFiles = created.ok
+    ? created.stdout.split("\n").filter((line) => line.trim() !== "").length
+    : 0;
+
+  return { mergeBase, changedFiles, newFiles, addedLines, deletedLines, binaryFiles };
+}
