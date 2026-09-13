@@ -25,6 +25,8 @@ architect のビルド分割ステップと、builder の実装中にスコー�
 
 改善提案の分類先は `doc:{論理名}` / `workflow` / `記録のみ` の3つです。`doc:` の論理名は `document-guide.md` が正で、そこに無い論理名は使いません。Hikyaku の手順そのものに穴があると思える場合も、このリポジトリで埋めるなら `workflow`（= `instructions.md`）に落とします。
 
+実装フェーズ（`build-{NN}`）では、これに加えて BP 見積もりの実績を記録します。architect 段階・builder 段階の見積もりと、PR の base からの差分を集計した実績を並べ、乖離があればどの指標を読み違えたかを残します。R-N でも L-N でもない事実の記録ですが、乖離の要因がこのリポジトリ固有の再現条件に落ちる場合は L-N としても書かれます。
+
 各フェーズの末尾で呼ばれます。`economy` では `skip`、それ以外は `auto` です。
 
 ## エージェント
@@ -42,7 +44,7 @@ architect のビルド分割ステップと、builder の実装中にスコー�
 
 `code-explorer` が返す Key Files は本セッション自身が読みます。要約だけで設計を進めると、規約やインターフェースの解像度が落ちるためです。
 
-`doc-reviewer` は渡された context（`user-stories` / `architecture` / `tasklist` / `plan` / `test-spec`）に応じて観点を切り替えます。architecture と plan ではセキュリティ設計の考慮漏れも見ます。tasklist は BP見積もりの妥当性と分割の網羅性が対象で、tasklist.md・issue.md がまだファイルに書き込まれていない段階でレビューするため、build-manager が内容をプロンプトへ直接渡します。plan と test-spec はそれぞれの成果物の完成直後にレビューされ、`plan` は plan.md 作成直後、`test-spec` は test-spec.md 作成後という位置は、どのプロファイルでも変わりません。test-spec は plan.md・issue.md に対するテストシナリオの網羅性が対象です。
+`doc-reviewer` は渡された context（`user-stories` / `architecture` / `tasklist` / `plan` / `test-spec`）に応じて観点を切り替えます。architecture と plan ではセキュリティ設計の考慮漏れも見ます。tasklist は BP見積もりの妥当性と分割の網羅性が対象で、tasklist.md・issue.md がまだファイルに書き込まれていない段階でレビューするため、build-manager が内容をプロンプトへ直接渡します。plan と test-spec はそれぞれの成果物の完成直後にレビューされ、`plan` は plan.md 作成直後、`test-spec` は test-spec.md 作成後という位置は、どのプロファイルでも変わりません。plan は受け入れ基準の網羅とスコープ逸脱に加えて、plan.md に書かれた BP 見積もりの妥当性も見ます（tasklist は issue.md のスコープ記述から、plan は実装計画から、それぞれ同じ基準表で判定します）。test-spec は plan.md・issue.md に対するテストシナリオの網羅性が対象です。
 
 `code-reviewer` と `security-reviewer` は並列で起動し、指摘は統合されます。同じ箇所への重複は1件に束ねられ、セキュリティの指摘が優先されます。担当が分かれているので、`code-reviewer` はセキュリティ観点を扱いません。
 
