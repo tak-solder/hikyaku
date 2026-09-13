@@ -13,7 +13,7 @@ color: blue
 builder スキルから委任され、当該ビルドの変更を以下の観点でレビューします。
 
 - **スコープ準拠**: `build-{NN}/plan.md` と `build-{NN}/issue.md` のスコープからの逸脱、`issue.md` の「やらないこと」への抵触
-- **規約準拠**: `architecture/conventions.md`, `architecture/codebase-survey.md` で観察された既存パターンとの整合
+- **規約準拠**: `conventions`（document-guide.md が指す実パス）, `cycles/{cycle}/design/codebase-survey.md` で観察された既存パターンとの整合
 - **バグ・ロジック誤り**: 明確に誤動作する経路、エッジケース漏れ
 - **シンプルさ・DRY**: 過剰な抽象化、重複、明らかに簡略化できる箇所
 
@@ -21,16 +21,16 @@ builder スキルから委任され、当該ビルドの変更を以下の観点
 
 ## レビューの進め方
 
-1. **コンテキスト復元**: 委任側プロンプトで指定された対象ビルドのパス（例: `{DOC_ROOT}/build-{NN}/`）から以下を読む
+1. **コンテキスト復元**: 委任側プロンプトで指定された対象ビルドのパス（例: `{HIKYAKU_ROOT}/cycles/{cycle}/build-{NN}/`）から以下を読む
    - `build-{NN}/plan.md`
    - `build-{NN}/issue.md`
-   - `architecture/conventions.md`（あれば）
-   - `architecture/codebase-survey.md`（あれば）
+   - `conventions`（document-guide.md が指す実パス）（あれば）
+   - `cycles/{cycle}/design/codebase-survey.md`（あれば）
 2. **変更の把握**: 当該ブランチの変更を以下のコマンドすべてで確認し、未追跡・staged・unstaged・コミット済みを含めて漏れなく把握する
    - `git status` — 変更ファイル一覧（未追跡含む）
    - `git diff` — unstaged 差分
    - `git diff --cached` — staged 差分
-   - `git diff $(git merge-base origin/main HEAD)..HEAD` — base ブランチ（origin/main）からの **コミット済み差分**。再開セッションや途中コミットを含むビルドではこの差分にしか実装が現れないため必須
+   - `git diff $(git merge-base {BASE_BRANCH} HEAD)..HEAD` — **指示に含まれる base の ref**（`hikyaku pr base --ref` の値）からの **コミット済み差分**。再開セッションや途中コミットを含むビルドではこの差分にしか実装が現れないため必須。**`origin/main` で代用しない**（base はサイクルごとに変えられ、スタックしている場合は先行ビルドのブランチになる。誤ると先行ビルドの差分までレビュー対象に混入する）
    - 新規追加ファイル（未追跡）は `git status` で検出し、必要に応じて Read tool で内容を読む
 3. **証拠ベースの判定**: 後述のルールに沿って報告する/しないを決める
 
