@@ -206,6 +206,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title build-{NN} {cycle
   - **含めないもの:** 詳細な実装コード、テストコードの実装方法
 - [ ] コミット & push する
 
+- [ ] **`plan_review` が有効な場合**（express / standard / thorough）、ここで `doc-reviewer` を起動し plan.md をレビューする（`context: plan`）
+  - 渡す情報: `plan.md`, `issue.md`, `design-delta.md`, 依存ビルドの `handoff.md`
+  - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
+
 - [ ] **`plan_gate` が有効な場合**（thorough のみ）、ここで plan.md の承認を得る（G7）
   - それ以外のプロファイルでは Step 3 の最後にまとめて承認する（G8）
 
@@ -238,8 +242,9 @@ Agent に渡すフォーマット指定:
 
 - [ ] コミット & push する
 
-- [ ] **`plan_review` が有効な場合**（express / standard / thorough）、`doc-reviewer` を起動する（`context: plan`）
-  - 渡す情報: `plan.md`, `issue.md`, `design-delta.md`, 依存ビルドの `handoff.md`
+- [ ] **`plan_review` が有効な場合**（express / standard / thorough）、ここで `doc-reviewer` を起動し test-spec.md をレビューする（`context: test-spec`）
+  - 渡す情報: `test-spec.md`, `plan.md`, `issue.md`, `design-delta.md`
+  - plan.md のレビューは上で完了済みなので、ここでは行わない
   - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
 
 - [ ] **plan.md と test-spec.md をまとめてユーザーに提示し、承認を得る（G8）**

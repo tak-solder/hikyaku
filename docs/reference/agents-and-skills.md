@@ -42,7 +42,7 @@ architect のビルド分割ステップと、builder の実装中にスコー�
 
 `code-explorer` が返す Key Files は本セッション自身が読みます。要約だけで設計を進めると、規約やインターフェースの解像度が落ちるためです。
 
-`doc-reviewer` は渡された context（`user-stories` / `architecture` / `tasklist` / `plan`）に応じて観点を切り替えます。architecture と plan ではセキュリティ設計の考慮漏れも見ます。tasklist は BP見積もりの妥当性と分割の網羅性が対象で、tasklist.md・issue.md がまだファイルに書き込まれていない段階でレビューするため、build-manager が内容をプロンプトへ直接渡します。
+`doc-reviewer` は渡された context（`user-stories` / `architecture` / `tasklist` / `plan` / `test-spec`）に応じて観点を切り替えます。architecture と plan ではセキュリティ設計の考慮漏れも見ます。tasklist は BP見積もりの妥当性と分割の網羅性が対象で、tasklist.md・issue.md がまだファイルに書き込まれていない段階でレビューするため、build-manager が内容をプロンプトへ直接渡します。plan と test-spec はそれぞれの成果物の完成直後にレビューされ、`plan` は plan.md 作成直後、`test-spec` は test-spec.md 作成後という位置は、どのプロファイルでも変わりません。test-spec は plan.md・issue.md に対するテストシナリオの網羅性が対象です。
 
 `code-reviewer` と `security-reviewer` は並列で起動し、指摘は統合されます。同じ箇所への重複は1件に束ねられ、セキュリティの指摘が優先されます。担当が分かれているので、`code-reviewer` はセキュリティ観点を扱いません。
 
