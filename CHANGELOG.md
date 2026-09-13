@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 各エントリには「何が変わったか」と「利用者に必要な対応」を書きます。設計判断の経緯は issue と `docs/` を参照してください。
 
+## [2.1.0]
+
+BP 見積もりの精度を上げるための、レビュー対象の拡張と実績の記録。要因の切り分けは [issue #34](https://github.com/tak-solder/hikyaku/issues/34) に記録している。
+
+### Added
+
+- **plan レビューに BP 見積もりを追加**: `doc-reviewer`（`context: plan`）が、plan.md のクラス設計・実装ステップから読み取れる規模と、書かれた BP の乖離を報告するようになった。判定は `context: tasklist` と同じ `bp-guide.md` の基準表で行う。算出根拠が書かれていない場合も指摘対象。再算出の結果が `bp_max − 2` 以上になった場合は、builder が `build-manager` を呼び出して分割を検討する
+- **plan.md の BP 見積もりに算出根拠を追加**: 指標ごとの値・ベース BP・加算要素の内訳を表で書くようになった。根拠が無いとレビューで乖離を検証できないため
+- **実装フェーズの振り返りに BP 実績を追加**: `retrospective` が `build-{NN}` のとき、architect 段階・builder 段階の見積もりと実績を並べた「BP見積もりの振り返り」を retrospective.md に記録する。実績は PR の base からの差分を集計して求め、ワークフロー成果物（`{HIKYAKU_ROOT}` 配下）は集計から除く。乖離があれば、どの指標をどちらへ読み違えたかを要因として残す
+
+### Changed
+
+- **plan.md の分割検討しきい値を `bp_max` 基準に変更**: テンプレートの「6BP 以上」という固定値をやめ、`bp_max − 2` 以上（既定の `bp_max = 8` なら 6）になった。`bp_max` を変えたときにテンプレートだけ取り残される状態を解消した
+
+### Migration
+
+互換性の変更はない。既存サイクルはそのまま継続できる。
+
+plan.md のテンプレートが変わるため、**既にある plan.md を書き直す必要はない**。次に作られる plan.md から算出根拠つきの形式になる。進行中のビルドで plan レビューをやり直した場合、BP 見積もりの算出根拠が無いことを指摘されることがある（その場で根拠を追記すればよい）。
+
+BP 実績の記録は `retrospective` が動くプロファイル（express / standard / thorough）でのみ行われる。`economy` では従来どおり振り返り自体が実行されない。Hikyaku の規則外のブランチで作業した場合は実測が取れず、「実測不可」と記録される。
+
 ## [2.0.0]
 
 複数サイクルの並行実行、ファイル正への一本化、決定的な処理のスクリプト化を軸とした大規模改修。設計の経緯と判断理由は [issue #26](https://github.com/tak-solder/hikyaku/issues/26) に記録している。
