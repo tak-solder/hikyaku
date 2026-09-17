@@ -31,6 +31,7 @@ import "./commands/context.mts";
 import "./commands/validate.mts";
 import "./commands/external.mts";
 import "./commands/naming.mts";
+import "./commands/bp.mts";
 
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2));

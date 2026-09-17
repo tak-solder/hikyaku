@@ -204,11 +204,23 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title build-{NN} {cycle
   - テンプレートは [templates.md](references/templates.md) を参照
   - **含めるもの:** 依存パッケージの選定、クラス設計（メソッドシグネチャ）、非機能要件
   - **含めないもの:** 詳細な実装コード、テストコードの実装方法
+- [ ] **BP を再算出する**（`${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/bp-guide.md` の手順に従う）
+  - architect 段階の BP は issue.md のスコープ記述からの見積もり。**plan.md ではクラス設計と
+    実装ステップまで具体化しているので、算出し直す**
+  - **算出根拠を plan.md に書く。** 指標ごとの値と BP、加算要素の内訳まで書く。根拠が無いと
+    次のレビューで検証できず、乖離を指摘できない
+  - **加算BPを落とさない。** 過小見積もりの多くは、影響ファイル数・基盤セットアップ・
+    外部API連携・大規模リファクタの取りこぼしから来る
 - [ ] コミット & push する
 
 - [ ] **`plan_review` が有効な場合**（express / standard / thorough）、ここで `doc-reviewer` を起動し plan.md をレビューする（`context: plan`）
-  - 渡す情報: `plan.md`, `issue.md`, `design-delta.md`, 依存ビルドの `handoff.md`
+  - 渡す情報: `plan.md`, `issue.md`, `design-delta.md`, 依存ビルドの `handoff.md`,
+    `${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/bp-guide.md`, Step 0 で取得した `bpMax`
+  - **BP見積もりもレビュー対象**である旨をプロンプトに明記する（`context: plan` の観点に含まれる）
   - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
+  - **BP見積もり乖離の指摘は再算出して反映する。** 再算出の結果が `bpMax − 2` 以上
+    （既定では 6 以上）になったら、下の「ビルド管理」に従って
+    `/hikyaku:build-manager {cycle}` を呼び出し、分割を検討する
 
 - [ ] **`plan_gate` が有効な場合**（thorough のみ）、ここで plan.md の承認を得る（G7）
   - それ以外のプロファイルでは Step 3 の最後にまとめて承認する（G8）
@@ -448,7 +460,7 @@ Build {NN} が完了しました。
 
 実装中に以下が判明した場合、`/hikyaku:build-manager {cycle}` を呼び出す。
 
-- **Step 3 後** — issue.md のスコープが実際には BP 超過 → ビルドの分割
+- **Step 3 後** — 再算出した BP が `bpMax − 2` 以上（issue.md のスコープが実際には BP 超過） → ビルドの分割
 - **Step 4 中** — 想定外の複雑さや未定義の依存 → ビルドの追加・更新
 - **Step 6 時** — 指摘の「新ビルド化して後で対応」 → 新ビルドの追加
 - **Step 7 時** — 意図的に先送りした作業 → 新ビルドの追加

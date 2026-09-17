@@ -1,124 +1,12 @@
 /** branch name / branch verify / pr title / session title — 命名規則の適用 */
 
-import { flagBoolean, flagString, type ParsedArgs } from "../lib/args.mts";
-import { branchName, isPhase, parseBranch, renderPrTitle, type Phase } from "../lib/branch.mts";
-import { loadConfig, type ResolvedConfig } from "../lib/config.mts";
-import { HikyakuError, ValidationError } from "../lib/errors.mts";
-import {
-  currentBranch,
-  defaultBranch,
-  listKnownBranches,
-  listRemoteBranches,
-  localSha,
-  nearestAncestorBranch,
-  type KnownBranch,
-} from "../lib/git.mts";
+import { flagBoolean, flagString } from "../lib/args.mts";
+import { branchName, parseBranch, renderPrTitle } from "../lib/branch.mts";
+import { ValidationError } from "../lib/errors.mts";
+import { currentBranch, defaultBranch, listRemoteBranches } from "../lib/git.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
-import { normalizeBuildId } from "../lib/tasklist.mts";
-import { resolveViews } from "../lib/views.mts";
-import { openCycle, type CycleContext } from "../lib/workspace.mts";
-
-function requirePhase(raw: string | undefined): Phase {
-  if (raw === undefined) {
-    throw new HikyakuError(
-      "フェーズを指定してください",
-      "使用できる値: init | create | plan | architect | build-NN | close",
-    );
-  }
-  if (!isPhase(raw)) {
-    throw new HikyakuError(
-      `フェーズの値が不正です: ${raw}`,
-      "使用できる値: init | create | plan | architect | build-NN（NN は2桁以上の数字）| close",
-    );
-  }
-  return raw;
-}
-
-interface Scope {
-  /** サイクル固有設定を重ねた設定。init ではリポジトリルートの設定 */
-  config: ResolvedConfig;
-  cycle: string | undefined;
-  /** init 以外では対象サイクル。スタック元の導出に使う */
-  context: CycleContext | undefined;
-}
-
-/**
- * 対象サイクルと、そのサイクルの設定を決める。
- * init はサイクルに属さないのでリポジトリルートの設定だけを使う。
- *
- * 明示指定があっても解決を通す。[branch] / [pr] / [session] はサイクル側で
- * 上書きできるため、サイクルディレクトリを特定しないと名前を組み立てられない。
- * 引数を ID や slug で渡されたときにディレクトリ名へ正規化されるのも、
- * 解決を通す副次的な効果（`002` から `002-billing` のブランチ名が出る）。
- */
-function scopeFor(args: ParsedArgs, phase: Phase, operand: string | undefined): Scope {
-  if (phase === "init") {
-    return { config: loadConfig({ root: flagString(args, "root") }), cycle: undefined, context: undefined };
-  }
-  const opened = openCycle(args, operand);
-  return { config: opened.config, cycle: opened.context.name, context: opened.context };
-}
-
-/**
- * スタック元のブランチを導出する。
- *
- * デフォルトブランチへマージせず、先行フェーズのブランチから積んだ場合、
- * PR の base はデフォルトブランチではなくそのブランチになる。状態は保存せず、
- * 「同じサイクルの Hikyaku ブランチのうち、HEAD の祖先で、まだ base に
- * 取り込まれていない、最も近いもの」として導出する。
- *
- * 取り込み済みの判定は2つ併用する。
- *
- *   祖先関係      git merge-base --is-ancestor で base に含まれるか
- *   base の PR 列  そのビルドの PR 列がデフォルトブランチで非空か
- *
- * 後者が要るのは、**squash merge / rebase merge ではマージ済みでも
- * ブランチの先端が base の祖先にならない**ため。どれだけ fetch しても
- * 祖先関係は false のままなので、Hikyaku 自身の完了の定義で補う。
- *
- * 積んでいなければ undefined を返す（＝PR の base はデフォルトブランチ）。
- */
-async function stackParent(
-  config: ResolvedConfig,
-  context: CycleContext | undefined,
-  phase: Phase,
-  base: string | undefined,
-  options: { fetch: boolean },
-): Promise<KnownBranch | undefined> {
-  if (context === undefined) return undefined;
-
-  const views = await resolveViews(config, context, { fetch: options.fetch });
-
-  const candidates = (await listKnownBranches(config.repoRoot)).filter((branch) => {
-    if (branch.name === base) return false;
-    const parsed = parseBranch(config.branch, branch.name);
-    if (parsed === undefined || parsed.cycle !== context.name || parsed.phase === phase) {
-      return false;
-    }
-    // マージ済みのビルドは、祖先関係に関わらずスタック元にならない
-    const buildId = /^build-(\d+)$/.exec(parsed.phase)?.[1];
-    if (buildId !== undefined && views.mergedIds?.has(normalizeBuildId(buildId)) === true) {
-      return false;
-    }
-    return true;
-  });
-  if (candidates.length === 0) return undefined;
-
-  const baseRefs: string[] = [];
-  if (base !== undefined) {
-    for (const ref of [`origin/${base}`, base]) {
-      if ((await localSha(config.repoRoot, ref)) !== undefined) baseRefs.push(ref);
-    }
-  }
-
-  // 取り込み済みを1つも除外できないなら、スタック元を推測しない。
-  // この状態で祖先を拾うと、既にマージ済みのブランチや無関係のブランチへ
-  // PR を向けることになる。デフォルトブランチへフォールバックするほうが安全
-  if (views.mergedIds === undefined && baseRefs.length === 0) return undefined;
-
-  return nearestAncestorBranch(config.repoRoot, candidates, baseRefs);
-}
+import { requirePhase, resolvePrBase, scopeFor, stackParent } from "../lib/stack.mts";
 
 register({
   name: "branch verify",
@@ -332,29 +220,20 @@ register({
   ].join("\n"),
   run: async ({ args, operands }) => {
     const phase = requirePhase(operands[0]);
-    const { config, cycle, context } = scopeFor(args, phase, operands[1]);
-    const base = config.baseBranch ?? defaultBranch(config.repoRoot);
-    const stacked = await stackParent(config, context, phase, base, {
+    const scope = scopeFor(args, phase, operands[1]);
+    const { config, cycle } = scope;
+
+    // PR の base に使う名前と、ローカルの git 操作に使う ref は別物。
+    // リモート追跡参照しか無いブランチ名をそのまま git merge-base に渡すと解決に失敗する
+    const { base: prBase, ref: localRef, stacked, defaultBase } = await resolvePrBase(scope, phase, {
       fetch: !flagBoolean(args, "no-fetch"),
     });
-    const prBase = stacked?.name ?? base;
 
     // スタック元がリモートに無ければ PR は作れない（マージ後に削除された等）
     let missingOnRemote = false;
     if (stacked !== undefined) {
       const remote = await listRemoteBranches(config.repoRoot);
       missingOnRemote = remote.unavailable === undefined && !remote.names.includes(stacked.name);
-    }
-
-    // PR の base に使う名前と、ローカルの git 操作に使う ref は別物。
-    // リモート追跡参照しか無いブランチ名をそのまま git merge-base に渡すと解決に失敗する
-    const localRef = prBase === undefined ? undefined : await resolvableRef(config.repoRoot, prBase);
-
-    if (prBase === undefined) {
-      throw new HikyakuError(
-        "PR のマージ先を決められません",
-        "base_branch を設定するか、origin/HEAD が解決できる状態にしてください。",
-      );
     }
 
     const wantRef = flagBoolean(args, "ref");
@@ -365,14 +244,14 @@ register({
         ref: localRef ?? null,
         stackedOn: stacked?.name ?? null,
         stackedOnMissingOnRemote: missingOnRemote,
-        baseBranch: base ?? null,
+        baseBranch: defaultBase ?? null,
         phase,
         cycle,
       },
       () => {
         const head = wantRef ? (localRef ?? prBase) : prBase;
         if (stacked === undefined) return head;
-        const lines = [head, `（スタック元です。デフォルトブランチ ${base ?? "?"} ではありません）`];
+        const lines = [head, `（スタック元です。デフォルトブランチ ${defaultBase ?? "?"} ではありません）`];
         if (missingOnRemote) {
           lines.push(
             "",
@@ -425,17 +304,3 @@ register({
     emit({ title, phase, cycle }, () => title);
   },
 });
-
-/**
- * ローカルで解決できる ref に直す。
- *
- * PR の base に渡すのはブランチ名（origin/ を付けない）だが、git merge-base や
- * git diff に渡すには解決できる ref が要る。リモート追跡参照しか無いブランチを
- * 名前のまま渡すと解決に失敗し、コミット済み差分のレビューが空になる。
- */
-async function resolvableRef(repoRoot: string, branch: string): Promise<string | undefined> {
-  if ((await localSha(repoRoot, branch)) !== undefined) return branch;
-  const tracking = `origin/${branch}`;
-  if ((await localSha(repoRoot, tracking)) !== undefined) return tracking;
-  return undefined;
-}
