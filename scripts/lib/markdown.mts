@@ -45,8 +45,12 @@ function splitRow(line: string): string[] {
   return cells.map((cell) => cell.trim());
 }
 
+/**
+ * `|` を含むだけでは表の行と見なさない。表の直後に空行を挟まず本文が続くと、
+ * 本文中の `|` で行が丸ごと表に取り込まれる（cycles.md なら status 不正で全コマンドが止まる）
+ */
 function isTableRow(line: string): boolean {
-  return line.includes("|");
+  return line.trimStart().startsWith("|");
 }
 
 /** ソース中のすべての Markdown テーブルを見つける */

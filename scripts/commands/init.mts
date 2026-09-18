@@ -9,7 +9,7 @@ import { cyclesPath, renderCyclesFile } from "../lib/cycles.mts";
 import { guidePath } from "../lib/docs.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { emit } from "../lib/output.mts";
-import { repoRoot } from "../lib/paths.mts";
+import { repoRelative, repoRoot } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
 import { renderGuideScaffold } from "./docs.mts";
 
@@ -59,7 +59,14 @@ register({
     }
 
     const hikyakuRoot = isAbsolute(requested) ? requested : resolve(root, requested);
-    const rel = relative(root, hikyakuRoot) || ".";
+    if (hikyakuRoot === root) {
+      throw new HikyakuError(
+        "HIKYAKU_ROOT にリポジトリルート自身は指定できません",
+        "例: hikyaku init --root docs/hikyaku",
+      );
+    }
+    // TOML と git のパスに埋めるので、OS に依らず `/` 区切りで書く
+    const rel = repoRelative(root, hikyakuRoot);
     const dryRun = flagBoolean(args, "dry-run");
 
     const repoConfigPath = join(root, ".hikyaku.config");

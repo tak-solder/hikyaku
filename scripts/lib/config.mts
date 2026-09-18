@@ -511,6 +511,16 @@ export function loadConfig(options: LoadOptions = {}): ResolvedConfig {
 
   const hikyakuRoot = isAbsolute(candidate) ? candidate : resolve(root, candidate);
 
+  // リポジトリルート自身は HIKYAKU_ROOT にできない。ルートの .hikyaku.config と
+  // ワークスペースの .hikyaku.config が同じファイルになり、以下の古い設定の検出が
+  // 自分自身を弾く。cycles/ や document-guide.md をルート直下に散らかす形にもなる
+  if (hikyakuRoot === root) {
+    throw new HikyakuError(
+      "hikyaku_root にリポジトリルート自身は指定できません",
+      "docs/hikyaku のようなサブディレクトリを指定してください。",
+    );
+  }
+
   // v2.0 の初期実装が生成していた中間層。読まなくなったので、置いたままだと
   // 「設定したつもりの値が効かない」状態になる。黙って無視せず対処を促す
   const staleWorkspaceConfig = join(hikyakuRoot, ".hikyaku.config");

@@ -10,6 +10,7 @@ import { type ExternalTarget, type ResolvedConfig } from "../lib/config.mts";
 import { cyclesPath, loadCycles, renderCyclesFile } from "../lib/cycles.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { emit, warn } from "../lib/output.mts";
+import { repoRelative } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
 import { formatRef, refNumber, refUrl } from "../lib/refs.mts";
 import { buildDirName, isComplete, type BuildRecord } from "../lib/tasklist.mts";
@@ -45,9 +46,7 @@ function tasklistLocation(config: ResolvedConfig, cycleName: string): string {
 }
 
 function relativeRoot(config: ResolvedConfig): string {
-  return config.hikyakuRoot.startsWith(`${config.repoRoot}/`)
-    ? config.hikyakuRoot.slice(config.repoRoot.length + 1)
-    : config.hikyakuRoot;
+  return repoRelative(config.repoRoot, config.hikyakuRoot);
 }
 
 /**
@@ -299,7 +298,16 @@ register({
         }
         await run(
           "gh",
-          ["issue", "edit", number, "--body", projection.body, ...repoArgs(config.external.githubRepo)],
+          [
+            "issue",
+            "edit",
+            number,
+            "--title",
+            projection.title,
+            "--body",
+            projection.body,
+            ...repoArgs(config.external.githubRepo),
+          ],
           { cwd: config.repoRoot, timeout: 30_000 },
         );
         results.push({

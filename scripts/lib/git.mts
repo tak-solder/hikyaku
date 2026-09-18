@@ -31,7 +31,17 @@ async function tryGit(cwd: string, argv: string[], timeout = 15_000): Promise<Ru
     const { stdout } = await run("git", argv, { cwd, timeout, maxBuffer: 8 * 1024 * 1024 });
     return { ok: true, stdout };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    // execFile の message は "Command failed: git …" で始まり、原因は stderr 側にある。
+    // 認証失敗・DNS・remote 不在などを利用者に見せるため stderr の先頭行を優先する
+    const stderr = (error as { stderr?: unknown }).stderr;
+    const fromStderr =
+      typeof stderr === "string"
+        ? stderr
+            .split("\n")
+            .map((line) => line.trim())
+            .find((line) => line !== "")
+        : undefined;
+    const message = fromStderr ?? (error instanceof Error ? error.message : String(error));
     return { ok: false, message: message.split("\n")[0] ?? message };
   }
 }

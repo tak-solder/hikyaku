@@ -16,7 +16,6 @@
  * 「マージされたか」を問う用途だけ。
  */
 
-import { relative } from "node:path";
 import type { ResolvedConfig } from "./config.mts";
 import {
   baseFreshness,
@@ -27,6 +26,7 @@ import {
   type BaseFreshness,
   type FileAtRef,
 } from "./git.mts";
+import { repoRelative } from "./paths.mts";
 import { parseTasklist, tasklistPath, type BuildRecord } from "./tasklist.mts";
 import type { CycleContext } from "./workspace.mts";
 
@@ -74,7 +74,7 @@ export async function resolveViews(
   ctx: CycleContext,
   options: ViewOptions = {},
 ): Promise<TasklistViews> {
-  const relativePath = relative(config.repoRoot, tasklistPath(ctx.directory));
+  const relativePath = repoRelative(config.repoRoot, tasklistPath(ctx.directory));
   const base = config.baseBranch ?? defaultBranch(config.repoRoot);
 
   const head = toSection(await readFileAtRef(config.repoRoot, "HEAD", relativePath));

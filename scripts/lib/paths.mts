@@ -7,7 +7,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HikyakuError } from "./errors.mts";
 
@@ -36,6 +36,15 @@ function searchUpward(from: string, matches: (dir: string) => boolean): string |
     if (parent === dir) return undefined;
     dir = parent;
   }
+}
+
+/**
+ * リポジトリ相対パス。TOML の文字列・`git show <ref>:<path>`・GitHub の URL に
+ * 埋めるので、区切りは OS に依らず常に `/`（Windows の `\` は TOML では
+ * エスケープ、git では無効なパスになる）。同じ場所なら `.`
+ */
+export function repoRelative(repoRootPath: string, target: string): string {
+  return relative(repoRootPath, target).split(sep).join("/") || ".";
 }
 
 /** .git を上方向に探索する。見つからなければ cwd を返す */

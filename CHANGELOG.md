@@ -104,7 +104,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 | **ディレクトリ構造** | `planning/` `tasklist.md` `build-NN/` は `cycles/{NNN}-{slug}/` 配下へ移動します（`cycles/001-legacy/` へのアーカイブが第一候補） |
 | **`architecture/` 配下** | 移動しません。`document-guide.md` に `repo` 管理として登録します |
 | **`retrospective.md` 等** | コミット対象になります。v1 では `.gitignore` されていたため、サイクルをまたいで学びが蓄積しませんでした |
-| **リポジトリルートの `.hikyaku.config`** | 必須になりました。`hikyaku_root` はここでのみ宣言できます |
+| **リポジトリルートの `.hikyaku.config`** | 必須になりました。`hikyaku_root` はここでのみ宣言でき、リポジトリルート自身（`.`）は指定できません |
 | **`{HIKYAKU_ROOT}/.hikyaku.config`** | 読み込まれません。**残っているとエラーになります。** 内容をリポジトリルートへ移して削除してください |
 | **`{HIKYAKU_ROOT}/instruction.md`** | `instructions.md` へ改名してください。`hikyaku validate` が旧名の残存を検出します |
 | **スキルの引数** | `{HIKYAKU_ROOT}` を渡さなくなりました。`/hikyaku:planner 002-billing` のようにサイクルだけを渡すか、省略します |

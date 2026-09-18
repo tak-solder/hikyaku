@@ -87,7 +87,7 @@ bp_max = 8
 
 | キー | 既定値 | 意味 |
 |---|---|---|
-| `hikyaku_root` | なし（必須） | HIKYAKU_ROOT のパス。リポジトリルートからの相対または絶対 |
+| `hikyaku_root` | なし（必須） | HIKYAKU_ROOT のパス。リポジトリルートからの相対または絶対。リポジトリルート自身（`.`）は指定できません |
 | `profile` | `standard` | `create-cycle` が提示する既定値。express / economy / standard / thorough |
 | `base_branch` | 自動検出 | そのサイクルが向かうブランチ。未設定なら `origin/HEAD` から導出し、それも無ければ `null`（`main` と推測しない） |
 | `bp_max` | `8` | ビルド分割の上限 BP。これを超えると分割必須 |

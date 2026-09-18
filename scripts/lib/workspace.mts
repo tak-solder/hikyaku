@@ -15,6 +15,7 @@ import {
 import { HikyakuError } from "./errors.mts";
 import { currentBranch } from "./git.mts";
 import { readLocalState } from "./local.mts";
+import { warn } from "./output.mts";
 import { loadTasklist, renderTasklistFile, tasklistPath, type BuildRecord } from "./tasklist.mts";
 
 /** 対象サイクルをどう決めたか。スキルが根拠を表示できるようにする */
@@ -36,8 +37,11 @@ export interface ResolveOptions {
   branchNaming?: ((record: CycleRecord) => BranchNaming) | undefined;
   /** 現在のブランチ名 */
   currentBranch?: string | undefined;
-  /** .hikyaku.local に記録されたサイクル */
-  local?: string | undefined;
+  /**
+   * .hikyaku.local に記録されたサイクルを返す関数。
+   * 引数・ブランチで決まればファイルを読む必要が無いので、値ではなく関数で受け取る
+   */
+  local?: (() => string | undefined) | undefined;
 }
 
 /**
@@ -83,8 +87,9 @@ export function resolveCycle(
 
   // 3. ローカルの栞。指す先が active でなければ黙って捨てる。
   // ここは active に限って引く（栞の曖昧さでエラーにはしない。無効なら捨てて次へ）
-  if (options.local !== undefined) {
-    const key = options.local;
+  const localKey = options.local?.();
+  if (localKey !== undefined) {
+    const key = localKey;
     const record = records.find(
       (r) => r.status === "active" && (r.id === key || r.slug === key || cycleDirName(r) === key),
     );
@@ -190,7 +195,15 @@ export function openCycle(args: ParsedArgs, key: string | undefined): OpenedCycl
   const ctx = resolveCycle(base.hikyakuRoot, key, {
     branchNaming: (record) => cycleBranchNaming(base, cycleDir(base.hikyakuRoot, record)),
     currentBranch: currentBranch(base.repoRoot),
-    local: readLocalState(base.hikyakuRoot).cycle,
+    local: () => {
+      // 栞は「消えても支障が無い」もの。壊れていても止めず、無いものとして次の根拠へ進む
+      try {
+        return readLocalState(base.hikyakuRoot).cycle;
+      } catch (error) {
+        warn(`.hikyaku.local を無視します: ${error instanceof Error ? error.message : String(error)}`);
+        return undefined;
+      }
+    },
   });
   const config = loadConfig({
     root,
