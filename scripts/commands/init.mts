@@ -1,7 +1,7 @@
 /** init — ワークスペースの雛形を冪等に生成する */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { flagBoolean, flagString } from "../lib/args.mts";
 import { ASK_KEYS, PROFILE_NAMES } from "../lib/config.mts";
 import { LOCAL_FILE } from "../lib/local.mts";
@@ -58,7 +58,10 @@ register({
       );
     }
 
-    const hikyakuRoot = isAbsolute(requested) ? requested : resolve(root, requested);
+
+    // 絶対パスも正規化する。`/repo/.` や `/repo/sub/..` のような表記で
+    // 「リポジトリルート自身は不可」の検査を迂回できないようにする。
+    const hikyakuRoot = resolve(root, requested);
     if (hikyakuRoot === root) {
       throw new HikyakuError(
         "HIKYAKU_ROOT にリポジトリルート自身は指定できません",

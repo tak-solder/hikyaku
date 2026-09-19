@@ -23,7 +23,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import type { BranchNaming } from "./branch.mts";
 import { HikyakuError } from "./errors.mts";
 import { repoRoot } from "./paths.mts";
@@ -509,7 +509,9 @@ export function loadConfig(options: LoadOptions = {}): ResolvedConfig {
     ].join("\n"));
   }
 
-  const hikyakuRoot = isAbsolute(candidate) ? candidate : resolve(root, candidate);
+  // 絶対パスも正規化する。末尾の `.` や `..` を残すと、同じディレクトリでも
+  // 文字列比較をすり抜けてリポジトリルートを HIKYAKU_ROOT にできてしまう。
+  const hikyakuRoot = resolve(root, candidate);
 
   // リポジトリルート自身は HIKYAKU_ROOT にできない。ルートの .hikyaku.config と
   // ワークスペースの .hikyaku.config が同じファイルになり、以下の古い設定の検出が
