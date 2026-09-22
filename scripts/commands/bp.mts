@@ -18,6 +18,8 @@ import {
   BP_RULES_FILE,
   type BpInput,
   type BpRules,
+  DEFAULT_BP_CASES,
+  DEFAULT_BP_RULES,
   bpGuideDir,
   bpReadmePath,
   bpVerdict,
@@ -300,19 +302,27 @@ register({
 register({
   name: "bp test",
   summary: `${BP_CASES_FILE} の期待値と基準表の算出結果を照合する`,
-  usage: "hikyaku bp test [--root <path>] [--json]",
+  usage: "hikyaku bp test [--builtin] [--root <path>] [--json]",
   details: [
     `${BP_GUIDE_DIR}/${BP_CASES_FILE} の全ケースについて、input を基準表に当てた BP が expect と`,
     "一致するかを確かめます。基準表を変えたときの回帰をここで止めます。",
     "",
     `${BP_GUIDE_DIR}/ が無ければ、Hikyaku 組み込みの既定ケースを既定値に対して実行します。`,
     "",
+    "--builtin はワークスペースを見ず、組み込みの既定値と既定ケースだけを照合します。",
+    "プラグイン自身の CI で、既定値の変更が既定ケースを壊していないかを確かめる用途です",
+    "（.hikyaku.config が無い場所でも動きます）。",
+    "",
     "1件でも一致しなければ終了コード 2 で終了します。validate からも呼ばれます。",
   ].join("\n"),
   run: ({ args }) => {
-    const config = loadConfig({ root: flagString(args, "root") });
-    const rules = loadBpRules(config.hikyakuRoot);
-    const { cases, source } = loadBpCases(config.hikyakuRoot);
+    const builtin = flagBoolean(args, "builtin");
+    const config = loadConfig({ root: flagString(args, "root"), allowMissingRoot: builtin });
+    const useBuiltin = builtin || config.hikyakuRoot === "";
+    const rules = useBuiltin ? DEFAULT_BP_RULES : loadBpRules(config.hikyakuRoot);
+    const { cases, source } = useBuiltin
+      ? { cases: DEFAULT_BP_CASES, source: undefined }
+      : loadBpCases(config.hikyakuRoot);
     const where = source === undefined ? "既定ケース" : relative(config.repoRoot, source);
     const results = runBpCases(rules, cases, where);
     const failed = results.filter((r) => !r.ok);
@@ -320,12 +330,17 @@ register({
     emit(
       {
         ok: failed.length === 0,
+        builtin: useBuiltin,
         rules: rules.source === undefined ? null : relative(config.repoRoot, rules.source),
         cases: source === undefined ? null : relative(config.repoRoot, source),
         results: results.map((r) => ({ name: r.name, expect: r.expect, actual: r.actual, ok: r.ok })),
       },
       () => {
-        const lines = [`基準表: ${sourceLabel(config, rules)}`, `ケース: ${where}`, ""];
+        const lines = [
+          `基準表: ${useBuiltin ? "組み込みの既定値（--builtin）" : sourceLabel(config, rules)}`,
+          `ケース: ${where}`,
+          "",
+        ];
         for (const r of results) {
           const mark = r.ok ? "✓" : "✗";
           const detail = r.ok ? `${r.actual}` : `期待 ${r.expect} / 算出 ${r.actual}`;

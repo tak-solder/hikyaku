@@ -18,7 +18,7 @@ BP 見積もりの精度改善（[issue #34](https://github.com/tak-solder/hikya
 - **`hikyaku bp estimate`**: 指標と加算要素の値を `--<キー>` で渡すと、基準表に当てた BP・内訳・`bp_max` に対する判定を返す。`--markdown` で plan.md / issue.md に貼る内訳表を出す。基準表に無いオプションはエラー（タイプミスで加算要素が黙って落ちるのを防ぐ）
 - **`hikyaku bp guide`**: 現在有効な基準表と出どころ（ワークスペース / 既定値）、`bp estimate` に渡すオプション名を表示する
 - **`hikyaku bp render`**: `bp-guide/README.md` のマーカーブロックを `rules.toml` から再生成する
-- **`hikyaku bp test`**: `bp-guide/cases.toml` の期待値と算出結果を照合する。`bp-guide/` が無ければ組み込みの既定ケースを走らせる
+- **`hikyaku bp test`**: `bp-guide/cases.toml` の期待値と算出結果を照合する。`bp-guide/` が無ければ組み込みの既定ケースを走らせる。`--builtin` はワークスペースを見ずに組み込みの既定値と既定ケースだけを照合し、プラグインの CI（check-scripts）がこれを実行する
 - **`hikyaku bp history`**: 各ビルドの `retrospective.md` から見積もり・実績・乖離・セッションの完結状況を集める
 - **`/hikyaku:bp-guide`**: ワークフローの外で基準表を運用するスキル。`bp history` を素材に `rules.toml` を調整し、期待値ケースを足し、README を再生成する。ブランチは `init` と同じサイクルに属さない形（`{prefix}{separator}bp-guide`）
 - `hikyaku validate` が `bp-guide/` の構文・README の表の古さ・期待値の不一致を検出する。`hikyaku doctor` は `bp-guide/` が無いことを注意（warn）として出す

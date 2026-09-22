@@ -109,7 +109,7 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | `bp estimate [<cycle>] --new-files <n> ...` | 見積もった入力値を BP にするとき（build-manager / builder が呼ぶ）。振り返りで実績 BP を出すときも同じ |
 | `bp actual <phase> [<cycle>]` | 振り返りで、差分から新規ファイル数と追加行数を測るとき |
 | `bp render` | `bp-guide/rules.toml` を変えたあと、`README.md` の表を再生成するとき |
-| `bp test` | `bp-guide/cases.toml` の期待値が基準表と一致するか確かめるとき |
+| `bp test` | `bp-guide/cases.toml` の期待値が基準表と一致するか確かめるとき。`--builtin` はワークスペースを見ず、組み込みの既定値と既定ケースだけを照合する（プラグイン自身の CI 用） |
 | `bp history [<cycle>]` | 基準表を調整する前に、ビルドごとの見積もりと実績を見渡したいとき |
 
 `bp estimate` が返すのは、指標と加算要素の値を基準表に当てた BP と内訳です。基準表への当てはめをコマンドに寄せているのは、見積もりが外れたときに入力値の読み違えと基準表の不適合を切り分けるためです。基準表に無いオプションはエラーになります。タイプミスで加算要素が黙って落ちると、そのまま過小見積もりになります。

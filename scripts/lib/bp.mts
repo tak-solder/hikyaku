@@ -155,6 +155,7 @@ const RESERVED_KEYS = new Set([
   "no_fetch",
   "markdown",
   "workspace",
+  "builtin",
 ]);
 
 const KEY_PATTERN = /^[a-z][a-z0-9_]*$/;
