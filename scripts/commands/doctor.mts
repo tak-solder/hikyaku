@@ -5,6 +5,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { flagString } from "../lib/args.mts";
+import { BP_GUIDE_DIR, bpRulesPath } from "../lib/bp.mts";
 import { loadConfig } from "../lib/config.mts";
 import { ValidationError } from "../lib/errors.mts";
 import { isTracked } from "../lib/git.mts";
@@ -74,6 +75,7 @@ register({
     "  - Node.js が v22.18.0 以上か（型剥がしがフラグ無しで動くか）",
     "  - リポジトリルートの .hikyaku.config があり、解析でき、廃止キーが残っていないか",
     "  - HIKYAKU_ROOT が解決でき、必須ファイルが揃っているか",
+    `  - ${BP_GUIDE_DIR}/ があるか（無くても既定値で動くので注意のみ）`,
     "  - .hikyaku.local が git 管理下に入っていないか（他人の栞を掴む事故になる）",
     "  - origin に到達できるか（着手中ブランチの検出に使う）",
     "",
@@ -150,6 +152,17 @@ register({
               },
         );
       }
+      checks.push(
+        existsSync(bpRulesPath(hikyakuRoot))
+          ? { name: `${BP_GUIDE_DIR}/`, status: "ok", detail: "あり（BP の基準表はこのワークスペースのもの）" }
+          : {
+              name: `${BP_GUIDE_DIR}/`,
+              status: "warn",
+              detail:
+                "無し。BP の基準表は Hikyaku の既定値で動きます。\n" +
+                "    リポジトリに合わせて調整するなら hikyaku init --root <HIKYAKU_ROOT> を再実行して生成してください",
+            },
+      );
     }
 
     if (hikyakuRoot !== undefined && existsSync(localPath(hikyakuRoot))) {

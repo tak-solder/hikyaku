@@ -48,7 +48,7 @@ node --version
 /hikyaku:close-cycle     → 永続ドキュメントへ昇格し、サイクルを closed に
 ```
 
-`init` と `create-cycle` は明示的に制御したいときの入口で、planner が必要に応じて代行します。実質の最短経路は4フェーズです。
+`init` と `create-cycle` は明示的に制御したいときの入口で、planner が必要に応じて代行します。実質の最短経路は4フェーズです。ワークフローの外には `/hikyaku:bp-guide` があり、ビルド分割の基準（BP）をリポジトリに合わせて調整します。
 
 最初の1サイクルを通す手順は [Getting Started](docs/getting-started.md) にあります。
 
@@ -57,7 +57,7 @@ node --version
 - [Getting Started](docs/getting-started.md) — インストールから最初の1サイクル完走まで
 - [概念と設計思想](docs/concepts.md) — 用語集と、この形になっている理由
 - [ワークフロー](docs/workflow/README.md) — 各フェーズで何が起き、どこで承認を求められるか
-- [設定](docs/configuration/config-file.md) — `.hikyaku.config` / [プロファイル](docs/configuration/profiles.md) / [ドキュメントガイド](docs/configuration/documents.md) / [外部連携](docs/configuration/external.md)
+- [設定](docs/configuration/config-file.md) — `.hikyaku.config` / [プロファイル](docs/configuration/profiles.md) / [ドキュメントガイド](docs/configuration/documents.md) / [外部連携](docs/configuration/external.md) / [BP の基準表](docs/configuration/bp-guide.md)
 - [運用](docs/operations/multi-cycle.md) — 並行運用 / [トラブルシューティング](docs/operations/troubleshooting.md) / [CI](docs/operations/ci.md)
 - [リファレンス](docs/reference/cli.md) — CLI / [ディレクトリ構造](docs/reference/directory-layout.md) / [内部スキルとエージェント](docs/reference/agents-and-skills.md)
 - [v1 → v2 移行ガイド](docs/migration/v1-to-v2.md)

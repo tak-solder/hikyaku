@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "[{cycle}] [{buildID}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.0.0"
+  version: "2.1.0"
 ---
 
 # Hikyaku Builder
@@ -206,19 +206,29 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title build-{NN} {cycle
   - **含めないもの:** 詳細な実装コード、テストコードの実装方法
 - [ ] **BP を再算出する**（`${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/bp-guide.md` の手順に従う）
   - architect 段階の BP は issue.md のスコープ記述からの見積もり。**plan.md ではクラス設計と
-    実装ステップまで具体化しているので、算出し直す**
-  - **算出根拠を plan.md に書く。** 指標ごとの値と BP、加算要素の内訳まで書く。根拠が無いと
-    次のレビューで検証できず、乖離を指摘できない
-  - **加算BPを落とさない。** 過小見積もりの多くは、影響ファイル数・基盤セットアップ・
-    外部API連携・大規模リファクタの取りこぼしから来る
+    実装ステップまで具体化しているので、入力値を見直して算出し直す**
+  - `{HIKYAKU_ROOT}/bp-guide/README.md` があれば、このリポジトリ固有の数え方の注意を先に読む
+  - 作成するファイルを名前で列挙し、そこから新規ファイル数・実装行数を数える。列挙は plan.md に残す
+  - 入力値を `bp estimate` に渡し、**`--markdown` の内訳表をそのまま plan.md に貼る**。
+    表への当てはめはコマンドが行うので、自分で表を読んで BP にしない
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" bp estimate {cycle} \
+  --new-files 7 --lines 900 --impact-files 9 --external-api --markdown
+```
+
+  - **加算要素を落とさない。** 過小見積もりの多くは、影響ファイル数・基盤セットアップ・
+    外部API連携・大規模リファクタの取りこぼしから来る。使える入力は `bp guide {cycle}` の「入力」列
 - [ ] コミット & push する
 
 - [ ] **`plan_review` が有効な場合**（express / standard / thorough）、ここで `doc-reviewer` を起動し plan.md をレビューする（`context: plan`）
   - 渡す情報: `plan.md`, `issue.md`, `design-delta.md`, 依存ビルドの `handoff.md`,
-    `${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/bp-guide.md`, Step 0 で取得した `bpMax`
-  - **BP見積もりもレビュー対象**である旨をプロンプトに明記する（`context: plan` の観点に含まれる）
+    `{HIKYAKU_ROOT}/bp-guide/README.md`（存在する場合。無ければ `bp guide --markdown` の出力を
+    プロンプトに含める）, Step 0 で取得した `bpMax`
+  - **BP見積もりの入力値もレビュー対象**である旨をプロンプトに明記する（`context: plan` の観点に含まれる）。
+    見るのは、列挙したファイルとクラス設計が合っているか、加算要素の取りこぼしが無いか
   - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
-  - **BP見積もり乖離の指摘は再算出して反映する。** 再算出の結果が `bpMax − 2` 以上
+  - **入力値の乖離の指摘は `bp estimate` を再実行して反映する。** 再算出の結果が `bpMax − 2` 以上
     （既定では 6 以上）になったら、下の「ビルド管理」に従って
     `/hikyaku:build-manager {cycle}` を呼び出し、分割を検討する
 

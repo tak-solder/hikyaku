@@ -15,7 +15,7 @@ register({
   details: [
     "  {prefix}{separator}{cycle}{separator}{phase}",
     "",
-    "init はサイクルに属さないため {prefix}{separator}init になります。",
+    "init と bp-guide はサイクルに属さないため {prefix}{separator}{phase} になります。",
     "",
     "**生成と検証を兼ねます。** 不一致のときは期待するブランチ名と切り替えコマンドを",
     "返すので、ブランチの作成にもこのコマンドを使ってください。名前を生成するだけの",
@@ -159,7 +159,7 @@ register({
     "  {cycle}       002-billing",
     "  {cycle_id}    002",
     "  {cycle_name}  billing",
-    "  {phase}       init / create / plan / architect / build-01 / close",
+    "  {phase}       init / bp-guide / create / plan / architect / build-01 / close",
     "  {build_id}    01（builder のみ）",
     "  {title}       --build-title の値（他フェーズでは空）",
     "",

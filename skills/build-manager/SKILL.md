@@ -6,7 +6,7 @@ disable-model-invocation: false
 argument-hint: "[{cycle}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.0.0"
+  version: "2.1.0"
 ---
 
 # Hikyaku Build Manager
@@ -40,6 +40,7 @@ BP見積もりと分割単位の判断、issue.md の内容の作成、レビュ
 
 - [ ] `${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/templates.md`: 各種テンプレート（必須）
 - [ ] `${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/bp-guide.md`: BP見積もりガイド（必須）
+- [ ] `{HIKYAKU_ROOT}/bp-guide/README.md`: このリポジトリの BP 基準表と数え方の注意（存在する場合）
 - [ ] 設定を解決する
 
 ```bash
@@ -48,6 +49,15 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json
 
 `bp_max`（未設定なら 8）を取得する。サイクル固有の `.hikyaku.config` があれば
 その値が優先される。HIKYAKU_ROOT は引数では受け取らない（設定から解決される）。
+
+- [ ] 現在有効な BP の基準表を確認する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" bp guide {cycle}
+```
+
+「入力」列が `bp estimate` に渡すフラグ。基準表はワークスペースの持ち物
+（`{HIKYAKU_ROOT}/bp-guide/rules.toml`）で、無ければ既定値が出る。
 
 - [ ] 対象サイクルの現状を取得する
 
@@ -80,10 +90,22 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist read {cycle}
 
 ### Step 2: BP見積もり
 
-- [ ] [bp-guide.md](references/bp-guide.md) の手順に従いBP見積もりを行う
+- [ ] [bp-guide.md](references/bp-guide.md) の手順に従い、**入力値を見積もってコマンドに渡す**
   - ビルドが関わるワークスペース（パッケージ）を特定する
-  - ワークスペースごとに、主要指標（新規ファイル数、実装行数、API操作数、画面数、DBテーブル数）の最大値 + 加算要素でBPを算出する
-  - 全ワークスペースのBPを合計する
+  - ワークスペースごとに、指標（新規ファイル数、実装行数、API操作数、画面数、DBテーブル数）と
+    加算要素（影響ファイル数、基盤セットアップ、外部API連携、大規模リファクタ、基準表にあれば
+    リポジトリ固有の要素）の値を issue.md のスコープ記述から見積もる
+  - 新規ファイル数は、作成するファイルを名前で列挙してから数える
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" bp estimate {cycle} \
+  --new-files 5 --lines 800 --impact-files 7 --setup --markdown
+```
+
+  - 表への当てはめはコマンドが行う。**自分で表を読んで BP にしない**
+  - 複数ワークスペースにまたがるなら、ワークスペースごとに実行して BP を合計する
+  - 出力の内訳表（`--markdown`）を issue.md の「BP見積もり」に**そのまま貼る**。
+    転記しないのは、レビューが入力値を検証するときに算出の根拠が要るため
 - [ ] 合計BPが `bp_max + 1` 以上（デフォルト: 9 以上）の場合は分割が必須
 - [ ] `bp_max − 2` 以上 `bp_max` 以下（デフォルト: 6〜8）は、以下のいずれかに該当する場合のみ分割せずに許容する:
   - 分割したビルド間で同一ファイルの同一箇所を編集する必要があり、マージコンフリクトが避けられない
@@ -105,9 +127,12 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist add {cycle} \
 - [ ] **`tasklist_review` が有効な場合**（express / standard / thorough）、`doc-reviewer` を起動する（`context: tasklist`）
   - **この時点ではまだファイルに書き込まれていない。** `--dry-run` の出力（変更後の一覧・依存グラフ）と issue.md の本文をプロンプトに直接含めて渡す
   - 参照として渡す: `cycles/{cycle}/design/design-delta.md`（存在する場合）,
-    `${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/bp-guide.md`
-  - 明確な不整合・BP見積もりの乖離は反映する（主観的な指摘は無視してよい）。
-    反映が必要な場合は Step 1 からやり直す
+    `{HIKYAKU_ROOT}/bp-guide/README.md`（存在する場合。無ければ `bp guide --markdown` の出力を
+    プロンプトに含める）
+  - **BP のレビュー対象は入力値**（列挙したファイル数がスコープと合っているか、加算要素の
+    取りこぼしが無いか）。表への当てはめはコマンドが行っているので、そこは見ない
+  - 明確な不整合・入力値の乖離は反映する（主観的な指摘は無視してよい）。
+    反映が必要な場合は Step 1 からやり直し、`bp estimate` を再実行する
 
 - [ ] 以下をユーザーに提示して承認を得る
   - **tasklist の変更差分** — スクリプトが返した一覧

@@ -16,7 +16,7 @@
 
 import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
-import { isPhase, type Phase } from "../lib/branch.mts";
+import { isCyclelessPhase, isPhase, type Phase } from "../lib/branch.mts";
 import { loadGuide, type DocEntry } from "../lib/docs.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { emit, table } from "../lib/output.mts";
@@ -163,7 +163,7 @@ register({
         "使用できる値: plan | architect | build-NN | close",
       );
     }
-    if (!isPhase(rawPhase) || rawPhase === "init" || rawPhase === "create") {
+    if (!isPhase(rawPhase) || isCyclelessPhase(rawPhase) || rawPhase === "create") {
       throw new HikyakuError(
         `読むべきドキュメントを持たないフェーズです: ${rawPhase}`,
         "使用できる値: plan | architect | build-NN | close",

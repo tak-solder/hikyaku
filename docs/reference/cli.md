@@ -65,7 +65,7 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | コマンド | いつ使うか |
 |---|---|
 | `doctor` | 環境が動く状態かを確認したいとき。導入直後と、動かないとき |
-| `validate [<cycle>]` | ファイルの整合性を確認したいとき。[CI](../operations/ci.md) から呼ぶと効く |
+| `validate [<cycle>]` | ファイルの整合性を確認したいとき。[CI](../operations/ci.md) から呼ぶと効く。`bp-guide/` の構文・README の表の古さ・期待値の不一致も見る |
 | `docs validate` | ドキュメントガイドのパスだけを確認したいとき |
 
 ## ドキュメント
@@ -98,13 +98,27 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | `tasklist update` | 既存ビルドのタイトル・BP・依存を変えるとき |
 | `tasklist done --id <n> --pr <url>` | ビルドの完了を記録するとき。当該ビルドの PR に同梱する |
 | `tasklist link --id <n> --issue <url>` | 子 issue の参照を手で記録するとき |
-| `bp actual <phase> [<cycle>]` | 振り返りで、見積もった BP と実績を突き合わせるとき |
 
 ビルドの分割に専用コマンドはありません。「元ビルドの `update` + 新ビルドの `add`」で表現します。
 
-`bp actual` が返すのは実測値だけで、BP の値そのものは返しません。基準表への当てはめは判断を伴うため、`bp-guide.md` を読んだ呼び出し元が行います。比較の起点は `pr base` と同じ導出なので、PR に含まれる差分と、測る差分が一致します。起点を別に持つと、先行ビルドの差分まで数えたり、逆に PR の一部を数え落としたりします。
+## BP
+
+| コマンド | いつ使うか |
+|---|---|
+| `bp guide [<cycle>]` | 現在有効な基準表と、`bp estimate` に渡すオプション名を確認したいとき |
+| `bp estimate [<cycle>] --new-files <n> ...` | 見積もった入力値を BP にするとき（build-manager / builder が呼ぶ）。振り返りで実績 BP を出すときも同じ |
+| `bp actual <phase> [<cycle>]` | 振り返りで、差分から新規ファイル数と追加行数を測るとき |
+| `bp render` | `bp-guide/rules.toml` を変えたあと、`README.md` の表を再生成するとき |
+| `bp test` | `bp-guide/cases.toml` の期待値が基準表と一致するか確かめるとき |
+| `bp history [<cycle>]` | 基準表を調整する前に、ビルドごとの見積もりと実績を見渡したいとき |
+
+`bp estimate` が返すのは、指標と加算要素の値を基準表に当てた BP と内訳です。基準表への当てはめをコマンドに寄せているのは、見積もりが外れたときに入力値の読み違えと基準表の不適合を切り分けるためです。基準表に無いオプションはエラーになります。タイプミスで加算要素が黙って落ちると、そのまま過小見積もりになります。
+
+`bp actual` が返すのは実測値だけで、BP の値そのものは返しません。差分から機械的に数えられるのは新規ファイル数と追加行数だけで、影響ファイル数や外部 API の該当は実装したセッションが申告するしかないためです。実績 BP は、実測値に申告を添えて `bp estimate` に渡して求めます。比較の起点は `pr base` と同じ導出なので、PR に含まれる差分と、測る差分が一致します。起点を別に持つと、先行ビルドの差分まで数えたり、逆に PR の一部を数え落としたりします。
 
 ワークスペース配下は数えません。`plan.md` や `handoff.md` が実装行数に混ざると、見積もりの指標（実装コードの規模）と比較する意味が無くなるためです。起点を解決できないときはエラーになります。推測値を返さないのは、実測できなかったことを実測できたように記録させないためです。
+
+基準表の構成と調整の手順は [BP の基準表](../configuration/bp-guide.md) にあります。
 
 ## 命名
 
@@ -121,7 +135,7 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 
 取り込み済みかどうかは、祖先関係とデフォルトブランチの `PR` 列の両方で判定します。squash merge や rebase merge ではマージ済みでもブランチの先端が祖先になりません。祖先関係だけに頼ると、マージ済みのブランチをスタック元と誤判定して、存在しないブランチへ PR を向けることになります。
 
-`branch verify` / `pr title` / `session title` は対象サイクルの設定でテンプレートを展開します。`[branch]` / `[pr]` / `[session]` は[サイクルごとに変えられる](../configuration/config-file.md#サイクルごとに変える)ため、`init` を除いてサイクルの特定が必要です。ID や slug で渡してもディレクトリ名に解決されるので、`002` からも `hikyaku/002-billing/plan` が返ります。
+`branch verify` / `pr title` / `session title` は対象サイクルの設定でテンプレートを展開します。`[branch]` / `[pr]` / `[session]` は[サイクルごとに変えられる](../configuration/config-file.md#サイクルごとに変える)ため、サイクルに属さない `init` と `bp-guide` を除いてサイクルの特定が必要です。ID や slug で渡してもディレクトリ名に解決されるので、`002` からも `hikyaku/002-billing/plan` が返ります。
 
 ## 外部連携
 

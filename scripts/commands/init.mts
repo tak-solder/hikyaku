@@ -3,13 +3,25 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { flagBoolean, flagString } from "../lib/args.mts";
+import {
+  BP_CASES_FILE,
+  BP_GUIDE_DIR,
+  BP_README_FILE,
+  BP_RULES_FILE,
+  bpCasesPath,
+  bpReadmePath,
+  bpRulesPath,
+  renderCasesScaffold,
+  renderReadmeScaffold,
+  renderRulesScaffold,
+} from "../lib/bp.mts";
 import { ASK_KEYS, PROFILE_NAMES } from "../lib/config.mts";
 import { LOCAL_FILE } from "../lib/local.mts";
 import { cyclesPath, renderCyclesFile } from "../lib/cycles.mts";
 import { guidePath } from "../lib/docs.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { emit } from "../lib/output.mts";
-import { repoRelative, repoRoot } from "../lib/paths.mts";
+import { pluginVersion, repoRelative, repoRoot } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
 import { renderGuideScaffold } from "./docs.mts";
 
@@ -27,7 +39,7 @@ interface PlannedFile {
 
 register({
   name: "init",
-  summary: "HIKYAKU_ROOT の雛形（設定・cycles.md・document-guide.md）を生成する",
+  summary: "HIKYAKU_ROOT の雛形（設定・cycles.md・document-guide.md・bp-guide/）を生成する",
   usage: "hikyaku init --root <path> [--dry-run] [--json]",
   writes: true,
   details: [
@@ -36,10 +48,16 @@ register({
     "  リポジトリルート/.hikyaku.config   設定の唯一のベース。hikyaku_root を記録する",
     "  {HIKYAKU_ROOT}/cycles.md           サイクル索引",
     "  {HIKYAKU_ROOT}/document-guide.md   ドキュメントガイドの雛形（全て『未作成』）",
+    `  {HIKYAKU_ROOT}/${BP_GUIDE_DIR}/${BP_RULES_FILE}   BP の基準表（正本。Hikyaku の既定値から生成）`,
+    `  {HIKYAKU_ROOT}/${BP_GUIDE_DIR}/${BP_README_FILE}    基準表の人間向け説明（表は rules.toml から生成）`,
+    `  {HIKYAKU_ROOT}/${BP_GUIDE_DIR}/${BP_CASES_FILE}   基準表の期待値テスト`,
     "  {HIKYAKU_ROOT}/.gitignore          .hikyaku.local だけを除外する（既存があれば追記）",
     "",
     "既存の設計ドキュメントを検出して document-guide.md へ登録するのは",
     "/hikyaku:init スキルの役割です（対話が必要なため）。",
+    "",
+    `${BP_GUIDE_DIR}/ が無いワークスペースでは Hikyaku の既定値が使われます。v2.0 で初期化した`,
+    "ワークスペースに足すには init をもう一度実行してください（無いものだけを生成します）。",
     "",
     "設定を置ける場所はリポジトリルートとサイクルディレクトリの2箇所だけです。",
     "{HIKYAKU_ROOT}/.hikyaku.config は作りません（読み込まれません）。",
@@ -83,6 +101,9 @@ register({
       plan(repoConfigPath, renderRepoConfig(rel)),
       plan(cyclesPath(hikyakuRoot), renderCyclesFile([])),
       plan(guidePath(hikyakuRoot), renderGuideScaffold()),
+      plan(bpRulesPath(hikyakuRoot), renderRulesScaffold(pluginVersion())),
+      plan(bpReadmePath(hikyakuRoot), renderReadmeScaffold()),
+      plan(bpCasesPath(hikyakuRoot), renderCasesScaffold()),
       planGitignore(join(hikyakuRoot, ".gitignore")),
     ];
 
