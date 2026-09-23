@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-marketplace.json",
   "name": "hikyaku",
-  "description": "Hikyaku ワークフロー（PLAN → ARCHITECT → BUILD の3フェーズ）のプラグイン配布",
+  "description": "Hikyaku ワークフロー（PLAN → ARCHITECT → BUILD → CLOSE の4フェーズ）のプラグイン配布",
   "owner": {
     "name": "tak-solder"
   },
@@ -9,7 +9,7 @@
     {
       "name": "hikyaku",
       "source": "./",
-      "description": "PLAN → ARCHITECT → BUILD の3フェーズで構成される、AIエージェント協働開発ワークフロー",
+      "description": "PLAN → ARCHITECT → BUILD → CLOSE の4フェーズで構成される、AIエージェント協働開発ワークフロー",
       "homepage": "https://github.com/tak-solder/hikyaku",
       "keywords": [
         "workflow",
@@ -17,6 +17,7 @@
         "planning",
         "architect",
         "builder",
+        "multi-cycle",
         "japanese"
       ]
     }

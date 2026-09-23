@@ -1,0 +1,15 @@
+{
+  "name": "hikyaku-scripts",
+  "private": true,
+  "description": "Hikyaku ワークフローの決定的な処理を担う CLI（実行時依存ゼロ）",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.1",
+    "typescript": "^5.8.0"
+  }
+}

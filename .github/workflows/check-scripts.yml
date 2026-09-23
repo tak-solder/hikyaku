@@ -1,0 +1,36 @@
+name: Check Scripts
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "scripts/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - ".github/workflows/check-scripts.yml"
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          # 型剥がしがフラグ無しで有効になる最小バージョン
+          node-version: "22.18.0"
+          cache: npm
+
+      - run: npm ci
+
+      # erasableSyntaxOnly により、型剥がしで動かない構文もここで検出される
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Smoke test (CLI が起動するか)
+        run: |
+          node scripts/hikyaku.mts version
+          node scripts/hikyaku.mts help > /dev/null
+          node scripts/hikyaku.mts doctor --json > /dev/null || true
