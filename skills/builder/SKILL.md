@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "[{cycle}] [{buildID}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.0.0"
+  version: "2.0.1"
 ---
 
 # Hikyaku Builder
@@ -254,7 +254,7 @@ Agent に渡すフォーマット指定:
 
 - [ ] コミット & push する
 
-- [ ] **`plan_review` が有効な場合**（express / standard / thorough）、ここで `doc-reviewer` を起動し test-spec.md をレビューする（`context: test-spec`）
+- [ ] **`test_spec_review` が有効な場合**（express / standard / thorough）、ここで `doc-reviewer` を起動し test-spec.md をレビューする（`context: test-spec`）
   - 渡す情報: `test-spec.md`, `plan.md`, `issue.md`, `design-delta.md`
   - plan.md のレビューは上で完了済みなので、ここでは行わない
   - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
