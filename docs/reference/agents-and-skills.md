@@ -8,9 +8,9 @@
 
 ### build-manager
 
-BP の見積もりと分割単位の判断、`issue.md` の作成、レビュー、承認を行います。`tasklist.md` の行の更新・依存グラフの再生成・循環依存の検証はスクリプトの担当です。
+BP の入力値の見積もりと分割単位の判断、`issue.md` の作成、レビュー、承認を行います。入力値を BP にする当てはめ（`hikyaku bp estimate`）、`tasklist.md` の行の更新・依存グラフの再生成・循環依存の検証はスクリプトの担当です。
 
-architect のビルド分割ステップと、builder の実装中にスコープが変わったときに呼ばれます。書き込み前に `tasklist_review` が有効なら `doc-reviewer`（`context: tasklist`）を起動し、BP見積もりの乖離やスコープの重複を確認します。承認（G6）はどのプロファイルでも省略されません。
+architect のビルド分割ステップと、builder の実装中にスコープが変わったときに呼ばれます。書き込み前に `tasklist_review` が有効なら `doc-reviewer`（`context: tasklist`）を起動し、BP見積もりの入力値の乖離やスコープの重複を確認します。承認（G6）はどのプロファイルでも省略されません。
 
 ### retrospective
 
@@ -25,7 +25,7 @@ architect のビルド分割ステップと、builder の実装中にスコー�
 
 改善提案の分類先は `doc:{論理名}` / `workflow` / `記録のみ` の3つです。`doc:` の論理名は `document-guide.md` が正で、そこに無い論理名は使いません。Hikyaku の手順そのものに穴があると思える場合も、このリポジトリで埋めるなら `workflow`（= `instructions.md`）に落とします。
 
-実装フェーズ（`build-{NN}`）では、これに加えて BP 見積もりの実績を記録します。architect 段階・builder 段階の見積もりと、PR の base からの差分を集計した実績を並べ、乖離があればどの指標を読み違えたかを残します。R-N でも L-N でもない事実の記録ですが、乖離の要因がこのリポジトリ固有の再現条件に落ちる場合は L-N としても書かれます。
+実装フェーズ（`build-{NN}`）では、これに加えて BP 見積もりの実績を記録します。architect 段階・builder 段階の見積もりと、PR の base からの差分の実測（新規ファイル数・追加行数）に申告（影響ファイル数・加算要素）を添えて `hikyaku bp estimate` で出した実績を並べ、1セッションで完結したかと、乖離の要因を「入力値の読み違え」と「基準表の問題」に分けて残します。R-N でも L-N でもない事実の記録ですが、乖離の要因がこのリポジトリ固有の再現条件に落ちる場合は L-N としても書かれます。この節の形は固定で、`hikyaku bp history` が読み、`/hikyaku:bp-guide` が基準表を調整する素材にします。
 
 各フェーズの末尾で呼ばれます。`economy` では `skip`、それ以外は `auto` です。
 
@@ -44,7 +44,7 @@ architect のビルド分割ステップと、builder の実装中にスコー�
 
 `code-explorer` が返す Key Files は本セッション自身が読みます。要約だけで設計を進めると、規約やインターフェースの解像度が落ちるためです。
 
-`doc-reviewer` は渡された context（`user-stories` / `architecture` / `tasklist` / `plan` / `test-spec`）に応じて観点を切り替えます。architecture と plan ではセキュリティ設計の考慮漏れも見ます。tasklist は BP見積もりの妥当性と分割の網羅性が対象で、tasklist.md・issue.md がまだファイルに書き込まれていない段階でレビューするため、build-manager が内容をプロンプトへ直接渡します。plan と test-spec はそれぞれの成果物の完成直後にレビューされ、`plan` は plan.md 作成直後、`test-spec` は test-spec.md 作成後という位置は、どのプロファイルでも変わりません。plan は受け入れ基準の網羅とスコープ逸脱に加えて、plan.md に書かれた BP 見積もりの妥当性も見ます（tasklist は issue.md のスコープ記述から、plan は実装計画から、それぞれ同じ基準表で判定します）。test-spec は plan.md・issue.md に対するテストシナリオの網羅性が対象です。
+`doc-reviewer` は渡された context（`user-stories` / `architecture` / `tasklist` / `plan` / `test-spec`）に応じて観点を切り替えます。architecture と plan ではセキュリティ設計の考慮漏れも見ます。tasklist は BP見積もりの妥当性と分割の網羅性が対象で、tasklist.md・issue.md がまだファイルに書き込まれていない段階でレビューするため、build-manager が内容をプロンプトへ直接渡します。plan と test-spec はそれぞれの成果物の完成直後にレビューされ、`plan` は plan.md 作成直後、`test-spec` は test-spec.md 作成後という位置は、どのプロファイルでも変わりません。plan は受け入れ基準の網羅とスコープ逸脱に加えて、plan.md に書かれた BP 見積もりの入力値の妥当性も見ます（tasklist は issue.md のスコープ記述から、plan は実装計画から、それぞれ内訳表の入力値が記述と合っているかを見ます。表への当てはめはコマンドが行うので対象外です）。test-spec は plan.md・issue.md に対するテストシナリオの網羅性が対象です。
 
 `code-reviewer` と `security-reviewer` は並列で起動し、指摘は統合されます。同じ箇所への重複は1件に束ねられ、セキュリティの指摘が優先されます。担当が分かれているので、`code-reviewer` はセキュリティ観点を扱いません。
 

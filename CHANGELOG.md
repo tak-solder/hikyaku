@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 各エントリには「何が変わったか」と「利用者に必要な対応」を書きます。設計判断の経緯は issue と `docs/` を参照してください。
 
+## [2.1.0]
+
+BP 見積もりの精度改善（[issue #34](https://github.com/tak-solder/hikyaku/issues/34) の 2・4）。基準表への当てはめをスクリプトに寄せ、基準表をワークスペースの持ち物にした。
+
+### Added
+
+- **`{HIKYAKU_ROOT}/bp-guide/`**: BP の基準表をワークスペースの持ち物にした。`rules.toml`（正本）/ `README.md`（人間向けの説明。表は `rules.toml` から生成）/ `cases.toml`（期待値テスト）の3ファイルで、`hikyaku init` が既定値から生成する
+  - 加算要素は `flag`（該当すれば定数）/ `per`（1単位につき。`free` / `cap`）/ `tiered`（段階表）の3種類で書け、`input` で既存の指標の値を共有できる。リポジトリ固有の要素（「決済 API を叩くなら +2」「テーブル1つにつき Entity 設計で +1」）を足せる
+  - 無ければ Hikyaku の既定値で動く。既定値は旧 `bp-guide.md` の表と同じしきい値で、境界の重なり（DB テーブル数 1 が BP1 と BP2 の両方に載る等）だけを決定的に解消した
+- **`hikyaku bp estimate`**: 指標と加算要素の値を `--<キー>` で渡すと、基準表に当てた BP・内訳・`bp_max` に対する判定を返す。`--markdown` で plan.md / issue.md に貼る内訳表を出す。基準表に無いオプションはエラー（タイプミスで加算要素が黙って落ちるのを防ぐ）
+- **`hikyaku bp guide`**: 現在有効な基準表と出どころ（ワークスペース / 既定値）、`bp estimate` に渡すオプション名を表示する
+- **`hikyaku bp render`**: `bp-guide/README.md` のマーカーブロックを `rules.toml` から再生成する
+- **`hikyaku bp test`**: `bp-guide/cases.toml` の期待値と算出結果を照合する。`bp-guide/` が無ければ組み込みの既定ケースを走らせる。`--builtin` はワークスペースを見ずに組み込みの既定値と既定ケースだけを照合し、プラグインの CI（check-scripts）がこれを実行する
+- **`hikyaku bp history`**: 各ビルドの `retrospective.md` から見積もり・実績・乖離・セッションの完結状況を集める
+- **`/hikyaku:bp-guide`**: ワークフローの外で基準表を運用するスキル。`bp history` を素材に `rules.toml` を調整し、期待値ケースを足し、README を再生成する。ブランチは `init` と同じサイクルに属さない形（`{prefix}{separator}bp-guide`）
+- `hikyaku validate` が `bp-guide/` の構文・README の表の古さ・期待値の不一致を検出する。`hikyaku doctor` は `bp-guide/` が無いことを注意（warn）として出す
+
+### Changed
+
+- **build-manager / builder**: BP は LLM が表を読んで当てはめるのをやめ、入力値（新規ファイル数・実装行数・影響ファイル数・加算要素）を見積もって `bp estimate` に渡す。作成するファイルを名前で列挙してから数え、内訳表を issue.md / plan.md にそのまま貼る
+- **retrospective（`build-NN`）**: 実績 BP は `bp actual` の実測値（新規ファイル数・追加行数）に申告（影響ファイル数・加算要素）を添えて `bp estimate` で出す。1セッションで完結したかを記録し、乖離の要因を「入力値の読み違え」と「基準表の問題」に分けて書く。節の形は固定（`bp history` が読む）
+- **doc-reviewer（tasklist / plan）**: BP のレビュー対象は表への当てはめではなく入力値の妥当性（列挙したファイルとスコープ・クラス設計の整合、加算要素の取りこぼし）
+- `skills/build-manager/references/bp-guide.md` から数値の表を除き、手順と入力値の数え方だけを残した。表は `hikyaku bp guide` が唯一の正
+- `bp actual` の出力に、実績 BP を出すための `bp estimate` の引数を添えた（挙動は変わらない）
+
+### Migration
+
+- **v2.0 で初期化したワークスペースはそのまま動きます。** `bp-guide/` が無ければ既定値で計算し、`bp guide` / `bp estimate` の出力先頭に「既定値」と出ます。リポジトリに合わせて調整するなら `hikyaku init --root <HIKYAKU_ROOT>` を再実行してください（無いファイルだけ生成します）
+- 旧表で曖昧だった境界は既定値で片方に寄せています（DB テーブル数 1 → BP2、3 → BP3、6 → BP8。画面数 5 → BP8。新規ファイル数 30 → BP8、0 → BP1）。2.0.0 で LLM が選んだ値と1段階ずれることがあります
+- `.hikyaku.config` に変更はありません。2.0.0 で作ったサイクルはそのまま引き継げます
+
 ## [2.0.1]
 
 ### Added

@@ -56,7 +56,7 @@ architect が作るのは「これから作るもの（to-be）」で、それ�
 
 ### ビルド分割
 
-設計に基づいてビルドの論理的な単位を整理し、`build-manager` が BP を見積もって分割します。`tasklist_review` が有効なら、書き込み前に `doc-reviewer`(`context: tasklist`)がBP見積もりの乖離や設計との網羅漏れを確認します。その後、tasklist の変更差分、依存グラフ、issue.md の内容が提示され、承認を求められます(G6)。**このゲートはどのプロファイルでも省略されません。**
+設計に基づいてビルドの論理的な単位を整理し、`build-manager` が BP を見積もって分割します。`tasklist_review` が有効なら、書き込み前に `doc-reviewer`(`context: tasklist`)がBP見積もりの入力値の乖離や設計との網羅漏れを確認します。その後、tasklist の変更差分、依存グラフ、issue.md の内容が提示され、承認を求められます(G6)。**このゲートはどのプロファイルでも省略されません。**
 
 BP の考え方は [BUILD](build.md#ビルドポイントbp) にあります。
 

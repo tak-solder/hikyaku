@@ -6,7 +6,7 @@ disable-model-invocation: false
 argument-hint: "[{HIKYAKU_ROOT}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.0.1"
+  version: "2.1.0"
 ---
 
 # Hikyaku Init
@@ -88,14 +88,19 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" init --root {HIKYAKU_ROOT}
 
 既存ファイルは決して上書きされない。
 
-生成するのは次の4つ。
+生成するのは次の5つ。
 
 | ファイル | 役割 |
 |---|---|
 | リポジトリルート/`.hikyaku.config` | 設定のベース（必須）。`hikyaku_root` の唯一の宣言先 |
 | `{HIKYAKU_ROOT}/cycles.md` | サイクル索引 |
 | `{HIKYAKU_ROOT}/document-guide.md` | ドキュメントガイドの雛形 |
+| `{HIKYAKU_ROOT}/bp-guide/` | BP の基準表（`rules.toml` 正本 / `README.md` 説明 / `cases.toml` 期待値テスト）。Hikyaku の既定値から生成 |
 | `{HIKYAKU_ROOT}/.gitignore` | `.hikyaku.local` の1行だけ |
+
+`bp-guide/` はワークスペースの持ち物で、以後プラグインを更新しても変わらない。
+無くても既定値で動くので、v2.0 で初期化済みのワークスペースに足すときも同じコマンドを
+再実行すればよい（無いファイルだけ生成する）。調整は `/hikyaku:bp-guide` で行う。
 
 **`{HIKYAKU_ROOT}/.hikyaku.config` は作らない。** 設定を置ける場所はリポジトリルートと
 サイクルディレクトリの2箇所だけで、中間層は読み込まれない。
