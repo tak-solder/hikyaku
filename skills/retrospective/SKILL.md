@@ -6,7 +6,7 @@ disable-model-invocation: false
 argument-hint: "{cycle} {SUB_DIR}"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.0.1"
+  version: "2.0.2"
 ---
 
 # Hikyaku Retrospective
