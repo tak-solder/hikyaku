@@ -71,6 +71,7 @@ export interface Reviews {
   architecture: boolean;
   tasklist: boolean;
   plan: boolean;
+  testSpec: boolean;
   code: boolean;
   security: SecurityReviewMode;
   retrospective: RetrospectiveMode;
@@ -99,6 +100,7 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
       architecture: true,
       tasklist: true,
       plan: true,
+      testSpec: true,
       code: true,
       security: "recommended",
       retrospective: "auto",
@@ -121,6 +123,7 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
       architecture: false,
       tasklist: false,
       plan: false,
+      testSpec: false,
       code: true,
       security: "recommended",
       retrospective: "skip",
@@ -141,6 +144,7 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
       architecture: true,
       tasklist: true,
       plan: true,
+      testSpec: true,
       code: true,
       security: "recommended",
       retrospective: "auto",
@@ -163,6 +167,7 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
       architecture: true,
       tasklist: true,
       plan: true,
+      testSpec: true,
       code: true,
       security: "on",
       retrospective: "auto",
@@ -597,6 +602,7 @@ function finalize(
       readBoolean(merged, "architecture_review", "config") ?? preset.reviews.architecture,
     tasklist: readBoolean(merged, "tasklist_review", "config") ?? preset.reviews.tasklist,
     plan: readBoolean(merged, "plan_review", "config") ?? preset.reviews.plan,
+    testSpec: readBoolean(merged, "test_spec_review", "config") ?? preset.reviews.testSpec,
     code: readBoolean(merged, "code_review", "config") ?? preset.reviews.code,
     security:
       readEnum(merged, "security_review", ["off", "recommended", "on"], "config") ??

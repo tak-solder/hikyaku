@@ -37,6 +37,19 @@ BP 見積もりの精度改善（[issue #34](https://github.com/tak-solder/hikya
 - 旧表で曖昧だった境界は既定値で片方に寄せています（DB テーブル数 1 → BP2、3 → BP3、6 → BP8。画面数 5 → BP8。新規ファイル数 30 → BP8、0 → BP1）。2.0.0 で LLM が選んだ値と1段階ずれることがあります
 - `.hikyaku.config` に変更はありません。2.0.0 で作ったサイクルはそのまま引き継げます
 
+## [2.0.1]
+
+### Added
+
+- **`test_spec_review`**: builder が `test-spec.md` に対して `doc-reviewer` を起動するかどうかを、`plan_review` から独立して指定できるようにした（`context: test-spec`）
+  - 既定値は `plan_review` と同じプロファイル別の値（express / standard / thorough で `true`、economy で `false`）
+  - plan.md はレビューしつつ test-spec.md だけ省く、といった組み合わせが個別キーの上書きで作れる
+
+### Migration
+
+- 既定値は変わらないため、`test_spec_review` を明示していない設定は従来どおり動作する
+- v1 時代に存在した同名キー（test-spec 承認ゲートの skip、v2.0.0 で廃止）とは意味が異なる。今回の `test_spec_review` は `doc-reviewer` によるレビューの有無を切り替えるキーで、G8（plan + test-spec の人間承認）はこれまでどおりプロファイルの管轄外で常に有効
+
 ## [2.0.0]
 
 複数サイクルの並行実行、ファイル正への一本化、決定的な処理のスクリプト化を軸とした大規模改修。設計の経緯と判断理由は [issue #26](https://github.com/tak-solder/hikyaku/issues/26) に記録している。
