@@ -26,6 +26,7 @@
   - ❌ `enum` / 実行時 `namespace` / パラメータプロパティ / デコレータ / import alias
   - ✅ import は拡張子必須（`import { x } from "./config.mts"`）。パスエイリアスは使えません
 - 変更したら `npx tsc --noEmit` を通してください
+- BP の既定値（`scripts/lib/bp.mts` の `DEFAULT_BP_RULES`）を変えたら、`DEFAULT_BP_CASES` も更新し `node scripts/hikyaku.mts bp test --builtin` を通してください。CI（check-scripts）が同じコマンドを実行します
 - 書き込みを伴うコマンドには必ず `--dry-run` を用意してください。承認はスキル側が取ります
 
 ## ドキュメント
