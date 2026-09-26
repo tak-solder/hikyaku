@@ -122,11 +122,8 @@ register({
           ? "既に作業ブランチに居ますが、Hikyaku の命名規則に沿っていません。"
           : `現在のブランチは ${parsed.cycle ?? "-"} の ${parsed.phase} を指しています。`,
         "",
-        "**どのブランチで作業するかはユーザーに尋ねてください。判断しないでください。**",
-        "実行環境が割り当てたブランチと、別の作業のブランチに紛れ込んだ状態は、",
-        "ここからは区別できません。前者だと推測して進めると、後者も同じ理屈で通ります。",
-        "",
-        `Hikyaku の規則に従う場合: git switch ${expected} || git switch -c ${expected}`,
+        "hikyaku の規則に従ったブランチで作業してください",
+        `git switch ${expected} || git switch -c ${expected}`,
       );
 
       if (parsed !== undefined && cycle !== undefined && parsed.cycle === cycle && actual !== undefined) {
