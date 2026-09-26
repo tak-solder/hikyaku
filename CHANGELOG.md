@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 各エントリには「何が変わったか」と「利用者に必要な対応」を書きます。設計判断の経緯は issue と `docs/` を参照してください。
 
+## [2.1.0]
+
+### Added
+
+- **`test_spec_review`**: builder が `test-spec.md` に対して `doc-reviewer` を起動するかどうかを、`plan_review` から独立して指定できるようにした（`context: test-spec`）
+  - 既定値は `plan_review` と同じプロファイル別の値（express / standard / thorough で `true`、economy で `false`）
+  - plan.md はレビューしつつ test-spec.md だけ省く、といった組み合わせが個別キーの上書きで作れる
+
+### Migration
+
+- 既定値は変わらないため、`test_spec_review` を明示していない設定は従来どおり動作する
+- v1 時代に存在した同名キー（test-spec 承認ゲートの skip、v2.0.0 で廃止）とは意味が異なる。今回の `test_spec_review` は `doc-reviewer` によるレビューの有無を切り替えるキーで、G8（plan + test-spec の人間承認）はこれまでどおりプロファイルの管轄外で常に有効
+
 ## [2.0.0]
 
 複数サイクルの並行実行、ファイル正への一本化、決定的な処理のスクリプト化を軸とした大規模改修。設計の経緯と判断理由は [issue #26](https://github.com/tak-solder/hikyaku/issues/26) に記録している。

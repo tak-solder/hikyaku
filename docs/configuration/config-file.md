@@ -115,6 +115,7 @@ security_review = "on"
 | `architecture_review` | bool | doc-reviewer（architecture） |
 | `tasklist_review` | bool | doc-reviewer（tasklist） |
 | `plan_review` | bool | doc-reviewer（plan） |
+| `test_spec_review` | bool | doc-reviewer（test-spec） |
 | `code_review` | bool | code-reviewer |
 | `security_review` | `off` / `recommended` / `on` | security-reviewer |
 | `retrospective` | `skip` / `prompt` / `auto` | 振り返りの実行 |

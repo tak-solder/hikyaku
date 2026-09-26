@@ -42,10 +42,13 @@ express は「要件（G1）と実装直前（G8）だけ人間が見て、そ�
 | architecture_review | ✓ | ✗ | ✓ | ✓ |
 | tasklist_review | ✓ | ✗ | ✓ | ✓ |
 | plan_review | ✓ | ✗ | ✓ | ✓ |
+| test_spec_review | ✓ | ✗ | ✓ | ✓ |
 | code_review | ✓ | ✓ | ✓ | ✓ |
 | security_review | 推奨時のみ確認 | 推奨時のみ確認 | 推奨時のみ確認 | on |
 | retrospective | auto | skip | auto | auto |
 | validate | 手動のみ | 手動のみ | 各フェーズ末 | 各ステップ |
+
+`plan_review` と `test_spec_review` は既定値こそ同じプロファイルに従いますが、別々のキーです。plan.md だけレビューして test-spec.md は省く、といった組み合わせは個別キーの上書きで作れます。
 
 `code_review` はどのプロファイルでも行います。中間成果物（user-stories / 設計 / tasklist・issue / plan）のレビューは人間の承認で代替できますが、コードは差分が大きく、人間の承認ゲートが拾える粒度を超えるためです。economy で省くのはこの中間成果物のレビューです。
 
