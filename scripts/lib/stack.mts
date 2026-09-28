@@ -7,7 +7,7 @@
  */
 
 import { flagString, type ParsedArgs } from "./args.mts";
-import { isPhase, parseBranch, type Phase } from "./branch.mts";
+import { isCyclelessPhase, isPhase, parseBranch, type Phase } from "./branch.mts";
 import { loadConfig, type ResolvedConfig } from "./config.mts";
 import { HikyakuError } from "./errors.mts";
 import {
@@ -25,13 +25,13 @@ export function requirePhase(raw: string | undefined): Phase {
   if (raw === undefined) {
     throw new HikyakuError(
       "フェーズを指定してください",
-      "使用できる値: init | create | plan | architect | build-NN | close",
+      "使用できる値: init | bp-guide | create | plan | architect | build-NN | close",
     );
   }
   if (!isPhase(raw)) {
     throw new HikyakuError(
       `フェーズの値が不正です: ${raw}`,
-      "使用できる値: init | create | plan | architect | build-NN（NN は2桁以上の数字）| close",
+      "使用できる値: init | bp-guide | create | plan | architect | build-NN（NN は2桁以上の数字）| close",
     );
   }
   return raw;
@@ -55,7 +55,7 @@ export interface Scope {
  * 解決を通す副次的な効果（`002` から `002-billing` のブランチ名が出る）。
  */
 export function scopeFor(args: ParsedArgs, phase: Phase, operand: string | undefined): Scope {
-  if (phase === "init") {
+  if (isCyclelessPhase(phase)) {
     return {
       config: loadConfig({ root: flagString(args, "root") }),
       cycle: undefined,

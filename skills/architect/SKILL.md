@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "[{cycle}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.0.2"
+  version: "2.1.0"
 ---
 
 # Hikyaku Architect

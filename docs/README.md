@@ -26,6 +26,7 @@ Hikyaku がなぜこの形をしているのか（永続ドキュメントとサ
 - [プロファイル](configuration/profiles.md) — 承認ゲートとレビューの量をサイクルごとに選ぶ
 - [ドキュメントガイド](configuration/documents.md) — 永続ドキュメントの所在を宣言する
 - [外部システムへの投影](configuration/external.md) — GitHub / Asana へ片方向で投影する
+- [BP の基準表](configuration/bp-guide.md) — ビルド分割の基準をリポジトリに合わせて調整する
 
 ## 運用する
 

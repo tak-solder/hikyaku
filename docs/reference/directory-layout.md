@@ -13,6 +13,10 @@
     ├── document-guide.md      # 永続ドキュメントの所在を宣言（必須）
     ├── cycles.md              # サイクル索引（必須）
     ├── instructions.md        # ワークフロー独自の指示（任意）
+    ├── bp-guide/              # BP の基準表（任意。無ければ既定値）
+    │   ├── rules.toml         #   正本
+    │   ├── README.md          #   人間向けの説明。表は rules.toml から生成
+    │   └── cases.toml         #   期待値テスト
     ├── .hikyaku.local         # 最後に作業したサイクル（git 管理対象外）
     ├── .gitignore             # .hikyaku.local の1行だけ
     └── cycles/
@@ -35,12 +39,15 @@
 | `document-guide.md` | 永続ドキュメントの所在と管理主体。無ければ Hikyaku は動かない | init / close-cycle |
 | `cycles.md` | サイクル索引。並行サイクル検出の起点 | create-cycle / close-cycle |
 | `instructions.md` | このリポジトリで Hikyaku を回すときの手順・前提（任意） | close-cycle |
+| `bp-guide/` | BP の基準表。`rules.toml` が正本で、`README.md` の表と `cases.toml` の期待値がそれに従う（任意。無ければ既定値） | init / bp-guide |
 | `.hikyaku.local` | このチェックアウトで最後に作業したサイクル | `cycle use` |
 | `.gitignore` | `.hikyaku.local` の1行だけ | init |
 
 `.gitignore` に包括パターンを書かないでください。close-cycle は別セッションで `retrospective.md` を昇格素材として読むため、まとめて除外すると読めなくなります。
 
 `instructions.md` はインストラクションの優先順位で SKILL.md より上位にあり、スキルの挙動を上書きするための正規の場所です。走行中の他サイクルも読むため、書き換えるのは close-cycle だけです。
+
+`bp-guide/` も同じ理由でワークフローの外からだけ書き換えます。基準表はワークスペース全体の見積もりに効くため、サイクルの途中で動かすとそのサイクルの中で見積もりの比較が成立しなくなります。構成と調整の手順は [BP の基準表](../configuration/bp-guide.md) にあります。
 
 ## サイクルディレクトリ
 
@@ -113,6 +120,7 @@ buildID の採番は `max(既存) + 1` で、リナンバリングは行いま�
 | フェーズ | 例 |
 |---|---|
 | `init` | `hikyaku/init`（サイクルに属さない） |
+| `bp-guide` | `hikyaku/bp-guide`（サイクルに属さない） |
 | `create` | `hikyaku/002-billing/create` |
 | `plan` | `hikyaku/002-billing/plan` |
 | `architect` | `hikyaku/002-billing/architect` |

@@ -12,9 +12,19 @@
 import { HikyakuError } from "./errors.mts";
 
 /** フェーズは閉じた集合。これがブランチ名の解析を成立させている */
-export type Phase = "init" | "create" | "plan" | "architect" | "close" | `build-${string}`;
+export type Phase = "init" | "bp-guide" | "create" | "plan" | "architect" | "close" | `build-${string}`;
 
-export const FIXED_PHASES = ["init", "create", "plan", "architect", "close"] as const;
+/**
+ * サイクルに属さないフェーズ。ブランチ名は {prefix}{sep}{phase} になる。
+ * init はワークスペースの初期化、bp-guide は BP 基準表の運用（どちらもサイクル横断）
+ */
+export const CYCLELESS_PHASES = ["init", "bp-guide"] as const;
+
+export const FIXED_PHASES = ["init", "bp-guide", "create", "plan", "architect", "close"] as const;
+
+export function isCyclelessPhase(phase: string): boolean {
+  return (CYCLELESS_PHASES as readonly string[]).includes(phase);
+}
 
 const BUILD_PHASE = /^build-\d{2,}$/;
 
@@ -32,10 +42,10 @@ export interface BranchNaming {
   separator: string;
 }
 
-/** init はサイクルに属さないので {prefix}{sep}init になる */
+/** init / bp-guide はサイクルに属さないので {prefix}{sep}{phase} になる */
 export function branchName(naming: BranchNaming, phase: Phase, cycle?: string): string {
-  const parts = phase === "init" ? [phase] : [cycle ?? "", phase];
-  if (phase !== "init" && (cycle === undefined || cycle === "")) {
+  const parts = isCyclelessPhase(phase) ? [phase] : [cycle ?? "", phase];
+  if (!isCyclelessPhase(phase) && (cycle === undefined || cycle === "")) {
     throw new HikyakuError(`フェーズ ${phase} のブランチ名にはサイクルが必要です`);
   }
   const body = parts.join(naming.separator);
@@ -62,10 +72,13 @@ export function parseBranch(naming: BranchNaming, name: string): ParsedBranch | 
     rest = rest.slice(head.length);
   }
 
-  if (rest === "init") return { cycle: undefined, phase: "init" };
+  for (const phase of CYCLELESS_PHASES) {
+    if (rest === phase) return { cycle: undefined, phase };
+  }
 
-  // 末尾から既知のフェーズを剥がす
+  // 末尾から既知のフェーズを剥がす（サイクルに属さないフェーズは上で完全一致のみ）
   for (const phase of FIXED_PHASES) {
+    if (isCyclelessPhase(phase)) continue;
     const tail = `${separator}${phase}`;
     if (rest.endsWith(tail)) {
       const cycle = rest.slice(0, -tail.length);

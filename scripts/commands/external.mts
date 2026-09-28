@@ -433,7 +433,7 @@ register({
     if (phaseRaw === undefined || !isPhase(phaseRaw)) {
       throw new HikyakuError(
         "フェーズを指定してください",
-        "使用できる値: init | create | plan | architect | build-NN | close",
+        "使用できる値: init | bp-guide | create | plan | architect | build-NN | close",
       );
     }
     const phase: Phase = phaseRaw;

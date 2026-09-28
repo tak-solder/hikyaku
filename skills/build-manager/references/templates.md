@@ -45,7 +45,7 @@ graph TD
 |---|---|
 | `buildID` | 作成順の連番。`max(既存) + 1` で採番し、リナンバリングは行わない |
 | `title` | ビルド名 |
-| `BP` | ビルドポイント（[bp-guide.md](bp-guide.md) 参照） |
+| `BP` | ビルドポイント（`hikyaku bp estimate` の算出値。手順は [bp-guide.md](bp-guide.md)） |
 | `dependencies` | 依存ビルドID。実行順序はこの依存グラフで決まる |
 | `issue` | `build-{NN}/issue.md` への相対リンク。作成時に記録し以後不変 |
 | `PR` | **着手可否と完了判定に使う唯一の列**。当該ビルドの PR に同梱して更新する |
@@ -82,4 +82,19 @@ issue.md の本文は build-manager（LLM）が書きます。tasklist.md の行
 ## 参照する設計ドキュメント
 
 - （design-delta.md の該当箇所、永続ドキュメントの該当箇所）
+
+## BP見積もり
+
+（`hikyaku bp estimate {cycle} ... --markdown` の内訳表をそのまま貼る。
+　新規ファイル数の根拠として、作成するファイルを列挙する）
+
+作成するファイル: （例: `src/billing/invoice.ts`, `src/billing/invoice.test.ts`, ...）
+
+| 項目 | 値 | BP |
+|------|----|----|
+| ... | ... | ... |
 ```
+
+「BP見積もり」の表は build-manager が `bp estimate` の出力を貼るもので、手で計算しません。
+builder は plan.md で入力値を見直して再算出するので、ここに書くのは architect 段階の
+入力値とその BP です。
