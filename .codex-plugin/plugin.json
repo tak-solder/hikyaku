@@ -1,0 +1,22 @@
+{
+  "name": "hikyaku",
+  "version": "2.1.0",
+  "description": "PLAN → ARCHITECT → BUILD → CLOSE の4フェーズで構成される、AIエージェント協働開発ワークフロー",
+  "skills": "./codex/skills/",
+  "author": {
+    "name": "tak-solder",
+    "url": "https://github.com/tak-solder"
+  },
+  "homepage": "https://github.com/tak-solder/hikyaku",
+  "repository": "https://github.com/tak-solder/hikyaku",
+  "license": "MIT",
+  "interface": {
+    "displayName": "Hikyaku",
+    "shortDescription": "AIエージェント協働開発ワークフロー",
+    "longDescription": "PLAN → ARCHITECT → BUILD → CLOSE をスキルと CLI で進める",
+    "developerName": "tak-solder",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://github.com/tak-solder/hikyaku"
+  }
+}

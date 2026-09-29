@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 各エントリには「何が変わったか」と「利用者に必要な対応」を書きます。設計判断の経緯は issue と `docs/` を参照してください。
 
+## [Unreleased]
+
+### Added
+
+- Codex 用の `.codex-plugin/plugin.json`、`.agents/plugins/marketplace.json`、`codex/skills/*/SKILL.md` を追加した。Codex では専用入口から従来の Hikyaku 手順を読み、パス・引数・内部スキル・エージェント委任の表記を Codex の機能に読み替える
+- `codex/compatibility.md` に Codex での実行規約を追加し、`docs/getting-started-codex.md` に導入と起動方法を記載した
+
+### Migration
+
+- Claude Code 利用者の操作は変わらない。従来の `/hikyaku:...` と `skills/`・`agents/` の手順は維持する
+- Codex 利用者はマーケットプレイスからプラグインをインストールし、`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要
+
 ## [2.1.0]
 
 BP 見積もりの精度改善（[issue #34](https://github.com/tak-solder/hikyaku/issues/34) の 2・4）。基準表への当てはめをスクリプトに寄せ、基準表をワークスペースの持ち物にした。

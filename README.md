@@ -1,6 +1,6 @@
 # Hikyaku (飛脚)
 
-Hikyaku は **PLAN → ARCHITECT → BUILD → CLOSE の4フェーズ**で構成される、AIエージェント協働開発ワークフローです。Claude Code のプラグインとして配布され、Agent Skills の仕様に準拠しています。
+Hikyaku は **PLAN → ARCHITECT → BUILD → CLOSE の4フェーズ**で構成される、AIエージェント協働開発ワークフローです。Claude Code と Codex のプラグインとして配布され、Agent Skills の仕様に準拠しています。
 
 AIエージェントと開発を進めると、2つの問題に必ず突き当たります。1つは、機能が大きくなるほど1セッションのコンテキストに収まらなくなること。もう1つは、設計ドキュメントが実装とずれていき、しかもずれていることに誰も気づけなくなることです。
 
@@ -17,10 +17,14 @@ Hikyaku は前者をフェーズとビルドへの分割で、後者を「実装
 
 ## インストール
 
+Claude Code では次のコマンドで導入します。
+
 ```bash
 claude plugin marketplace add tak-solder/hikyaku
 claude plugin install hikyaku@hikyaku
 ```
+
+Codex での導入と起動方法は [Codex で使い始める](docs/getting-started-codex.md) を参照してください。
 
 **Node.js v22.18.0 以上が必要です。** スクリプトは TypeScript のまま Node で直接実行します（型剥がしがフラグ無しで有効になる最小バージョンです）。実行時依存はゼロで、`npm install` もビルドも不要です。
 
@@ -28,11 +32,11 @@ claude plugin install hikyaku@hikyaku
 node --version
 ```
 
-環境が要件を満たしているかは `/hikyaku:init` が最初に確認します。CLI を自分のシェルからも叩きたい場合は [実行方法](docs/reference/cli.md#実行方法) を参照してください。
+環境が要件を満たしているかは init スキルが最初に確認します。CLI を自分のシェルからも叩きたい場合は [実行方法](docs/reference/cli.md#実行方法) を参照してください。
 
 ## 使い始める
 
-導入したいリポジトリで初期化し、あとは4つのフェーズを順に回します。
+導入したいリポジトリで初期化し、あとは4つのフェーズを順に回します。以下は Claude Code での呼び出し方です。Codex の呼び出し方は [Codex で使い始める](docs/getting-started-codex.md) にあります。
 
 ```
 /hikyaku:init            → ワークスペースを初期化（リポジトリにつき1回）
@@ -55,6 +59,7 @@ node --version
 ## ドキュメント
 
 - [Getting Started](docs/getting-started.md) — インストールから最初の1サイクル完走まで
+- [Codex で使い始める](docs/getting-started-codex.md) — Codex への導入とスキルの起動
 - [概念と設計思想](docs/concepts.md) — 用語集と、この形になっている理由
 - [ワークフロー](docs/workflow/README.md) — 各フェーズで何が起き、どこで承認を求められるか
 - [設定](docs/configuration/config-file.md) — `.hikyaku.config` / [プロファイル](docs/configuration/profiles.md) / [ドキュメントガイド](docs/configuration/documents.md) / [外部連携](docs/configuration/external.md) / [BP の基準表](docs/configuration/bp-guide.md)

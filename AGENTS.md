@@ -52,6 +52,7 @@
 - `skills/`, `agents/`, `scripts/` 配下のファイルを変更したときは、各スキルのフロントマターに記載されているバージョンと `.claude-plugin/plugin.json` の `version` を更新してください。
     - バージョンは `MAJOR.MINOR.PATCH` の形式で、変更の内容に応じて適切にインクリメントしてください。
     - すべてのスキルのバージョンと plugin.json のバージョンは統一してください。つまり、1つでもスキルまたはエージェントを変更したら、すべてのスキルと plugin.json のバージョンを更新する必要があります。
+- `codex/`、`.codex-plugin/`、`.agents/plugins/` のみの変更では Claude Code 用スキルと `.claude-plugin/plugin.json` のバージョンを上げません。Codex 用スキルのバージョンは `.codex-plugin/plugin.json` と揃えてください。
 - `docs/`, `README.md`, `AGENTS.md`, `CHANGELOG.md` だけの変更ではバージョンを上げません（プラグインの挙動が変わらないため）。
 - バージョンを上げる際は`CHANGELOG.md`に変更内容を記載してください。
     - **何が変わったか**（どのスキル・エージェント・設定キーがどうなったか）を具体的に書いてください。
@@ -60,14 +61,19 @@
 
 ## プラグイン構成
 
-このリポジトリは Claude Code のプラグイン仕様（[plugins.md](https://code.claude.com/docs/en/plugins.md), [plugins-reference.md](https://code.claude.com/docs/en/plugins-reference.md)）に準拠しています。
+このリポジトリは Claude Code のプラグイン仕様（[plugins.md](https://code.claude.com/docs/en/plugins.md), [plugins-reference.md](https://code.claude.com/docs/en/plugins-reference.md)）と [Codex のプラグイン仕様](https://developers.openai.com/plugins/build/plugins) に準拠しています。
 
 ```
 ./
 ├── .claude-plugin/
 │   ├── plugin.json            # プラグインマニフェスト
 │   └── marketplace.json       # マーケットプレイス定義（リポジトリ自身を単一プラグイン構成のマーケットプレイスとして配布）
+├── .codex-plugin/plugin.json  # Codex 用マニフェスト。Codex 用スキルだけを指定
+├── .agents/plugins/marketplace.json # Codex 用マーケットプレイス定義
 ├── agents/<name>.md           # スキルから委任される各サブエージェント定義
+├── codex/
+│   ├── compatibility.md       # Codex での呼び出しとパスの読み替え
+│   └── skills/<name>/SKILL.md # Codex 専用入口。詳細は skills/ を参照
 ├── scripts/                   # CLI（実行時依存ゼロ）
 │   ├── hikyaku.mts
 │   ├── lib/
