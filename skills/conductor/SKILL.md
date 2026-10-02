@@ -58,6 +58,14 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle} --json
 | `closed` / `abandoned` | 何もせず**終了**する |
 | それ以外 | 続ける |
 
+- [ ] 子がテストを実行できるかを確認する
+  - テストのコマンドを AGENTS.md / README / package.json などから引く
+  - `conductor launch builder {cycle} {build} --json` の `allowedTools` で許可されているかを照合する
+    （既定は `git` / `node` / `ls` / `cat` などだけで、`npm test` や環境変数を前置きしたコマンドは含まない）
+  - 許可されていなければ、`.hikyaku.config` の `[conductor] allowed_tools` に足してコミットするよう人間に
+    案内して**終了**する。許可が無いと builder はローカル検証で blocked になる
+  - 設定は `conductor launch` が起動のたびに読むので、作業ツリーで一時的に足すのではなくコミットしておく
+
 - [ ] 委任される範囲を取得する
 
 ```bash
@@ -198,8 +206,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {phase} {cycle
 
 #### error
 
-予算超過などで子が異常終了した。`reason` と `costUsd` を示して人間に上げ、再開するかを尋ねる。
-再開するなら新しい session で起動し直す（スキルの中断検出で続きから進む）。
+予算超過や利用上限への到達などで子が異常終了した。`reason` と `costUsd` を示して人間に上げ、再開するかを尋ねる。
+再開するなら、**同じ session-id で** `--resume` し、「中断したところから続けてください」とだけ伝える。
+子は止まる直前の文脈を持っているので、新しい session で起動し直すより確実に続きから進む。
+`--resume` 自体が失敗したときだけ、新しい session で起動し直す（スキルの中断検出で続きから進む）。
 
 ### Step 4: マージ待ちで止まる
 

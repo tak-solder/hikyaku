@@ -311,7 +311,14 @@ export function parseResultJson(raw: string): ParsedResult {
       body: result.trimEnd().slice(-2000),
       sessionId,
       costUsd,
-      reason: `子セッションがエラーで終了しました（${subtype || "is_error"}）`,
+      // 利用上限への到達などは subtype が success のまま is_error だけが立ち、
+      // 理由は result の本文にしか無い。subtype だけでは原因が分からないので本文を添える
+      reason: [
+        `子セッションがエラーで終了しました（${subtype !== "" && subtype !== "success" ? subtype : "is_error"}）`,
+        result.trim().split("\n")[0] ?? "",
+      ]
+        .filter((part) => part !== "")
+        .join(": "),
     };
   }
 
