@@ -25,6 +25,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { BranchNaming } from "./branch.mts";
+import { checkConductorAsks, DEFAULT_CONDUCTOR, type ConductorConfig } from "./conductor.mts";
 import { HikyakuError } from "./errors.mts";
 import { repoRoot } from "./paths.mts";
 import { parseToml, TomlError, type TomlTable, type TomlValue } from "./toml.mts";
@@ -233,6 +234,7 @@ export interface ResolvedConfig {
   session: { title: string };
   security: { triggers: string };
   external: { target: ExternalTarget; githubRepo?: string; asanaProjectGid?: string };
+  conductor: ConductorConfig;
   /**
    * ルート設定の ask に並んでいて、まだ答えが記録されていないキー。
    * create-cycle が尋ねる対象。サイクルを重ねた結果ここに残っていれば、
@@ -297,6 +299,44 @@ function readInteger(table: TomlTable | undefined, key: string, where: string): 
     throw new HikyakuError(`${where}.${key} は整数で指定してください`);
   }
   return value;
+}
+
+function readNumber(table: TomlTable | undefined, key: string, where: string): number | undefined {
+  const value = table?.[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new HikyakuError(`${where}.${key} は数値で指定してください`);
+  }
+  return value;
+}
+
+function readStringArray(table: TomlTable | undefined, key: string, where: string): string[] | undefined {
+  const value = table?.[key];
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new HikyakuError(`${where}.${key} は文字列の配列で指定してください`);
+  }
+  return value as string[];
+}
+
+/**
+ * [conductor] を読む。配列はキー単位のマージなので、サイクル設定に書くと
+ * ルート設定の配列を置き換える（足し合わせない）
+ */
+function readConductor(table: TomlTable | undefined): ConductorConfig {
+  const where = "[conductor]";
+  const budget = readNumber(table, "budget_per_run", where) ?? DEFAULT_CONDUCTOR.budgetPerRun;
+  if (budget < 0) {
+    throw new HikyakuError(`${where}.budget_per_run は 0 以上で指定してください（0 は上限なし）`);
+  }
+  const conductor: ConductorConfig = {
+    escalate: readStringArray(table, "escalate", where) ?? DEFAULT_CONDUCTOR.escalate,
+    delegate: readStringArray(table, "delegate", where) ?? DEFAULT_CONDUCTOR.delegate,
+    allowedTools: readStringArray(table, "allowed_tools", where) ?? DEFAULT_CONDUCTOR.allowedTools,
+    budgetPerRun: budget,
+  };
+  checkConductorAsks(conductor, where);
+  return conductor;
 }
 
 function checkEnum<T extends string>(
@@ -639,6 +679,7 @@ function finalize(
       githubRepo: readString(externalTable, "github_repo", "[external]"),
       asanaProjectGid: readString(externalTable, "asana_project_gid", "[external]"),
     },
+    conductor: readConductor(readTable(merged, "conductor")),
     askAtCreate,
     sources,
   };
