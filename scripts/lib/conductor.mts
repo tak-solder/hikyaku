@@ -87,6 +87,40 @@ export const ASKS: AskDefinition[] = [
 
 export const ASK_IDS: string[] = ASKS.map((ask) => ask.id);
 
+/** 子として動くスキル。conductor lint はこれらの SKILL.md と references/ からタグを集める */
+export const CONDUCTED_SKILLS = ["architect", "builder", "build-manager", "close-cycle", "retrospective"];
+
+/** タグとして扱う書式。（G8）と（ask: branch） */
+const TAG_PATTERN = /（(?:ask: ([a-z][a-z-]*)|(G\d+))）/g;
+
+export function collectTags(text: string): string[] {
+  return [...text.matchAll(TAG_PATTERN)].map((m) => (m[1] ?? m[2]) as string);
+}
+
+/**
+ * スキルのタグと ASKS の突き合わせ。食い違うと子は表に無い ID で gate を出し、
+ * 監督は「分類できない問い」として人間に上げ続ける。動作は止まらず静かにずれるので、
+ * CI で検出する
+ */
+export function lintTags(tagsByFile: Map<string, string[]>): string[] {
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  for (const [file, tags] of tagsByFile) {
+    for (const id of tags) {
+      seen.add(id);
+      if (!ASK_IDS.includes(id)) {
+        problems.push(`${file}: ${id} が scripts/lib/conductor.mts の ASKS にありません`);
+      }
+    }
+  }
+  for (const id of ASK_IDS) {
+    if (id !== "other" && !seen.has(id)) {
+      problems.push(`ASKS の ${id} に対応するタグが ${CONDUCTED_SKILLS.join(" / ")} のどこにもありません`);
+    }
+  }
+  return problems;
+}
+
 export interface ConductorConfig {
   /** 既定では監督が答える問いのうち、人間に上げるもの */
   escalate: string[];

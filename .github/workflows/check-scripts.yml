@@ -7,6 +7,8 @@ on:
     paths:
       - "scripts/**"
       - "tests/**"
+      # conductor lint がスキルのタグを読むため
+      - "skills/**"
       - "package.json"
       - "package-lock.json"
       - "tsconfig.json"
@@ -43,3 +45,7 @@ jobs:
       # ワークスペースの bp-guide/ はこの検証の対象外（利用者側の validate が見る）
       - name: BP built-in cases
         run: node scripts/hikyaku.mts bp test --builtin
+
+      # スキルに付けた問いの ID（（G8）/（ask: branch））と、conductor の ID の表の突き合わせ
+      - name: Conductor ask tags
+        run: node scripts/hikyaku.mts conductor lint

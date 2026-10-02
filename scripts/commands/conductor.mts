@@ -1,20 +1,23 @@
 /** conductor asks / launch / parse — 監督が子セッションを動かすための組み立てと解析 */
 
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { flagString } from "../lib/args.mts";
 import {
   CATEGORY_LABELS,
+  collectTags,
+  CONDUCTED_SKILLS,
   DEFAULT_ALLOWED_TOOLS,
+  lintTags,
   parseResultJson,
   resolveAllAsks,
   resolveAsk,
   shellQuote,
   type ResolvedAsk,
 } from "../lib/conductor.mts";
-import { HikyakuError } from "../lib/errors.mts";
+import { HikyakuError, ValidationError } from "../lib/errors.mts";
 import { emit, table } from "../lib/output.mts";
 import { pluginRoot } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
@@ -214,6 +217,45 @@ register({
       lines.push("", parsed.body);
       return lines.join("\n");
     });
+  },
+});
+
+register({
+  name: "conductor lint",
+  summary: "スキルに付けた問いの ID と、conductor の ID の表が食い違っていないか検査する",
+  usage: "hikyaku conductor lint [--json]",
+  details: [
+    "プラグイン本体の開発用です。CI（check-scripts）が実行します。",
+    "",
+    `対象は子として動くスキル（${CONDUCTED_SKILLS.join(" / ")}）の SKILL.md と references/ です。`,
+    "（G8）や（ask: branch）の形のタグを集め、scripts/lib/conductor.mts の ASKS と突き合わせます。",
+    "",
+    "  タグにあって ASKS に無い ID   子が出しても「分類できない問い」として人間に上がる",
+    "  ASKS にあってタグに無い ID   改名や削除の取り残し。escalate に書いても効かない",
+    "",
+    "タグの付け忘れ（問いの箇所なのにタグが無い）は検出しません。",
+  ].join("\n"),
+  run: () => {
+    const tagsByFile = new Map<string, string[]>();
+    for (const skill of CONDUCTED_SKILLS) {
+      const directory = join(pluginRoot(), "skills", skill);
+      const references = join(directory, "references");
+      const files = [
+        join(directory, "SKILL.md"),
+        ...(existsSync(references)
+          ? readdirSync(references).filter((name) => name.endsWith(".md")).map((name) => join(references, name))
+          : []),
+      ];
+      for (const file of files) {
+        const tags = collectTags(readFileSync(file, "utf8"));
+        if (tags.length > 0) tagsByFile.set(`skills/${file.slice(join(pluginRoot(), "skills").length + 1)}`, tags);
+      }
+    }
+
+    const problems = lintTags(tagsByFile);
+    if (problems.length > 0) throw new ValidationError(problems);
+    const count = [...tagsByFile.values()].reduce((sum, tags) => sum + tags.length, 0);
+    emit({ ok: true, files: Object.fromEntries(tagsByFile) }, () => `✓ ${tagsByFile.size} ファイル・${count} 個のタグが ASKS と一致しています`);
   },
 });
 

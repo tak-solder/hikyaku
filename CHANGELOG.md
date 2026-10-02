@@ -16,6 +16,7 @@ ARCHITECT 以降を監督セッションに任せる conductor を追加する�
 - **`hikyaku conductor asks`**: 子が出しうる問いと、監督・人間への振り分けを、サイクルの profile と設定を重ねて一覧する
 - **`hikyaku conductor launch`**: 子（`claude -p`）の起動・再開コマンドを組み立てて返す。自分では実行しない
 - **`hikyaku conductor parse`**: 子の結果ファイルから gate / done / blocked を取り出し、gate なら問いの振り分けを返す。ブロックが規約どおりでなければ `violation` を返す
+- **`hikyaku conductor lint`**: 子として動くスキルの問いのタグと、conductor の ID の表の食い違いを検出する（プラグイン本体の開発用。CI の check-scripts が実行する）
 - **`[conductor]` 設定**: `escalate` / `delegate`（問いの ID ごとに人間・監督への振り分けを上書きする）、`allowed_tools`（子に許可するツールを足す）、`budget_per_run`（呼び出しごとの費用の上限。既定 0 で上限なし）
 
 ### Changed
