@@ -1,0 +1,264 @@
+---
+name: conductor
+description: "Hikyaku 監督: PLAN 済みのサイクルを、ARCHITECT → BUILD を非対話の子セッション（claude -p）に実行させて進める。子の問いには監督が答え、取り返しのつかない判断だけを人間に上げる"
+user-invocable: true
+disable-model-invocation: true
+argument-hint: "[{cycle}]"
+metadata:
+  repository: https://github.com/tak-solder/hikyaku
+  version: "2.3.0"
+---
+
+# Hikyaku Conductor
+
+PLAN を終えたサイクルを、ARCHITECT から最後のビルドまで進める。あなたは**監督**で、
+各フェーズは非対話の**子セッション**（`claude -p`）が既存のスキルのまま実行する。
+
+```
+/hikyaku:planner       → 人間と要件をすり合わせる（conductor の対象外）
+/hikyaku:conductor     → architect → build-01 → build-02 … を子に実行させる  ← あなたはここ
+（人間が PR の連鎖をマージ）
+/hikyaku:conductor     → close-cycle を子に実行させる
+```
+
+**あなたの仕事は、子の成果物を読んで判断すること。** 実装はしない。成果物を書き換えない。
+コミットもしない（ブランチの切り替えと作成だけは行う）。
+
+## 原則
+
+- **状態は保存しない。** 次に何をするかは毎回 `cycle status` / `next` から導く。子の session-id も
+  記録しない。監督のセッションが落ちたら、子を新しく起動し直せばスキルの中断検出で続きから進む
+- **子の報告をそのまま信じない。** 「検証の義務」を必ず行う
+- **PR はマージしない。** フェーズのブランチを直前のブランチから切って積んでいき、マージは人間が行う
+- **子の自由文から問いを推測しない。** 判断の起点は常に `conductor parse` の結果
+- **逐次実行。** `next` が複数のビルドを返しても1件ずつ進める
+
+## 作業ステップ
+
+### Step 0: 前提の確認と委任の合意
+
+- [ ] 設定と対象サイクルを解決する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json
+```
+
+- 未初期化（`.hikyaku.config` が無い等）なら、`/hikyaku:init` を先に実行するよう伝えて**終了**する
+- サイクルを決められなければ、進行中サイクルの一覧を示して人間に尋ねる
+
+- [ ] サイクルの状態を確認する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle} --json
+```
+
+| `phase` | 対応 |
+|---|---|
+| `planning` | `/hikyaku:planner {cycle}` を先に実行するよう伝えて**終了**する。要件のすり合わせは人間が対話で行う |
+| `closed` / `abandoned` | 何もせず**終了**する |
+| それ以外 | 続ける |
+
+- [ ] 委任される範囲を取得する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor asks {cycle}
+```
+
+- [ ] **人間に1回だけ確認する**（`AskUserQuestion`）。次を示し、進めてよいかを尋ねる
+
+```
+サイクル {cycle}（profile: {profile}）を {ARCHITECT / BUILD / CLOSE} から進めます。
+planning/user-stories.md を承認済みの要件として扱います。
+監督が判断する同意ゲート: {asks の出力}
+人間に上げる問い: {asks の出力}、およびスコープを広げる回答が要る問い
+PR はマージしません。最後のビルドが終わったら、マージすべき PR の連鎖を示して止まります。
+```
+
+同意ゲートは、ここでの合意によって監督に**委任**される（省かれるのではない）。断られたら**終了**する。
+想定と違う振り分けを望まれたら、`.hikyaku.config` の `[conductor] escalate` / `delegate` を案内する。
+
+→ Step 1 へ。
+
+### Step 1: 次の作業を決める
+
+- [ ] `cycle status {cycle} --json` を実行し、次の表で決める
+
+| 状態 | 次の作業 |
+|---|---|
+| `architecting` | Step 2 → Step 3（`architect`） |
+| `building` かつ `returned` あり | 差し戻されたビルドのブランチのまま Step 3（`architect {cycle} build-NN`） |
+| `building` | 下記で着手するビルドを決めて Step 2 → Step 3（`builder {cycle} {NN}`） |
+| `completed` | Step 2 → Step 3（`close-cycle`） |
+| `closed` | Step 5 へ |
+
+`building` のときは、積む元のブランチ（Step 2）に居る状態で次の順に決める。
+
+- `cycle status` の `resumeAt` が `build-NN/…` を指していれば、途中で止まったそのビルドを再開する
+- そうでなければ `next` を実行し、`available` のうち**番号が最も小さい1件**を選ぶ
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle} --json
+```
+
+- `available` が空で、`tasklist read {cycle}` で全ビルドが完了なら Step 4 へ（マージ待ち）
+- それ以外（依存が満たされず進めない）は、`next` の出力を示して人間に上げる
+
+### Step 2: ブランチを用意する
+
+子に `branch` の問いを出させないため、**子を起動する前に**期待されるブランチへ切り替えておく。
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify {phase} {cycle} --json
+```
+
+`{phase}` は `architect` / `build-NN` / `close`。
+
+| 状況 | 対応 |
+|---|---|
+| `ok: true` | そのまま |
+| `expected` のブランチが既にある | `git switch {expected}`（中断からの再開） |
+| 無い（architect / build） | **積む元**に切り替えてから `git switch -c {expected}` |
+| 無い（close） | デフォルトブランチを最新にしてから `git switch -c {expected}` |
+
+**積む元**は、このサイクルのブランチのうち最後に積まれたもの（build の番号が最大のもの、無ければ
+architect、無ければ plan）。直前の子が作業したブランチなので、通常はいま居るブランチになる。
+監督を起動し直した直後は `cycle status --json` の `branches` から選ぶ。どれもマージ済みで
+残っていなければ、デフォルトブランチを最新にして積む元にする。
+
+切り替えたあと、もう一度 `branch verify` を実行して `ok: true` を確認する。
+
+**差し戻しの再設計（`returned` あり）ではブランチを切らない。** 差し戻されたビルドのブランチに居ることを
+`branch verify build-NN {cycle}` で確認する。
+
+### Step 3: 子を起動して結果を処理する
+
+- [ ] 起動コマンドを組み立てる
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {architect|builder|close-cycle} {cycle} [{build}] --json
+```
+
+- [ ] 返ってきた `command` を **Bash の `run_in_background` で実行**する（`timeout` は最大値にする）
+  - 子は10分を超えうる。フォアグラウンドで待たない。完了の通知を待ち、ポーリングしない
+  - 起動が許可ルールで拒否されたら、`Bash(claude -p:*)` を許可するよう人間に案内して止まる
+- [ ] 完了したら結果を解析する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor parse {resultFile} {cycle} --json
+```
+
+`outcome` で分岐する。
+
+#### gate
+
+`ask.handler` で分岐する。
+
+- **`supervisor`**: 「問いへの答え方」に従って判断する。ただし、そこに書いた「人間に上げる」条件に
+  当たれば `human` と同じに扱う
+- **`human`**: 子の問い（`body`）を要約せずに `AskUserQuestion` で人間に示し、回答を得る
+
+回答をスクラッチパッドのファイルに書き、同じ session-id で再開する。
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {phase} {cycle} [{build}] \
+  --resume {sessionId} --message {回答ファイル} --json
+```
+
+回答ファイルの書式（監督が判断した場合）:
+
+```
+回答（委任された判断）: {回答。選択肢があればどれを選んだか}
+根拠: {どの成果物の、どの記述に基づくか}
+```
+
+人間が答えた場合は `回答（人間の判断）:` とし、根拠は書かない。子は「委任された判断」を
+非対話規約に従って記録する。
+
+→ 再開した子の結果を、また Step 3 の解析から処理する。
+
+#### done
+
+- [ ] 「検証の義務」のうち、そのフェーズの done に当たるものを行う
+- [ ] 問題があれば人間に上げる（自分で直さない）
+- → Step 1 へ
+
+#### blocked
+
+- [ ] `cycle status {cycle} --json` を実行する
+- `returned` があれば（builder からの差し戻し）→ Step 1 へ（architect が差し戻しを扱う）
+- それ以外は、`body` を示して人間に上げる。指示があればそれに従い、無ければ**終了**する
+
+#### violation
+
+規約どおりのブロックが無い。**子の自由文から問いや結果を推測しない。**
+
+- 1回目: 同じ session-id で再開し、「非対話規約に従い、最後に gate / done / blocked のどれか1つを
+  出力してください」とだけ伝える
+- 2回目も violation なら、`body`（出力の末尾）と `reason` を示して人間に上げる
+
+#### error
+
+予算超過などで子が異常終了した。`reason` と `costUsd` を示して人間に上げ、再開するかを尋ねる。
+再開するなら新しい session で起動し直す（スキルの中断検出で続きから進む）。
+
+### Step 4: マージ待ちで止まる
+
+最後のビルドが done になったら、CLOSE には進まない。close-cycle は全ビルドが
+デフォルトブランチにマージされていることを前提にしている（未マージの実装を永続ドキュメントに
+書くと、永続ドキュメントとサイクルドキュメントを分けた意味が無くなる）。
+
+- [ ] マージすべき PR を、マージする順（plan → architect → build-01 → …）に一覧で示す
+  - `tasklist read {cycle}` の PR 列と、plan / architect の PR（`gh pr list --head {branch}`）から作る
+  - 各 PR の base が直前のブランチになっていることを示す
+- [ ] 監督が判断した同意ゲートを、PR ごとに1行で示す（レビューで確認してもらうため）
+- [ ] 「全てマージしたら `/hikyaku:conductor {cycle}` を実行すると CLOSE から再開する」と案内して**終了**する
+
+### Step 5: 完了
+
+close-cycle の子が done になったら、`cycle status` が `closed` であることを確認し、
+CLOSE の PR を示して終了する。
+
+## 問いへの答え方
+
+監督が答えてよいのは、**issue と承認済みの成果物から導ける回答**と、**挙動を狭める回答**だけ。
+スコープを広げる回答、issue や user-stories と矛盾する回答が必要なら、どの種別でも人間に上げる。
+
+| id | 答え方 |
+|---|---|
+| `cycle` | 対象サイクル名を答える |
+| `branch` | Step 2 で用意したブランチなら「Hikyaku の規則に従う」。食い違いの理由が分からなければ人間に上げる |
+| `build-select` | Step 1 で選んだビルドを答える |
+| `overlap` | このサイクルの design-delta で分担を決められるなら答える。**他のサイクルの設計を変える必要があれば人間に上げる** |
+| `G3` | 推奨案が user-stories と `constraints` に反していなければ推奨案を選ぶ |
+| `G2` / `G4` / `G7` | 成果物を読み、承認観点（スキルが示すもの）に沿って承認するか差し戻す |
+| `retrospective` | 実施する |
+| `docs-link` | `--dry-run` の差分がマーカーで囲まれた索引ブロックの中だけなら承認する |
+| `G6` | 分割・依存が design-delta と矛盾せず、各ビルドの BP が上限内なら承認する |
+| `G8` | 「検証の義務」の G8 を行い、満たしていれば承認する |
+| `G10` | 「検証の義務」の G10 を行い、除外すべき候補を外して承認する |
+| `questions` | 成果物から導けるものだけ答える。導けないものは人間に上げる |
+| `adr-status` | 既存の形式に欄を足さない（挙動を狭める側） |
+| `design-conflict` | 「architect に差し戻す」を選ぶ。**「設計に合わせる（要件を改める）」が必要なら人間に上げる**。ビルドの中で設計を改めるのは、変更が plan.md の範囲に収まり ADR を覆さない場合だけ |
+| `review-findings` | 明確なバグ・規約違反は「今修正する」。スコープ外は「新ビルド化」。「そのまま進める」は確度の低い懸念だけ |
+
+## 検証の義務
+
+| 時点 | 行うこと |
+|---|---|
+| G8 の前 | plan.md と test-spec.md が、issue.md の受け入れ基準をすべて網羅しているかを読む |
+| builder の done の後 | テストを自分で再実行する。差分（`git diff {base}...HEAD --stat` と主要ファイル）が plan.md の範囲に収まっているかを読む |
+| G10 の前 | 昇格候補に「監督がその場で決めた運用」や「すでに事実でない前提」が混ざっていないかを読み、混ざっていれば除外する |
+
+テストのコマンドは handoff.md / plan.md から引く。再実行に許可が要れば人間に案内する。
+
+## 人間に上げるとき
+
+`AskUserQuestion` で、次を含めて尋ねる。
+
+- どのフェーズの、どの問いか（`id` と種別）
+- 子の問いの本文（要約しない）
+- 監督が自分で答えなかった理由
+- 選択肢（子が示したもの）
+
+人間の回答は「回答（人間の判断）」として子に渡す。人間が「監督に任せる」と答えたら、
+その問いに限って監督が判断し、「委任された判断」として渡す。

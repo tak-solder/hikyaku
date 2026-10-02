@@ -12,6 +12,7 @@ ARCHITECT 以降を監督セッションに任せる conductor を追加する�
 
 ### Added
 
+- **`/hikyaku:conductor`**: PLAN 済みのサイクルを、ARCHITECT から最後のビルドまで非対話の子セッション（`claude -p`）に実行させる監督スキル。子の問いは `conductor parse` の振り分けに従って監督が答えるか人間に上げ、同意ゲート（G6 / G8 / G10）は起動時の合意によって監督に委任される。フェーズのブランチは直前のブランチから切って積み、PR はマージしない。最後のビルドが終わったらマージすべき PR の連鎖を示して止まり、マージ後に再実行すると CLOSE から再開する
 - **`skills/conductor/references/headless-protocol.md`**: 非対話で起動された子セッションが、問いの箇所で gate / done / blocked のブロックを出して止まるための規約
 - **`hikyaku conductor asks`**: 子が出しうる問いと、監督・人間への振り分けを、サイクルの profile と設定を重ねて一覧する
 - **`hikyaku conductor launch`**: 子（`claude -p`）の起動・再開コマンドを組み立てて返す。自分では実行しない
