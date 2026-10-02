@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "[{cycle}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.2.0"
+  version: "2.3.0"
 ---
 
 # Hikyaku Close Cycle
@@ -57,7 +57,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context close {cycle}
 
 HIKYAKU_ROOT は `.hikyaku.config` から解決されるので、引数では受け取らない。
 `$ARGUMENTS[0]` でサイクルが指定されていなければ、**現在のブランチ → `.hikyaku.local`
-→ 唯一の進行中サイクル** の順で決まる。決められないときはユーザーに尋ねる。
+→ 唯一の進行中サイクル** の順で決まる。決められないときはユーザーに尋ねる（ask: cycle）。
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {cycle}
@@ -75,7 +75,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify close {cycle}
 |---|---|
 | `ok: true` | そのまま続ける |
 | `ok: false` かつ `onBaseBranch: true` | `expected` の名前でブランチを作成して続ける |
-| `ok: false` かつ `onBaseBranch` が `false` / `null` | **ユーザーに尋ねる**（下記） |
+| `ok: false` かつ `onBaseBranch` が `false` / `null` | **ユーザーに尋ねる**（下記）（ask: branch） |
 
 3つ目は**ユーザーの判断であって、あなたの判断ではない。** 現在のブランチが実行環境に
 割り当てられたものだと分かっていても、**自分で決めずに必ず尋ねる。**
@@ -102,7 +102,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify close {cycle}
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
 ```
 
-`completed` でない場合はユーザーに確認する。未完了のビルドを残したまま締めるのは、
+`completed` でない場合はユーザーに確認する（ask: abandon）。未完了のビルドを残したまま締めるのは、
 サイクルを**中止（abandoned）**する場合に限る。
 
 **ブランチを決めたあとに実行する。** 成果物の有無は作業ツリーを見て判定するため、
@@ -190,13 +190,13 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title close {cycle}
 
 **`repo` 管理のドキュメントには形式を強制しない。** 既存形式に合わせて追記するだけで、
 既存記述の削除・整理はしない。既存 ADR に status 欄が無くて実装状態が分からない
-場合も、勝手に欄を足さず**ユーザーに提案して判断を仰ぐ**。
+場合も、勝手に欄を足さず**ユーザーに提案して判断を仰ぐ**（ask: adr-status）。
 
 → Step 4 へ。
 
 ### Step 4: ユーザー承認（G10）
 
-- [ ] 昇格候補を**昇格先ごとに**提示し、承認を得る
+- [ ] 昇格候補を**昇格先ごとに**提示し、承認を得る（G10）
 
 ```
 overview に昇格:
@@ -238,7 +238,7 @@ ADR:
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs link --dry-run
 ```
 
-新しいドキュメントを追加した場合のみ差分が出る。承認を得てから実行する。
+新しいドキュメントを追加した場合のみ差分が出る。承認を得てから実行する（ask: docs-link）。
 
 - [ ] 検証する
 

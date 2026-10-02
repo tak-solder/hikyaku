@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "[{cycle}] [build-{NN}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.2.0"
+  version: "2.3.0"
 ---
 
 # Hikyaku Architect
@@ -54,7 +54,7 @@ close-cycle が行う。並行サイクルはこの status を見て「決まっ
 
 - **ブランチ: 差し戻し元のビルドのブランチ上で作業する。** architect 用のブランチは切らない。
   Step 0 のブランチ確認は `branch verify architect` ではなく `branch verify build-{NN} {cycle}` で行い、
-  `ok: true` でなければブランチを作らずにユーザーに尋ねる（差し戻し元のブランチに切り替えてもらう）。
+  `ok: true` でなければブランチを作らずにユーザーに尋ねる（ask: branch）（差し戻し元のブランチに切り替えてもらう）。
   設計の変更はそのビルドの PR に入るので、積んでいる場合も連鎖が一直線のまま保てる
 - **入力: `return.md` と、差し戻し元のビルドの `questions.md` を必ず読む。** 何が崩れたか、
   何を決め直すかはそこに書かれている。企画成果物と既存の design-delta.md も通常どおり読む
@@ -84,7 +84,7 @@ HIKYAKU_ROOT は `.hikyaku.config` から解決されるので、引数では受
 
 `$ARGUMENTS[0]` でサイクルが指定されていればそれを渡す。省略された場合は
 **現在のブランチ → `.hikyaku.local` → 唯一の進行中サイクル** の順で決まる。
-決められないときは進行中サイクルの一覧を添えてエラーになるので、**ユーザーに尋ねてから**
+決められないときは進行中サイクルの一覧を添えてエラーになるので、**ユーザーに尋ねてから**（ask: cycle）
 指定し直す。推測して進めない（別サイクルへコミットする事故になる）。
 
 出力の `cycle` と `cycleSource` を、作業対象としてユーザーに1行で示す。
@@ -131,7 +131,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify architect {cycle}
 |---|---|
 | `ok: true` | そのまま続ける |
 | `ok: false` かつ `onBaseBranch: true` | `expected` の名前でブランチを作成して続ける |
-| `ok: false` かつ `onBaseBranch` が `false` / `null` | **ユーザーに尋ねる**（下記） |
+| `ok: false` かつ `onBaseBranch` が `false` / `null` | **ユーザーに尋ねる**（下記）（ask: branch） |
 
 3つ目は**ユーザーの判断であって、あなたの判断ではない。** 現在のブランチが実行環境に
 割り当てられたものだと分かっていても、**自分で決めずに必ず尋ねる。**
@@ -186,7 +186,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active
 - [ ] `cycle-scanner` エージェントを起動する
   - 渡す情報: 今回の `user-stories.md` のパス / 走行中サイクルのディレクトリ一覧 / `document-guide.md` のパス
   - 出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/agents/cycle-scanner.md` を参照
-- [ ] 重複が報告されたら、ユーザーに提示して方針を確認する
+- [ ] 重複が報告されたら、ユーザーに提示して方針を確認する（ask: overlap）
   - 設計を分ける / どちらかに寄せる / そのまま進める
 
 全走行サイクルの本文を本セッションで読むと、大規模リポジトリでコンテキストが破綻する。
@@ -229,7 +229,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active
     ここでは「今回のサイクルで必要な範囲」に留める
 - [ ] **コミット & push する**
 
-- [ ] **`codebase_survey_gate` が有効な場合**（thorough のみ）、ユーザーに提示して確認を得る
+- [ ] **`codebase_survey_gate` が有効な場合**（thorough のみ）、ユーザーに提示して確認を得る（G2）
 
 → Step 3 へ。
 
@@ -238,7 +238,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active
 **codebase-survey.md・planning/・永続ドキュメントに明記されている内容は質問しない。**
 特に `constraints` に書かれている非機能要件を聞き直さないこと。
 
-- [ ] 技術設計に落とし込む過程で生じる不明点を質問する
+- [ ] 技術設計に落とし込む過程で生じる不明点を質問する（ask: questions）
   - 1ラウンドの質問数に上限はない。聞くべきことは1回でまとめて聞く
   - 確認観点: **技術選定**, **データ設計**, **インターフェース設計**, **非機能要件**, **既存コードとの整合**
   - 質問が発生した場合のみ `cycles/{cycle}/design/design-questions.md` に記録する
@@ -272,7 +272,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active
 
 **`design_choice_gate` が有効な場合**（economy / standard / thorough）:
 
-- [ ] trade-off表と推奨案をユーザーに提示し、**選択を得る**
+- [ ] trade-off表と推奨案をユーザーに提示し、**選択を得る**（G3）
 - [ ] 「お任せ」と回答された場合も、推奨案を改めて提示して**明示的な確認**を得る（空回答として進めない）
 
 トレードオフの選択は本来**人間にしか下せない判断**なので、外せるのは express だけ。
@@ -288,7 +288,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active
   - 昇格先は `document-guide.md` の `decisions` が指すパス
   - **`hikyaku` 管理の場合**: 日付ベースのファイル名（`20260901-auth-strategy.md`）、`status: accepted`
   - **`repo` 管理の場合**: **既存形式に合わせる。** 連番なら連番、独自テンプレートならそれに従う。
-    既存に status 欄が無い場合、勝手に欄を足さず**ユーザーに提案して判断を仰ぐ**
+    既存に status 欄が無い場合、勝手に欄を足さず**ユーザーに提案して判断を仰ぐ**（ask: adr-status）
   - 記録項目: 決定 / 文脈 / 検討した案 / 採用理由 / **トレードオフ** / 影響範囲
   - **トレードオフ欄に「特になし」と書かない。** 書きたくなるなら Step 4a の分岐判定が誤っている
   - **既存エントリは書き換えない**（覆すときは新エントリ + 旧を superseded）
@@ -313,7 +313,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active
 - [ ] **`architecture_review` が有効な場合**（express / standard / thorough）、`doc-reviewer` を起動する（`context: architecture`）
   - 渡す情報: `design-delta.md`, `codebase-survey.md`, 今回追記した ADR, `user-stories.md`
   - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
-- [ ] **`architecture_gate` が有効な場合**（economy / standard / thorough）、ユーザーに提示して承認を得る
+- [ ] **`architecture_gate` が有効な場合**（economy / standard / thorough）、ユーザーに提示して承認を得る（G4）
 
 **承認観点はこれに限定する:**
 

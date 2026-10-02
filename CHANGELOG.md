@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 各エントリには「何が変わったか」と「利用者に必要な対応」を書きます。設計判断の経緯は issue と `docs/` を参照してください。
 
+## [2.3.0]
+
+ARCHITECT 以降を監督セッションに任せる conductor を追加する（[issue #40](https://github.com/tak-solder/hikyaku/issues/40)）。作業中。
+
+### Added
+
+- **`skills/conductor/references/headless-protocol.md`**: 非対話で起動された子セッションが、問いの箇所で gate / done / blocked のブロックを出して止まるための規約
+
+### Changed
+
+- **architect / builder / build-manager / close-cycle / retrospective**: ユーザーに尋ねる箇所に `（G8）` や `（ask: branch）` の形で ID を付けた。手順は変わらない
+
+### Migration
+
+- 対応は不要
+
 ## [2.2.0]
 
 builder から architect への差し戻し経路を定義した（[issue #41](https://github.com/tak-solder/hikyaku/issues/41)）。
