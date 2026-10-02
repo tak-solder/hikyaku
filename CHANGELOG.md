@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 各エントリには「何が変わったか」と「利用者に必要な対応」を書きます。設計判断の経緯は issue と `docs/` を参照してください。
 
+## [2.2.0]
+
+builder から architect への差し戻し経路を定義した（[issue #41](https://github.com/tak-solder/hikyaku/issues/41)）。
+
+### Added
+
+- **`{cycle}/return.md`**: builder が architect に差し戻すときに書く記録。差し戻し元のビルドのブランチにだけコミットし、デフォルトブランチにはマージしない。1行目の見出し `# 差し戻し: build-NN` から差し戻し元のビルドを読む。テンプレートは builder の references にある
+- **builder**: 設計どおりでは要件を満たせないと分かったら、自分で設計を変えずに「設計に合わせる / このビルドの中で設計を改める / architect に差し戻す」を確認する。差し戻すなら `return.md` を書いて止まる（handoff.md・振り返り・PR・`tasklist done` は行わない）。Step 2 で差し戻し中と分かったら、作業を始めずに architect を案内する
+- **architect**: `/hikyaku:architect {cycle} build-NN` で、差し戻しからの再設計として動く。差し戻し元のビルドのブランチ上で再設計し（architect 用のブランチも PR も作らない）、最後に `return.md` と差し戻し元の plan.md / test-spec.md を削除する
+
+### Changed
+
+- **`hikyaku cycle status` / `cycle list` / `next`**: 作業ツリーに `return.md` があれば、フェーズは `building` のまま「差し戻し中: build-NN」と表示し、再開コマンドに `/hikyaku:architect {cycle} build-NN` を案内する。`next` は差し戻し中に着手可能なビルドを返さない。JSON 出力に `returned` を追加した
+
+### Migration
+
+- 対応は不要。`return.md` が無いサイクルの挙動は変わらない
+- 差し戻しは差し戻し元のブランチの上でだけ検出される。他のブランチやチェックアウトから差し戻しに気づく仕組みは無い
+
 ## [2.1.0]
 
 BP 見積もりの精度改善（[issue #34](https://github.com/tak-solder/hikyaku/issues/34) の 2・4）。基準表への当てはめをスクリプトに寄せ、基準表をワークスペースの持ち物にした。
