@@ -287,18 +287,23 @@ export function parseFinalText(text: string): Omit<ParsedResult, "sessionId" | "
  * それを規約違反と混同しないよう、is_error / subtype を先に見る
  */
 export function parseResultJson(raw: string): ParsedResult {
-  let json: Record<string, unknown>;
+  let parsed: unknown;
   try {
-    json = JSON.parse(raw) as Record<string, unknown>;
+    parsed = JSON.parse(raw);
   } catch {
+    parsed = undefined;
+  }
+  // null や配列も JSON としては読めるが、結果オブジェクトではない
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     return {
       outcome: "error",
       body: raw.trimEnd().slice(-2000),
       sessionId: null,
       costUsd: null,
-      reason: "結果を JSON として読めません（--output-format json で起動されていないか、途中で終了しました）",
+      reason: "結果を JSON のオブジェクトとして読めません（--output-format json で起動されていないか、途中で終了しました）",
     };
   }
+  const json = parsed as Record<string, unknown>;
 
   const sessionId = typeof json["session_id"] === "string" ? json["session_id"] : null;
   const costUsd = typeof json["total_cost_usd"] === "number" ? json["total_cost_usd"] : null;
@@ -333,23 +338,31 @@ export function parseResultJson(raw: string): ParsedResult {
  *
  * bypassPermissions は渡さず、ここに列挙したものだけを許可する。監督の目が
  * 届かないところで何でもできる状態を作らないため。PR の作成に gh が要るが、
- * マージなどはさせないので pr create / pr view に絞る
+ * マージなどはさせないので pr create / pr view に絞る。
+ *
+ * node は Hikyaku CLI の実行だけを許す。Bash(node:*) にすると node -e で
+ * 任意のコマンドを実行でき、他の許可をすべて迂回できる。スキルはパスを
+ * 二重引用符でくくって呼ぶので、くくった形とくくらない形の両方を許可する
  */
-export const DEFAULT_ALLOWED_TOOLS = [
-  "Read",
-  "Write",
-  "Edit",
-  "Glob",
-  "Grep",
-  "Agent",
-  "Skill",
-  "Bash(git:*)",
-  "Bash(node:*)",
-  "Bash(ls:*)",
-  "Bash(cat:*)",
-  "Bash(gh pr create:*)",
-  "Bash(gh pr view:*)",
-];
+export function defaultAllowedTools(pluginRootPath: string): string[] {
+  const cli = `${pluginRootPath}/scripts/hikyaku.mts`;
+  return [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Agent",
+    "Skill",
+    "Bash(git:*)",
+    `Bash(node ${cli}:*)`,
+    `Bash(node "${cli}":*)`,
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(gh pr create:*)",
+    "Bash(gh pr view:*)",
+  ];
+}
 
 /** POSIX シェルの単一引用符でくくる */
 export function shellQuote(value: string): string {

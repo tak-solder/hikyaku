@@ -23,7 +23,7 @@
 }
 ```
 
-子に許可するツールは `hikyaku conductor launch` が決めます。既定はファイルの読み書きと検索、サブエージェント、`git` / `node` / `ls` / `cat`、PR の作成と参照（`gh pr create` / `gh pr view`）だけです。テストの実行コマンドがこれに含まれない場合（`npm test` など）は、`.hikyaku.config` の `[conductor] allowed_tools` に足してコミットしておきます。許可が無いと、builder はローカル検証の段階で止まります。監督も起動前にこれを確かめ、足りなければ案内して止まります。
+子に許可するツールは `hikyaku conductor launch` が決めます。既定はファイルの読み書きと検索、サブエージェント、`git` / `ls` / `cat`、Hikyaku CLI の実行、PR の作成と参照（`gh pr create` / `gh pr view`）だけです。`node` は Hikyaku CLI を動かす形でしか許可しません。`node -e` のような任意のコードの実行を許すと、ほかの許可をすべて迂回できてしまうためです。テストの実行コマンド（`npm test` や `node --test` など）は既定に含まれないので、`.hikyaku.config` の `[conductor] allowed_tools` に足してコミットしておきます。許可が無いと、builder はローカル検証の段階で止まります。監督も起動前にこれを確かめ、足りなければ案内して止まります。
 
 ```toml
 [conductor]

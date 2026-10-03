@@ -61,7 +61,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle} --json
 - [ ] 子がテストを実行できるかを確認する
   - テストのコマンドを AGENTS.md / README / package.json などから引く
   - `conductor launch builder {cycle} {build} --json` の `allowedTools` で許可されているかを照合する
-    （既定は `git` / `node` / `ls` / `cat` などだけで、`npm test` や環境変数を前置きしたコマンドは含まない）
+    （既定は `git` / `ls` / `cat` と Hikyaku CLI の実行などだけで、`npm test` / `node --test` や環境変数を前置きしたコマンドは含まない）
   - 許可されていなければ、`.hikyaku.config` の `[conductor] allowed_tools` に足してコミットするよう人間に
     案内して**終了**する。許可が無いと builder はローカル検証で blocked になる
   - 設定は `conductor launch` が起動のたびに読むので、作業ツリーで一時的に足すのではなくコミットしておく

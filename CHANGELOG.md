@@ -27,7 +27,7 @@ ARCHITECT 以降を監督セッションに任せる conductor を追加する�
 ### Migration
 
 - conductor を使わない場合、対応は不要。既存のスキルの手順は変わらない
-- conductor を使う場合は、監督のセッションで `Bash(claude -p:*)` を許可する。テストのコマンドが子の既定の許可（`git` / `node` / `ls` / `cat` など）に含まれなければ、`[conductor] allowed_tools` に足してコミットする。手順は [conductor](docs/workflow/conductor.md) にある
+- conductor を使う場合は、監督のセッションで `Bash(claude -p:*)` を許可する。テストのコマンドが子の既定の許可（`git` / `ls` / `cat` と Hikyaku CLI の実行など。`node` は Hikyaku CLI 以外を許可しない）に含まれなければ、`[conductor] allowed_tools` に足してコミットする。手順は [conductor](docs/workflow/conductor.md) にある
 
 ## [2.2.0]
 

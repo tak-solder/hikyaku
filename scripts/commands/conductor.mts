@@ -9,7 +9,7 @@ import {
   CATEGORY_LABELS,
   collectTags,
   CONDUCTED_SKILLS,
-  DEFAULT_ALLOWED_TOOLS,
+  defaultAllowedTools,
   lintTags,
   parseResultJson,
   resolveAllAsks,
@@ -95,7 +95,8 @@ register({
     "  --append-system-prompt-file   非対話規約（skills/conductor/references/headless-protocol.md）",
     "  --disallowedTools AskUserQuestion",
     "  --permission-mode acceptEdits と --permission-prompts none",
-    "  --allowedTools                既定に [conductor] allowed_tools を足したもの",
+    "  --allowedTools                既定に [conductor] allowed_tools を足したもの。既定の node は",
+    "                                Hikyaku CLI の実行だけで、node -e などは許可しない",
     "  --output-format json          結果を --out のファイルに書く（conductor parse の入力）",
     "  < /dev/null                   バックグラウンド起動で stdin を待たないため",
     "",
@@ -126,7 +127,7 @@ register({
     const sessionId = resume ?? randomUUID();
     const out = flagString(args, "out") ?? join(tmpdir(), `hikyaku-conductor-${sessionId}-${Date.now()}.json`);
     const protocol = join(pluginRoot(), "skills", "conductor", "references", "headless-protocol.md");
-    const allowedTools = [...DEFAULT_ALLOWED_TOOLS, ...config.conductor.allowedTools];
+    const allowedTools = [...defaultAllowedTools(pluginRoot()), ...config.conductor.allowedTools];
 
     const argv = [
       "claude",

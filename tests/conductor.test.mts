@@ -5,8 +5,8 @@ import {
   ASK_IDS,
   checkConductorAsks,
   collectTags,
-  DEFAULT_ALLOWED_TOOLS,
   DEFAULT_CONDUCTOR,
+  defaultAllowedTools,
   lintTags,
   parseFinalText,
   parseResultJson,
@@ -14,6 +14,7 @@ import {
   resolveAsk,
   shellQuote,
 } from "../scripts/lib/conductor.mts";
+import { pluginRoot } from "../scripts/lib/paths.mts";
 import { cli, snapshot, succeeds, workspace, write } from "./helpers.mts";
 
 const settings: AskSettings = {
@@ -129,6 +130,22 @@ test("conductor: 異常終了は規約違反と区別して error を返し、�
   assert.equal(parseResultJson("not json").outcome, "error");
 });
 
+for (const raw of ["null", "[]", '"text"', "1"]) {
+  test(`conductor: JSON として読めてもオブジェクトでない結果（${raw}）は error を返す`, () => {
+    const parsed = parseResultJson(raw);
+    assert.equal(parsed.outcome, "error");
+    assert.equal(parsed.sessionId, null);
+  });
+}
+
+test("conductor: 既定の許可は node を Hikyaku CLI の実行だけに絞る", () => {
+  const tools = defaultAllowedTools("/plugins/hikyaku");
+  assert.equal(tools.includes("Bash(node:*)"), false);
+  assert.ok(tools.includes("Bash(node /plugins/hikyaku/scripts/hikyaku.mts:*)"));
+  assert.ok(tools.includes('Bash(node "/plugins/hikyaku/scripts/hikyaku.mts":*)'));
+  assert.equal(tools.some((tool) => /^Bash\(node(?! .*hikyaku\.mts)/.test(tool)), false);
+});
+
 test("conductor: タグの集合と ASKS の食い違いを両方向で検出する", () => {
   const matching = new Map([["skills/x/SKILL.md", ASK_IDS.filter((id) => id !== "other")]]);
   assert.deepEqual(lintTags(matching), []);
@@ -181,7 +198,7 @@ budget_per_run = 2.5
   const output = JSON.parse(succeeds(directory, "conductor", "launch", "builder", "001", "1", "--out", "r.json", "--json"));
   assert.equal(output.prompt, "/hikyaku:builder 001-test 1");
   assert.equal(output.resumed, false);
-  assert.deepEqual(output.allowedTools, [...DEFAULT_ALLOWED_TOOLS, "Bash(npm test:*)"]);
+  assert.deepEqual(output.allowedTools, [...defaultAllowedTools(pluginRoot()), "Bash(npm test:*)"]);
   for (const flag of ["--session-id", "--disallowedTools", "--append-system-prompt-file", "--permission-prompts"]) {
     assert.ok(output.argv.includes(flag), flag);
   }
