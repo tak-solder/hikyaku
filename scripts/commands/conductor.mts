@@ -281,7 +281,8 @@ function allowedToolsOf(config: ResolvedConfig): string[] {
 }
 
 function digestOf(config: ResolvedConfig): string {
-  return settingsDigest(config.profile, config, config.conductor);
+  const files = config.sources.map((path) => `${path}\n${readFileSync(path, "utf8")}`);
+  return settingsDigest(config.profile, config, config.conductor, files);
 }
 
 function requireDigest(args: ParsedArgs, config: ResolvedConfig): void {
@@ -297,7 +298,7 @@ function requireDigest(args: ParsedArgs, config: ResolvedConfig): void {
     throw new HikyakuError(
       `委任の範囲を決める設定が、合意したときから変わっています（合意時: ${expected} / 現在: ${actual}）`,
       [
-        "profile・ゲート・レビュー・[conductor] のいずれかが変わりました。子が .hikyaku.config を",
+        "profile か .hikyaku.config（ルート・サイクル）の内容が変わりました。子が .hikyaku.config を",
         "書き換えた可能性があります。git log -p -- .hikyaku.config などで変更を確かめ、",
         "人間に委任の範囲を確認し直してください。",
       ].join("\n"),

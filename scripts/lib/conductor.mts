@@ -401,13 +401,25 @@ export function shellQuote(value: string): string {
  * 子は Write / Edit を持つので、.hikyaku.config の allowed_tools や delegate を
  * 書き換えられる。launch / parse は起動のたびに設定を読み直すため、書き換えが
  * 次の起動で効くと、人間が合意していない権限や振り分けになる。監督は起動時に
- * 人間と合意したときのダイジェストを全呼び出しに渡し、変わっていれば止める
+ * 人間と合意したときのダイジェストを全呼び出しに渡し、変わっていれば止める。
+ *
+ * 設定ファイルの内容そのもの（configFiles）も含める。base_branch や [branch] が
+ * 変わると、PR の向き先や completed の判定まで変わるため。キーを選んで含めると
+ * 追加漏れが起きる。conductor が実行するフェーズは .hikyaku.config を書き換えない
+ * ので、正常な流れで止まることはない。profile は cycles.md が正なので別に含める
  */
 export function settingsDigest(
   profile: string,
   settings: AskSettings,
   conductor: ConductorConfig,
+  configFiles: string[] = [],
 ): string {
-  const canonical = JSON.stringify({ profile, gates: settings.gates, reviews: settings.reviews, conductor });
+  const canonical = JSON.stringify({
+    profile,
+    gates: settings.gates,
+    reviews: settings.reviews,
+    conductor,
+    configFiles,
+  });
   return createHash("sha256").update(canonical).digest("hex").slice(0, 12);
 }

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { rmSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 import type { AskSettings, ConductorConfig } from "../scripts/lib/conductor.mts";
 import {
@@ -192,6 +194,7 @@ test("conductor: ダイジェストは委任の範囲を決める設定が変わ
   assert.notEqual(settingsDigest("express", settings, conductor()), base);
   assert.notEqual(settingsDigest("standard", settings, conductor({ delegate: ["retry-limit"] })), base);
   assert.notEqual(settingsDigest("standard", settings, conductor({ allowedTools: ["Bash(curl:*)"] })), base);
+  assert.notEqual(settingsDigest("standard", settings, conductor(), ['base_branch = "other"']), base);
 });
 
 test("CLI: conductor lint はプラグイン本体のタグと ASKS が一致していれば成功する", (t) => {
@@ -291,6 +294,27 @@ test("CLI: 合意したときから委任の設定が変わっていれば launc
     assert.equal(changed.status, 1);
     assert.match(changed.stderr, /合意したときから変わっています/);
   }
+});
+
+test("CLI: [conductor] 以外の設定（base_branch やサイクル設定）が変わっても launch を止める", (t) => {
+  const directory = workspace(t, true);
+  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--bp", "2");
+  const agreed = digest(directory);
+  const launch = () => cli(directory, "conductor", "launch", "builder", "001", "1", "--expect-digest", agreed);
+  assert.equal(launch().status, 0);
+  write(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config", '[branch]\nprefix = "other"\n');
+  assert.equal(launch().status, 1);
+  rmSync(join(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config"));
+  assert.equal(launch().status, 0);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\nbase_branch = "release"\n');
+  assert.equal(launch().status, 1);
+});
+
+test("CLI: context は conductor を読むべきフェーズとして受け付けない", (t) => {
+  const directory = workspace(t, true);
+  const rejected = cli(directory, "context", "conductor", "001");
+  assert.equal(rejected.status, 1);
+  assert.match(rejected.stderr, /読むべきドキュメントを持たないフェーズ/);
 });
 
 test("CLI: フェーズの PR は conductor ブランチへ、conductor ブランチの PR はデフォルトブランチへ向く", (t) => {
