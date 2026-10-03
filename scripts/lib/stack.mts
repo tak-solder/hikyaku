@@ -25,13 +25,13 @@ export function requirePhase(raw: string | undefined): Phase {
   if (raw === undefined) {
     throw new HikyakuError(
       "フェーズを指定してください",
-      "使用できる値: init | bp-guide | create | plan | architect | build-NN | close",
+      "使用できる値: init | bp-guide | create | plan | architect | build-NN | close | conductor",
     );
   }
   if (!isPhase(raw)) {
     throw new HikyakuError(
       `フェーズの値が不正です: ${raw}`,
-      "使用できる値: init | bp-guide | create | plan | architect | build-NN（NN は2桁以上の数字）| close",
+      "使用できる値: init | bp-guide | create | plan | architect | build-NN（NN は2桁以上の数字）| close | conductor",
     );
   }
   return raw;
@@ -84,6 +84,11 @@ export function scopeFor(args: ParsedArgs, phase: Phase, operand: string | undef
  * 祖先関係は false のままなので、Hikyaku 自身の完了の定義で補う。
  *
  * 積んでいなければ undefined を返す（＝PR の base はデフォルトブランチ）。
+ *
+ * conductor ブランチ（/hikyaku:conductor の統合ブランチ）は、祖先として同じ距離に
+ * ある候補より優先する。監督が fast-forward でフェーズのブランチを取り込むと、
+ * 取り込んだブランチの先端と conductor の先端が同じコミットになるため。
+ * conductor ブランチ自身の PR は常にデフォルトブランチへ向ける（統合の終点なので）。
  */
 export async function stackParent(
   config: ResolvedConfig,
@@ -92,7 +97,7 @@ export async function stackParent(
   base: string | undefined,
   options: { fetch: boolean },
 ): Promise<KnownBranch | undefined> {
-  if (context === undefined) return undefined;
+  if (context === undefined || phase === "conductor") return undefined;
 
   const views = await resolveViews(config, context, { fetch: options.fetch });
 
@@ -123,7 +128,12 @@ export async function stackParent(
   // PR を向けることになる。デフォルトブランチへフォールバックするほうが安全
   if (views.mergedIds === undefined && baseRefs.length === 0) return undefined;
 
-  return nearestAncestorBranch(config.repoRoot, candidates, baseRefs);
+  // 同じ距離なら先に並んだ候補が選ばれるので、conductor ブランチを先頭に置く
+  const ordered = [
+    ...candidates.filter((branch) => parseBranch(config.branch, branch.name)?.phase === "conductor"),
+    ...candidates.filter((branch) => parseBranch(config.branch, branch.name)?.phase !== "conductor"),
+  ];
+  return nearestAncestorBranch(config.repoRoot, ordered, baseRefs);
 }
 
 /**

@@ -17,19 +17,26 @@ PLAN を終えたサイクルを、ARCHITECT から最後のビルドまで進�
 ```
 /hikyaku:planner       → 人間と要件をすり合わせる（conductor の対象外）
 /hikyaku:conductor     → architect → build-01 → build-02 … を子に実行させる  ← あなたはここ
-（人間が PR の連鎖をマージ）
+                          各 PR は conductor ブランチへ向け、監督が取り込む
+（人間が conductor ブランチ → デフォルトブランチの PR をマージ）
 /hikyaku:conductor     → close-cycle を子に実行させる
 ```
 
 **あなたの仕事は、子の成果物を読んで判断すること。** 実装はしない。成果物を書き換えない。
-コミットもしない（ブランチの切り替えと作成だけは行う）。
+コミットもしない。行う git 操作は、ブランチの作成・切り替えと、子の PR の conductor ブランチへの
+取り込みだけ。
 
 ## 原則
 
 - **状態は保存しない。** 次に何をするかは毎回 `cycle status` / `next` から導く。子の session-id も
   記録しない。監督のセッションが落ちたら、子を新しく起動し直せばスキルの中断検出で続きから進む
 - **子の報告をそのまま信じない。** 「検証の義務」を必ず行う
-- **PR はマージしない。** フェーズのブランチを直前のブランチから切って積んでいき、マージは人間が行う
+- **デフォルトブランチにはマージしない。** サイクルの統合ブランチ（conductor ブランチ）を1本切り、
+  各フェーズのブランチはそこから切って PR もそこへ向ける。子の PR を conductor ブランチに取り込むのは
+  監督、conductor ブランチをデフォルトブランチへマージするのは人間
+- **委任の範囲を固定する。** Step 0 で人間と合意したときの `digest` を、以後のすべての
+  `conductor launch` / `parse` に `--expect-digest` で渡す。子が `.hikyaku.config` を書き換えて
+  権限や振り分けが変わっていれば、CLI がエラーで止まる。そのときは人間に上げる
 - **子の自由文から問いを推測しない。** 判断の起点は常に `conductor parse` の結果
 - **逐次実行。** `next` が複数のビルドを返しても1件ずつ進める
 
@@ -58,19 +65,21 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle} --json
 | `closed` / `abandoned` | 何もせず**終了**する |
 | それ以外 | 続ける |
 
-- [ ] 子がテストを実行できるかを確認する
-  - テストのコマンドを AGENTS.md / README / package.json などから引く
-  - `conductor launch builder {cycle} {build} --json` の `allowedTools` で許可されているかを照合する
-    （既定は `git` / `ls` / `cat` と Hikyaku CLI の実行などだけで、`npm test` / `node --test` や環境変数を前置きしたコマンドは含まない）
-  - 許可されていなければ、`.hikyaku.config` の `[conductor] allowed_tools` に足してコミットするよう人間に
-    案内して**終了**する。許可が無いと builder はローカル検証で blocked になる
-  - 設定は `conductor launch` が起動のたびに読むので、作業ツリーで一時的に足すのではなくコミットしておく
-
-- [ ] 委任される範囲を取得する
+- [ ] 委任される範囲と、子に許可するツールを取得する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor asks {cycle}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor asks {cycle} --json
 ```
+
+出力の `digest` を控える（以後のすべての `launch` / `parse` に渡す）。
+
+- [ ] 子がテストを実行できるかを確認する
+  - テストのコマンドを AGENTS.md / README / package.json などから引く
+  - `asks` の `allowedTools` で許可されているかを照合する
+    （既定は `git` のサブコマンドと Hikyaku CLI の実行などだけで、`npm test` / `node --test` や
+    環境変数を前置きしたコマンドは含まない）
+  - 許可されていなければ、`.hikyaku.config` の `[conductor] allowed_tools` に足してコミットするよう人間に
+    案内して**終了**する。許可が無いと builder はローカル検証で blocked になる
 
 - [ ] **人間に1回だけ確認する**（`AskUserQuestion`）。次を示し、進めてよいかを尋ねる
 
@@ -79,7 +88,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor asks {cycle}
 planning/user-stories.md を承認済みの要件として扱います。
 監督が判断する同意ゲート: {asks の出力}
 人間に上げる問い: {asks の出力}、およびスコープを広げる回答が要る問い
-PR はマージしません。最後のビルドが終わったら、マージすべき PR の連鎖を示して止まります。
+各フェーズの PR は conductor ブランチ（{conductor}）に向け、監督が取り込みます。
+デフォルトブランチにはマージしません。最後のビルドが終わったら、{conductor} → デフォルトブランチの
+PR を作って止まります。
 ```
 
 同意ゲートは、ここでの合意によって監督に**委任**される（省かれるのではない）。断られたら**終了**する。
@@ -99,7 +110,10 @@ PR はマージしません。最後のビルドが終わったら、マージ�
 | `completed` | Step 2 → Step 3（`close-cycle`） |
 | `closed` | Step 5 へ |
 
-`building` のときは、積む元のブランチ（Step 2）に居る状態で次の順に決める。
+状態は **conductor ブランチの上で**見る（途中のビルドを再開するときは、そのビルドのブランチの上）。
+デフォルトブランチの上では、取り込み済みの成果物が見えない。
+
+`building` のときは、次の順に決める。
 
 - `cycle status` の `resumeAt` が `build-NN/…` を指していれば、途中で止まったそのビルドを再開する
 - そうでなければ `next` を実行し、`available` のうち**番号が最も小さい1件**を選ぶ
@@ -108,12 +122,25 @@ PR はマージしません。最後のビルドが終わったら、マージ�
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle} --json
 ```
 
-- `available` が空で、`tasklist read {cycle}` で全ビルドが完了なら Step 4 へ（マージ待ち）
+- `available` が空で、`tasklist read {cycle}` で全ビルドが完了なら Step 4 へ
 - それ以外（依存が満たされず進めない）は、`next` の出力を示して人間に上げる
 
 ### Step 2: ブランチを用意する
 
 子に `branch` の問いを出させないため、**子を起動する前に**期待されるブランチへ切り替えておく。
+
+- [ ] conductor ブランチを用意する（close-cycle では不要）
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify conductor {cycle} --json
+```
+
+`expected` が conductor ブランチの名前。既にあれば（ローカルか origin に）それに切り替えて最新にする。
+無ければ、デフォルトブランチを最新にしてから `git switch -c {expected}` で作り、push する。
+plan の PR がまだマージされていなければ、デフォルトブランチではなく plan のブランチから作る
+（plan の成果物が無いと architect が始められない。plan の変更も最後の PR に含まれる）。
+
+- [ ] フェーズのブランチを用意する
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify {phase} {cycle} --json
@@ -125,15 +152,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify {phase} {cycle} -
 |---|---|
 | `ok: true` | そのまま |
 | `expected` のブランチが既にある | `git switch {expected}`（中断からの再開） |
-| 無い（architect / build） | **積む元**に切り替えてから `git switch -c {expected}` |
+| 無い（architect / build） | conductor ブランチに切り替えてから `git switch -c {expected}` |
 | 無い（close） | デフォルトブランチを最新にしてから `git switch -c {expected}` |
 
-**積む元**は、このサイクルのブランチのうち最後に積まれたもの（build の番号が最大のもの、無ければ
-architect、無ければ plan）。直前の子が作業したブランチなので、通常はいま居るブランチになる。
-監督を起動し直した直後は `cycle status --json` の `branches` から選ぶ。どれもマージ済みで
-残っていなければ、デフォルトブランチを最新にして積む元にする。
-
-切り替えたあと、もう一度 `branch verify` を実行して `ok: true` を確認する。
+切り替えたあと、もう一度 `branch verify` を実行して `ok: true` を確認する。architect / build では
+出力の `prBase` が conductor ブランチになっていることも確認する（子が作る PR の向き先になる）。
 
 **差し戻しの再設計（`returned` あり）ではブランチを切らない。** 差し戻されたビルドのブランチに居ることを
 `branch verify build-NN {cycle}` で確認する。
@@ -143,7 +166,8 @@ architect、無ければ plan）。直前の子が作業したブランチなの
 - [ ] 起動コマンドを組み立てる
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {architect|builder|close-cycle} {cycle} [{build}] --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {architect|builder|close-cycle} {cycle} [{build}] \
+  --expect-digest {digest} --json
 ```
 
 - [ ] 返ってきた `command` を **Bash の `run_in_background` で実行**する（`timeout` は最大値にする）
@@ -152,7 +176,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {architect|bui
 - [ ] 完了したら結果を解析する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor parse {resultFile} {cycle} --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor parse {resultFile} {cycle} --expect-digest {digest} --json
 ```
 
 `outcome` で分岐する。
@@ -169,7 +193,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor parse {resultFile} {c
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {phase} {cycle} [{build}] \
-  --resume {sessionId} --message {回答ファイル} --json
+  --resume {sessionId} --message {回答ファイル} --expect-digest {digest} --json
 ```
 
 回答ファイルの書式（監督が判断した場合）:
@@ -188,6 +212,23 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {phase} {cycle
 
 - [ ] 「検証の義務」のうち、そのフェーズの done に当たるものを行う
 - [ ] 問題があれば人間に上げる（自分で直さない）
+- [ ] 子が PR を作っていれば（architect / builder）、conductor ブランチに取り込む
+
+```bash
+git switch {conductor}
+git pull --ff-only
+git merge --no-ff {フェーズのブランチ} -m "{フェーズ} を conductor に取り込む（{PR の URL}）"
+git push origin {conductor}
+git branch -d {フェーズのブランチ}
+git push origin --delete {フェーズのブランチ}
+```
+
+  - `--no-ff` で取り込み、取り込んだブランチは消す。残すと、次のフェーズの PR の向き先
+    （`pr base`）を導くときの候補に混ざる
+  - push すると、GitHub はその PR をマージ済みとして扱う
+  - 差し戻しの再設計（`architect {cycle} build-NN`）は PR を作らない。取り込まずに Step 1 へ
+    （同じビルドのブランチで builder を起動し直す）
+  - close-cycle の PR はデフォルトブランチへ向く。取り込まない
 - → Step 1 へ
 
 #### blocked
@@ -211,17 +252,20 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {phase} {cycle
 子は止まる直前の文脈を持っているので、新しい session で起動し直すより確実に続きから進む。
 `--resume` 自体が失敗したときだけ、新しい session で起動し直す（スキルの中断検出で続きから進む）。
 
-### Step 4: マージ待ちで止まる
+### Step 4: デフォルトブランチへの PR を作って止まる
 
-最後のビルドが done になったら、CLOSE には進まない。close-cycle は全ビルドが
+最後のビルドを conductor ブランチに取り込んだら、CLOSE には進まない。close-cycle は全ビルドが
 デフォルトブランチにマージされていることを前提にしている（未マージの実装を永続ドキュメントに
 書くと、永続ドキュメントとサイクルドキュメントを分けた意味が無くなる）。
 
-- [ ] マージすべき PR を、マージする順（plan → architect → build-01 → …）に一覧で示す
-  - `tasklist read {cycle}` の PR 列と、plan / architect の PR（`gh pr list --head {branch}`）から作る
-  - 各 PR の base が直前のブランチになっていることを示す
-- [ ] 監督が判断した同意ゲートを、PR ごとに1行で示す（レビューで確認してもらうため）
-- [ ] 「全てマージしたら `/hikyaku:conductor {cycle}` を実行すると CLOSE から再開する」と案内して**終了**する
+- [ ] conductor ブランチ → デフォルトブランチの PR を作る
+  - タイトルは `hikyaku pr title conductor {cycle}` で生成する
+  - 本文に、取り込んだフェーズの PR を順に並べ、それぞれで**監督が判断した同意ゲート**を1行ずつ示す
+    （人間がレビューで確認するため）
+  - 外部連携が有効なら、各ビルドの `hikyaku external ref build-NN {cycle}` の行を本文の末尾に入れる。
+    conductor ブランチへのマージではクローズキーワードが効かないため、ここでまとめて閉じる
+- [ ] PR の URL を示し、「マージしたら `/hikyaku:conductor {cycle}` を実行すると CLOSE から再開する」と
+  案内して**終了**する
 
 ### Step 5: 完了
 
@@ -256,7 +300,7 @@ CLOSE の PR を示して終了する。
 | 時点 | 行うこと |
 |---|---|
 | G8 の前 | plan.md と test-spec.md が、issue.md の受け入れ基準をすべて網羅しているかを読む |
-| builder の done の後 | テストを自分で再実行する。差分（`git diff {base}...HEAD --stat` と主要ファイル）が plan.md の範囲に収まっているかを読む |
+| builder の done の後 | テストを自分で再実行する。差分（`git diff {conductor}...HEAD --stat` と主要ファイル）が plan.md の範囲に収まっているかを読む |
 | G10 の前 | 昇格候補に「監督がその場で決めた運用」や「すでに事実でない前提」が混ざっていないかを読み、混ざっていれば除外する |
 
 テストのコマンドは handoff.md / plan.md から引く。再実行に許可が要れば人間に案内する。

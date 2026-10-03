@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 import type { AskSettings, ConductorConfig } from "../scripts/lib/conductor.mts";
 import {
@@ -12,10 +13,11 @@ import {
   parseResultJson,
   resolveAllAsks,
   resolveAsk,
+  settingsDigest,
   shellQuote,
 } from "../scripts/lib/conductor.mts";
 import { pluginRoot } from "../scripts/lib/paths.mts";
-import { cli, snapshot, succeeds, workspace, write } from "./helpers.mts";
+import { cli, snapshot, succeeds, testEnvironment, workspace, write } from "./helpers.mts";
 
 const settings: AskSettings = {
   gates: { userStories: true, codebaseSurvey: false, designChoice: true, architecture: true, plan: false },
@@ -27,6 +29,19 @@ const settings: AskSettings = {
 
 function conductor(overrides: Partial<ConductorConfig> = {}): ConductorConfig {
   return { ...DEFAULT_CONDUCTOR, ...overrides };
+}
+
+function git(directory: string, ...args: string[]): string {
+  const run = spawnSync("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", ...args], {
+    cwd: directory, encoding: "utf8", env: testEnvironment(), timeout: 10_000,
+  });
+  assert.equal(run.status, 0, run.stderr);
+  return run.stdout.trim();
+}
+
+/** conductor asks が返す digest。launch / parse に渡す */
+function digest(directory: string): string {
+  return JSON.parse(succeeds(directory, "conductor", "asks", "001", "--json")).digest;
 }
 
 function result(text: string, extra: Record<string, unknown> = {}): string {
@@ -138,9 +153,12 @@ for (const raw of ["null", "[]", '"text"', "1"]) {
   });
 }
 
-test("conductor: 既定の許可は node を Hikyaku CLI の実行だけに絞る", () => {
+test("conductor: 既定の許可は node を Hikyaku CLI の実行だけに、git を列挙したサブコマンドだけに絞る", () => {
   const tools = defaultAllowedTools("/plugins/hikyaku");
   assert.equal(tools.includes("Bash(node:*)"), false);
+  assert.equal(tools.includes("Bash(git:*)"), false);
+  assert.ok(tools.includes("Bash(git commit:*)"));
+  assert.equal(tools.some((tool) => /^Bash\(git (-c|config)/.test(tool)), false);
   assert.ok(tools.includes("Bash(node /plugins/hikyaku/scripts/hikyaku.mts:*)"));
   assert.ok(tools.includes('Bash(node "/plugins/hikyaku/scripts/hikyaku.mts":*)'));
   assert.equal(tools.some((tool) => /^Bash\(node(?! .*hikyaku\.mts)/.test(tool)), false);
@@ -168,6 +186,14 @@ test("conductor: シェルの単一引用符を正しくエスケープする", 
   assert.equal(shellQuote("it's"), "'it'\\''s'");
 });
 
+test("conductor: ダイジェストは委任の範囲を決める設定が変わると変わる", () => {
+  const base = settingsDigest("standard", settings, conductor());
+  assert.equal(settingsDigest("standard", settings, conductor()), base);
+  assert.notEqual(settingsDigest("express", settings, conductor()), base);
+  assert.notEqual(settingsDigest("standard", settings, conductor({ delegate: ["retry-limit"] })), base);
+  assert.notEqual(settingsDigest("standard", settings, conductor({ allowedTools: ["Bash(curl:*)"] })), base);
+});
+
 test("CLI: conductor lint はプラグイン本体のタグと ASKS が一致していれば成功する", (t) => {
   const directory = workspace(t);
   assert.match(succeeds(directory, "conductor", "lint"), /一致しています/);
@@ -179,6 +205,8 @@ test("CLI: conductor asks はサイクルの profile を反映し、設定の誤
   assert.equal(output.profile, "standard");
   const g2 = output.asks.find((ask: { id: string }) => ask.id === "G2");
   assert.equal(g2.enabled, false);
+  assert.match(output.digest, /^[0-9a-f]{12}$/);
+  assert.deepEqual(output.allowedTools, defaultAllowedTools(pluginRoot()));
 
   write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[conductor]\ndelegate = ["abandon"]\n');
   const rejected = cli(directory, "conductor", "asks", "001");
@@ -194,8 +222,11 @@ test("CLI: conductor launch は起動コマンドを組み立てるだけで、�
 allowed_tools = ["Bash(npm test:*)"]
 budget_per_run = 2.5
 `);
+  const expected = digest(directory);
   const before = snapshot(directory);
-  const output = JSON.parse(succeeds(directory, "conductor", "launch", "builder", "001", "1", "--out", "r.json", "--json"));
+  const output = JSON.parse(succeeds(
+    directory, "conductor", "launch", "builder", "001", "1", "--out", "r.json", "--expect-digest", expected, "--json",
+  ));
   assert.equal(output.prompt, "/hikyaku:builder 001-test 1");
   assert.equal(output.resumed, false);
   assert.deepEqual(output.allowedTools, [...defaultAllowedTools(pluginRoot()), "Bash(npm test:*)"]);
@@ -206,7 +237,9 @@ budget_per_run = 2.5
   assert.ok(output.command.endsWith("< /dev/null > r.json"));
   assert.deepEqual(snapshot(directory), before);
 
-  const returned = JSON.parse(succeeds(directory, "conductor", "launch", "architect", "001", "build-01", "--json"));
+  const returned = JSON.parse(succeeds(
+    directory, "conductor", "launch", "architect", "001", "build-01", "--expect-digest", expected, "--json",
+  ));
   assert.equal(returned.prompt, "/hikyaku:architect 001-test build-01");
 });
 
@@ -214,8 +247,10 @@ test("CLI: conductor launch は再開時に回答ファイルを渡し、組で�
   const directory = workspace(t, true);
   succeeds(directory, "tasklist", "add", "001", "--title", "export", "--bp", "2");
   write(directory, "answer.txt", "回答（委任された判断）: 承認する\n");
+  const expected = digest(directory);
   const output = JSON.parse(succeeds(
-    directory, "conductor", "launch", "builder", "001", "1", "--resume", "s-1", "--message", "answer.txt", "--json",
+    directory, "conductor", "launch", "builder", "001", "1", "--resume", "s-1", "--message", "answer.txt",
+    "--expect-digest", expected, "--json",
   ));
   assert.equal(output.resumed, true);
   assert.equal(output.sessionId, "s-1");
@@ -223,21 +258,63 @@ test("CLI: conductor launch は再開時に回答ファイルを渡し、組で�
   assert.ok(output.argv.includes("--resume"));
   assert.equal(output.argv.includes("--max-budget-usd"), false);
 
-  assert.equal(cli(directory, "conductor", "launch", "builder", "001", "1", "--resume", "s-1").status, 1);
-  assert.equal(cli(directory, "conductor", "launch", "builder", "001").status, 1);
-  assert.equal(cli(directory, "conductor", "launch", "builder", "001", "9").status, 1);
-  assert.equal(cli(directory, "conductor", "launch", "planner", "001").status, 1);
+  const launch = (...args: string[]) => cli(directory, "conductor", "launch", ...args, "--expect-digest", expected);
+  assert.equal(launch("builder", "001", "1", "--resume", "s-1").status, 1);
+  assert.equal(launch("builder", "001").status, 1);
+  assert.equal(launch("builder", "001", "9").status, 1);
+  assert.equal(launch("planner", "001").status, 1);
+  assert.equal(cli(directory, "conductor", "launch", "builder", "001", "1").status, 1);
 });
 
 test("CLI: conductor parse は gate の振り分けまで返す", (t) => {
   const directory = workspace(t, true);
   write(directory, "r.json", result('<hikyaku-gate id="G8">\n承認しますか？\n</hikyaku-gate>'));
-  const output = JSON.parse(succeeds(directory, "conductor", "parse", "r.json", "001", "--json"));
+  const output = JSON.parse(succeeds(directory, "conductor", "parse", "r.json", "001", "--expect-digest", digest(directory), "--json"));
   assert.equal(output.outcome, "gate");
   assert.equal(output.ask.handler, "supervisor");
 
   write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[conductor]\nescalate = ["G8"]\n');
-  const escalated = JSON.parse(succeeds(directory, "conductor", "parse", "r.json", "001", "--json"));
+  const escalated = JSON.parse(succeeds(directory, "conductor", "parse", "r.json", "001", "--expect-digest", digest(directory), "--json"));
   assert.equal(escalated.ask.handler, "human");
   assert.equal(escalated.ask.source, "escalate");
+});
+
+test("CLI: 合意したときから委任の設定が変わっていれば launch / parse を止める", (t) => {
+  const directory = workspace(t, true);
+  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--bp", "2");
+  write(directory, "r.json", result('<hikyaku-gate id="G8">\nq\n</hikyaku-gate>'));
+  const agreed = digest(directory);
+  // 子が .hikyaku.config を書き換えた想定
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[conductor]\nallowed_tools = ["Bash(curl:*)"]\n');
+  for (const args of [["launch", "builder", "001", "1"], ["parse", "r.json", "001"]]) {
+    const changed = cli(directory, "conductor", ...args, "--expect-digest", agreed);
+    assert.equal(changed.status, 1);
+    assert.match(changed.stderr, /合意したときから変わっています/);
+  }
+});
+
+test("CLI: フェーズの PR は conductor ブランチへ、conductor ブランチの PR はデフォルトブランチへ向く", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\nbase_branch = "main"\n');
+  git(directory, "add", "-A");
+  git(directory, "commit", "-q", "-m", "init");
+  const base = (phase: string) => JSON.parse(succeeds(directory, "pr", "base", phase, "001", "--no-fetch", "--json")).base;
+
+  // plan の PR が未マージのまま、plan のブランチから conductor ブランチを切る（先端が同じになる）
+  git(directory, "switch", "-q", "-c", "hikyaku/001-test/plan");
+  git(directory, "commit", "-q", "--allow-empty", "-m", "plan");
+  git(directory, "switch", "-q", "-c", "hikyaku/001-test/conductor");
+  assert.equal(base("conductor"), "main");
+
+  git(directory, "switch", "-q", "-c", "hikyaku/001-test/architect");
+  git(directory, "commit", "-q", "--allow-empty", "-m", "architect");
+  assert.equal(base("architect"), "hikyaku/001-test/conductor");
+
+  // 監督が --no-ff で取り込み、取り込んだブランチを消してから次のビルドを切る
+  git(directory, "switch", "-q", "hikyaku/001-test/conductor");
+  git(directory, "merge", "-q", "--no-ff", "-m", "merge architect", "hikyaku/001-test/architect");
+  git(directory, "branch", "-q", "-d", "hikyaku/001-test/architect");
+  git(directory, "switch", "-q", "-c", "hikyaku/001-test/build-01");
+  git(directory, "commit", "-q", "--allow-empty", "-m", "build-01");
+  assert.equal(base("build-01"), "hikyaku/001-test/conductor");
 });

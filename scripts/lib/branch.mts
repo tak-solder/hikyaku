@@ -12,7 +12,15 @@
 import { HikyakuError } from "./errors.mts";
 
 /** フェーズは閉じた集合。これがブランチ名の解析を成立させている */
-export type Phase = "init" | "bp-guide" | "create" | "plan" | "architect" | "close" | `build-${string}`;
+export type Phase =
+  | "init"
+  | "bp-guide"
+  | "create"
+  | "plan"
+  | "architect"
+  | "close"
+  | "conductor"
+  | `build-${string}`;
 
 /**
  * サイクルに属さないフェーズ。ブランチ名は {prefix}{sep}{phase} になる。
@@ -20,7 +28,12 @@ export type Phase = "init" | "bp-guide" | "create" | "plan" | "architect" | "clo
  */
 export const CYCLELESS_PHASES = ["init", "bp-guide"] as const;
 
-export const FIXED_PHASES = ["init", "bp-guide", "create", "plan", "architect", "close"] as const;
+/**
+ * conductor はフェーズではなく、/hikyaku:conductor がサイクルの作業を集める統合ブランチ。
+ * 各フェーズのブランチはここから切り、PR もここへ向ける。ブランチ名の解析と
+ * スタック元の導出に参加させるため、フェーズと同じ閉じた集合に入れる
+ */
+export const FIXED_PHASES = ["init", "bp-guide", "create", "plan", "architect", "close", "conductor"] as const;
 
 export function isCyclelessPhase(phase: string): boolean {
   return (CYCLELESS_PHASES as readonly string[]).includes(phase);

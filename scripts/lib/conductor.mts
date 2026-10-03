@@ -9,6 +9,7 @@
  * スキル側に ID を足したら、ここにも足すこと。
  */
 
+import { createHash } from "node:crypto";
 import type { Gates, Reviews } from "./config.mts";
 import { HikyakuError } from "./errors.mts";
 
@@ -342,8 +343,32 @@ export function parseResultJson(raw: string): ParsedResult {
  *
  * node は Hikyaku CLI の実行だけを許す。Bash(node:*) にすると node -e で
  * 任意のコマンドを実行でき、他の許可をすべて迂回できる。スキルはパスを
- * 二重引用符でくくって呼ぶので、くくった形とくくらない形の両方を許可する
+ * 二重引用符でくくって呼ぶので、くくった形とくくらない形の両方を許可する。
+ *
+ * git もサブコマンドを列挙する。Bash(git:*) にすると git -c alias.x='!…' x の形で
+ * 任意のコマンドを実行できる。ただし、子は .git/hooks を書けて git commit で
+ * 実行されるので、ツールの許可だけでは完全には隔離できない
  */
+/** スキルが子の中で使う git のサブコマンド */
+const GIT_SUBCOMMANDS = [
+  "status",
+  "diff",
+  "log",
+  "show",
+  "add",
+  "commit",
+  "push",
+  "fetch",
+  "switch",
+  "checkout",
+  "branch",
+  "mv",
+  "rm",
+  "merge-base",
+  "rev-parse",
+  "ls-files",
+];
+
 export function defaultAllowedTools(pluginRootPath: string): string[] {
   const cli = `${pluginRootPath}/scripts/hikyaku.mts`;
   return [
@@ -354,7 +379,7 @@ export function defaultAllowedTools(pluginRootPath: string): string[] {
     "Grep",
     "Agent",
     "Skill",
-    "Bash(git:*)",
+    ...GIT_SUBCOMMANDS.map((command) => `Bash(git ${command}:*)`),
     `Bash(node ${cli}:*)`,
     `Bash(node "${cli}":*)`,
     "Bash(ls:*)",
@@ -368,4 +393,21 @@ export function defaultAllowedTools(pluginRootPath: string): string[] {
 export function shellQuote(value: string): string {
   if (/^[A-Za-z0-9_./:=@%+-]+$/.test(value)) return value;
   return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * 委任の範囲を決める設定のダイジェスト。
+ *
+ * 子は Write / Edit を持つので、.hikyaku.config の allowed_tools や delegate を
+ * 書き換えられる。launch / parse は起動のたびに設定を読み直すため、書き換えが
+ * 次の起動で効くと、人間が合意していない権限や振り分けになる。監督は起動時に
+ * 人間と合意したときのダイジェストを全呼び出しに渡し、変わっていれば止める
+ */
+export function settingsDigest(
+  profile: string,
+  settings: AskSettings,
+  conductor: ConductorConfig,
+): string {
+  const canonical = JSON.stringify({ profile, gates: settings.gates, reviews: settings.reviews, conductor });
+  return createHash("sha256").update(canonical).digest("hex").slice(0, 12);
 }

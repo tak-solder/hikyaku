@@ -12,16 +12,18 @@ ARCHITECT 以降を監督セッションに任せる conductor を追加する�
 
 ### Added
 
-- **`/hikyaku:conductor`**: PLAN 済みのサイクルを、ARCHITECT から最後のビルドまで非対話の子セッション（`claude -p`）に実行させる監督スキル。子の問いは `conductor parse` の振り分けに従って監督が答えるか人間に上げ、同意ゲート（G6 / G8 / G10）は起動時の合意によって監督に委任される。フェーズのブランチは直前のブランチから切って積み、PR はマージしない。最後のビルドが終わったらマージすべき PR の連鎖を示して止まり、マージ後に再実行すると CLOSE から再開する
+- **`/hikyaku:conductor`**: PLAN 済みのサイクルを、ARCHITECT から最後のビルドまで非対話の子セッション（`claude -p`）に実行させる監督スキル。子の問いは `conductor parse` の振り分けに従って監督が答えるか人間に上げ、同意ゲート（G6 / G8 / G10）は起動時の合意によって監督に委任される。サイクルの統合ブランチ（`{cycle}/conductor`）を切り、各フェーズのブランチはそこから切って PR もそこへ向ける。監督は検証を済ませた PR を conductor ブランチに取り込み、デフォルトブランチにはマージしない。最後のビルドを取り込んだら conductor ブランチ → デフォルトブランチの PR を作って止まり、人間がマージしたあと再実行すると CLOSE から再開する
 - **`skills/conductor/references/headless-protocol.md`**: 非対話で起動された子セッションが、問いの箇所で gate / done / blocked のブロックを出して止まるための規約
-- **`hikyaku conductor asks`**: 子が出しうる問いと、監督・人間への振り分けを、サイクルの profile と設定を重ねて一覧する
-- **`hikyaku conductor launch`**: 子（`claude -p`）の起動・再開コマンドを組み立てて返す。自分では実行しない
+- **`hikyaku conductor asks`**: 子が出しうる問いと、監督・人間への振り分けを、サイクルの profile と設定を重ねて一覧する。子に許可するツールの一覧と、委任の範囲を決める設定のダイジェストも返す
+- **`hikyaku conductor launch`**: 子（`claude -p`）の起動・再開コマンドを組み立てて返す。自分では実行しない。子に既定で許可するのは、スキルが使う `git` のサブコマンドと Hikyaku CLI の実行などに限る（`git -c` や `node -e` の形は許可しない）
 - **`hikyaku conductor parse`**: 子の結果ファイルから gate / done / blocked を取り出し、gate なら問いの振り分けを返す。ブロックが規約どおりでなければ `violation` を返す
+- **`launch` / `parse` の `--expect-digest`**: 監督が起動時に人間と合意したときの設定のダイジェストを渡す。設定が変わっていればエラーで止まる
 - **`hikyaku conductor lint`**: 子として動くスキルの問いのタグと、conductor の ID の表の食い違いを検出する（プラグイン本体の開発用。CI の check-scripts が実行する）
 - **`[conductor]` 設定**: `escalate` / `delegate`（問いの ID ごとに人間・監督への振り分けを上書きする）、`allowed_tools`（子に許可するツールを足す）、`budget_per_run`（呼び出しごとの費用の上限。既定 0 で上限なし）
 
 ### Changed
 
+- **ブランチのフェーズ名に `conductor` を追加**: `branch verify conductor` / `pr title conductor` などで conductor の統合ブランチを扱える。`pr base` は、同じ距離にある候補より conductor ブランチを優先し、conductor ブランチ自身の PR は常にデフォルトブランチへ向ける
 - **architect / builder / build-manager / close-cycle / retrospective**: ユーザーに尋ねる箇所に `（G8）` や `（ask: branch）` の形で ID を付けた。手順は変わらない
 
 ### Migration

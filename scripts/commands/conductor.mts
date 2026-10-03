@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { flagString } from "../lib/args.mts";
+import { flagString, type ParsedArgs } from "../lib/args.mts";
 import {
   CATEGORY_LABELS,
   collectTags,
@@ -14,6 +14,7 @@ import {
   parseResultJson,
   resolveAllAsks,
   resolveAsk,
+  settingsDigest,
   shellQuote,
   type ResolvedAsk,
 } from "../lib/conductor.mts";
@@ -22,6 +23,7 @@ import { emit, table } from "../lib/output.mts";
 import { pluginRoot } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
 import { normalizeBuildId } from "../lib/tasklist.mts";
+import type { ResolvedConfig } from "../lib/config.mts";
 import { openCycle, type CycleContext } from "../lib/workspace.mts";
 
 const PHASES = ["architect", "builder", "close-cycle"] as const;
@@ -40,12 +42,18 @@ register({
     "  enabled   false なら、この profile ではそのゲートが無効で問いは出ない",
     "",
     "サイクルの中止（abandon）と ID の無い問い（other）は常に人間に上げます。",
+    "",
+    "JSON 出力には、子に許可するツールの一覧（allowedTools）と、委任の範囲を決める",
+    "設定のダイジェスト（digest）も含みます。監督は人間と合意したときの digest を、",
+    "以後の conductor launch / parse に --expect-digest で渡します。",
   ].join("\n"),
   run: ({ args, operands }) => {
     const { config, context } = openCycle(args, operands[0]);
     const asks = resolveAllAsks(config.conductor, config);
+    const digest = digestOf(config);
+    const allowedTools = allowedToolsOf(config);
 
-    emit({ cycle: context.name, profile: config.profile, asks }, () => {
+    emit({ cycle: context.name, profile: config.profile, digest, allowedTools, asks }, () => {
       const ids = (filter: (ask: ResolvedAsk) => boolean): string =>
         asks.filter(filter).map((ask) => ask.id).join(" / ") || "なし";
       const consent = (ask: ResolvedAsk): boolean => ask.category === "consent";
@@ -56,6 +64,8 @@ register({
         `監督が判断するその他の問い: ${ids((a) => !consent(a) && a.enabled && a.handler === "supervisor")}`,
         `人間に上げる問い: ${ids((a) => a.enabled && a.handler === "human")}`,
         `この profile では出ない問い: ${ids((a) => !a.enabled)}`,
+        `子に許可するツール: ${allowedTools.join(" ")}`,
+        `設定のダイジェスト: ${digest}`,
         "",
         table(
           asks.map((ask) => [
@@ -76,7 +86,7 @@ register({
   name: "conductor launch",
   summary: "子セッション（claude -p）の起動コマンドを組み立てる。自分では実行しない",
   usage:
-    "hikyaku conductor launch <architect|builder|close-cycle> [<cycle>] [<build>] " +
+    "hikyaku conductor launch <architect|builder|close-cycle> [<cycle>] [<build>] --expect-digest <digest> " +
     "[--resume <session-id> --message <file>] [--out <file>] [--root <path>] [--json]",
   details: [
     "実行すべきコマンド行と session-id を返します。起動は呼び出し元（監督）が行います。",
@@ -102,10 +112,15 @@ register({
     "",
     "[conductor] budget_per_run が 0 より大きければ --max-budget-usd も入ります。",
     "--out を省くと、一時ディレクトリに session-id 入りの名前で書きます。",
+    "",
+    "--expect-digest には、監督が起動時に人間と合意したときの conductor asks の digest を",
+    "渡します。設定が変わっていればエラーで止まります。子は .hikyaku.config を書き換えられる",
+    "ので、書き換えた権限や振り分けが次の起動で黙って効くのを防ぐためです。",
   ].join("\n"),
   run: ({ args, operands }) => {
     const phase = requireConductorPhase(operands[0]);
     const { config, context } = openCycle(args, operands[1]);
+    requireDigest(args, config);
     const prompt = buildPrompt(phase, context, operands[2]);
 
     const resume = flagString(args, "resume");
@@ -127,7 +142,7 @@ register({
     const sessionId = resume ?? randomUUID();
     const out = flagString(args, "out") ?? join(tmpdir(), `hikyaku-conductor-${sessionId}-${Date.now()}.json`);
     const protocol = join(pluginRoot(), "skills", "conductor", "references", "headless-protocol.md");
-    const allowedTools = [...defaultAllowedTools(pluginRoot()), ...config.conductor.allowedTools];
+    const allowedTools = allowedToolsOf(config);
 
     const argv = [
       "claude",
@@ -178,7 +193,7 @@ register({
 register({
   name: "conductor parse",
   summary: "子セッションの結果から gate / done / blocked を取り出し、問いの振り分けを返す",
-  usage: "hikyaku conductor parse <result.json> [<cycle>] [--root <path>] [--json]",
+  usage: "hikyaku conductor parse <result.json> [<cycle>] --expect-digest <digest> [--root <path>] [--json]",
   details: [
     "conductor launch が組み立てたコマンドの結果ファイルを読みます。",
     "",
@@ -198,6 +213,7 @@ register({
     if (!existsSync(file)) throw new HikyakuError(`結果ファイルがありません: ${file}`);
 
     const { config, context } = openCycle(args, operands[1]);
+    requireDigest(args, config);
     const parsed = parseResultJson(readFileSync(file, "utf8"));
     const ask =
       parsed.outcome === "gate" && parsed.id !== undefined
@@ -259,6 +275,35 @@ register({
     emit({ ok: true, files: Object.fromEntries(tagsByFile) }, () => `✓ ${tagsByFile.size} ファイル・${count} 個のタグが ASKS と一致しています`);
   },
 });
+
+function allowedToolsOf(config: ResolvedConfig): string[] {
+  return [...defaultAllowedTools(pluginRoot()), ...config.conductor.allowedTools];
+}
+
+function digestOf(config: ResolvedConfig): string {
+  return settingsDigest(config.profile, config, config.conductor);
+}
+
+function requireDigest(args: ParsedArgs, config: ResolvedConfig): void {
+  const expected = flagString(args, "expect-digest");
+  if (expected === undefined) {
+    throw new HikyakuError(
+      "--expect-digest を指定してください",
+      "監督が起動時に人間と合意したときの conductor asks の digest を渡します。",
+    );
+  }
+  const actual = digestOf(config);
+  if (expected !== actual) {
+    throw new HikyakuError(
+      `委任の範囲を決める設定が、合意したときから変わっています（合意時: ${expected} / 現在: ${actual}）`,
+      [
+        "profile・ゲート・レビュー・[conductor] のいずれかが変わりました。子が .hikyaku.config を",
+        "書き換えた可能性があります。git log -p -- .hikyaku.config などで変更を確かめ、",
+        "人間に委任の範囲を確認し直してください。",
+      ].join("\n"),
+    );
+  }
+}
 
 function requireConductorPhase(raw: string | undefined): ConductorPhase {
   if (raw === undefined || !(PHASES as readonly string[]).includes(raw)) {
