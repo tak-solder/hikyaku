@@ -26,7 +26,7 @@ import {
 import { HikyakuError } from "../lib/errors.mts";
 import { listRemoteBranches } from "../lib/git.mts";
 import { localPath, readLocalState, writeLocalState } from "../lib/local.mts";
-import { deriveState, suggestCommand } from "../lib/phase.mts";
+import { deriveState, phaseLabel, RETURN_FILE, suggestFor } from "../lib/phase.mts";
 import { emit, table } from "../lib/output.mts";
 import { pluginVersion } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
@@ -462,6 +462,10 @@ register({
     "  completed     **全ビルドがデフォルトブランチにマージ済み**。だが昇格がまだ",
     "  closed        cycles.md に記録された status",
     "",
+    "作業ツリーに差し戻しの記録（return.md）があれば、building のまま",
+    "「差し戻し中」と注記します。記録は差し戻し元のビルドのブランチにしか無いので、",
+    "そのブランチに居るときだけ表示されます。",
+    "",
     "ビルド列は「マージ済み / 全体」です。このツリーでは完了しているがまだ",
     "マージされていないビルドがあれば (+n) が付きます（スタック中など）。",
     "デフォルトブランチを読めない場合は ?/全体 になります。",
@@ -501,20 +505,29 @@ register({
           return {
             record,
             phase: state.phase,
+            label: phaseLabel(state),
+            returned: state.returned ?? null,
             progress: total > 0 ? `${merged}/${total}${pending}` : "—",
           };
         }),
     );
 
     emit(
-      { cycles: rows.map((row) => ({ ...row.record, phase: row.phase, progress: row.progress })) },
+      {
+        cycles: rows.map((row) => ({
+          ...row.record,
+          phase: row.phase,
+          returned: row.returned,
+          progress: row.progress,
+        })),
+      },
       () =>
         rows.length === 0
           ? "サイクルはまだありません。/hikyaku:create-cycle で作成してください。"
           : table(
               rows.map((row) => [
                 cycleDirName(row.record),
-                row.phase,
+                row.label,
                 row.record.profile || "—",
                 row.progress,
                 row.record.ticket || "—",
@@ -544,6 +557,10 @@ register({
     "デフォルトブランチ基準にすると、マージ待ちで完了済みの先行ビルドが未完了に",
     "混ざり、スタック中に中断点が古いビルドへ戻ります。",
     "completed かどうかだけはリポジトリ全体の問いなので、デフォルトブランチを見ます。",
+    "",
+    "作業ツリーに差し戻しの記録（return.md）があれば、フェーズは building のまま",
+    "「差し戻し中」と表示し、差し戻し元を指定した architect を案内します。",
+    "記録は差し戻し元のビルドのブランチにしか無いので、他のブランチからは見えません。",
   ].join("\n"),
   run: async ({ args, operands }) => {
     const root = flagString(args, "root");
@@ -581,6 +598,7 @@ register({
       {
         cycle: record,
         phase: state.phase,
+        returned: state.returned ?? null,
         resumeAt: state.resumeAt,
         artifacts: state.artifacts,
         branches: inProgress,
@@ -593,13 +611,22 @@ register({
           ids: views.mergedIds === undefined ? null : [...views.mergedIds],
         },
         remoteUnavailable: remote.unavailable,
-        suggestion: suggestCommand(state.phase, name),
+        suggestion: suggestFor(state, name),
       },
       () => {
         const lines = [
-          `cycle ${name}: ${state.phase}${versionNote(record.hikyaku)}`,
+          `cycle ${name}: ${phaseLabel(state)}${versionNote(record.hikyaku)}`,
           `  profile   ${record.profile || "—"}`,
         ];
+
+        if (state.returned !== undefined) {
+          lines.push(
+            "",
+            `  記録: ${RETURN_FILE}`,
+            "  設計の前提が崩れたため、architect に差し戻されています。再設計が終わるまで",
+            "  このビルドは進められません（再設計は architect がこのブランチ上で行います）。",
+          );
+        }
 
         if (state.artifacts.length > 0) {
           lines.push("", "  成果物:");
@@ -639,7 +666,7 @@ register({
 
         lines.push(
           "",
-          `  再開: ${suggestCommand(state.phase, name)}`,
+          `  再開: ${suggestFor(state, name)}`,
         );
         return lines.join("\n");
       },

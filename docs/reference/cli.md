@@ -56,7 +56,7 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 |---|---|
 | `next [<cycle>]` | 次に着手できるビルドを知りたいとき。複数返れば並行実行できる。判定は**いま居るブランチの `HEAD`** が基準 |
 | `cycle list [--active]` | 走行中のサイクルを見渡したいとき。ビルド列は「マージ済み / 全体」で、手元で完了しマージ待ちのものは (+n) が付く |
-| `cycle status <cycle>` | 中断からの再開点を知りたいとき。ブランチを切り替えてから実行する。中断点は `HEAD` 基準 |
+| `cycle status <cycle>` | 中断からの再開点を知りたいとき。ブランチを切り替えてから実行する。中断点は `HEAD` 基準。作業ツリーに `return.md` があれば「差し戻し中」と表示し、architect を案内する |
 | `tasklist read [<cycle>]` | ビルドの一覧と完了状況を見たいとき |
 | `config [<cycle>]` | 設定のマージ結果とプロファイルの展開結果を確認したいとき |
 

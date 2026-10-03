@@ -3,10 +3,10 @@ name: architect
 description: "Hikyaku 設計フェーズ: 企画成果物と既存コードを入力に、このサイクルの設計差分（design-delta）とビルド分割を出力する"
 user-invocable: true
 disable-model-invocation: true
-argument-hint: "[{cycle}]"
+argument-hint: "[{cycle}] [build-{NN}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.1.0"
+  version: "2.2.0"
 ---
 
 # Hikyaku Architect
@@ -42,6 +42,32 @@ close-cycle が行う。並行サイクルはこの status を見て「決まっ
 - 企画内容の変更（スコープ・優先度の変更は企画フェーズに差し戻す）
 - 実装コード・テストコードの記述
 - ADR 以外の永続ドキュメントへの書き込み
+
+## 差し戻しからの再設計
+
+`$ARGUMENTS[1]` に `build-{NN}` が指定された場合、または `cycle status` が
+`building（差し戻し中: build-NN）` を返した場合は、builder から差し戻された設計の見直しとして
+進める。差し戻しの記録は `cycles/{cycle}/return.md` にあり、差し戻し元のビルドのブランチにだけ
+コミットされている。
+
+通常の設計との違いは次のとおり。ここに書いていないステップは通常どおり行う。
+
+- **ブランチ: 差し戻し元のビルドのブランチ上で作業する。** architect 用のブランチは切らない。
+  Step 0 のブランチ確認は `branch verify architect` ではなく `branch verify build-{NN} {cycle}` で行い、
+  `ok: true` でなければブランチを作らずにユーザーに尋ねる（差し戻し元のブランチに切り替えてもらう）。
+  設計の変更はそのビルドの PR に入るので、積んでいる場合も連鎖が一直線のまま保てる
+- **入力: `return.md` と、差し戻し元のビルドの `questions.md` を必ず読む。** 何が崩れたか、
+  何を決め直すかはそこに書かれている。企画成果物と既存の design-delta.md も通常どおり読む
+- **design-delta.md: 撤回した判断を残す。** 書き換えるだけでなく、どの判断を、なぜ撤回したかを
+  1段落で書く（後からビルドの PR を読む人が、設計が変わった理由を追えるようにするため）
+- **Step 5b: 影響を受けるビルドは、追加よりも更新で扱う。** build-manager を呼び出し、差し戻し元の
+  issue.md・BP・依存を改める。他のビルドに波及する場合はそれも更新する
+- **Step 6: PR を作らない。** 振り返りのあと、`return.md` と、差し戻し元のビルドの `plan.md` /
+  `test-spec.md`（古い設計の上で書かれたもの）を削除してコミット & push する。この削除が差し戻しの
+  解決の記録になる。`return.md` が消えれば、`cycle status` は差し戻し元のビルドの plan.md からの
+  再開を返す
+- **案内: `/hikyaku:builder {cycle} {NN}` を案内する。** 同じブランチで builder を起動し直せば、
+  Step 3 からやり直せる
 
 ## 作業ステップ
 
@@ -92,7 +118,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context architect {cycle}
 `tech-stack` / `db-schema` / `interfaces` は俯瞰の手がかりとして読むが、
 **コードと矛盾したら常にコードを正とする**（勝手に直さず、handoff に記録する）。
 
-- [ ] ブランチを作成し、命名規則どおりか確認する
+- [ ] ブランチを作成し、命名規則どおりか確認する（差し戻しからの再設計では
+  `branch verify build-{NN} {cycle}`。上の「差し戻しからの再設計」を参照）
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify architect {cycle}

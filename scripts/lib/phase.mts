@@ -10,9 +10,9 @@
  * 前提にしている（コミットされていなければ他セッションから見えない）。
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildDirName, isComplete, type BuildRecord } from "./tasklist.mts";
+import { buildDirName, isComplete, normalizeBuildId, type BuildRecord } from "./tasklist.mts";
 import type { CycleRecord } from "./cycles.mts";
 
 export type DerivedPhase =
@@ -39,6 +39,34 @@ export interface CycleState {
   builds: BuildRecord[];
   /** このツリーでは完了しているが、まだデフォルトブランチに入っていないビルド */
   mergePending: string[];
+  /** 作業ツリーに差し戻しの記録があれば、その内容。無ければ undefined */
+  returned?: ReturnRecord | undefined;
+}
+
+/**
+ * 差し戻しの記録（{cycle}/return.md）。
+ *
+ * builder が設計の前提が崩れたと判断したときに書き、差し戻し元のビルドの
+ * ブランチにだけコミットする（デフォルトブランチにはマージしない）。
+ * architect が再設計の最後に削除するので、「ファイルがある」こと自体が
+ * 差し戻し中を意味する。他のブランチは読まない。差し戻しに気づくのは、
+ * 差し戻しを受けた人と、そのブランチで動くスキルだけでよいため。
+ */
+export const RETURN_FILE = "return.md";
+
+export interface ReturnRecord {
+  /** 差し戻し元のビルド ID。見出しから読めなければ undefined */
+  buildId: string | undefined;
+}
+
+/** 差し戻し元は見出し（`# 差し戻し: build-NN`）から読む。中身の他の部分は解釈しない */
+const RETURN_HEADING = /^#\s*差し戻し\s*[:：]\s*(build-\d+)/m;
+
+export function readReturn(cycleDirectory: string): ReturnRecord | undefined {
+  const path = join(cycleDirectory, RETURN_FILE);
+  if (!existsSync(path)) return undefined;
+  const match = RETURN_HEADING.exec(readFileSync(path, "utf8"));
+  return { buildId: match?.[1] === undefined ? undefined : normalizeBuildId(match[1]) };
 }
 
 interface ArtifactSpec {
@@ -122,6 +150,16 @@ export function deriveState(
     };
   }
 
+  // 差し戻し中は、設計がそろっていてもビルドを進められない。フェーズは building の
+  // まま（サイクルとしてはビルドの途中）にし、差し戻しの記録を添えて返す。
+  // completed より先に見るのは、差し戻し元のブランチでは完了判定より再設計が先だから
+  const returned = readReturn(cycleDirectory);
+  if (returned !== undefined) {
+    const target = builds.find((build) => build.id === returned.buildId);
+    const artifacts = target === undefined ? [] : resolve(cycleDirectory, buildArtifacts(target.id));
+    return { phase: "building", artifacts, resumeAt: undefined, builds, mergePending, returned };
+  }
+
   // 「サイクルが完了したか」はリポジトリ全体の問いなので、デフォルトブランチで
   // マージ済みかを見る。builds（HEAD 基準）の PR 列で代用すると、最後のビルドで
   // tasklist done した直後に completed と出て close-cycle を勧めてしまう。
@@ -172,4 +210,23 @@ export function suggestCommand(phase: DerivedPhase, cycle: string): string {
     default:
       return "（このサイクルは終了しています）";
   }
+}
+
+/**
+ * 状態に対応する次の実行コマンドの案内。差し戻し中なら、差し戻し元を指定した architect。
+ * 差し戻し元を読めなければビルドを付けない（architect が記録を読んで確かめる）
+ */
+export function suggestFor(state: CycleState, cycle: string): string {
+  if (state.returned === undefined) return suggestCommand(state.phase, cycle);
+  const build = state.returned.buildId;
+  return build === undefined
+    ? `/hikyaku:architect ${cycle}`
+    : `/hikyaku:architect ${cycle} ${buildDirName(build)}`;
+}
+
+/** 表示用のフェーズ。差し戻し中はフェーズの値を変えずに注記する */
+export function phaseLabel(state: CycleState): string {
+  if (state.returned === undefined) return state.phase;
+  const build = state.returned.buildId;
+  return `${state.phase}（差し戻し中${build === undefined ? "" : `: ${buildDirName(build)}`}）`;
 }

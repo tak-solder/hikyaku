@@ -64,6 +64,7 @@ cycles/{NNN}-{slug}/
 │   ├── design-delta.md
 │   └── retrospective.md
 ├── tasklist.md
+├── return.md                 # architect への差し戻し中のみ（差し戻し元のビルドのブランチだけにある）
 └── build-{NN}/
     ├── issue.md              # architect が作成
     ├── questions.md          # 質問が発生した場合のみ
@@ -76,6 +77,8 @@ cycles/{NNN}-{slug}/
 ディレクトリ名は `{NNN}-{slug}` です。slug は英数字とハイフンに正規化されます（ブランチ名の解析を壊さないため）。`closed` になったサイクルのディレクトリも残します。PR 履歴から辿れることに価値があるためです。
 
 `handoff.md` と `retrospective.md` は close-cycle の昇格素材になります。どちらもコミット対象です。
+
+`return.md` は、builder が architect に差し戻したときに書く記録です。差し戻し元のビルドのブランチにだけコミットされ、architect が再設計の最後に削除するので、デフォルトブランチには入りません。作業ツリーにこのファイルがあることが「差し戻し中」を意味し、1行目の見出し（`# 差し戻し: build-NN`）から差し戻し元のビルドが読まれます。
 
 ## cycles.md
 
