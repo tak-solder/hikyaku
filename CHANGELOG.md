@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [2.3.0]
 
-ARCHITECT 以降を監督セッションに任せる conductor を追加する（[issue #40](https://github.com/tak-solder/hikyaku/issues/40)）。作業中。
+ARCHITECT 以降を監督セッションに任せる conductor を追加する（[issue #40](https://github.com/tak-solder/hikyaku/issues/40)）。
 
 ### Added
 
@@ -26,7 +26,8 @@ ARCHITECT 以降を監督セッションに任せる conductor を追加する�
 
 ### Migration
 
-- 対応は不要
+- conductor を使わない場合、対応は不要。既存のスキルの手順は変わらない
+- conductor を使う場合は、監督のセッションで `Bash(claude -p:*)` を許可する。テストのコマンドが子の既定の許可（`git` / `node` / `ls` / `cat` など）に含まれなければ、`[conductor] allowed_tools` に足してコミットする。手順は [conductor](docs/workflow/conductor.md) にある
 
 ## [2.2.0]
 
