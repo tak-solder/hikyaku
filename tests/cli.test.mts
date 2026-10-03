@@ -141,3 +141,42 @@ test("CLI: validate は BP ガイドの表が古い場合と期待値の不一�
   rmSync(join(directory, "docs/hikyaku/bp-guide/cases.toml"));
   assert.equal(JSON.parse(succeeds(directory, "validate", "--json")).ok, true);
 });
+
+test("CLI: return.md があれば cycle status・next・cycle list が差し戻し中として扱う", (t) => {
+  const directory = workspace(t, true);
+  const cycleDirectory = "docs/hikyaku/cycles/001-test";
+  write(directory, `${cycleDirectory}/planning/user-stories.md`);
+  write(directory, `${cycleDirectory}/design/design-delta.md`);
+  succeeds(directory, "tasklist", "add", "001", "--title", "基盤");
+  succeeds(directory, "tasklist", "add", "001", "--title", "API");
+
+  const normal = JSON.parse(succeeds(directory, "next", "001", "--no-fetch", "--json"));
+  assert.equal(normal.returned, null);
+  assert.deepEqual(normal.available, ["1", "2"]);
+
+  write(directory, `${cycleDirectory}/return.md`, "# 差し戻し: build-01\n\n## 何が崩れたか\n");
+
+  const status = JSON.parse(succeeds(directory, "cycle", "status", "001", "--no-fetch", "--json"));
+  assert.equal(status.phase, "building");
+  assert.deepEqual(status.returned, { buildId: "1" });
+  assert.equal(status.suggestion, "/hikyaku:architect 001-test build-01");
+  const text = succeeds(directory, "cycle", "status", "001", "--no-fetch");
+  assert.match(text, /^cycle 001-test: building（差し戻し中: build-01）/);
+  assert.match(text, /再開: \/hikyaku:architect 001-test build-01/);
+
+  const next = JSON.parse(succeeds(directory, "next", "001", "--no-fetch", "--json"));
+  assert.deepEqual(next.returned, { buildId: "1" });
+  assert.deepEqual(next.available, []);
+  assert.match(succeeds(directory, "next", "001", "--no-fetch"), /どのビルドにも着手できません/);
+
+  const list = JSON.parse(succeeds(directory, "cycle", "list", "--json"));
+  assert.equal(list.cycles[0].phase, "building");
+  assert.deepEqual(list.cycles[0].returned, { buildId: "1" });
+  assert.match(succeeds(directory, "cycle", "list"), /building（差し戻し中: build-01）/);
+
+  // architect が再設計の最後に return.md を消すと、通常の再開に戻る
+  rmSync(join(directory, cycleDirectory, "return.md"));
+  const resumed = JSON.parse(succeeds(directory, "cycle", "status", "001", "--no-fetch", "--json"));
+  assert.equal(resumed.returned, null);
+  assert.equal(resumed.suggestion, "/hikyaku:builder 001-test");
+});
