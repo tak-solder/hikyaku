@@ -26,6 +26,8 @@
   - ❌ `enum` / 実行時 `namespace` / パラメータプロパティ / デコレータ / import alias
   - ✅ import は拡張子必須（`import { x } from "./config.mts"`）。パスエイリアスは使えません
 - 変更したら `npx tsc --noEmit` を通してください
+- スクリプトのテストは `tests/` の `.test.mts` に置き、Node 標準の `node:test` と `node:assert/strict` を使います。`npm test` で実行し、テスト用の依存も増やしません。CLI の結合テストは一時 Git リポジトリで実行し、作業中のワークスペースや外部サービスに依存させないでください
+- スクリプトを変更したら `npm test` も通してください。CI の `check-scripts` はテスト本体・補助ファイルを型チェックし、単体・CLI 結合テストを実行します
 - BP の既定値（`scripts/lib/bp.mts` の `DEFAULT_BP_RULES`）を変えたら、`DEFAULT_BP_CASES` も更新し `node scripts/hikyaku.mts bp test --builtin` を通してください。CI（check-scripts）が同じコマンドを実行します
 - 書き込みを伴うコマンドには必ず `--dry-run` を用意してください。承認はスキル側が取ります
 

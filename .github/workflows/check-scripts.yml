@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "scripts/**"
+      - "tests/**"
       - "package.json"
       - "package-lock.json"
       - "tsconfig.json"
@@ -28,6 +29,9 @@ jobs:
       # erasableSyntaxOnly により、型剥がしで動かない構文もここで検出される
       - name: Typecheck
         run: npx tsc --noEmit
+
+      - name: Unit and CLI integration tests
+        run: npm test
 
       - name: Smoke test (CLI が起動するか)
         run: |

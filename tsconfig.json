@@ -22,5 +22,5 @@
     "noUnusedParameters": true,
     "skipLibCheck": true
   },
-  "include": ["scripts/**/*.mts"]
+  "include": ["scripts/**/*.mts", "tests/**/*.mts"]
 }
