@@ -88,6 +88,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor asks {cycle} --json
 planning/user-stories.md を承認済みの要件として扱います。
 監督が判断する同意ゲート: {asks の出力}
 人間に上げる問い: {asks の出力}、およびスコープを広げる回答が要る問い
+子のモデル: {asks の出力の models。null は「既定」と書く}
 各フェーズの PR は conductor ブランチ（{conductor}）に向け、監督が取り込みます。
 デフォルトブランチにはマージしません。最後のビルドが終わったら、{conductor} → デフォルトブランチの
 PR を作って止まります。

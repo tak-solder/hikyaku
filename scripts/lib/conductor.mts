@@ -122,6 +122,10 @@ export function lintTags(tagsByFile: Map<string, string[]>): string[] {
   return problems;
 }
 
+/** conductor が子として起動するフェーズ（スキル名） */
+export const CONDUCTOR_PHASES = ["architect", "builder", "close-cycle"] as const;
+export type ConductorPhase = (typeof CONDUCTOR_PHASES)[number];
+
 export interface ConductorConfig {
   /** 既定では監督が答える問いのうち、人間に上げるもの */
   escalate: string[];
@@ -131,6 +135,10 @@ export interface ConductorConfig {
   allowedTools: string[];
   /** 呼び出し1回ごとの費用の上限（USD）。0 なら上限を渡さない */
   budgetPerRun: number;
+  /** 子のモデル（全フェーズの既定）。未指定なら Claude Code の既定に任せる */
+  model: string | undefined;
+  /** フェーズごとのモデル。model より優先する */
+  models: Partial<Record<ConductorPhase, string>>;
 }
 
 export const DEFAULT_CONDUCTOR: ConductorConfig = {
@@ -138,7 +146,14 @@ export const DEFAULT_CONDUCTOR: ConductorConfig = {
   delegate: [],
   allowedTools: [],
   budgetPerRun: 0,
+  model: undefined,
+  models: {},
 };
+
+/** そのフェーズの子に渡すモデル。undefined なら --model を渡さない */
+export function modelFor(conductor: ConductorConfig, phase: ConductorPhase): string | undefined {
+  return conductor.models[phase] ?? conductor.model;
+}
 
 /**
  * escalate / delegate の検査。

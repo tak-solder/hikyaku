@@ -342,3 +342,41 @@ test("CLI: フェーズの PR は conductor ブランチへ、conductor ブラ�
   git(directory, "commit", "-q", "--allow-empty", "-m", "build-01");
   assert.equal(base("build-01"), "hikyaku/001-test/conductor");
 });
+
+test("CLI: [conductor.models] のフェーズ、無ければ model を --model で渡し、どちらも無ければ渡さない", (t) => {
+  const directory = workspace(t, true);
+  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--bp", "2");
+  const modelOf = (...args: string[]) => {
+    const output = JSON.parse(succeeds(
+      directory, "conductor", "launch", ...args, "--expect-digest", digest(directory), "--json",
+    ));
+    const index = output.argv.indexOf("--model");
+    assert.equal(index === -1 ? null : output.argv[index + 1], output.model);
+    return output.model;
+  };
+  assert.equal(modelOf("builder", "001", "1"), null);
+
+  write(directory, ".hikyaku.config", `hikyaku_root = "docs/hikyaku"
+[conductor]
+model = "sonnet"
+[conductor.models]
+architect = "opus"
+`);
+  assert.equal(modelOf("architect", "001"), "opus");
+  assert.equal(modelOf("builder", "001", "1"), "sonnet");
+  const asks = JSON.parse(succeeds(directory, "conductor", "asks", "001", "--json"));
+  assert.deepEqual(asks.models, { architect: "opus", builder: "sonnet", "close-cycle": "sonnet" });
+});
+
+for (const [name, content, pattern] of [
+  ["未知のフェーズ", '[conductor.models]\nplanner = "opus"\n', /指定できないキー/],
+  ["空文字のモデル", '[conductor]\nmodel = ""\n', /空文字/],
+] as const) {
+  test(`CLI: [conductor] のモデル指定で${name}を拒否する`, (t) => {
+    const directory = workspace(t, true);
+    write(directory, ".hikyaku.config", `hikyaku_root = "docs/hikyaku"\n${content}`);
+    const rejected = cli(directory, "conductor", "asks", "001");
+    assert.equal(rejected.status, 1);
+    assert.match(rejected.stderr, pattern);
+  });
+}

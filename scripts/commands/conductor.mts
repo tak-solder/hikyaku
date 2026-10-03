@@ -9,8 +9,11 @@ import {
   CATEGORY_LABELS,
   collectTags,
   CONDUCTED_SKILLS,
+  CONDUCTOR_PHASES,
+  type ConductorPhase,
   defaultAllowedTools,
   lintTags,
+  modelFor,
   parseResultJson,
   resolveAllAsks,
   resolveAsk,
@@ -26,8 +29,6 @@ import { normalizeBuildId } from "../lib/tasklist.mts";
 import type { ResolvedConfig } from "../lib/config.mts";
 import { openCycle, type CycleContext } from "../lib/workspace.mts";
 
-const PHASES = ["architect", "builder", "close-cycle"] as const;
-type ConductorPhase = (typeof PHASES)[number];
 
 register({
   name: "conductor asks",
@@ -52,8 +53,11 @@ register({
     const asks = resolveAllAsks(config.conductor, config);
     const digest = digestOf(config);
     const allowedTools = allowedToolsOf(config);
+    const models = Object.fromEntries(
+      CONDUCTOR_PHASES.map((phase) => [phase, modelFor(config.conductor, phase) ?? null]),
+    );
 
-    emit({ cycle: context.name, profile: config.profile, digest, allowedTools, asks }, () => {
+    emit({ cycle: context.name, profile: config.profile, digest, allowedTools, models, asks }, () => {
       const ids = (filter: (ask: ResolvedAsk) => boolean): string =>
         asks.filter(filter).map((ask) => ask.id).join(" / ") || "なし";
       const consent = (ask: ResolvedAsk): boolean => ask.category === "consent";
@@ -65,6 +69,7 @@ register({
         `人間に上げる問い: ${ids((a) => a.enabled && a.handler === "human")}`,
         `この profile では出ない問い: ${ids((a) => !a.enabled)}`,
         `子に許可するツール: ${allowedTools.join(" ")}`,
+        `子のモデル: ${CONDUCTOR_PHASES.map((phase) => `${phase}=${models[phase] ?? "既定"}`).join(" / ")}`,
         `設定のダイジェスト: ${digest}`,
         "",
         table(
@@ -111,6 +116,8 @@ register({
     "  < /dev/null                   バックグラウンド起動で stdin を待たないため",
     "",
     "[conductor] budget_per_run が 0 より大きければ --max-budget-usd も入ります。",
+    "[conductor.models] のそのフェーズ、無ければ [conductor] model が指定されていれば",
+    "--model も入ります。どちらも無ければ Claude Code の既定のモデルで動きます。",
     "--out を省くと、一時ディレクトリに session-id 入りの名前で書きます。",
     "",
     "--expect-digest には、監督が起動時に人間と合意したときの conductor asks の digest を",
@@ -143,6 +150,7 @@ register({
     const out = flagString(args, "out") ?? join(tmpdir(), `hikyaku-conductor-${sessionId}-${Date.now()}.json`);
     const protocol = join(pluginRoot(), "skills", "conductor", "references", "headless-protocol.md");
     const allowedTools = allowedToolsOf(config);
+    const model = modelFor(config.conductor, phase);
 
     const argv = [
       "claude",
@@ -160,6 +168,7 @@ register({
       "--allowedTools",
       ...allowedTools,
       ...(config.conductor.budgetPerRun > 0 ? ["--max-budget-usd", String(config.conductor.budgetPerRun)] : []),
+      ...(model === undefined ? [] : ["--model", model]),
       "--output-format",
       "json",
     ];
@@ -174,6 +183,7 @@ register({
         resumed: resume !== undefined,
         resultFile: out,
         budgetPerRun: config.conductor.budgetPerRun,
+        model: model ?? null,
         allowedTools,
         argv,
         command,
@@ -307,10 +317,10 @@ function requireDigest(args: ParsedArgs, config: ResolvedConfig): void {
 }
 
 function requireConductorPhase(raw: string | undefined): ConductorPhase {
-  if (raw === undefined || !(PHASES as readonly string[]).includes(raw)) {
+  if (raw === undefined || !(CONDUCTOR_PHASES as readonly string[]).includes(raw)) {
     throw new HikyakuError(
       raw === undefined ? "フェーズを指定してください" : `フェーズの値が不正です: ${raw}`,
-      `使用できる値: ${PHASES.join(" | ")}（PLAN は人間が対話で行うため対象外）`,
+      `使用できる値: ${CONDUCTOR_PHASES.join(" | ")}（PLAN は人間が対話で行うため対象外）`,
     );
   }
   return raw as ConductorPhase;

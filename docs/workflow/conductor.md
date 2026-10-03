@@ -33,6 +33,16 @@
 allowed_tools = ["Bash(npm test:*)"]
 ```
 
+子のモデルは、既定では Claude Code の既定のモデルです。フェーズごとに変えたい場合（設計は opus、実装は sonnet など）は `[conductor] model` と `[conductor.models]` で指定します。モデルの指定も起動時に合意する設定に含まれるので、途中で変わることはありません。
+
+```toml
+[conductor]
+model = "sonnet"
+
+[conductor.models]
+architect = "opus"
+```
+
 子に `bypassPermissions` は渡しません。監督の目が届かないところで何でもできる状態を作らないためです。ただし、ツールの許可だけで子を完全に閉じ込めることはできません。子はファイルを書けるので、`.git/hooks` に置いたスクリプトは `git commit` のときに実行されますし、許可したテストのコマンドは子が編集したコードを実行します。信頼できないリポジトリや、秘密情報のある環境で動かすなら、サンドボックスやコンテナの中で動かしてください。設定キーの一覧は [.hikyaku.config](../configuration/config-file.md#conductor) にあります。
 
 ## 始める

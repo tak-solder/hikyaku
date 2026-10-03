@@ -25,7 +25,13 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { BranchNaming } from "./branch.mts";
-import { checkConductorAsks, DEFAULT_CONDUCTOR, type ConductorConfig } from "./conductor.mts";
+import {
+  checkConductorAsks,
+  CONDUCTOR_PHASES,
+  DEFAULT_CONDUCTOR,
+  type ConductorConfig,
+  type ConductorPhase,
+} from "./conductor.mts";
 import { HikyakuError } from "./errors.mts";
 import { repoRoot } from "./paths.mts";
 import { parseToml, TomlError, type TomlTable, type TomlValue } from "./toml.mts";
@@ -334,9 +340,39 @@ function readConductor(table: TomlTable | undefined): ConductorConfig {
     delegate: readStringArray(table, "delegate", where) ?? DEFAULT_CONDUCTOR.delegate,
     allowedTools: readStringArray(table, "allowed_tools", where) ?? DEFAULT_CONDUCTOR.allowedTools,
     budgetPerRun: budget,
+    model: readModel(table, "model", where),
+    models: readConductorModels(readTable(table ?? {}, "models")),
   };
   checkConductorAsks(conductor, where);
   return conductor;
+}
+
+function readModel(table: TomlTable | undefined, key: string, where: string): string | undefined {
+  const value = readString(table, key, where);
+  if (value !== undefined && value.trim() === "") {
+    throw new HikyakuError(`${where}.${key} に空文字は指定できません`, "Claude Code の既定に任せるなら、キーごと消してください。");
+  }
+  return value;
+}
+
+/**
+ * [conductor.models] を読む。フェーズ名のタイプミスを黙って捨てると、指定したつもりの
+ * モデルが効かないまま既定のモデルで動くので、未知のキーはエラーにする
+ */
+function readConductorModels(table: TomlTable | undefined): Partial<Record<ConductorPhase, string>> {
+  const where = "[conductor.models]";
+  const models: Partial<Record<ConductorPhase, string>> = {};
+  for (const key of Object.keys(table ?? {})) {
+    if (!(CONDUCTOR_PHASES as readonly string[]).includes(key)) {
+      throw new HikyakuError(
+        `${where} に指定できないキーです: ${key}`,
+        `使用できるキー: ${CONDUCTOR_PHASES.join(" | ")}`,
+      );
+    }
+    const model = readModel(table, key, where);
+    if (model !== undefined) models[key as ConductorPhase] = model;
+  }
+  return models;
 }
 
 function checkEnum<T extends string>(

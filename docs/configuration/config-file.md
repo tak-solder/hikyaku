@@ -209,6 +209,12 @@ escalate = []        # 既定では監督が答える問いのうち、人間に
 delegate = []        # 既定では人間に上げる問いのうち、監督に任せるものの ID
 allowed_tools = []   # 子セッションに許可するツール（既定に追加される）
 budget_per_run = 0   # 子の呼び出し1回ごとの費用の上限（USD）。0 なら上限なし
+# model = "sonnet"   # 子のモデル（全フェーズの既定）。未指定なら Claude Code の既定
+
+[conductor.models]   # フェーズごとのモデル。model より優先する
+# architect = "opus"
+# builder = "sonnet"
+# close-cycle = "sonnet"
 ```
 
 [conductor](../workflow/conductor.md) で子セッションを動かすときの設定です。使わないなら書く必要はありません。
@@ -216,6 +222,8 @@ budget_per_run = 0   # 子の呼び出し1回ごとの費用の上限（USD）�
 `escalate` と `delegate` には問いの ID（`G8`、`review-findings` など）を並べます。使える ID と現在の振り分けは `hikyaku conductor asks <cycle>` で確認できます。表に無い ID や、同じ ID を両方に書いた場合はエラーになります。サイクルの中止（`abandon`）と ID の無い問い（`other`）は常に人間に上げるので、`delegate` には書けません。
 
 `allowed_tools` は `--allowedTools` に渡す書式で書きます（`"Bash(npm test:*)"` など）。子はこの設定を起動のたびに読むので、作業ツリーで一時的に足すのではなくコミットしておいてください。
+
+`model` と `[conductor.models]` の値は、`claude --model` に渡すモデル名（`opus` / `sonnet` のような別名か、正式なモデル名）です。`[conductor.models]` のキーは `architect` / `builder` / `close-cycle` だけで、それ以外はエラーになります。効くのは子のセッション本体だけで、子の中で起動されるサブエージェントのモデルは、エージェント定義で決まります。
 
 配列はキー単位で上書きされます。サイクル設定に `escalate` を書くと、ルートの `escalate` に足されるのではなく置き換わります。
 

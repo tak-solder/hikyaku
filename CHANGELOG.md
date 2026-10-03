@@ -19,7 +19,7 @@ ARCHITECT 以降を監督セッションに任せる conductor を追加する�
 - **`hikyaku conductor parse`**: 子の結果ファイルから gate / done / blocked を取り出し、gate なら問いの振り分けを返す。ブロックが規約どおりでなければ `violation` を返す
 - **`launch` / `parse` の `--expect-digest`**: 監督が起動時に人間と合意したときの設定のダイジェスト（profile と `.hikyaku.config` の内容から作る）を渡す。設定が変わっていればエラーで止まる
 - **`hikyaku conductor lint`**: 子として動くスキルの問いのタグと、conductor の ID の表の食い違いを検出する（プラグイン本体の開発用。CI の check-scripts が実行する）
-- **`[conductor]` 設定**: `escalate` / `delegate`（問いの ID ごとに人間・監督への振り分けを上書きする）、`allowed_tools`（子に許可するツールを足す）、`budget_per_run`（呼び出しごとの費用の上限。既定 0 で上限なし）
+- **`[conductor]` 設定**: `escalate` / `delegate`（問いの ID ごとに人間・監督への振り分けを上書きする）、`allowed_tools`（子に許可するツールを足す）、`budget_per_run`（呼び出しごとの費用の上限。既定 0 で上限なし）、`model` と `[conductor.models]`（子のモデル。全フェーズの既定と、フェーズごとの上書き。未指定なら Claude Code の既定）
 
 ### Changed
 
