@@ -201,6 +201,24 @@ target = "none"                 # none | github | asana
 
 外部システムへの片方向投影の設定です。詳細は [外部システムへの投影](external.md)。
 
+## [conductor]
+
+```toml
+[conductor]
+escalate = []        # 既定では監督が答える問いのうち、人間に上げるものの ID
+delegate = []        # 既定では人間に上げる問いのうち、監督に任せるものの ID
+allowed_tools = []   # 子セッションに許可するツール（既定に追加される）
+budget_per_run = 0   # 子の呼び出し1回ごとの費用の上限（USD）。0 なら上限なし
+```
+
+[conductor](../workflow/conductor.md) で子セッションを動かすときの設定です。使わないなら書く必要はありません。
+
+`escalate` と `delegate` には問いの ID（`G8`、`review-findings` など）を並べます。使える ID と現在の振り分けは `hikyaku conductor asks <cycle>` で確認できます。表に無い ID や、同じ ID を両方に書いた場合はエラーになります。サイクルの中止（`abandon`）と ID の無い問い（`other`）は常に人間に上げるので、`delegate` には書けません。
+
+`allowed_tools` は `--allowedTools` に渡す書式で書きます（`"Bash(npm test:*)"` など）。子はこの設定を起動のたびに読むので、作業ツリーで一時的に足すのではなくコミットしておいてください。
+
+配列はキー単位で上書きされます。サイクル設定に `escalate` を書くと、ルートの `escalate` に足されるのではなく置き換わります。
+
 ## 確認する
 
 マージ結果とプロファイルの展開結果は `config` で確認できます。

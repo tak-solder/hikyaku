@@ -144,6 +144,17 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | `external sync [<target>] [<cycle>]` | 投影が抜けたときに同期し直すとき |
 | `external ref <phase> [<cycle>]` | PR 本文に入れる参照行を生成するとき |
 
+## conductor
+
+| コマンド | いつ使うか |
+|---|---|
+| `conductor asks [<cycle>]` | 子の問いのうち、どれを監督が答え、どれを人間に上げるかを確認するとき |
+| `conductor launch <phase> [<cycle>] [<build>]` | 子セッションの起動・再開コマンドを組み立てるとき（通常は `/hikyaku:conductor` が呼ぶ） |
+| `conductor parse <result.json> [<cycle>]` | 子の結果から gate / done / blocked を取り出すとき（同上） |
+| `conductor lint` | プラグイン本体の開発用。スキルに付けた問いの ID と、CLI の ID の表の食い違いを検出する |
+
+`launch` はコマンドを組み立てるだけで、自分では起動しません。起動を監督のセッションの Bash に置くことで、子に権限を渡す操作が人間の許可ルール（`Bash(claude -p:*)`）の下で起きるようにしています。`parse` を CLI に置くのは、監督が子の自由文から問いを読み違えると判断の前提が崩れるためです。規約どおりのブロックが無ければ `violation` を返し、監督は推測で進めません。
+
 ## セットアップ
 
 | コマンド | いつ使うか |

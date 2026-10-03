@@ -19,6 +19,7 @@ Hikyaku がなぜこの形をしているのか（永続ドキュメントとサ
 - [ARCHITECT — 設計](workflow/architect.md)
 - [BUILD — 実装](workflow/build.md)
 - [CLOSE — サイクル終了](workflow/close.md)
+- [conductor — ARCHITECT 以降を任せる](workflow/conductor.md)
 
 ## 設定する
 
