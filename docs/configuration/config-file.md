@@ -142,6 +142,8 @@ separator = "/"
 ```toml
 [pr]
 title = "[hikyaku] {cycle}: {phase} {title}"
+reviewers = []        # PR を作った直後にレビューを依頼する相手
+reviewers_skip = []   # アサインをオフにするスキル
 ```
 
 PR タイトルは表示専用で解析されないため、テンプレートは自由に組み立てられます。
@@ -156,6 +158,12 @@ PR タイトルは表示専用で解析されないため、テンプレート�
 | `{title}` | ビルドのタイトル（他フェーズでは空） |
 
 空になった変数は前後の区切り文字ごと詰められます。サイクルを持たない `init` で `[hikyaku] : init` のような出力にならないようにするためです。
+
+`reviewers` には、PR を作る各スキルが PR を作った直後に、レビューを依頼する相手を書きます。人は login、チームは `org/team`、Copilot は `@copilot` で、1要素に1つずつ書きます。空（既定）なら何も依頼しません。依頼は `hikyaku pr request-reviewers` が行い、PR の作成者本人、すでに依頼した相手、すでにレビューした相手には依頼しません（GitHub は作成者本人を依頼先にできず、`gh` はレビュー済みの相手にも再依頼してしまうためです）。
+
+`reviewers_skip` には、アサインをオフにするスキルを `init` / `bp-guide` / `create` / `plan` / `architect` / `build` / `close` / `conductor` のフェーズ名で並べます。`build` は全てのビルドの PR にあたり、`conductor` は監督が作る最後の PR にあたります。たとえば PLAN と ARCHITECT のドキュメントだけの PR にはレビューを求めず、BUILD の PR にだけ求めるなら、`reviewers_skip = ["init", "bp-guide", "create", "plan", "architect", "close"]` と書きます。名前のタイプミスはエラーになります。この設定は [conductor] の `phase_reviewers` にも効きます。
+
+[conductor](../workflow/conductor.md) のフェーズの PR（conductor ブランチ向け）には、`reviewers` ではなく `[conductor] phase_reviewers` が使われます。向き先は PR の実際のマージ先から決まります。
 
 ## [session]
 
@@ -210,6 +218,8 @@ delegate = []        # 既定では人間に上げる問いのうち、監督に
 allowed_tools = []   # 子セッションに許可するツール（既定に追加される）
 budget_per_run = 0   # 子の呼び出し1回ごとの費用の上限（USD）。0 なら上限なし
 require_approval = false  # true なら、PR を conductor ブランチに取り込む条件に承認（Approve）を加える
+phase_reviewers = []      # conductor ブランチ向けのフェーズの PR にアサインするレビュアー
+review_timeout = 15       # レビューの依頼や CI を待つ上限（分）。0 なら待たずにその場で判定する
 # model = "sonnet"   # 子のモデル（全フェーズの既定）。未指定なら Claude Code の既定
 
 [conductor.models]   # フェーズごとのモデル。model より優先する
@@ -223,6 +233,8 @@ require_approval = false  # true なら、PR を conductor ブランチに取り
 `escalate` と `delegate` には問いの ID（`G8`、`review-findings` など）を並べます。使える ID と現在の振り分けは `hikyaku conductor asks <cycle>` で確認できます。表に無い ID や、同じ ID を両方に書いた場合はエラーになります。サイクルの中止（`abandon`）と ID の無い問い（`other`）は常に人間に上げるので、`delegate` には書けません。
 
 `allowed_tools` は `--allowedTools` に渡す書式で書きます（`"Bash(npm test:*)"` など）。子はこの設定を起動のたびに読むので、作業ツリーで一時的に足すのではなくコミットしておいてください。
+
+`phase_reviewers` には、conductor ブランチに向かうフェーズの PR にアサインするレビュアーを書きます。Copilot のような Bot を入れておくと、取り込みの前にレビューが付くのを待てます。人間のレビュアーを入れると、レビューが付くまで取り込みが止まるので、フェーズごとの確認が重くなります。`review_timeout` を超えても依頼が残っていれば、監督は人間に確認します。
 
 `require_approval` を `true` にすると、監督がフェーズの PR を取り込む条件に、1人以上の承認があり、変更の要求が残っていないことが加わります。承認の有無は、レビュアーごとの最新のレビューで判定します。子の PR はあなたの `gh` の認証で作られるので、承認できるのはあなた以外のレビュアーです。
 

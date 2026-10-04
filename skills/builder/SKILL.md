@@ -407,6 +407,13 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr base build-{NN} {cycle}
   - 本文の末尾に上の参照行を入れる
   - PR 作成前の承認は取らない。PR はレビューのための提案であって不可逆ではなく、
     ユーザーが `/hikyaku:builder` を実行した時点で PR 作成まで依頼されている
+- [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers build-{NN} {cycle} --pr {PR の URL}
+```
+
+  失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
 
 - [ ] tasklist.md の PR 列を更新し、**同じブランチへコミット & push する**
 

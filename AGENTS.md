@@ -31,6 +31,7 @@
 - BP の既定値（`scripts/lib/bp.mts` の `DEFAULT_BP_RULES`）を変えたら、`DEFAULT_BP_CASES` も更新し `node scripts/hikyaku.mts bp test --builtin` を通してください。CI（check-scripts）が同じコマンドを実行します
 - 書き込みを伴うコマンドには必ず `--dry-run` を用意してください。承認はスキル側が取ります
 - 子として動くスキル（architect / builder / build-manager / close-cycle / retrospective）にユーザーへ尋ねる箇所を足したら、`（ask: <id>）` のタグを付け、`scripts/lib/conductor.mts` の `ASKS` にも同じ ID を足してください。ID の改名・削除も両方で行います。`node scripts/hikyaku.mts conductor lint` が食い違いを検出し、CI（check-scripts）も同じコマンドを実行します。タグの付け忘れは検出できません
+- PR を作るスキルを足したら、PR を作った直後に `hikyaku pr request-reviewers <phase> [<cycle>] --pr <PR>` を呼ぶ手順を入れ、そのフェーズを `scripts/lib/config.mts` の `REVIEWER_SKIP_TARGETS` と `scripts/lib/reviewers.mts` の `skipTargetOf` にも足してください（`[pr] reviewers_skip` でオフにできるようにするため）
 
 ## ドキュメント
 

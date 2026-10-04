@@ -137,6 +137,10 @@ export interface ConductorConfig {
   budgetPerRun: number;
   /** フェーズの PR を取り込む条件に、レビュアーの承認（Approve）を加える */
   requireApproval: boolean;
+  /** conductor ブランチ向けのフェーズの PR にアサインするレビュアー。人間を入れると取り込みが止まる */
+  phaseReviewers: string[];
+  /** レビューの依頼や CI を待つ上限（分）。0 なら待たずにその場で判定する */
+  reviewTimeoutMinutes: number;
   /** 子のモデル（全フェーズの既定）。未指定なら Claude Code の既定に任せる */
   model: string | undefined;
   /** フェーズごとのモデル。model より優先する */
@@ -149,6 +153,8 @@ export const DEFAULT_CONDUCTOR: ConductorConfig = {
   allowedTools: [],
   budgetPerRun: 0,
   requireApproval: false,
+  phaseReviewers: [],
+  reviewTimeoutMinutes: 15,
   model: undefined,
   models: {},
 };
@@ -458,6 +464,15 @@ export interface PrView {
   reviewRequests: unknown[];
   /** レビュアーごとの最新のレビュー */
   latestReviews: unknown[];
+  /** 未解決のレビュースレッド。取得していなければ undefined（確かめない） */
+  reviewThreads?: { unresolved: ReviewThread[]; truncated: boolean };
+}
+
+export interface ReviewThread {
+  path: string;
+  line: number | null;
+  author: string;
+  url: string;
 }
 
 export interface PrOptions {
@@ -478,8 +493,15 @@ export interface PrVerdict {
   requested: string[];
   approval: { required: boolean; ok: boolean; approvedBy: string[]; changesRequestedBy: string[] };
   checks: { status: ChecksStatus; failing: string[]; pending: string[]; total: number };
+  /** 未解決のレビュースレッド（レビューの指摘が残っている） */
+  threads: { ok: boolean; unresolved: ReviewThread[]; truncated: boolean };
   /** ok でない理由（人間と監督に示す） */
   problems: string[];
+  /**
+   * 待てば解消しうる問題（CI の実行中、レビューの依頼が残っている）だけで止まっているか。
+   * Draft・未解決の指摘・CI の失敗・マージ先の食い違いは、待っても解消しないので含まない
+   */
+  waiting: boolean;
 }
 
 type CheckVerdict = "pass" | "fail" | "pending";
@@ -549,23 +571,41 @@ export function judgePr(
     .map(reviewerName);
   const approvalOk = !options.requireApproval || (approvedBy.length > 0 && changesRequestedBy.length === 0);
 
-  const problems: string[] = [];
-  if (!readyOk) problems.push("PR が Draft です（Ready for Review になっていません）");
-  if (!requestsOk) problems.push(`レビューの依頼が残っています: ${requested.join(", ")}`);
-  if (options.requireApproval && changesRequestedBy.length > 0) {
-    problems.push(`変更が要求されています: ${changesRequestedBy.join(", ")}`);
-  } else if (!approvalOk) {
-    problems.push("承認（Approve）がありません");
-  }
+  const unresolved = view.reviewThreads?.unresolved ?? [];
+  const truncated = view.reviewThreads?.truncated ?? false;
+  const threadsOk = unresolved.length === 0 && !truncated;
+
+  // 待てば解消しうるもの（waits）と、人間の対応が要るもの（blocks）に分ける
+  const blocks: string[] = [];
+  const waits: string[] = [];
+  if (!readyOk) blocks.push("PR が Draft です（Ready for Review になっていません）");
   if (!baseOk) {
-    problems.push(`PR のマージ先が conductor ブランチではありません（期待: ${conductorBranch} / 実際: ${view.baseRefName}）`);
+    blocks.push(`PR のマージ先が conductor ブランチではありません（期待: ${conductorBranch} / 実際: ${view.baseRefName}）`);
   }
-  if (!stateOk) problems.push(`PR が開いていません（${view.state}）`);
-  if (status === "fail") problems.push(`CI が失敗しています: ${failing.join(", ")}`);
-  if (status === "pending") problems.push(`CI がまだ終わっていません: ${pending.join(", ")}`);
+  if (!stateOk) blocks.push(`PR が開いていません（${view.state}）`);
+  if (status === "fail") blocks.push(`CI が失敗しています: ${failing.join(", ")}`);
+  if (!threadsOk) {
+    const where = unresolved.slice(0, 5).map((t) => `${t.path}${t.line === null ? "" : `:${t.line}`}（${t.author}）`);
+    blocks.push(
+      truncated
+        ? "レビュースレッドが多すぎて、未解決かどうかを全て確かめられません"
+        : `未解決のレビュースレッドが ${unresolved.length} 件あります: ${where.join(", ")}${unresolved.length > 5 ? " ほか" : ""}`,
+    );
+  }
+  if (options.requireApproval && changesRequestedBy.length > 0) {
+    blocks.push(`変更が要求されています: ${changesRequestedBy.join(", ")}`);
+  } else if (!approvalOk) {
+    // 依頼が残っているあいだは、レビューが付けば承認されうるので待てる。依頼が無いなら待っても付かない
+    (requestsOk ? blocks : waits).push("承認（Approve）がありません");
+  }
+  if (!requestsOk) waits.push(`レビューの依頼が残っています: ${requested.join(", ")}`);
+  if (status === "pending") waits.push(`CI がまだ終わっていません: ${pending.join(", ")}`);
+  const problems = [...blocks, ...waits];
 
   return {
     ok: problems.length === 0,
+    waiting: blocks.length === 0 && waits.length > 0,
+    threads: { ok: threadsOk, unresolved, truncated },
     baseOk,
     stateOk,
     readyOk,

@@ -357,6 +357,13 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate {cycle}
 - [ ] 外部連携が有効なら、参照行を生成する（`hikyaku external ref architect {cycle}`）
 - [ ] PR を作成する（タイトルは `hikyaku pr title architect {cycle}` で生成）
   - `external ref` が返した行（`Refs #12` など）を本文の末尾に入れる。空なら入れない
+- [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers architect {cycle} --pr {PR の URL}
+```
+
+  失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
 
 **この PR も速やかにマージすることを想定している。** tasklist.md がデフォルトブランチに
 入らないと、他のサイクルからも外からもこのサイクルの進捗が見えない。

@@ -18,18 +18,22 @@ ARCHITECT 以降を監督セッションに任せる conductor を追加する�
 - **`hikyaku conductor launch`**: 子（`claude -p`）の起動・再開コマンドを組み立てて返す。自分では実行しない。子に既定で許可するのは、スキルが使う `git` のサブコマンドと Hikyaku CLI の実行などに限る（`git -c` や `node -e` の形は許可しない）
 - **`hikyaku conductor parse`**: 子の結果ファイルから gate / done / blocked を取り出し、gate なら問いの振り分けを返す。ブロックが規約どおりでなければ `violation` を返す
 - **`launch` / `parse` の `--expect-digest`**: 監督が起動時に人間と合意したときの設定のダイジェスト（profile と `.hikyaku.config` の内容から作る）を渡す。設定が変わっていればエラーで止まる
-- **`hikyaku conductor check-pr`**: フェーズの PR を conductor ブランチに取り込む前に、マージ先が conductor ブランチであること・PR が開いていること・Draft でないこと・レビューの依頼（人・チーム・Bot）が残っていないこと・CI が失敗も待機もしていないことを `gh pr view` で確かめる。`[conductor] require_approval = true` なら、1人以上の承認があり変更の要求が残っていないことも求める。満たさなければ終了コード 2。監督はローカルの `git merge` で取り込むため、ブランチ保護の必須チェックが働かない。その代わりの検証
+- **`hikyaku pr request-reviewers <phase> [<cycle>] --pr <PR>`**: PR を作った直後に、設定のレビュアーをアサインする。PR の実際のマージ先が conductor ブランチなら `[conductor] phase_reviewers`、それ以外なら `[pr] reviewers` を使う。PR の作成者本人・依頼済み・レビュー済みの相手には依頼せず、`--dry-run` で依頼予定だけを返す。依頼は `gh pr edit --add-reviewer` で行うので `@copilot` も使える
+- **`[pr] reviewers` / `reviewers_skip`**: PR を作る全てのスキルがアサインするレビュアーと、スキル（`init` / `bp-guide` / `create` / `plan` / `architect` / `build` / `close` / `conductor`）ごとにアサインをオフにする設定。既定は空で、設定しなければ挙動は変わらない
+- **`[conductor] phase_reviewers` / `review_timeout`**: conductor ブランチ向けのフェーズの PR にアサインするレビュアーと、レビューの依頼や CI を待つ上限（分。既定 15）
+- **`hikyaku conductor check-pr`**: フェーズの PR を conductor ブランチに取り込む前に、マージ先が conductor ブランチであること・PR が開いていること・Draft でないこと・レビューの依頼（人・チーム・Bot）が残っていないこと・未解決のレビュースレッドが無いこと・CI が失敗も待機もしていないことを `gh` で確かめる。`--wait` は、待てば解消しうる問題（CI の実行中、レビューの依頼が残っている）だけで止まっているあいだ確かめ直し、上限（`review_timeout`）を超えたら `timedOut` で返す。`[conductor] require_approval = true` なら、1人以上の承認があり変更の要求が残っていないことも求める。満たさなければ終了コード 2。監督はローカルの `git merge` で取り込むため、ブランチ保護の必須チェックが働かない。その代わりの検証
 - **`hikyaku conductor lint`**: 子として動くスキルの問いのタグと、conductor の ID の表の食い違いを検出する（プラグイン本体の開発用。CI の check-scripts が実行する）
 - **`[conductor]` 設定**: `escalate` / `delegate`（問いの ID ごとに人間・監督への振り分けを上書きする）、`allowed_tools`（子に許可するツールを足す）、`budget_per_run`（呼び出しごとの費用の上限。既定 0 で上限なし）、`require_approval`（PR を取り込む条件に承認を加える。既定 false）、`model` と `[conductor.models]`（子のモデル。全フェーズの既定と、フェーズごとの上書き。未指定なら Claude Code の既定）
 
 ### Changed
 
+- **PR を作るスキル（planner / architect / builder / close-cycle / create-cycle / init / bp-guide）**: PR を作った直後に `hikyaku pr request-reviewers` を呼ぶ手順を足した。設定が空なら何もしない
 - **ブランチのフェーズ名に `conductor` を追加**: `branch verify conductor` / `pr title conductor` などで conductor の統合ブランチを扱える。`context` は読むべきフェーズではないとして拒否する。`pr base` は、同じ距離にある候補より conductor ブランチを優先し、conductor ブランチ自身の PR は常にデフォルトブランチへ向ける
 - **architect / builder / build-manager / close-cycle / retrospective**: ユーザーに尋ねる箇所に `（G8）` や `（ask: branch）` の形で ID を付けた。手順は変わらない
 
 ### Migration
 
-- conductor を使わない場合、対応は不要。既存のスキルの手順は変わらない
+- conductor を使わない場合、対応は不要。`[pr] reviewers` を設定しなければ、既存のスキルの挙動は変わらない（PR を作った直後に `pr request-reviewers` が呼ばれるが、何もしない）
 - conductor を使う場合は、監督のセッションで `Bash(claude -p:*)` を許可する。テストのコマンドが子の既定の許可（`git` / `ls` / `cat` と Hikyaku CLI の実行など。`node` は Hikyaku CLI 以外を許可しない）に含まれなければ、`[conductor] allowed_tools` に足してコミットする。手順は [conductor](docs/workflow/conductor.md) にある
 
 ## [2.2.0]

@@ -128,6 +128,7 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | `pr title <phase> [<cycle>]` | PR タイトルを生成するとき |
 | `pr base <phase> [<cycle>]` | PR のマージ先を決めるとき。PR を作る直前。`--ref` でローカルに解決できる ref（レビューの差分基準）を返す |
 | `session title <phase> [<cycle>]` | セッション名を生成するとき |
+| `pr request-reviewers <phase> [<cycle>] --pr <PR>` | PR を作った直後に、設定のレビュアーをアサインするとき（通常は各スキルが呼ぶ） |
 
 `branch verify` は生成と検証を兼ねています。名前を生成するだけのコマンドを別に持つと、生成しただけで確認しないまま作業する余地が残るためです。
 
@@ -151,7 +152,7 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | `conductor asks [<cycle>]` | 子の問いのうち、どれを監督が答え、どれを人間に上げるかを確認するとき |
 | `conductor launch <phase> [<cycle>] [<build>]` | 子セッションの起動・再開コマンドを組み立てるとき（通常は `/hikyaku:conductor` が呼ぶ） |
 | `conductor parse <result.json> [<cycle>]` | 子の結果から gate / done / blocked を取り出すとき（同上） |
-| `conductor check-pr <pr> [<cycle>]` | フェーズの PR を conductor ブランチに取り込む前に、マージ先・Draft・レビューの依頼・CI（と、設定すれば承認）を確かめるとき（通常は `/hikyaku:conductor` が呼ぶ） |
+| `conductor check-pr <pr> [<cycle>]` | フェーズの PR を conductor ブランチに取り込む前に、マージ先・Draft・レビューの依頼・未解決の指摘・CI（と、設定すれば承認）を確かめるとき。`--wait` で待てる問題が解消するまで確かめ直す（通常は `/hikyaku:conductor` が呼ぶ） |
 | `conductor lint` | プラグイン本体の開発用。スキルに付けた問いの ID と、CLI の ID の表の食い違いを検出する |
 
 `asks` は、子に許可するツールの一覧と、設定のダイジェスト（profile と `.hikyaku.config` の内容から作る）も返します。監督は起動時に人間と合意したときのダイジェストを、以後の `launch` / `parse` に渡します。設定が変わっていれば両者はエラーで止まります。子が `.hikyaku.config` を書き換えて、合意していない権限や振り分けが効くのを防ぐためです。

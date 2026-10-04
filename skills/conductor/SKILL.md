@@ -89,6 +89,8 @@ planning/user-stories.md を承認済みの要件として扱います。
 監督が判断する同意ゲート: {asks の出力}
 人間に上げる問い: {asks の出力}、およびスコープを広げる回答が要る問い
 子のモデル: {asks の出力の models。null は「既定」と書く}
+フェーズの PR のレビュアーと、待つ上限: {asks の出力の review}
+最後の PR のレビュアー: {asks の出力の review.finalReviewers}
 各フェーズの PR は conductor ブランチ（{conductor}）に向け、監督が取り込みます。
 デフォルトブランチにはマージしません。最後のビルドが終わったら、{conductor} → デフォルトブランチの
 PR を作って止まります。
@@ -213,27 +215,35 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {phase} {cycle
 
 - [ ] 「検証の義務」のうち、そのフェーズの done に当たるものを行う
 - [ ] 問題があれば人間に上げる（自分で直さない）
-- [ ] 子が PR を作っていれば（architect / builder）、取り込む前にその PR を検証する
+- [ ] 子が PR を作っていれば（architect / builder）、取り込む前にその PR を検証する。レビューや CI を待つので、
+  **Bash の `run_in_background` で実行する**（`timeout` は最大値にする）
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor check-pr {PR の番号か URL} {cycle} --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor check-pr {PR の番号か URL} {cycle} --wait --json
 ```
 
-  - **マージ先が conductor ブランチであること**、PR が開いていること、**Draft でない（Ready for Review の）こと**、
-    **レビューの依頼が残っていないこと**、**CI が失敗も待機もしていないこと**を確かめる。
-    `[conductor] require_approval = true` なら、1人以上の承認があり変更の要求が残っていないことも求める
-    （既定では承認は不問）。満たしていなければ終了コード 2 になり、理由が `problems` に入る
+  - 確かめるのは、**マージ先が conductor ブランチであること**、PR が開いていること、**Draft でない
+    （Ready for Review の）こと**、**レビューの依頼が残っていないこと**、**未解決のレビュースレッドが
+    無いこと**、**CI が失敗も待機もしていないこと**。`[conductor] require_approval = true` なら、1人以上の
+    承認があり変更の要求が残っていないことも求める（既定では承認は不問）。満たしていなければ
+    終了コード 2 になり、理由が `problems` に入る
   - 取り込みはローカルの `git merge` と push で行うので、GitHub のブランチ保護や必須チェックは働かない。
     この検証がその代わりになる
-  - `checks.status` が `pending` なら、`gh pr checks {PR} --watch` を Bash の `run_in_background` で
-    実行して終わるのを待ち、`check-pr` をやり直す
+  - 子が作った PR には、`[conductor] phase_reviewers` のレビュアーが、子の `pr request-reviewers` で
+    アサインされている（設定が空なら何も依頼されない）
+  - `--wait` は、待てば解消しうる問題（CI の実行中、レビューの依頼が残っている）だけで止まっているあいだ、
+    確かめ直す。上限は `[conductor] review_timeout`（既定 15 分。0 なら待たない）。上限を超えると
+    `timedOut: true` で終了コード 2 になる。Draft・未解決の指摘・CI の失敗・マージ先の食い違いは、待っても
+    解消しないので、見つけた時点で返る
+  - **未解決のレビュースレッド**（`threads.unresolved`）があれば、取り込まない。指摘の場所・投稿者・URL を
+    人間に示して上げる。**監督は指摘に自分で対応せず、子を再開して直させることもしない**。人間が対応するか、
+    同意して resolve したら、`check-pr` をやり直す
+  - Draft・承認の不足・CI の失敗・マージ先の食い違い・待機の上限超過も、取り込まずに `problems` を示して
+    人間に上げる（`gh pr ready` で Draft を外したり、依頼を取り下げたりしない）。人間が対応したら
+    `check-pr` をやり直す
   - `none`（CI が1つも無い）は失敗にならない。ただし PR を作った直後はチェックが登録されていないことが
     あるので、一度だけ少し待って再実行する。それでも `none` なら、最後の PR の本文に
     「フェーズの PR に CI が走っていなかった」と書く
-  - Draft・レビューの依頼・承認の不足は、監督が解消できない（`gh pr ready` で Draft を外したり、
-    依頼を取り下げたりしない）。取り込まずに `problems` を示して人間に上げ、人間が対応したら
-    `check-pr` をやり直す
-  - `fail` や、マージ先の食い違いも、取り込まずに `problems` を示して人間に上げる（自分で直さない）
 
 - [ ] 検証を通った PR を conductor ブランチに取り込む
 
@@ -288,6 +298,12 @@ git push origin --delete {フェーズのブランチ}
     （人間がレビューで確認するため）
   - 外部連携が有効なら、各ビルドの `hikyaku external ref build-NN {cycle}` の行を本文の末尾に入れる。
     conductor ブランチへのマージではクローズキーワードが効かないため、ここでまとめて閉じる
+- [ ] この PR にレビュアーをアサインする（`[pr] reviewers` が空、または `[pr] reviewers_skip` に
+  `conductor` があれば何もしない）。人間がレビューする PR なので、待たない
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers conductor {cycle} --pr {PR の URL}
+```
 - [ ] PR の URL を示し、「マージしたら `/hikyaku:conductor {cycle}` を実行すると CLOSE から再開する」と
   案内して**終了**する
 

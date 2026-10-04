@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import type { AskSettings, ConductorConfig } from "../scripts/lib/conductor.mts";
@@ -20,6 +20,7 @@ import {
   shellQuote,
 } from "../scripts/lib/conductor.mts";
 import { pluginRoot } from "../scripts/lib/paths.mts";
+import { planReviewers, skipTargetOf, type ReviewerInput } from "../scripts/lib/reviewers.mts";
 import { cli, snapshot, succeeds, testEnvironment, workspace, write } from "./helpers.mts";
 
 const settings: AskSettings = {
@@ -45,14 +46,6 @@ function git(directory: string, ...args: string[]): string {
 /** conductor asks が返す digest。launch / parse に渡す */
 function digest(directory: string): string {
   return JSON.parse(succeeds(directory, "conductor", "asks", "001", "--json")).digest;
-}
-
-/** gh の代わりを置く一時ディレクトリ（テスト用リポジトリの外に作る） */
-function temporaryBin(t: TestContext, directory: string): string {
-  const bin = `${directory}-bin`;
-  mkdirSync(bin, { recursive: true });
-  t.after(() => rmSync(bin, { recursive: true, force: true }));
-  return bin;
 }
 
 function result(text: string, extra: Record<string, unknown> = {}): string {
@@ -390,13 +383,89 @@ for (const [name, content, pattern] of [
   });
 }
 
+interface FakeGh {
+  /** gh を差し替えた PATH で CLI を実行する */
+  cli: (...args: string[]) => ReturnType<typeof cli>;
+  /** gh が受け取った引数（1呼び出し1行） */
+  calls: () => string[];
+}
+
+/**
+ * 偽の gh を PATH の先頭に置く。pr view は view.json（view.N.json があれば N 回目の呼び出しはそちら）、
+ * api graphql は threads.json を返し、pr edit は記録するだけ（edit.fail があれば失敗する）
+ */
+function useGh(
+  t: TestContext,
+  directory: string,
+  files: { view?: unknown; views?: unknown[]; threads?: unknown; editFails?: boolean },
+): FakeGh {
+  const bin = `${directory}-bin`;
+  mkdirSync(bin, { recursive: true });
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  writeFileSync(join(bin, "view.json"), JSON.stringify(files.view ?? prView()));
+  (files.views ?? []).forEach((view, index) => writeFileSync(join(bin, `view.${index + 1}.json`), JSON.stringify(view)));
+  writeFileSync(join(bin, "threads.json"), JSON.stringify(files.threads ?? threadsResponse([])));
+  if (files.editFails) writeFileSync(join(bin, "edit.fail"), "");
+  writeFileSync(join(bin, "gh"), `#!/bin/sh
+DIR="$(dirname "$0")"
+echo "$@" >> "$DIR/calls.log"
+case "$1 $2" in
+  "pr view")
+    n=$(cat "$DIR/count" 2>/dev/null || echo 0); n=$((n + 1)); echo $n > "$DIR/count"
+    if [ -f "$DIR/view.$n.json" ]; then cat "$DIR/view.$n.json"; else cat "$DIR/view.json"; fi ;;
+  "api graphql") cat "$DIR/threads.json" ;;
+  "pr edit") if [ -f "$DIR/edit.fail" ]; then echo "boom" >&2; exit 1; fi ;;
+  *) echo "unsupported: $*" >&2; exit 1 ;;
+esac
+`);
+  chmodSync(join(bin, "gh"), 0o755);
+  return {
+    cli: (...args) => {
+      const saved = process.env["PATH"];
+      process.env["PATH"] = `${bin}:${saved}`;
+      try {
+        return cli(directory, ...args);
+      } finally {
+        process.env["PATH"] = saved;
+      }
+    },
+    calls: () => {
+      try {
+        return readFileSync(join(bin, "calls.log"), "utf8").trim().split("\n");
+      } catch {
+        return [];
+      }
+    },
+  };
+}
+
+function threadsResponse(threads: { path: string; line: number | null; author: string; resolved: boolean }[], hasNextPage = false) {
+  return {
+    data: {
+      repository: {
+        pullRequest: {
+          reviewThreads: {
+            pageInfo: { hasNextPage },
+            nodes: threads.map((thread) => ({
+              isResolved: thread.resolved,
+              path: thread.path,
+              line: thread.line,
+              comments: { nodes: [{ author: { login: thread.author }, url: `https://example.invalid/${thread.path}` }] },
+            })),
+          },
+        },
+      },
+    },
+  };
+}
+
 const CONDUCTOR = "hikyaku/001-test/conductor";
 
 function prView(overrides: Record<string, unknown> = {}) {
   return {
     number: 7, state: "OPEN", isDraft: false, baseRefName: CONDUCTOR, headRefName: "hikyaku/001-test/architect",
     statusCheckRollup: [{ __typename: "CheckRun", name: "typecheck", status: "COMPLETED", conclusion: "SUCCESS" }],
-    reviewRequests: [], latestReviews: [],
+    author: { login: "owner" }, reviewRequests: [], latestReviews: [],
     ...overrides,
   } as Parameters<typeof judgePr>[0];
 }
@@ -508,68 +577,301 @@ test("conductor: CI は失敗が1つでもあれば失敗、次に待機中、�
   assert.equal(none.ok, true);
 });
 
-test("CLI: conductor check-pr は gh pr view の結果で取り込めるかを返し、満たさなければ終了コード 2", (t) => {
-  const directory = workspace(t, true);
-  const bin = temporaryBin(t, directory);
-  const withGh = (json: unknown, ...args: string[]) => {
-    writeFileSync(join(bin, "gh"), `#!/bin/sh\ncat <<'EOF'\n${JSON.stringify(json)}\nEOF\n`);
-    chmodSync(join(bin, "gh"), 0o755);
-    const saved = process.env["PATH"];
-    process.env["PATH"] = `${bin}:${saved}`;
-    try {
-      return cli(directory, "conductor", "check-pr", "7", "001", ...args);
-    } finally {
-      process.env["PATH"] = saved;
-    }
-  };
+test("conductor: 未解決のレビュースレッドがあれば、待たずに取り込めない", () => {
+  const unresolved = [{ path: "src/a.mts", line: 12, author: "copilot-pull-request-reviewer", url: "u" }];
+  const verdict = judgePr(prView({ reviewThreads: { unresolved, truncated: false } }), CONDUCTOR);
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.threads.ok, false);
+  assert.equal(verdict.waiting, false);
+  assert.match(verdict.problems.join("\n"), /未解決のレビュースレッドが 1 件あります: src\/a\.mts:12（copilot-pull-request-reviewer）/);
+  const outdated = judgePr(prView({ reviewThreads: { unresolved: [{ ...unresolved[0], line: null }], truncated: false } }), CONDUCTOR);
+  assert.match(outdated.problems.join("\n"), /src\/a\.mts（/);
+  const truncated = judgePr(prView({ reviewThreads: { unresolved: [], truncated: true } }), CONDUCTOR);
+  assert.equal(truncated.ok, false);
+});
 
-  const good = withGh(prView(), "--json");
+test("conductor: 待てば解消しうる問題（CI の実行中・レビューの依頼）だけなら waiting、人間の対応が要る問題が混ざれば waiting でない", () => {
+  const running = { __typename: "CheckRun", name: "c", status: "IN_PROGRESS" };
+  const failed = { __typename: "CheckRun", name: "f", status: "COMPLETED", conclusion: "FAILURE" };
+  const request = [{ __typename: "Bot", login: "copilot-pull-request-reviewer" }];
+  const thread = { unresolved: [{ path: "a", line: 1, author: "x", url: "u" }], truncated: false };
+
+  assert.equal(judgePr(prView({ statusCheckRollup: [running] }), CONDUCTOR).waiting, true);
+  assert.equal(judgePr(prView({ reviewRequests: request }), CONDUCTOR).waiting, true);
+  assert.equal(judgePr(prView({ reviewRequests: request, statusCheckRollup: [running] }), CONDUCTOR).waiting, true);
+  assert.equal(judgePr(prView(), CONDUCTOR).waiting, false);
+  assert.equal(judgePr(prView({ statusCheckRollup: [running, failed] }), CONDUCTOR).waiting, false);
+  assert.equal(judgePr(prView({ reviewRequests: request, reviewThreads: thread }), CONDUCTOR).waiting, false);
+  assert.equal(judgePr(prView({ isDraft: true, reviewRequests: request }), CONDUCTOR).waiting, false);
+  assert.equal(judgePr(prView({ baseRefName: "main", reviewRequests: request }), CONDUCTOR).waiting, false);
+});
+
+test("conductor: 承認の不足は、レビューの依頼が残っているあいだだけ待てる", () => {
+  const strict = { requireApproval: true };
+  const request = [{ __typename: "Bot", login: "copilot-pull-request-reviewer" }];
+  assert.equal(judgePr(prView({ reviewRequests: request }), CONDUCTOR, strict).waiting, true);
+  assert.equal(judgePr(prView(), CONDUCTOR, strict).waiting, false);
+});
+
+function reviewerInput(overrides: Partial<ReviewerInput> = {}): ReviewerInput {
+  return {
+    phase: "build-01", baseRefName: "main", conductorBranch: CONDUCTOR, reviewers: ["alice", "@copilot"], skip: [],
+    phaseReviewers: ["@copilot"], author: "owner", requested: [], reviewed: [], ...overrides,
+  };
+}
+
+test("reviewers: build-NN は build として、他のフェーズはそのままの名前でオフにできる単位に対応する", () => {
+  assert.equal(skipTargetOf("build-03"), "build");
+  assert.equal(skipTargetOf("build-120"), "build");
+  for (const phase of ["init", "bp-guide", "create", "plan", "architect", "close", "conductor"]) {
+    assert.equal(skipTargetOf(phase), phase);
+  }
+  assert.equal(skipTargetOf("review"), undefined);
+});
+
+test("reviewers: マージ先がデフォルトブランチなら [pr] reviewers、conductor ブランチなら phase_reviewers を使う", () => {
+  const toMain = planReviewers(reviewerInput());
+  assert.equal(toMain.source, "pr");
+  assert.deepEqual(toMain.request, ["alice", "@copilot"]);
+  const toConductor = planReviewers(reviewerInput({ baseRefName: CONDUCTOR }));
+  assert.equal(toConductor.source, "conductor");
+  assert.deepEqual(toConductor.request, ["@copilot"]);
+  // サイクルに属さないフェーズには conductor ブランチが無い
+  assert.equal(planReviewers(reviewerInput({ phase: "init", conductorBranch: undefined })).source, "pr");
+});
+
+test("reviewers: 設定が空なら何もせず、スキルごとのオフは build-NN 全体と指定したフェーズにだけ効く", () => {
+  assert.deepEqual(planReviewers(reviewerInput({ reviewers: [] })), { source: "none", skipped: false, request: [], excluded: [] });
+  const skipped = planReviewers(reviewerInput({ phase: "build-07", skip: ["build"] }));
+  assert.equal(skipped.skipped, true);
+  assert.deepEqual(skipped.request, []);
+  assert.equal(planReviewers(reviewerInput({ phase: "architect", skip: ["build"] })).skipped, false);
+  // オフは phase_reviewers にも効く
+  assert.equal(planReviewers(reviewerInput({ phase: "architect", baseRefName: CONDUCTOR, skip: ["architect"] })).skipped, true);
+});
+
+test("reviewers: 作成者本人・依頼済み・レビュー済みには依頼しない。@copilot は Copilot の login と対応する", () => {
+  const plan = planReviewers(reviewerInput({
+    reviewers: ["Owner", "alice", "bob", "carol", "@copilot", "org/platform"],
+    author: "owner",
+    requested: ["alice", "platform"],
+    reviewed: ["bob", "copilot-pull-request-reviewer"],
+  }));
+  assert.deepEqual(plan.request, ["carol"]);
+  assert.deepEqual(plan.excluded, [
+    { reviewer: "Owner", reason: "PR の作成者本人" },
+    { reviewer: "alice", reason: "依頼済み" },
+    { reviewer: "bob", reason: "レビュー済み" },
+    { reviewer: "@copilot", reason: "レビュー済み" },
+    { reviewer: "org/platform", reason: "依頼済み" },
+  ]);
+  assert.deepEqual(planReviewers(reviewerInput({ reviewers: ["alice", "alice"] })).request, ["alice"]);
+});
+
+for (const [name, content, pattern] of [
+  ["空白を含むレビュアー", '[pr]\nreviewers = ["alice bob"]\n', /指定できない値/],
+  ["カンマを含むレビュアー", '[pr]\nreviewers = ["alice,bob"]\n', /指定できない値/],
+  ["空文字のレビュアー", '[conductor]\nphase_reviewers = [""]\n', /指定できない値/],
+  ["未知の reviewers_skip", '[pr]\nreviewers_skip = ["builder"]\n', /reviewers_skip に指定できない値/],
+  ["負の review_timeout", "[conductor]\nreview_timeout = -1\n", /review_timeout は 0 以上/],
+] as const) {
+  test(`CLI: レビュアーの設定で${name}を拒否する`, (t) => {
+    const directory = workspace(t, true);
+    write(directory, ".hikyaku.config", `hikyaku_root = "docs/hikyaku"\n${content}`);
+    const rejected = cli(directory, "config", "001", "--json");
+    assert.equal(rejected.status, 1);
+    assert.match(rejected.stderr, pattern);
+  });
+}
+
+test("CLI: [pr] reviewers とオフの設定は config に反映され、サイクル設定で上書きできる", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", `hikyaku_root = "docs/hikyaku"
+[pr]
+reviewers = ["alice", "@copilot", "org/platform"]
+reviewers_skip = ["init", "build"]
+[conductor]
+phase_reviewers = ["@copilot"]
+review_timeout = 5
+`);
+  const config = JSON.parse(succeeds(directory, "config", "001", "--json"));
+  assert.deepEqual(config.pr.reviewers, ["alice", "@copilot", "org/platform"]);
+  assert.deepEqual(config.pr.reviewersSkip, ["init", "build"]);
+  assert.deepEqual(config.conductor.phaseReviewers, ["@copilot"]);
+  assert.equal(config.conductor.reviewTimeoutMinutes, 5);
+  write(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config", '[pr]\nreviewers = ["bob"]\n');
+  assert.deepEqual(JSON.parse(succeeds(directory, "config", "001", "--json")).pr.reviewers, ["bob"]);
+});
+
+test("CLI: pr request-reviewers は PR のマージ先で一覧を選び、作成者を除いて gh pr edit で依頼する", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", `hikyaku_root = "docs/hikyaku"
+[pr]
+reviewers = ["owner", "alice", "@copilot"]
+[conductor]
+phase_reviewers = ["@copilot"]
+`);
+  const gh = useGh(t, directory, { view: prView({ baseRefName: "main", author: { login: "owner" } }) });
+  const dry = JSON.parse(gh.cli("pr", "request-reviewers", "build-01", "001", "--pr", "7", "--dry-run", "--json").stdout);
+  assert.equal(dry.source, "pr");
+  assert.deepEqual(dry.request, ["alice", "@copilot"]);
+  assert.deepEqual(dry.excluded, [{ reviewer: "owner", reason: "PR の作成者本人" }]);
+  assert.equal(dry.requested, false);
+  assert.equal(gh.calls().some((call) => call.startsWith("pr edit")), false, "--dry-run は書き込まない");
+
+  const real = JSON.parse(gh.cli("pr", "request-reviewers", "build-01", "001", "--pr", "7", "--json").stdout);
+  assert.equal(real.requested, true);
+  assert.ok(gh.calls().includes("pr edit 7 --add-reviewer alice,@copilot"));
+});
+
+test("CLI: pr request-reviewers は conductor ブランチ向けの PR に phase_reviewers を使う", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", `hikyaku_root = "docs/hikyaku"
+[pr]
+reviewers = ["alice"]
+[conductor]
+phase_reviewers = ["@copilot"]
+`);
+  const gh = useGh(t, directory, { view: prView() });
+  const output = JSON.parse(gh.cli("pr", "request-reviewers", "architect", "001", "--pr", "7", "--json").stdout);
+  assert.equal(output.source, "conductor");
+  assert.ok(gh.calls().includes("pr edit 7 --add-reviewer @copilot"));
+});
+
+test("CLI: pr request-reviewers は設定が空・オフ・新しく依頼する人がいないときに gh pr edit を呼ばない", (t) => {
+  const directory = workspace(t, true);
+  const gh = useGh(t, directory, { view: prView({ baseRefName: "main" }) });
+  const empty = JSON.parse(gh.cli("pr", "request-reviewers", "plan", "001", "--pr", "7", "--json").stdout);
+  assert.equal(empty.source, "none");
+
+  write(directory, ".hikyaku.config", `hikyaku_root = "docs/hikyaku"
+[pr]
+reviewers = ["alice"]
+reviewers_skip = ["plan"]
+`);
+  const skipped = JSON.parse(gh.cli("pr", "request-reviewers", "plan", "001", "--pr", "7", "--json").stdout);
+  assert.equal(skipped.skipped, true);
+
+  const already = useGh(t, directory, {
+    view: prView({ baseRefName: "main", reviewRequests: [{ __typename: "User", login: "alice" }] }),
+  });
+  const none = JSON.parse(already.cli("pr", "request-reviewers", "architect", "001", "--pr", "7", "--json").stdout);
+  assert.deepEqual(none.request, []);
+  assert.equal(none.requested, false);
+  assert.equal([...gh.calls(), ...already.calls()].some((call) => call.startsWith("pr edit")), false);
+});
+
+test("CLI: pr request-reviewers は --pr が無い・gh が失敗したときに終了コード 1 を返す", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["alice"]\n');
+  const gh = useGh(t, directory, { view: prView({ baseRefName: "main" }), editFails: true });
+  assert.equal(gh.cli("pr", "request-reviewers", "plan", "001").status, 1);
+  const failed = gh.cli("pr", "request-reviewers", "plan", "001", "--pr", "7");
+  assert.equal(failed.status, 1);
+  assert.match(failed.stderr, /レビュアーの依頼に失敗しました: alice/);
+  assert.match(failed.stderr, /PR 自体は作成済み/);
+});
+
+test("CLI: conductor check-pr は gh の結果で取り込めるかを返し、満たさなければ終了コード 2", (t) => {
+  const directory = workspace(t, true);
+  const good = useGh(t, directory, {}).cli("conductor", "check-pr", "7", "001", "--json");
   assert.equal(good.status, 0, good.stderr);
   const parsed = JSON.parse(good.stdout);
   assert.equal(parsed.ok, true);
   assert.equal(parsed.conductorBranch, CONDUCTOR);
+  assert.equal(parsed.threads.ok, true);
 
-  const wrongBase = withGh(prView({ baseRefName: "main" }), "--json");
+  const wrongBase = useGh(t, directory, { view: prView({ baseRefName: "main" }) }).cli("conductor", "check-pr", "7", "001", "--json");
   assert.equal(wrongBase.status, 2);
   assert.equal(JSON.parse(wrongBase.stdout).baseOk, false);
 
-  const failing = withGh(prView({
-    statusCheckRollup: [{ __typename: "CheckRun", name: "typecheck", status: "COMPLETED", conclusion: "FAILURE" }],
-  }));
+  const failing = useGh(t, directory, {
+    view: prView({ statusCheckRollup: [{ __typename: "CheckRun", name: "typecheck", status: "COMPLETED", conclusion: "FAILURE" }] }),
+  }).cli("conductor", "check-pr", "7", "001");
   assert.equal(failing.status, 2);
   assert.match(failing.stdout, /CI: fail/);
   assert.match(failing.stderr, /CI が失敗しています: typecheck/);
 
-  const draft = withGh(prView({ isDraft: true, reviewRequests: [{ __typename: "User", login: "alice" }] }));
+  const draft = useGh(t, directory, {
+    view: prView({ isDraft: true, reviewRequests: [{ __typename: "User", login: "alice" }] }),
+  }).cli("conductor", "check-pr", "7", "001");
   assert.equal(draft.status, 2);
   assert.match(draft.stderr, /Draft/);
   assert.match(draft.stderr, /レビューの依頼が残っています: alice/);
 
   // 古い gh などで新しいフィールドが欠けても落ちない
-  const sparse = withGh({ number: 7, state: "OPEN", baseRefName: CONDUCTOR, headRefName: "x" }, "--json");
+  const sparse = useGh(t, directory, { view: { number: 7, state: "OPEN", baseRefName: CONDUCTOR, headRefName: "x" } })
+    .cli("conductor", "check-pr", "7", "001", "--json");
   assert.equal(sparse.status, 0, sparse.stderr);
 });
 
-test("CLI: [conductor] require_approval を設定すると check-pr が承認を求める", (t) => {
+test("CLI: conductor check-pr は gh api graphql で未解決のレビュースレッドを取得し、あれば終了コード 2", (t) => {
   const directory = workspace(t, true);
-  const bin = temporaryBin(t, directory);
-  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[conductor]\nrequire_approval = true\n');
-  writeFileSync(join(bin, "gh"), `#!/bin/sh\ncat <<'EOF'\n${JSON.stringify(prView())}\nEOF\n`);
-  chmodSync(join(bin, "gh"), 0o755);
-  const saved = process.env["PATH"];
-  process.env["PATH"] = `${bin}:${saved}`;
-  try {
-    const result = cli(directory, "conductor", "check-pr", "7", "001");
-    assert.equal(result.status, 2);
-    assert.match(result.stderr, /承認（Approve）がありません/);
-  } finally {
-    process.env["PATH"] = saved;
-  }
+  const gh = useGh(t, directory, {
+    threads: threadsResponse([
+      { path: "src/a.mts", line: 3, author: "copilot-pull-request-reviewer", resolved: false },
+      { path: "src/b.mts", line: null, author: "copilot-pull-request-reviewer", resolved: true },
+    ]),
+  });
+  const result = gh.cli("conductor", "check-pr", "7", "001", "--json");
+  assert.equal(result.status, 2);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.threads.unresolved.length, 1);
+  assert.equal(parsed.threads.unresolved[0].path, "src/a.mts");
+  assert.ok(gh.calls().some((call) => call.startsWith("api graphql") && call.includes("owner={owner}") && call.includes("number=7")));
+  assert.match(result.stderr, /未解決のレビュースレッドが 1 件あります/);
+
+  const truncated = useGh(t, directory, { threads: threadsResponse([], true) }).cli("conductor", "check-pr", "7", "001");
+  assert.equal(truncated.status, 2);
+});
+
+test("CLI: conductor check-pr --wait はレビューの依頼が消えるまで確かめ直し、消えたら成功する", (t) => {
+  const directory = workspace(t, true);
+  const request = [{ __typename: "Bot", login: "copilot-pull-request-reviewer" }];
+  const gh = useGh(t, directory, {
+    view: prView(),
+    views: [prView({ reviewRequests: request }), prView({ reviewRequests: request })],
+  });
+  const result = gh.cli("conductor", "check-pr", "7", "001", "--wait", "--interval", "0", "--timeout", "1", "--json");
+  assert.equal(result.status, 0, result.stderr);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.timedOut, false);
+  assert.equal(gh.calls().filter((call) => call.startsWith("pr view")).length, 3);
+});
+
+test("CLI: conductor check-pr --wait は上限を超えたら timedOut で終了コード 2、待たない設定なら1回で判定する", (t) => {
+  const directory = workspace(t, true);
+  const pending = prView({ reviewRequests: [{ __typename: "Bot", login: "copilot-pull-request-reviewer" }] });
+  const gh = useGh(t, directory, { view: pending });
+  const timedOut = gh.cli("conductor", "check-pr", "7", "001", "--wait", "--interval", "0", "--timeout", "0", "--json");
+  assert.equal(timedOut.status, 2);
+  assert.equal(JSON.parse(timedOut.stdout).timedOut, true);
+  assert.match(timedOut.stderr, /待機の上限（0 分）を超えました/);
+  assert.equal(gh.calls().filter((call) => call.startsWith("pr view")).length, 1);
+
+  // 設定の review_timeout を上限の既定にする
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[conductor]\nreview_timeout = 0\n');
+  const configured = useGh(t, directory, { view: pending }).cli("conductor", "check-pr", "7", "001", "--wait", "--interval", "0", "--json");
+  assert.equal(JSON.parse(configured.stdout).timedOut, true);
+});
+
+test("CLI: conductor check-pr --wait は待っても解消しない問題（Draft・未解決の指摘）を見つけたらすぐ返す", (t) => {
+  const directory = workspace(t, true);
+  const gh = useGh(t, directory, {
+    view: prView({ isDraft: true, reviewRequests: [{ __typename: "Bot", login: "copilot-pull-request-reviewer" }] }),
+  });
+  const result = gh.cli("conductor", "check-pr", "7", "001", "--wait", "--interval", "0", "--timeout", "10", "--json");
+  assert.equal(result.status, 2);
+  assert.equal(JSON.parse(result.stdout).timedOut, false);
+  assert.equal(gh.calls().filter((call) => call.startsWith("pr view")).length, 1);
 });
 
 test("CLI: conductor check-pr は gh が PR を取得できなければ終了コード 1", (t) => {
   const directory = workspace(t, true);
-  const bin = temporaryBin(t, directory);
+  const bin = `${directory}-bin`;
+  mkdirSync(bin, { recursive: true });
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
   writeFileSync(join(bin, "gh"), "#!/bin/sh\necho 'no such pr' >&2\nexit 1\n");
   chmodSync(join(bin, "gh"), 0o755);
   const saved = process.env["PATH"];
@@ -582,4 +884,24 @@ test("CLI: conductor check-pr は gh が PR を取得できなければ終了コ
     process.env["PATH"] = saved;
   }
   assert.equal(cli(directory, "conductor", "check-pr").status, 1);
+});
+
+test("CLI: [conductor] require_approval を設定すると check-pr が承認を求める", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[conductor]\nrequire_approval = true\n');
+  const result = useGh(t, directory, {}).cli("conductor", "check-pr", "7", "001");
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /承認（Approve）がありません/);
+});
+
+test("CLI: conductor asks はレビューの設定を返し、設定を変えるとダイジェストも変わる", (t) => {
+  const directory = workspace(t, true);
+  const before = JSON.parse(succeeds(directory, "conductor", "asks", "001", "--json"));
+  assert.deepEqual(before.review.phaseReviewers, []);
+  assert.equal(before.review.timeoutMinutes, 15);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["alice"]\n[conductor]\nphase_reviewers = ["@copilot"]\n');
+  const after = JSON.parse(succeeds(directory, "conductor", "asks", "001", "--json"));
+  assert.deepEqual(after.review.phaseReviewers, ["@copilot"]);
+  assert.deepEqual(after.review.finalReviewers, ["alice"]);
+  assert.notEqual(after.digest, before.digest);
 });

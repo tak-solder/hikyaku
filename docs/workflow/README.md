@@ -54,6 +54,8 @@ BUILD の PR にはコードと `tasklist.md` の `PR` 列の更新が同梱さ�
 
 依存のある後続ビルドは、PR がマージされてから始めるのが既定ですが、そのブランチから積んで（スタックして）始めることもできます。積んだ場合、後続の PR のマージ先は先行ビルドのブランチになります（`hikyaku pr base` が導出します）。
 
+PR を作ったスキルは、設定があれば `[pr] reviewers` のレビュアーをアサインします。ドキュメントだけの PR など、アサインしたくないスキルは `[pr] reviewers_skip` でオフにできます（[.hikyaku.config](../configuration/config-file.md#pr)）。
+
 ## ブランチ
 
 各フェーズは作業前に `hikyaku branch verify` で現在のブランチを確認します。命名は次の構造で固定です。

@@ -204,6 +204,13 @@ Hikyaku の規則に従う / 現在のブランチで作業する / 別のブラ
 
 - [ ] コミットして PR を作成する（タイトルは `hikyaku pr title init` で生成）
   - コミットメッセージの形式はリポジトリの規約に従う。Hikyaku は関与しない
+- [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers init --pr {PR の URL}
+```
+
+  失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
 - [ ] 完了後、次を案内する
 
 ```

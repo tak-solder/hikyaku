@@ -189,6 +189,13 @@ export const DEFAULT_SECURITY_TRIGGERS = `- 個人情報・秘密情報を扱う
 - 決済（支払い、カード情報、請求、返金）`;
 
 export const DEFAULT_PR_TITLE = "[hikyaku] {cycle}: {phase} {title}";
+
+/**
+ * レビュアーのアサインをオフにできる単位。PR を作るスキルに対応する。
+ * build は build-NN の全て、conductor は監督が作る最後の PR
+ */
+export const REVIEWER_SKIP_TARGETS = ["init", "bp-guide", "create", "plan", "architect", "build", "close", "conductor"] as const;
+export type ReviewerSkipTarget = (typeof REVIEWER_SKIP_TARGETS)[number];
 /** セッション名の既定。空文字にするとセッション名を変更しない */
 export const DEFAULT_SESSION_TITLE = "{cycle} {phase} {title}";
 export const DEFAULT_BRANCH_PREFIX = "hikyaku";
@@ -235,7 +242,7 @@ export interface ResolvedConfig {
   gates: Gates;
   reviews: Reviews;
   branch: BranchNaming;
-  pr: { title: string };
+  pr: { title: string; reviewers: string[]; reviewersSkip: ReviewerSkipTarget[] };
   /** セッション名のテンプレート。空文字なら変更しない */
   session: { title: string };
   security: { triggers: string };
@@ -341,11 +348,50 @@ function readConductor(table: TomlTable | undefined): ConductorConfig {
     allowedTools: readStringArray(table, "allowed_tools", where) ?? DEFAULT_CONDUCTOR.allowedTools,
     budgetPerRun: budget,
     requireApproval: readBoolean(table, "require_approval", where) ?? DEFAULT_CONDUCTOR.requireApproval,
+    phaseReviewers: readReviewers(table, "phase_reviewers", where),
+    reviewTimeoutMinutes: readTimeout(table, where),
     model: readModel(table, "model", where),
     models: readConductorModels(readTable(table ?? {}, "models")),
   };
   checkConductorAsks(conductor, where);
   return conductor;
+}
+
+/**
+ * レビュアーの指定を読む。人（login）、チーム（org/team）、Copilot（@copilot）を並べる。
+ * 空白やカンマを含む値は gh に渡すときに別の値として解釈されるので、その場で拒否する
+ */
+function readReviewers(table: TomlTable | undefined, key: string, where: string): string[] {
+  const values = readStringArray(table, key, where) ?? [];
+  for (const value of values) {
+    if (value === "" || /[\s,]/.test(value)) {
+      throw new HikyakuError(
+        `${where}.${key} に指定できない値があります: ${JSON.stringify(value)}`,
+        "人は login、チームは org/team、Copilot は @copilot で、1要素に1つずつ書いてください。",
+      );
+    }
+  }
+  return values;
+}
+
+/** [pr] reviewers_skip を読む。名前のタイプミスを黙って捨てると、オフにしたつもりのスキルにアサインされる */
+function readReviewerSkip(table: TomlTable | undefined): ReviewerSkipTarget[] {
+  const values = readStringArray(table, "reviewers_skip", "[pr]") ?? [];
+  for (const value of values) {
+    if (!(REVIEWER_SKIP_TARGETS as readonly string[]).includes(value)) {
+      throw new HikyakuError(
+        `[pr].reviewers_skip に指定できない値があります: ${value}`,
+        `使用できる値: ${REVIEWER_SKIP_TARGETS.join(" | ")}`,
+      );
+    }
+  }
+  return values as ReviewerSkipTarget[];
+}
+
+function readTimeout(table: TomlTable | undefined, where: string): number {
+  const value = readNumber(table, "review_timeout", where) ?? DEFAULT_CONDUCTOR.reviewTimeoutMinutes;
+  if (value < 0) throw new HikyakuError(`${where}.review_timeout は 0 以上で指定してください（0 は待たない）`);
+  return value;
 }
 
 function readModel(table: TomlTable | undefined, key: string, where: string): string | undefined {
@@ -703,7 +749,11 @@ function finalize(
     gates,
     reviews,
     branch: readBranchNaming(readTable(merged, "branch"), DEFAULT_NAMING),
-    pr: { title: readString(readTable(merged, "pr"), "title", "[pr]") ?? DEFAULT_PR_TITLE },
+    pr: {
+      title: readString(readTable(merged, "pr"), "title", "[pr]") ?? DEFAULT_PR_TITLE,
+      reviewers: readReviewers(readTable(merged, "pr"), "reviewers", "[pr]"),
+      reviewersSkip: readReviewerSkip(readTable(merged, "pr")),
+    },
     session: {
       title:
         readString(readTable(merged, "session"), "title", "[session]") ?? DEFAULT_SESSION_TITLE,

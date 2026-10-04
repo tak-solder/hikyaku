@@ -6,7 +6,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { join } from "node:path";
-import { flagString, type ParsedArgs } from "../lib/args.mts";
+import { flagBoolean, flagString, type ParsedArgs } from "../lib/args.mts";
 import {
   CATEGORY_LABELS,
   collectTags,
@@ -23,6 +23,7 @@ import {
   settingsDigest,
   shellQuote,
   type PrView,
+  type ReviewThread,
   type ResolvedAsk,
 } from "../lib/conductor.mts";
 import { branchName } from "../lib/branch.mts";
@@ -62,7 +63,15 @@ register({
       CONDUCTOR_PHASES.map((phase) => [phase, modelFor(config.conductor, phase) ?? null]),
     );
 
-    emit({ cycle: context.name, profile: config.profile, digest, allowedTools, models, asks }, () => {
+    const review = {
+      phaseReviewers: config.conductor.phaseReviewers,
+      timeoutMinutes: config.conductor.reviewTimeoutMinutes,
+      requireApproval: config.conductor.requireApproval,
+      finalReviewers: config.pr.reviewers,
+      skipped: config.pr.reviewersSkip,
+    };
+
+    emit({ cycle: context.name, profile: config.profile, digest, allowedTools, models, review, asks }, () => {
       const ids = (filter: (ask: ResolvedAsk) => boolean): string =>
         asks.filter(filter).map((ask) => ask.id).join(" / ") || "なし";
       const consent = (ask: ResolvedAsk): boolean => ask.category === "consent";
@@ -75,6 +84,8 @@ register({
         `この profile では出ない問い: ${ids((a) => !a.enabled)}`,
         `子に許可するツール: ${allowedTools.join(" ")}`,
         `子のモデル: ${CONDUCTOR_PHASES.map((phase) => `${phase}=${models[phase] ?? "既定"}`).join(" / ")}`,
+        `フェーズの PR のレビュアー: ${review.phaseReviewers.length === 0 ? "なし" : review.phaseReviewers.join(", ")}（待つ上限 ${review.timeoutMinutes} 分、承認${review.requireApproval ? "必須" : "不問"}）`,
+        `最後の PR のレビュアー: ${review.finalReviewers.length === 0 || review.skipped.includes("conductor") ? "なし" : review.finalReviewers.join(", ")}`,
         `設定のダイジェスト: ${digest}`,
         "",
         table(
@@ -254,30 +265,114 @@ register({
 
 const run = promisify(execFile);
 
+const THREADS_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100) {
+        pageInfo { hasNextPage }
+        nodes {
+          isResolved
+          path
+          line
+          comments(first: 1) { nodes { author { login } url } }
+        }
+      }
+    }
+  }
+}`;
+
+/** gh でこの PR の未解決のレビュースレッドを取得する（gh pr view にはスレッドが無いので GraphQL を使う） */
+async function fetchUnresolvedThreads(
+  cwd: string,
+  number: number,
+): Promise<{ unresolved: ReviewThread[]; truncated: boolean }> {
+  try {
+    const { stdout } = await run(
+      "gh",
+      ["api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-F", `number=${number}`, "-f", `query=${THREADS_QUERY}`],
+      { cwd, timeout: 30_000 },
+    );
+    const threads = JSON.parse(stdout)?.data?.repository?.pullRequest?.reviewThreads;
+    const nodes: Record<string, any>[] = Array.isArray(threads?.nodes) ? threads.nodes : [];
+    return {
+      truncated: threads?.pageInfo?.hasNextPage === true,
+      unresolved: nodes
+        .filter((node) => node["isResolved"] === false)
+        .map((node) => ({
+          path: String(node["path"] ?? ""),
+          line: typeof node["line"] === "number" ? node["line"] : null,
+          author: String(node["comments"]?.nodes?.[0]?.author?.login ?? "（不明）"),
+          url: String(node["comments"]?.nodes?.[0]?.url ?? ""),
+        })),
+    };
+  } catch (error) {
+    throw new HikyakuError(
+      `PR #${number} のレビュースレッドを gh api graphql で取得できませんでした`,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
+
+async function fetchPrView(cwd: string, pr: string): Promise<PrView> {
+  let view: PrView;
+  try {
+    const { stdout } = await run(
+      "gh",
+      [
+        "pr", "view", pr, "--json",
+        "number,state,isDraft,baseRefName,headRefName,statusCheckRollup,reviewRequests,latestReviews",
+      ],
+      { cwd, timeout: 30_000 },
+    );
+    view = JSON.parse(stdout) as PrView;
+  } catch (error) {
+    throw new HikyakuError(
+      `PR ${pr} の状態を gh pr view で取得できませんでした`,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+  const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+  return {
+    ...view,
+    statusCheckRollup: list(view.statusCheckRollup),
+    reviewRequests: list(view.reviewRequests),
+    latestReviews: list(view.latestReviews),
+    reviewThreads: await fetchUnresolvedThreads(cwd, view.number),
+  };
+}
+
 register({
   name: "conductor check-pr",
-  summary: "フェーズの PR を conductor ブランチに取り込んでよいか（マージ先と CI）を検証する",
-  usage: "hikyaku conductor check-pr <pr> [<cycle>] [--root <path>] [--json]",
+  summary: "フェーズの PR を conductor ブランチに取り込んでよいか（マージ先・レビュー・CI）を検証する",
+  usage:
+    "hikyaku conductor check-pr <pr> [<cycle>] [--wait [--timeout <minutes>] [--interval <seconds>]] " +
+    "[--root <path>] [--json]",
   details: [
-    "<pr> は PR の番号か URL です。gh pr view で PR の状態を読み、次を確かめます。",
+    "<pr> は PR の番号か URL です。gh で PR の状態を読み、次を確かめます。",
     "",
-    "  マージ先   PR の base が、このサイクルの conductor ブランチであること",
-    "  状態       PR が開いていること（マージ済み・クローズ済みでないこと）",
-    "  Draft      Draft でなく、Ready for Review になっていること",
+    "  マージ先     PR の base が、このサイクルの conductor ブランチであること",
+    "  状態         PR が開いていること（マージ済み・クローズ済みでないこと）",
+    "  Draft        Draft でなく、Ready for Review になっていること",
     "  レビュー依頼 まだレビューしていないレビュアー（人・チーム・Copilot などの Bot）への依頼が残っていないこと",
-    "  CI         失敗しているチェックも、まだ終わっていないチェックも無いこと",
-    "  承認       既定では不問。[conductor] require_approval = true のときは、1人以上の承認があり、",
-    "             変更の要求が残っていないこと（レビュアーごとの最新のレビューで判定する）",
+    "  レビュー指摘 未解決のレビュースレッドが無いこと",
+    "  CI           失敗しているチェックも、まだ終わっていないチェックも無いこと",
+    "  承認         既定では不問。[conductor] require_approval = true のときは、1人以上の承認があり、",
+    "               変更の要求が残っていないこと（レビュアーごとの最新のレビューで判定する）",
     "",
     "満たしていなければ終了コード 2 で、理由を problems に返します。",
     "",
     "監督は PR を GitHub の機能ではなく、ローカルの git merge と push で取り込みます。",
     "そのためブランチ保護の必須チェックが働きません。このコマンドがその代わりです。",
     "",
+    "--wait を付けると、待てば解消しうる問題（CI の実行中、レビューの依頼が残っている）だけで",
+    "止まっているあいだ、--interval 秒（既定 30）ごとに確かめ直します。Draft・未解決の指摘・",
+    "CI の失敗・マージ先の食い違いは待っても解消しないので、見つけた時点で返します。",
+    "上限は --timeout 分（既定は [conductor] review_timeout。0 なら待たない）で、超えたら",
+    "timedOut: true で返します。最大で数十分かかるので、バックグラウンドで実行してください。",
+    "",
     "CI が1つも無い場合（paths フィルタで走らない、CI の無いリポジトリなど）は",
     "確かめるものが無いので失敗にせず、checks.status を none で返します。PR を作った直後は",
     "チェックがまだ登録されていないことがあるので、none のときは少し待って再実行してください。",
-    "pending のときは、gh pr checks <pr> --watch で終わるのを待ってから再実行します。",
   ].join("\n"),
   run: async ({ args, operands }) => {
     const pr = operands[0];
@@ -285,34 +380,38 @@ register({
     const { config, context } = openCycle(args, operands[1]);
     const conductorBranch = branchName(config.branch, "conductor", context.name);
 
-    let view: PrView;
-    try {
-      const { stdout } = await run(
-        "gh",
-        [
-          "pr", "view", pr, "--json",
-          "number,state,isDraft,baseRefName,headRefName,statusCheckRollup,reviewRequests,latestReviews",
-        ],
-        { cwd: config.repoRoot, timeout: 30_000 },
-      );
-      view = JSON.parse(stdout) as PrView;
-    } catch (error) {
-      throw new HikyakuError(
-        `PR ${pr} の状態を gh pr view で取得できませんでした`,
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-    const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
-    view = {
-      ...view,
-      statusCheckRollup: list(view.statusCheckRollup),
-      reviewRequests: list(view.reviewRequests),
-      latestReviews: list(view.latestReviews),
+    const number = (name: string, fallback: number): number => {
+      const raw = flagString(args, name);
+      if (raw === undefined) return fallback;
+      const value = Number(raw);
+      if (!Number.isFinite(value) || value < 0) throw new HikyakuError(`--${name} は 0 以上の数値で指定してください（現在: ${raw}）`);
+      return value;
     };
+    const wait = flagBoolean(args, "wait");
+    const timeoutMinutes = number("timeout", config.conductor.reviewTimeoutMinutes);
+    const intervalSeconds = number("interval", 30);
 
-    const verdict = judgePr(view, conductorBranch, { requireApproval: config.conductor.requireApproval });
+    const started = Date.now();
+    let timedOut = false;
+    let view = await fetchPrView(config.repoRoot, pr);
+    let verdict = judgePr(view, conductorBranch, { requireApproval: config.conductor.requireApproval });
+    while (wait && !verdict.ok && verdict.waiting) {
+      if (Date.now() - started >= timeoutMinutes * 60_000) {
+        timedOut = true;
+        verdict = { ...verdict, problems: [...verdict.problems, `待機の上限（${timeoutMinutes} 分）を超えました`] };
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalSeconds * 1000));
+      view = await fetchPrView(config.repoRoot, pr);
+      verdict = judgePr(view, conductorBranch, { requireApproval: config.conductor.requireApproval });
+    }
+    const waitedSeconds = Math.round((Date.now() - started) / 1000);
+
     emit(
-      { cycle: context.name, pr: view.number, base: view.baseRefName, head: view.headRefName, conductorBranch, ...verdict },
+      {
+        cycle: context.name, pr: view.number, base: view.baseRefName, head: view.headRefName,
+        conductorBranch, waitedSeconds, timedOut, ...verdict,
+      },
       () =>
         [
           `PR #${view.number}（${view.headRefName} → ${view.baseRefName}）`,
@@ -320,10 +419,12 @@ register({
           `状態: ${verdict.stateOk ? "✓" : "✗"} ${view.state}`,
           `Ready for Review: ${verdict.readyOk ? "✓" : "✗"}`,
           `レビューの依頼: ${verdict.requestsOk ? "✓ なし" : `✗ ${verdict.requested.join(", ")}`}`,
+          `レビュー指摘: ${verdict.threads.ok ? "✓ 未解決なし" : `✗ 未解決 ${verdict.threads.unresolved.length} 件`}`,
           `承認: ${verdict.approval.required ? (verdict.approval.ok ? "✓" : "✗") : "不問"}${
             verdict.approval.approvedBy.length > 0 ? `（${verdict.approval.approvedBy.join(", ")}）` : ""
           }`,
           `CI: ${verdict.checks.status}（${verdict.checks.total} 件）`,
+          ...(wait ? [`待機: ${waitedSeconds} 秒${timedOut ? "（上限に達した）" : ""}`] : []),
           ...verdict.problems.map((problem) => `  ! ${problem}`),
         ].join("\n"),
     );
