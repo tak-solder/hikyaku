@@ -438,3 +438,82 @@ export function settingsDigest(
   });
   return createHash("sha256").update(canonical).digest("hex").slice(0, 12);
 }
+
+// ---------------------------------------------------------------------------
+// フェーズの PR を conductor ブランチに取り込めるかの検証
+
+export type ChecksStatus = "pass" | "fail" | "pending" | "none";
+
+export interface PrView {
+  number: number;
+  state: string;
+  baseRefName: string;
+  headRefName: string;
+  statusCheckRollup: unknown[];
+}
+
+export interface PrVerdict {
+  /** 取り込んでよいか。base が conductor ブランチで、PR が開いていて、CI が失敗も待機もしていない */
+  ok: boolean;
+  baseOk: boolean;
+  stateOk: boolean;
+  checks: { status: ChecksStatus; failing: string[]; pending: string[]; total: number };
+  /** ok でない理由（人間と監督に示す） */
+  problems: string[];
+}
+
+type CheckVerdict = "pass" | "fail" | "pending";
+
+/**
+ * gh pr view --json statusCheckRollup の1要素を判定する。
+ * CheckRun（Actions など）と StatusContext（外部の CI）で形が違う
+ */
+function judgeCheck(entry: unknown): { name: string; verdict: CheckVerdict } {
+  const item = (typeof entry === "object" && entry !== null ? entry : {}) as Record<string, unknown>;
+  const text = (key: string): string => (typeof item[key] === "string" ? (item[key] as string).toUpperCase() : "");
+  const name = String(item["name"] ?? item["context"] ?? "（名前なし）");
+
+  if (item["__typename"] === "StatusContext" || "state" in item) {
+    const state = text("state");
+    if (state === "SUCCESS") return { name, verdict: "pass" };
+    if (state === "PENDING" || state === "EXPECTED") return { name, verdict: "pending" };
+    return { name, verdict: "fail" };
+  }
+  if (text("status") !== "COMPLETED") return { name, verdict: "pending" };
+  // 完了していても、成功・中立・スキップ以外（失敗・取り消し・タイムアウトなど）は通っていない
+  return { name, verdict: ["SUCCESS", "NEUTRAL", "SKIPPED"].includes(text("conclusion")) ? "pass" : "fail" };
+}
+
+/**
+ * PR が conductor ブランチに取り込める状態かを判定する。
+ *
+ * 取り込みは監督がローカルで git merge して push するので、GitHub のブランチ保護や
+ * 必須チェックは通らない。その代わりにここで、PR の向き先と CI を確かめる。
+ * CI が1つも無い（paths フィルタで走らない、CI が無いリポジトリなど）ときは、
+ * 確かめるものが無いので失敗にしない。ただし none として区別して返す
+ */
+export function judgePr(view: PrView, conductorBranch: string): PrVerdict {
+  const judged = view.statusCheckRollup.map(judgeCheck);
+  const failing = judged.filter((check) => check.verdict === "fail").map((check) => check.name);
+  const pending = judged.filter((check) => check.verdict === "pending").map((check) => check.name);
+  const status: ChecksStatus =
+    failing.length > 0 ? "fail" : pending.length > 0 ? "pending" : judged.length === 0 ? "none" : "pass";
+
+  const baseOk = view.baseRefName === conductorBranch;
+  const stateOk = view.state === "OPEN";
+  const problems: string[] = [];
+  if (!baseOk) {
+    problems.push(`PR のマージ先が conductor ブランチではありません（期待: ${conductorBranch} / 実際: ${view.baseRefName}）`);
+  }
+  if (!stateOk) problems.push(`PR が開いていません（${view.state}）`);
+  if (status === "fail") problems.push(`CI が失敗しています: ${failing.join(", ")}`);
+  if (status === "pending") problems.push(`CI がまだ終わっていません: ${pending.join(", ")}`);
+
+  return {
+    ok: problems.length === 0,
+    baseOk,
+    stateOk,
+    checks: { status, failing, pending, total: judged.length },
+    problems,
+  };
+}

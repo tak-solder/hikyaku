@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { rmSync } from "node:fs";
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import type { AskSettings, ConductorConfig } from "../scripts/lib/conductor.mts";
 import {
   ASK_IDS,
@@ -10,6 +10,7 @@ import {
   collectTags,
   DEFAULT_CONDUCTOR,
   defaultAllowedTools,
+  judgePr,
   lintTags,
   parseFinalText,
   parseResultJson,
@@ -44,6 +45,14 @@ function git(directory: string, ...args: string[]): string {
 /** conductor asks が返す digest。launch / parse に渡す */
 function digest(directory: string): string {
   return JSON.parse(succeeds(directory, "conductor", "asks", "001", "--json")).digest;
+}
+
+/** gh の代わりを置く一時ディレクトリ（テスト用リポジトリの外に作る） */
+function temporaryBin(t: TestContext, directory: string): string {
+  const bin = `${directory}-bin`;
+  mkdirSync(bin, { recursive: true });
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  return bin;
 }
 
 function result(text: string, extra: Record<string, unknown> = {}): string {
@@ -380,3 +389,119 @@ for (const [name, content, pattern] of [
     assert.match(rejected.stderr, pattern);
   });
 }
+
+const CONDUCTOR = "hikyaku/001-test/conductor";
+
+function prView(overrides: Record<string, unknown> = {}) {
+  return {
+    number: 7, state: "OPEN", baseRefName: CONDUCTOR, headRefName: "hikyaku/001-test/architect",
+    statusCheckRollup: [{ __typename: "CheckRun", name: "typecheck", status: "COMPLETED", conclusion: "SUCCESS" }],
+    ...overrides,
+  } as Parameters<typeof judgePr>[0];
+}
+
+test("conductor: マージ先が conductor ブランチで CI が通っていれば取り込める", () => {
+  const verdict = judgePr(prView(), CONDUCTOR);
+  assert.equal(verdict.ok, true);
+  assert.equal(verdict.checks.status, "pass");
+  assert.deepEqual(verdict.problems, []);
+});
+
+test("conductor: マージ先が conductor ブランチでなければ取り込めない", () => {
+  const verdict = judgePr(prView({ baseRefName: "main" }), CONDUCTOR);
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.baseOk, false);
+  assert.match(verdict.problems[0] ?? "", /期待: hikyaku\/001-test\/conductor \/ 実際: main/);
+});
+
+test("conductor: 開いていない PR は取り込めない", () => {
+  for (const state of ["MERGED", "CLOSED"]) {
+    const verdict = judgePr(prView({ state }), CONDUCTOR);
+    assert.equal(verdict.ok, false);
+    assert.equal(verdict.stateOk, false);
+  }
+});
+
+for (const [name, entry, status] of [
+  ["失敗した CheckRun", { __typename: "CheckRun", name: "t", status: "COMPLETED", conclusion: "FAILURE" }, "fail"],
+  ["取り消された CheckRun", { __typename: "CheckRun", name: "t", status: "COMPLETED", conclusion: "CANCELLED" }, "fail"],
+  ["タイムアウトした CheckRun", { __typename: "CheckRun", name: "t", status: "COMPLETED", conclusion: "TIMED_OUT" }, "fail"],
+  ["実行中の CheckRun", { __typename: "CheckRun", name: "t", status: "IN_PROGRESS", conclusion: "" }, "pending"],
+  ["待機中の CheckRun", { __typename: "CheckRun", name: "t", status: "QUEUED", conclusion: "" }, "pending"],
+  ["失敗した StatusContext", { __typename: "StatusContext", context: "ci/x", state: "FAILURE" }, "fail"],
+  ["エラーの StatusContext", { __typename: "StatusContext", context: "ci/x", state: "ERROR" }, "fail"],
+  ["保留中の StatusContext", { __typename: "StatusContext", context: "ci/x", state: "PENDING" }, "pending"],
+  ["成功した StatusContext", { __typename: "StatusContext", context: "ci/x", state: "SUCCESS" }, "pass"],
+  ["中立の CheckRun", { __typename: "CheckRun", name: "t", status: "COMPLETED", conclusion: "NEUTRAL" }, "pass"],
+  ["スキップされた CheckRun", { __typename: "CheckRun", name: "t", status: "COMPLETED", conclusion: "SKIPPED" }, "pass"],
+] as const) {
+  test(`conductor: CI の判定（${name}）`, () => {
+    const verdict = judgePr(prView({ statusCheckRollup: [entry] }), CONDUCTOR);
+    assert.equal(verdict.checks.status, status);
+    assert.equal(verdict.ok, status === "pass");
+  });
+}
+
+test("conductor: CI は失敗が1つでもあれば失敗、次に待機中、全て成功なら成功。1つも無ければ none で失敗にしない", () => {
+  const success = { __typename: "CheckRun", name: "a", status: "COMPLETED", conclusion: "SUCCESS" };
+  const failure = { __typename: "CheckRun", name: "b", status: "COMPLETED", conclusion: "FAILURE" };
+  const running = { __typename: "CheckRun", name: "c", status: "IN_PROGRESS" };
+  const mixed = judgePr(prView({ statusCheckRollup: [success, running, failure] }), CONDUCTOR);
+  assert.equal(mixed.checks.status, "fail");
+  assert.deepEqual(mixed.checks.failing, ["b"]);
+  assert.deepEqual(mixed.checks.pending, ["c"]);
+  assert.equal(judgePr(prView({ statusCheckRollup: [success, running] }), CONDUCTOR).checks.status, "pending");
+  const none = judgePr(prView({ statusCheckRollup: [] }), CONDUCTOR);
+  assert.equal(none.checks.status, "none");
+  assert.equal(none.ok, true);
+});
+
+test("CLI: conductor check-pr は gh pr view の結果で取り込めるかを返し、満たさなければ終了コード 2", (t) => {
+  const directory = workspace(t, true);
+  const bin = temporaryBin(t, directory);
+  const withGh = (json: unknown, ...args: string[]) => {
+    writeFileSync(join(bin, "gh"), `#!/bin/sh\ncat <<'EOF'\n${JSON.stringify(json)}\nEOF\n`);
+    chmodSync(join(bin, "gh"), 0o755);
+    const saved = process.env["PATH"];
+    process.env["PATH"] = `${bin}:${saved}`;
+    try {
+      return cli(directory, "conductor", "check-pr", "7", "001", ...args);
+    } finally {
+      process.env["PATH"] = saved;
+    }
+  };
+
+  const good = withGh(prView(), "--json");
+  assert.equal(good.status, 0, good.stderr);
+  const parsed = JSON.parse(good.stdout);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.conductorBranch, CONDUCTOR);
+
+  const wrongBase = withGh(prView({ baseRefName: "main" }), "--json");
+  assert.equal(wrongBase.status, 2);
+  assert.equal(JSON.parse(wrongBase.stdout).baseOk, false);
+
+  const failing = withGh(prView({
+    statusCheckRollup: [{ __typename: "CheckRun", name: "typecheck", status: "COMPLETED", conclusion: "FAILURE" }],
+  }));
+  assert.equal(failing.status, 2);
+  assert.match(failing.stdout, /CI: fail/);
+  assert.match(failing.stderr, /CI が失敗しています: typecheck/);
+});
+
+test("CLI: conductor check-pr は gh が PR を取得できなければ終了コード 1", (t) => {
+  const directory = workspace(t, true);
+  const bin = temporaryBin(t, directory);
+  writeFileSync(join(bin, "gh"), "#!/bin/sh\necho 'no such pr' >&2\nexit 1\n");
+  chmodSync(join(bin, "gh"), 0o755);
+  const saved = process.env["PATH"];
+  process.env["PATH"] = `${bin}:${saved}`;
+  try {
+    const failed = cli(directory, "conductor", "check-pr", "99", "001");
+    assert.equal(failed.status, 1);
+    assert.match(failed.stderr, /gh pr view で取得できませんでした/);
+  } finally {
+    process.env["PATH"] = saved;
+  }
+  assert.equal(cli(directory, "conductor", "check-pr").status, 1);
+});

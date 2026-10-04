@@ -1,8 +1,10 @@
 /** conductor asks / launch / parse — 監督が子セッションを動かすための組み立てと解析 */
 
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { promisify } from "node:util";
 import { join } from "node:path";
 import { flagString, type ParsedArgs } from "../lib/args.mts";
 import {
@@ -12,6 +14,7 @@ import {
   CONDUCTOR_PHASES,
   type ConductorPhase,
   defaultAllowedTools,
+  judgePr,
   lintTags,
   modelFor,
   parseResultJson,
@@ -19,8 +22,10 @@ import {
   resolveAsk,
   settingsDigest,
   shellQuote,
+  type PrView,
   type ResolvedAsk,
 } from "../lib/conductor.mts";
+import { branchName } from "../lib/branch.mts";
 import { HikyakuError, ValidationError } from "../lib/errors.mts";
 import { emit, table } from "../lib/output.mts";
 import { pluginRoot } from "../lib/paths.mts";
@@ -244,6 +249,67 @@ register({
       lines.push("", parsed.body);
       return lines.join("\n");
     });
+  },
+});
+
+const run = promisify(execFile);
+
+register({
+  name: "conductor check-pr",
+  summary: "フェーズの PR を conductor ブランチに取り込んでよいか（マージ先と CI）を検証する",
+  usage: "hikyaku conductor check-pr <pr> [<cycle>] [--root <path>] [--json]",
+  details: [
+    "<pr> は PR の番号か URL です。gh pr view で PR の状態を読み、次を確かめます。",
+    "",
+    "  マージ先   PR の base が、このサイクルの conductor ブランチであること",
+    "  状態       PR が開いていること（マージ済み・クローズ済みでないこと）",
+    "  CI         失敗しているチェックも、まだ終わっていないチェックも無いこと",
+    "",
+    "満たしていなければ終了コード 2 で、理由を problems に返します。",
+    "",
+    "監督は PR を GitHub の機能ではなく、ローカルの git merge と push で取り込みます。",
+    "そのためブランチ保護の必須チェックが働きません。このコマンドがその代わりです。",
+    "",
+    "CI が1つも無い場合（paths フィルタで走らない、CI の無いリポジトリなど）は",
+    "確かめるものが無いので失敗にせず、checks.status を none で返します。PR を作った直後は",
+    "チェックがまだ登録されていないことがあるので、none のときは少し待って再実行してください。",
+    "pending のときは、gh pr checks <pr> --watch で終わるのを待ってから再実行します。",
+  ].join("\n"),
+  run: async ({ args, operands }) => {
+    const pr = operands[0];
+    if (pr === undefined) throw new HikyakuError("PR の番号か URL を指定してください");
+    const { config, context } = openCycle(args, operands[1]);
+    const conductorBranch = branchName(config.branch, "conductor", context.name);
+
+    let view: PrView;
+    try {
+      const { stdout } = await run(
+        "gh",
+        ["pr", "view", pr, "--json", "number,state,baseRefName,headRefName,statusCheckRollup"],
+        { cwd: config.repoRoot, timeout: 30_000 },
+      );
+      view = JSON.parse(stdout) as PrView;
+    } catch (error) {
+      throw new HikyakuError(
+        `PR ${pr} の状態を gh pr view で取得できませんでした`,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+    view = { ...view, statusCheckRollup: Array.isArray(view.statusCheckRollup) ? view.statusCheckRollup : [] };
+
+    const verdict = judgePr(view, conductorBranch);
+    emit(
+      { cycle: context.name, pr: view.number, base: view.baseRefName, head: view.headRefName, conductorBranch, ...verdict },
+      () =>
+        [
+          `PR #${view.number}（${view.headRefName} → ${view.baseRefName}）`,
+          `マージ先: ${verdict.baseOk ? "✓" : "✗"} ${conductorBranch}`,
+          `状態: ${verdict.stateOk ? "✓" : "✗"} ${view.state}`,
+          `CI: ${verdict.checks.status}（${verdict.checks.total} 件）`,
+          ...verdict.problems.map((problem) => `  ! ${problem}`),
+        ].join("\n"),
+    );
+    if (!verdict.ok) throw new ValidationError(verdict.problems);
   },
 });
 
