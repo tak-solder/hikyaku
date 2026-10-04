@@ -938,7 +938,7 @@ test("CLI: Copilot（Bot）への依頼は gh pr view に現れなくても、Gr
 test("CLI: pr request-reviewers は Copilot が GraphQL 上で依頼済みなら、重ねて依頼しない", (t) => {
   const directory = workspace(t, true);
   write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["@copilot"]\n');
-  // PR の作成時にリポジトリの設定で Copilot が自動で依頼された状態
+  // リポジトリの設定などで、既に Copilot が依頼されている状態
   const gh = useGh(t, directory, { view: prView({ baseRefName: "main" }), requests: ["@copilot"] });
   const output = JSON.parse(gh.cli("pr", "request-reviewers", "plan", "001", "--pr", "7", "--json").stdout);
   assert.deepEqual(output.request, []);

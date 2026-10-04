@@ -43,7 +43,7 @@ register({
     "",
     "  PR の作成者本人   GitHub は作成者本人を依頼先にできない",
     "  依頼済み          二重に依頼しない。Copilot などの Bot の依頼は gh pr view に現れないので",
-    "                    GraphQL から取得する（PR の作成時に自動で依頼される設定でも、重ねて依頼しない）",
+    "                    GraphQL から取得する（リポジトリの設定などで既に依頼されていても、重ねて依頼しない）",
     "  レビュー済み      gh pr edit --add-reviewer はレビュー済みの人にも再依頼するため",
     "",
     "依頼は gh pr edit --add-reviewer で行うので、@copilot（Copilot への依頼）も使えます。",
@@ -75,7 +75,7 @@ register({
     }
 
     // 依頼済みは GraphQL から取る。gh pr view には Bot（Copilot など）の依頼が現れず、
-    // このリポジトリのように PR の作成時に自動で依頼される場合に、重ねて再依頼してしまう
+    // リポジトリの設定などで既に Copilot が依頼されている場合に、重ねて再依頼してしまう
     const graphql = await fetchPrGraphql(config.repoRoot, state.number);
 
     const names = (list: unknown): string[] =>
