@@ -1,22 +1,18 @@
 /** pr request-reviewers — 設定に従って、作成した PR にレビュアーをアサインする */
 
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { flagBoolean, flagString } from "../lib/args.mts";
 import { branchName } from "../lib/branch.mts";
 import { HikyakuError } from "../lib/errors.mts";
+import { fetchPrGraphql, run } from "../lib/github.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { planReviewers } from "../lib/reviewers.mts";
 import { requirePhase, scopeFor } from "../lib/stack.mts";
 
-const run = promisify(execFile);
-
 interface PrReviewState {
   number: number;
   baseRefName: string;
   author: { login: string };
-  reviewRequests: unknown[];
   latestReviews: unknown[];
 }
 
@@ -46,7 +42,8 @@ register({
     "次のレビュアーには依頼しません。理由は excluded に返します。",
     "",
     "  PR の作成者本人   GitHub は作成者本人を依頼先にできない",
-    "  依頼済み          二重に依頼しない",
+    "  依頼済み          二重に依頼しない。Copilot などの Bot の依頼は gh pr view に現れないので",
+    "                    GraphQL から取得する（PR の作成時に自動で依頼される設定でも、重ねて依頼しない）",
     "  レビュー済み      gh pr edit --add-reviewer はレビュー済みの人にも再依頼するため",
     "",
     "依頼は gh pr edit --add-reviewer で行うので、@copilot（Copilot への依頼）も使えます。",
@@ -66,7 +63,7 @@ register({
     try {
       const { stdout } = await run(
         "gh",
-        ["pr", "view", pr, "--json", "number,baseRefName,author,reviewRequests,latestReviews"],
+        ["pr", "view", pr, "--json", "number,baseRefName,author,latestReviews"],
         { cwd: config.repoRoot, timeout: 30_000 },
       );
       state = JSON.parse(stdout) as PrReviewState;
@@ -76,6 +73,10 @@ register({
         error instanceof Error ? error.message : String(error),
       );
     }
+
+    // 依頼済みは GraphQL から取る。gh pr view には Bot（Copilot など）の依頼が現れず、
+    // このリポジトリのように PR の作成時に自動で依頼される場合に、重ねて再依頼してしまう
+    const graphql = await fetchPrGraphql(config.repoRoot, state.number);
 
     const names = (list: unknown): string[] =>
       (Array.isArray(list) ? list : []).map(nameOf).filter((name): name is string => name !== undefined);
@@ -88,7 +89,7 @@ register({
       skip: config.pr.reviewersSkip,
       phaseReviewers: config.conductor.phaseReviewers,
       author: state.author?.login ?? "",
-      requested: names(state.reviewRequests),
+      requested: names(graphql.reviewRequests),
       reviewed: names(state.latestReviews),
     });
 

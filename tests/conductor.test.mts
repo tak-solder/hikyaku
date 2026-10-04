@@ -390,22 +390,37 @@ interface FakeGh {
   calls: () => string[];
 }
 
+type FakeReviewer = string | { __typename: string; login?: string; slug?: string };
+
+interface FakeState {
+  /** gh pr view の結果 */
+  view?: unknown;
+  /**
+   * GraphQL の reviewRequests。実際の GitHub では、Copilot などの Bot の依頼は gh pr view や
+   * REST に現れず、ここにしか現れない。文字列は User として扱う
+   */
+  requests?: FakeReviewer[];
+  threads?: { path: string; line: number | null; author: string; resolved: boolean }[];
+  truncated?: boolean;
+}
+
 /**
- * 偽の gh を PATH の先頭に置く。pr view は view.json（view.N.json があれば N 回目の呼び出しはそちら）、
- * api graphql は threads.json を返し、pr edit は記録するだけ（edit.fail があれば失敗する）
+ * 偽の gh を PATH の先頭に置く。pr view の1回目の呼び出しは steps[0]、2回目は steps[1]…を返し、
+ * steps を使い切ったら基本の状態を返し続ける。api graphql は直前の pr view と同じ状態の
+ * reviewRequests とスレッドを返し、pr edit は記録するだけ（editFails なら失敗する）
  */
-function useGh(
-  t: TestContext,
-  directory: string,
-  files: { view?: unknown; views?: unknown[]; threads?: unknown; editFails?: boolean },
-): FakeGh {
+function useGh(t: TestContext, directory: string, state: FakeState & { steps?: FakeState[]; editFails?: boolean } = {}): FakeGh {
   const bin = `${directory}-bin`;
   mkdirSync(bin, { recursive: true });
   t.after(() => rmSync(bin, { recursive: true, force: true }));
-  writeFileSync(join(bin, "view.json"), JSON.stringify(files.view ?? prView()));
-  (files.views ?? []).forEach((view, index) => writeFileSync(join(bin, `view.${index + 1}.json`), JSON.stringify(view)));
-  writeFileSync(join(bin, "threads.json"), JSON.stringify(files.threads ?? threadsResponse([])));
-  if (files.editFails) writeFileSync(join(bin, "edit.fail"), "");
+  const write = (suffix: string, step: FakeState) => {
+    const merged = { ...state, ...step };
+    writeFileSync(join(bin, `view${suffix}.json`), JSON.stringify(merged.view ?? prView()));
+    writeFileSync(join(bin, `graphql${suffix}.json`), JSON.stringify(graphqlResponse(merged)));
+  };
+  write("", {});
+  (state.steps ?? []).forEach((step, index) => write(`.${index + 1}`, step));
+  if (state.editFails) writeFileSync(join(bin, "edit.fail"), "");
   writeFileSync(join(bin, "gh"), `#!/bin/sh
 DIR="$(dirname "$0")"
 echo "$@" >> "$DIR/calls.log"
@@ -413,7 +428,9 @@ case "$1 $2" in
   "pr view")
     n=$(cat "$DIR/count" 2>/dev/null || echo 0); n=$((n + 1)); echo $n > "$DIR/count"
     if [ -f "$DIR/view.$n.json" ]; then cat "$DIR/view.$n.json"; else cat "$DIR/view.json"; fi ;;
-  "api graphql") cat "$DIR/threads.json" ;;
+  "api graphql")
+    n=$(cat "$DIR/count" 2>/dev/null || echo 0)
+    if [ -f "$DIR/graphql.$n.json" ]; then cat "$DIR/graphql.$n.json"; else cat "$DIR/graphql.json"; fi ;;
   "pr edit") if [ -f "$DIR/edit.fail" ]; then echo "boom" >&2; exit 1; fi ;;
   *) echo "unsupported: $*" >&2; exit 1 ;;
 esac
@@ -439,14 +456,20 @@ esac
   };
 }
 
-function threadsResponse(threads: { path: string; line: number | null; author: string; resolved: boolean }[], hasNextPage = false) {
+function graphqlResponse(state: FakeState) {
+  const copilot = { __typename: "Bot", login: "copilot-pull-request-reviewer" };
   return {
     data: {
       repository: {
         pullRequest: {
+          reviewRequests: {
+            nodes: (state.requests ?? []).map((reviewer) => ({
+              requestedReviewer: typeof reviewer === "string" ? (reviewer === "@copilot" ? copilot : { __typename: "User", login: reviewer }) : reviewer,
+            })),
+          },
           reviewThreads: {
-            pageInfo: { hasNextPage },
-            nodes: threads.map((thread) => ({
+            pageInfo: { hasNextPage: state.truncated === true },
+            nodes: (state.threads ?? []).map((thread) => ({
               isResolved: thread.resolved,
               path: thread.path,
               line: thread.line,
@@ -752,9 +775,7 @@ reviewers_skip = ["plan"]
   const skipped = JSON.parse(gh.cli("pr", "request-reviewers", "plan", "001", "--pr", "7", "--json").stdout);
   assert.equal(skipped.skipped, true);
 
-  const already = useGh(t, directory, {
-    view: prView({ baseRefName: "main", reviewRequests: [{ __typename: "User", login: "alice" }] }),
-  });
+  const already = useGh(t, directory, { view: prView({ baseRefName: "main" }), requests: ["alice"] });
   const none = JSON.parse(already.cli("pr", "request-reviewers", "architect", "001", "--pr", "7", "--json").stdout);
   assert.deepEqual(none.request, []);
   assert.equal(none.requested, false);
@@ -792,9 +813,7 @@ test("CLI: conductor check-pr は gh の結果で取り込めるかを返し、�
   assert.match(failing.stdout, /CI: fail/);
   assert.match(failing.stderr, /CI が失敗しています: typecheck/);
 
-  const draft = useGh(t, directory, {
-    view: prView({ isDraft: true, reviewRequests: [{ __typename: "User", login: "alice" }] }),
-  }).cli("conductor", "check-pr", "7", "001");
+  const draft = useGh(t, directory, { view: prView({ isDraft: true }), requests: ["alice"] }).cli("conductor", "check-pr", "7", "001");
   assert.equal(draft.status, 2);
   assert.match(draft.stderr, /Draft/);
   assert.match(draft.stderr, /レビューの依頼が残っています: alice/);
@@ -808,10 +827,10 @@ test("CLI: conductor check-pr は gh の結果で取り込めるかを返し、�
 test("CLI: conductor check-pr は gh api graphql で未解決のレビュースレッドを取得し、あれば終了コード 2", (t) => {
   const directory = workspace(t, true);
   const gh = useGh(t, directory, {
-    threads: threadsResponse([
+    threads: [
       { path: "src/a.mts", line: 3, author: "copilot-pull-request-reviewer", resolved: false },
       { path: "src/b.mts", line: null, author: "copilot-pull-request-reviewer", resolved: true },
-    ]),
+    ],
   });
   const result = gh.cli("conductor", "check-pr", "7", "001", "--json");
   assert.equal(result.status, 2);
@@ -821,17 +840,13 @@ test("CLI: conductor check-pr は gh api graphql で未解決のレビュース�
   assert.ok(gh.calls().some((call) => call.startsWith("api graphql") && call.includes("owner={owner}") && call.includes("number=7")));
   assert.match(result.stderr, /未解決のレビュースレッドが 1 件あります/);
 
-  const truncated = useGh(t, directory, { threads: threadsResponse([], true) }).cli("conductor", "check-pr", "7", "001");
+  const truncated = useGh(t, directory, { truncated: true }).cli("conductor", "check-pr", "7", "001");
   assert.equal(truncated.status, 2);
 });
 
 test("CLI: conductor check-pr --wait はレビューの依頼が消えるまで確かめ直し、消えたら成功する", (t) => {
   const directory = workspace(t, true);
-  const request = [{ __typename: "Bot", login: "copilot-pull-request-reviewer" }];
-  const gh = useGh(t, directory, {
-    view: prView(),
-    views: [prView({ reviewRequests: request }), prView({ reviewRequests: request })],
-  });
+  const gh = useGh(t, directory, { steps: [{ requests: ["@copilot"] }, { requests: ["@copilot"] }] });
   const result = gh.cli("conductor", "check-pr", "7", "001", "--wait", "--interval", "0", "--timeout", "1", "--json");
   assert.equal(result.status, 0, result.stderr);
   const parsed = JSON.parse(result.stdout);
@@ -842,8 +857,7 @@ test("CLI: conductor check-pr --wait はレビューの依頼が消えるまで�
 
 test("CLI: conductor check-pr --wait は上限を超えたら timedOut で終了コード 2、待たない設定なら1回で判定する", (t) => {
   const directory = workspace(t, true);
-  const pending = prView({ reviewRequests: [{ __typename: "Bot", login: "copilot-pull-request-reviewer" }] });
-  const gh = useGh(t, directory, { view: pending });
+  const gh = useGh(t, directory, { requests: ["@copilot"] });
   const timedOut = gh.cli("conductor", "check-pr", "7", "001", "--wait", "--interval", "0", "--timeout", "0", "--json");
   assert.equal(timedOut.status, 2);
   assert.equal(JSON.parse(timedOut.stdout).timedOut, true);
@@ -852,15 +866,13 @@ test("CLI: conductor check-pr --wait は上限を超えたら timedOut で終了
 
   // 設定の review_timeout を上限の既定にする
   write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[conductor]\nreview_timeout = 0\n');
-  const configured = useGh(t, directory, { view: pending }).cli("conductor", "check-pr", "7", "001", "--wait", "--interval", "0", "--json");
+  const configured = useGh(t, directory, { requests: ["@copilot"] }).cli("conductor", "check-pr", "7", "001", "--wait", "--interval", "0", "--json");
   assert.equal(JSON.parse(configured.stdout).timedOut, true);
 });
 
 test("CLI: conductor check-pr --wait は待っても解消しない問題（Draft・未解決の指摘）を見つけたらすぐ返す", (t) => {
   const directory = workspace(t, true);
-  const gh = useGh(t, directory, {
-    view: prView({ isDraft: true, reviewRequests: [{ __typename: "Bot", login: "copilot-pull-request-reviewer" }] }),
-  });
+  const gh = useGh(t, directory, { view: prView({ isDraft: true }), requests: ["@copilot"] });
   const result = gh.cli("conductor", "check-pr", "7", "001", "--wait", "--interval", "0", "--timeout", "10", "--json");
   assert.equal(result.status, 2);
   assert.equal(JSON.parse(result.stdout).timedOut, false);
@@ -904,4 +916,32 @@ test("CLI: conductor asks はレビューの設定を返し、設定を変える
   assert.deepEqual(after.review.phaseReviewers, ["@copilot"]);
   assert.deepEqual(after.review.finalReviewers, ["alice"]);
   assert.notEqual(after.digest, before.digest);
+});
+
+
+test("CLI: Copilot（Bot）への依頼は gh pr view に現れなくても、GraphQL から読んで check-pr が待つ", (t) => {
+  const directory = workspace(t, true);
+  // 実際の GitHub では、gh pr view の reviewRequests は空のまま、GraphQL にだけ Bot の依頼が現れる
+  const gh = useGh(t, directory, { view: prView({ reviewRequests: [] }), requests: ["@copilot"] });
+  const result = gh.cli("conductor", "check-pr", "7", "001", "--json");
+  assert.equal(result.status, 2);
+  const parsed = JSON.parse(result.stdout);
+  assert.deepEqual(parsed.requested, ["copilot-pull-request-reviewer"]);
+  assert.equal(parsed.waiting, true);
+  assert.equal(
+    gh.calls().some((call) => call.startsWith("pr view") && call.includes("reviewRequests")),
+    false,
+    "gh pr view の reviewRequests は使わない",
+  );
+});
+
+test("CLI: pr request-reviewers は Copilot が GraphQL 上で依頼済みなら、重ねて依頼しない", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["@copilot"]\n');
+  // PR の作成時にリポジトリの設定で Copilot が自動で依頼された状態
+  const gh = useGh(t, directory, { view: prView({ baseRefName: "main" }), requests: ["@copilot"] });
+  const output = JSON.parse(gh.cli("pr", "request-reviewers", "plan", "001", "--pr", "7", "--json").stdout);
+  assert.deepEqual(output.request, []);
+  assert.deepEqual(output.excluded, [{ reviewer: "@copilot", reason: "依頼済み" }]);
+  assert.equal(gh.calls().some((call) => call.startsWith("pr edit")), false);
 });

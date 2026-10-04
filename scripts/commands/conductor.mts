@@ -1,10 +1,8 @@
 /** conductor asks / launch / parse — 監督が子セッションを動かすための組み立てと解析 */
 
-import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { promisify } from "node:util";
 import { join } from "node:path";
 import { flagBoolean, flagString, type ParsedArgs } from "../lib/args.mts";
 import {
@@ -23,10 +21,10 @@ import {
   settingsDigest,
   shellQuote,
   type PrView,
-  type ReviewThread,
   type ResolvedAsk,
 } from "../lib/conductor.mts";
 import { branchName } from "../lib/branch.mts";
+import { fetchPrGraphql, run } from "../lib/github.mts";
 import { HikyakuError, ValidationError } from "../lib/errors.mts";
 import { emit, table } from "../lib/output.mts";
 import { pluginRoot } from "../lib/paths.mts";
@@ -263,56 +261,6 @@ register({
   },
 });
 
-const run = promisify(execFile);
-
-const THREADS_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
-  repository(owner: $owner, name: $name) {
-    pullRequest(number: $number) {
-      reviewThreads(first: 100) {
-        pageInfo { hasNextPage }
-        nodes {
-          isResolved
-          path
-          line
-          comments(first: 1) { nodes { author { login } url } }
-        }
-      }
-    }
-  }
-}`;
-
-/** gh でこの PR の未解決のレビュースレッドを取得する（gh pr view にはスレッドが無いので GraphQL を使う） */
-async function fetchUnresolvedThreads(
-  cwd: string,
-  number: number,
-): Promise<{ unresolved: ReviewThread[]; truncated: boolean }> {
-  try {
-    const { stdout } = await run(
-      "gh",
-      ["api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-F", `number=${number}`, "-f", `query=${THREADS_QUERY}`],
-      { cwd, timeout: 30_000 },
-    );
-    const threads = JSON.parse(stdout)?.data?.repository?.pullRequest?.reviewThreads;
-    const nodes: Record<string, any>[] = Array.isArray(threads?.nodes) ? threads.nodes : [];
-    return {
-      truncated: threads?.pageInfo?.hasNextPage === true,
-      unresolved: nodes
-        .filter((node) => node["isResolved"] === false)
-        .map((node) => ({
-          path: String(node["path"] ?? ""),
-          line: typeof node["line"] === "number" ? node["line"] : null,
-          author: String(node["comments"]?.nodes?.[0]?.author?.login ?? "（不明）"),
-          url: String(node["comments"]?.nodes?.[0]?.url ?? ""),
-        })),
-    };
-  } catch (error) {
-    throw new HikyakuError(
-      `PR #${number} のレビュースレッドを gh api graphql で取得できませんでした`,
-      error instanceof Error ? error.message : String(error),
-    );
-  }
-}
-
 async function fetchPrView(cwd: string, pr: string): Promise<PrView> {
   let view: PrView;
   try {
@@ -320,7 +268,7 @@ async function fetchPrView(cwd: string, pr: string): Promise<PrView> {
       "gh",
       [
         "pr", "view", pr, "--json",
-        "number,state,isDraft,baseRefName,headRefName,statusCheckRollup,reviewRequests,latestReviews",
+        "number,state,isDraft,baseRefName,headRefName,statusCheckRollup,latestReviews",
       ],
       { cwd, timeout: 30_000 },
     );
@@ -332,12 +280,14 @@ async function fetchPrView(cwd: string, pr: string): Promise<PrView> {
     );
   }
   const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+  // レビューの依頼は gh pr view に Bot（Copilot など）が現れないので、GraphQL から取る
+  const graphql = await fetchPrGraphql(cwd, view.number);
   return {
     ...view,
     statusCheckRollup: list(view.statusCheckRollup),
-    reviewRequests: list(view.reviewRequests),
     latestReviews: list(view.latestReviews),
-    reviewThreads: await fetchUnresolvedThreads(cwd, view.number),
+    reviewRequests: graphql.reviewRequests,
+    reviewThreads: graphql.threads,
   };
 }
 
@@ -354,6 +304,7 @@ register({
     "  状態         PR が開いていること（マージ済み・クローズ済みでないこと）",
     "  Draft        Draft でなく、Ready for Review になっていること",
     "  レビュー依頼 まだレビューしていないレビュアー（人・チーム・Copilot などの Bot）への依頼が残っていないこと",
+    "               Bot への依頼は gh pr view にも REST にも現れないので、GraphQL から取得する",
     "  レビュー指摘 未解決のレビュースレッドが無いこと",
     "  CI           失敗しているチェックも、まだ終わっていないチェックも無いこと",
     "  承認         既定では不問。[conductor] require_approval = true のときは、1人以上の承認があり、",
