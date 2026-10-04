@@ -3,18 +3,11 @@
 import { flagBoolean, flagString } from "../lib/args.mts";
 import { branchName } from "../lib/branch.mts";
 import { HikyakuError } from "../lib/errors.mts";
-import { fetchPrGraphql, run } from "../lib/github.mts";
+import { fetchPrGraphql, parsePrReviewState, run } from "../lib/github.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { planReviewers } from "../lib/reviewers.mts";
 import { requirePhase, scopeFor } from "../lib/stack.mts";
-
-interface PrReviewState {
-  number: number;
-  baseRefName: string;
-  author: { login: string };
-  latestReviews: unknown[];
-}
 
 function nameOf(entry: unknown): string | undefined {
   const item = (typeof entry === "object" && entry !== null ? entry : {}) as Record<string, unknown>;
@@ -59,20 +52,25 @@ register({
     const { config, cycle } = scopeFor(args, phase, operands[1]);
     const dryRun = flagBoolean(args, "dry-run");
 
-    let state: PrReviewState;
+    let stdout: string;
     try {
-      const { stdout } = await run(
-        "gh",
-        ["pr", "view", pr, "--json", "number,baseRefName,author,latestReviews"],
-        { cwd: config.repoRoot, timeout: 30_000 },
-      );
-      state = JSON.parse(stdout) as PrReviewState;
+      ({ stdout } = await run("gh", ["pr", "view", pr, "--json", "number,baseRefName,author,latestReviews"], {
+        cwd: config.repoRoot,
+        timeout: 30_000,
+      }));
     } catch (error) {
       throw new HikyakuError(
         `PR ${pr} の状態を gh pr view で取得できませんでした`,
         error instanceof Error ? error.message : String(error),
       );
     }
+    let raw: unknown;
+    try {
+      raw = JSON.parse(stdout);
+    } catch {
+      throw new HikyakuError("gh pr view の応答を JSON として読めません", stdout.slice(0, 200));
+    }
+    const state = parsePrReviewState(raw);
 
     // 依頼済みは GraphQL から取る。gh pr view には Bot（Copilot など）の依頼が現れず、
     // リポジトリの設定などで既に Copilot が依頼されている場合に、重ねて再依頼してしまう
@@ -88,7 +86,7 @@ register({
       reviewers: config.pr.reviewers,
       skip: config.pr.reviewersSkip,
       phaseReviewers: config.conductor.phaseReviewers,
-      author: state.author?.login ?? "",
+      author: state.author,
       requested: names(graphql.reviewRequests),
       reviewed: names(state.latestReviews),
     });

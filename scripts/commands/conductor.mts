@@ -24,7 +24,7 @@ import {
   type ResolvedAsk,
 } from "../lib/conductor.mts";
 import { branchName } from "../lib/branch.mts";
-import { fetchPrGraphql, run } from "../lib/github.mts";
+import { fetchPrGraphql, parsePrView, run } from "../lib/github.mts";
 import { HikyakuError, ValidationError } from "../lib/errors.mts";
 import { emit, table } from "../lib/output.mts";
 import { pluginRoot } from "../lib/paths.mts";
@@ -262,33 +262,29 @@ register({
 });
 
 async function fetchPrView(cwd: string, pr: string): Promise<PrView> {
-  let view: PrView;
+  let stdout: string;
   try {
-    const { stdout } = await run(
+    ({ stdout } = await run(
       "gh",
-      [
-        "pr", "view", pr, "--json",
-        "number,state,isDraft,baseRefName,headRefName,statusCheckRollup,latestReviews",
-      ],
+      ["pr", "view", pr, "--json", "number,state,isDraft,baseRefName,headRefName,statusCheckRollup,latestReviews"],
       { cwd, timeout: 30_000 },
-    );
-    view = JSON.parse(stdout) as PrView;
+    ));
   } catch (error) {
     throw new HikyakuError(
       `PR ${pr} の状態を gh pr view で取得できませんでした`,
       error instanceof Error ? error.message : String(error),
     );
   }
-  const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(stdout);
+  } catch {
+    throw new HikyakuError("gh pr view の応答を JSON として読めません", stdout.slice(0, 200));
+  }
+  const view = parsePrView(raw);
   // レビューの依頼は gh pr view に Bot（Copilot など）が現れないので、GraphQL から取る
   const graphql = await fetchPrGraphql(cwd, view.number);
-  return {
-    ...view,
-    statusCheckRollup: list(view.statusCheckRollup),
-    latestReviews: list(view.latestReviews),
-    reviewRequests: graphql.reviewRequests,
-    reviewThreads: graphql.threads,
-  };
+  return { ...view, reviewRequests: graphql.reviewRequests, reviewThreads: graphql.threads };
 }
 
 register({
@@ -310,7 +306,9 @@ register({
     "  承認         既定では不問。[conductor] require_approval = true のときは、1人以上の承認があり、",
     "               変更の要求が残っていないこと（レビュアーごとの最新のレビューで判定する）",
     "",
-    "満たしていなければ終了コード 2 で、理由を problems に返します。",
+    "満たしていなければ終了コード 2 で、理由を problems に返します。gh の応答に必須の",
+    "フィールドが無い、型が違うなど、状態を取得できなかったときは判定せず、終了コード 1 で",
+    "止まります（取得できなかった状態を、CI なし・依頼なし・Ready として合格させないため）。",
     "",
     "監督は PR を GitHub の機能ではなく、ローカルの git merge と push で取り込みます。",
     "そのためブランチ保護の必須チェックが働きません。このコマンドがその代わりです。",

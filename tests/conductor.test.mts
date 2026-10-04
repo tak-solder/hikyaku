@@ -20,6 +20,7 @@ import {
   shellQuote,
 } from "../scripts/lib/conductor.mts";
 import { pluginRoot } from "../scripts/lib/paths.mts";
+import { parsePrReviewState, parsePrView } from "../scripts/lib/github.mts";
 import { planReviewers, skipTargetOf, type ReviewerInput } from "../scripts/lib/reviewers.mts";
 import { cli, snapshot, succeeds, testEnvironment, workspace, write } from "./helpers.mts";
 
@@ -390,7 +391,7 @@ interface FakeGh {
   calls: () => string[];
 }
 
-type FakeReviewer = string | { __typename: string; login?: string; slug?: string };
+type FakeReviewer = string | null | { __typename: string; login?: string; slug?: string };
 
 interface FakeState {
   /** gh pr view の結果 */
@@ -400,8 +401,10 @@ interface FakeState {
    * REST に現れず、ここにしか現れない。文字列は User として扱う
    */
   requests?: FakeReviewer[];
-  threads?: { path: string; line: number | null; author: string; resolved: boolean }[];
+  threads?: { path: string; line: number | null; author: string; resolved: boolean | undefined }[];
   truncated?: boolean;
+  /** GraphQL の応答をそのまま差し替える（壊れた応答のテスト用） */
+  graphql?: unknown;
 }
 
 /**
@@ -415,8 +418,8 @@ function useGh(t: TestContext, directory: string, state: FakeState & { steps?: F
   t.after(() => rmSync(bin, { recursive: true, force: true }));
   const write = (suffix: string, step: FakeState) => {
     const merged = { ...state, ...step };
-    writeFileSync(join(bin, `view${suffix}.json`), JSON.stringify(merged.view ?? prView()));
-    writeFileSync(join(bin, `graphql${suffix}.json`), JSON.stringify(graphqlResponse(merged)));
+    writeFileSync(join(bin, `view${suffix}.json`), typeof merged.view === "string" ? merged.view : JSON.stringify(merged.view ?? prView()));
+    writeFileSync(join(bin, `graphql${suffix}.json`), JSON.stringify(merged.graphql ?? graphqlResponse(merged)));
   };
   write("", {});
   (state.steps ?? []).forEach((step, index) => write(`.${index + 1}`, step));
@@ -818,11 +821,81 @@ test("CLI: conductor check-pr は gh の結果で取り込めるかを返し、�
   assert.match(draft.stderr, /Draft/);
   assert.match(draft.stderr, /レビューの依頼が残っています: alice/);
 
-  // 古い gh などで新しいフィールドが欠けても落ちない
-  const sparse = useGh(t, directory, { view: { number: 7, state: "OPEN", baseRefName: CONDUCTOR, headRefName: "x" } })
-    .cli("conductor", "check-pr", "7", "001", "--json");
-  assert.equal(sparse.status, 0, sparse.stderr);
 });
+
+test("CLI: conductor check-pr は gh の応答に必須のフィールドが無い・型が違うときに、合格にせず終了コード 1 で止まる", (t) => {
+  const directory = workspace(t, true);
+  const full = prView() as unknown as Record<string, unknown>;
+  for (const field of ["isDraft", "statusCheckRollup", "latestReviews", "state", "baseRefName"]) {
+    const { [field]: _removed, ...rest } = full;
+    const result = useGh(t, directory, { view: rest }).cli("conductor", "check-pr", "7", "001", "--json");
+    assert.equal(result.status, 1, `${field} が無い応答は合格にしない`);
+    assert.match(result.stderr, new RegExp(`必須のフィールドが無いか、型が違います: ${field}`));
+  }
+  const wrongType = useGh(t, directory, { view: { ...full, isDraft: "false" } }).cli("conductor", "check-pr", "7", "001");
+  assert.equal(wrongType.status, 1);
+  assert.equal(useGh(t, directory, { view: "not json" }).cli("conductor", "check-pr", "7", "001").status, 1);
+  assert.equal(useGh(t, directory, { view: "null" }).cli("conductor", "check-pr", "7", "001").status, 1);
+  // 空配列は、CI もレビューも無い PR の正常な応答
+  const empty = useGh(t, directory, { view: { ...full, statusCheckRollup: [], latestReviews: [] } }).cli("conductor", "check-pr", "7", "001");
+  assert.equal(empty.status, 0, empty.stderr);
+});
+
+test("CLI: conductor check-pr は GraphQL の応答が不完全なときに、依頼なし・未解決なしとして扱わず終了コード 1 で止まる", (t) => {
+  const directory = workspace(t, true);
+  const broken = [
+    { data: { repository: { pullRequest: null } } },
+    { errors: [{ message: "boom" }], data: null },
+    { data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [] } } } } },
+    { data: { repository: { pullRequest: { reviewRequests: { nodes: [] } } } } },
+  ];
+  for (const graphql of broken) {
+    const result = useGh(t, directory, { graphql }).cli("conductor", "check-pr", "7", "001");
+    assert.equal(result.status, 1, JSON.stringify(graphql));
+    assert.match(result.stderr, /gh api graphql で取得できませんでした/);
+  }
+});
+
+test("CLI: 依頼先を読めない依頼は依頼が残っているものとして数え、解決済みと確認できないスレッドは未解決として扱う", (t) => {
+  const directory = workspace(t, true);
+  const unknownRequest = useGh(t, directory, { requests: [null] }).cli("conductor", "check-pr", "7", "001", "--json");
+  assert.equal(unknownRequest.status, 2);
+  assert.deepEqual(JSON.parse(unknownRequest.stdout).requested, ["（不明なレビュアー）"]);
+
+  const unknownThread = useGh(t, directory, {
+    threads: [{ path: "src/a.mts", line: 1, author: "copilot-pull-request-reviewer", resolved: undefined }],
+  }).cli("conductor", "check-pr", "7", "001", "--json");
+  assert.equal(unknownThread.status, 2);
+  assert.equal(JSON.parse(unknownThread.stdout).threads.unresolved.length, 1);
+});
+
+test("github: gh pr view の応答は必須のフィールドが全て揃っているときだけ読み、空配列は正常として扱う", () => {
+  const valid = { number: 7, state: "OPEN", isDraft: false, baseRefName: "main", headRefName: "x", statusCheckRollup: [], latestReviews: [] };
+  assert.equal(parsePrView(valid).isDraft, false);
+  for (const field of Object.keys(valid)) {
+    const { [field]: _removed, ...rest } = valid as Record<string, unknown>;
+    assert.throws(() => parsePrView(rest), new RegExp(field), field);
+  }
+  for (const raw of [null, [], "text", 1, undefined]) assert.throws(() => parsePrView(raw), /JSON のオブジェクトではありません/);
+  assert.throws(() => parsePrView({ ...valid, isDraft: undefined }), /isDraft/);
+  assert.throws(() => parsePrView({ ...valid, statusCheckRollup: null }), /statusCheckRollup/);
+});
+
+test("github: レビュアーのアサイン用の gh pr view の応答も、作成者や最新のレビューが無ければエラーにする", () => {
+  const valid = { number: 7, baseRefName: "main", author: { login: "owner" }, latestReviews: [] };
+  assert.equal(parsePrReviewState(valid).author, "owner");
+  assert.throws(() => parsePrReviewState({ ...valid, author: null }), /author/);
+  assert.throws(() => parsePrReviewState({ ...valid, author: { login: "" } }), /author/);
+  assert.throws(() => parsePrReviewState({ ...valid, latestReviews: undefined }), /latestReviews/);
+});
+
+test("conductor: isDraft が欠けた応答を Ready と判定しない", () => {
+  const view = { ...prView(), isDraft: undefined } as unknown as Parameters<typeof judgePr>[0];
+  const verdict = judgePr(view, CONDUCTOR);
+  assert.equal(verdict.readyOk, false);
+  assert.equal(verdict.ok, false);
+});
+
 
 test("CLI: conductor check-pr は gh api graphql で未解決のレビュースレッドを取得し、あれば終了コード 2", (t) => {
   const directory = workspace(t, true);

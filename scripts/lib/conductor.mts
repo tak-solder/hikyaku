@@ -562,7 +562,8 @@ export function judgePr(
 
   const baseOk = view.baseRefName === conductorBranch;
   const stateOk = view.state === "OPEN";
-  const readyOk = view.isDraft !== true;
+  // isDraft が欠けた応答を Ready と読まない（false を明示的に要求する）
+  const readyOk = view.isDraft === false;
   const requested = view.reviewRequests.map(reviewerName);
   const requestsOk = requested.length === 0;
   const approvedBy = view.latestReviews.filter((r) => reviewState(r) === "APPROVED").map(reviewerName);
