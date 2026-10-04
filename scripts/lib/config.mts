@@ -340,6 +340,7 @@ function readConductor(table: TomlTable | undefined): ConductorConfig {
     delegate: readStringArray(table, "delegate", where) ?? DEFAULT_CONDUCTOR.delegate,
     allowedTools: readStringArray(table, "allowed_tools", where) ?? DEFAULT_CONDUCTOR.allowedTools,
     budgetPerRun: budget,
+    requireApproval: readBoolean(table, "require_approval", where) ?? DEFAULT_CONDUCTOR.requireApproval,
     model: readModel(table, "model", where),
     models: readConductorModels(readTable(table ?? {}, "models")),
   };

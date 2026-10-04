@@ -263,7 +263,11 @@ register({
     "",
     "  マージ先   PR の base が、このサイクルの conductor ブランチであること",
     "  状態       PR が開いていること（マージ済み・クローズ済みでないこと）",
+    "  Draft      Draft でなく、Ready for Review になっていること",
+    "  レビュー依頼 まだレビューしていないレビュアー（人・チーム・Copilot などの Bot）への依頼が残っていないこと",
     "  CI         失敗しているチェックも、まだ終わっていないチェックも無いこと",
+    "  承認       既定では不問。[conductor] require_approval = true のときは、1人以上の承認があり、",
+    "             変更の要求が残っていないこと（レビュアーごとの最新のレビューで判定する）",
     "",
     "満たしていなければ終了コード 2 で、理由を problems に返します。",
     "",
@@ -285,7 +289,10 @@ register({
     try {
       const { stdout } = await run(
         "gh",
-        ["pr", "view", pr, "--json", "number,state,baseRefName,headRefName,statusCheckRollup"],
+        [
+          "pr", "view", pr, "--json",
+          "number,state,isDraft,baseRefName,headRefName,statusCheckRollup,reviewRequests,latestReviews",
+        ],
         { cwd: config.repoRoot, timeout: 30_000 },
       );
       view = JSON.parse(stdout) as PrView;
@@ -295,9 +302,15 @@ register({
         error instanceof Error ? error.message : String(error),
       );
     }
-    view = { ...view, statusCheckRollup: Array.isArray(view.statusCheckRollup) ? view.statusCheckRollup : [] };
+    const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+    view = {
+      ...view,
+      statusCheckRollup: list(view.statusCheckRollup),
+      reviewRequests: list(view.reviewRequests),
+      latestReviews: list(view.latestReviews),
+    };
 
-    const verdict = judgePr(view, conductorBranch);
+    const verdict = judgePr(view, conductorBranch, { requireApproval: config.conductor.requireApproval });
     emit(
       { cycle: context.name, pr: view.number, base: view.baseRefName, head: view.headRefName, conductorBranch, ...verdict },
       () =>
@@ -305,6 +318,11 @@ register({
           `PR #${view.number}（${view.headRefName} → ${view.baseRefName}）`,
           `マージ先: ${verdict.baseOk ? "✓" : "✗"} ${conductorBranch}`,
           `状態: ${verdict.stateOk ? "✓" : "✗"} ${view.state}`,
+          `Ready for Review: ${verdict.readyOk ? "✓" : "✗"}`,
+          `レビューの依頼: ${verdict.requestsOk ? "✓ なし" : `✗ ${verdict.requested.join(", ")}`}`,
+          `承認: ${verdict.approval.required ? (verdict.approval.ok ? "✓" : "✗") : "不問"}${
+            verdict.approval.approvedBy.length > 0 ? `（${verdict.approval.approvedBy.join(", ")}）` : ""
+          }`,
           `CI: ${verdict.checks.status}（${verdict.checks.total} 件）`,
           ...verdict.problems.map((problem) => `  ! ${problem}`),
         ].join("\n"),

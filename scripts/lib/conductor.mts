@@ -135,6 +135,8 @@ export interface ConductorConfig {
   allowedTools: string[];
   /** 呼び出し1回ごとの費用の上限（USD）。0 なら上限を渡さない */
   budgetPerRun: number;
+  /** フェーズの PR を取り込む条件に、レビュアーの承認（Approve）を加える */
+  requireApproval: boolean;
   /** 子のモデル（全フェーズの既定）。未指定なら Claude Code の既定に任せる */
   model: string | undefined;
   /** フェーズごとのモデル。model より優先する */
@@ -146,6 +148,7 @@ export const DEFAULT_CONDUCTOR: ConductorConfig = {
   delegate: [],
   allowedTools: [],
   budgetPerRun: 0,
+  requireApproval: false,
   model: undefined,
   models: {},
 };
@@ -447,9 +450,19 @@ export type ChecksStatus = "pass" | "fail" | "pending" | "none";
 export interface PrView {
   number: number;
   state: string;
+  isDraft: boolean;
   baseRefName: string;
   headRefName: string;
   statusCheckRollup: unknown[];
+  /** まだレビューしていないレビュアー（人・チーム・Copilot などの Bot）への依頼 */
+  reviewRequests: unknown[];
+  /** レビュアーごとの最新のレビュー */
+  latestReviews: unknown[];
+}
+
+export interface PrOptions {
+  /** 1人以上の承認が必要で、変更の要求が残っていないこと */
+  requireApproval: boolean;
 }
 
 export interface PrVerdict {
@@ -457,6 +470,13 @@ export interface PrVerdict {
   ok: boolean;
   baseOk: boolean;
   stateOk: boolean;
+  /** Draft でないこと */
+  readyOk: boolean;
+  /** レビューの依頼が残っていないこと */
+  requestsOk: boolean;
+  /** まだレビューしていないレビュアー */
+  requested: string[];
+  approval: { required: boolean; ok: boolean; approvedBy: string[]; changesRequestedBy: string[] };
   checks: { status: ChecksStatus; failing: string[]; pending: string[]; total: number };
   /** ok でない理由（人間と監督に示す） */
   problems: string[];
@@ -490,9 +510,28 @@ function judgeCheck(entry: unknown): { name: string; verdict: CheckVerdict } {
  * 取り込みは監督がローカルで git merge して push するので、GitHub のブランチ保護や
  * 必須チェックは通らない。その代わりにここで、PR の向き先と CI を確かめる。
  * CI が1つも無い（paths フィルタで走らない、CI が無いリポジトリなど）ときは、
- * 確かめるものが無いので失敗にしない。ただし none として区別して返す
+ * 確かめるものが無いので失敗にしない。ただし none として区別して返す。
+ *
+ * 承認は既定では不問。requireApproval のときは、1人以上の承認があり、変更の要求が
+ * 残っていないことを求める。reviewDecision はブランチ保護で承認が必須のときしか
+ * 値が入らないので使わず、レビュアーごとの最新のレビュー（latestReviews）から判定する
  */
-export function judgePr(view: PrView, conductorBranch: string): PrVerdict {
+function reviewerName(entry: unknown): string {
+  const item = (typeof entry === "object" && entry !== null ? entry : {}) as Record<string, unknown>;
+  const author = typeof item["author"] === "object" && item["author"] !== null ? (item["author"] as Record<string, unknown>) : {};
+  return String(item["login"] ?? item["slug"] ?? item["name"] ?? author["login"] ?? "（名前なし）");
+}
+
+function reviewState(entry: unknown): string {
+  const state = (entry as Record<string, unknown> | null)?.["state"];
+  return typeof state === "string" ? state.toUpperCase() : "";
+}
+
+export function judgePr(
+  view: PrView,
+  conductorBranch: string,
+  options: PrOptions = { requireApproval: false },
+): PrVerdict {
   const judged = view.statusCheckRollup.map(judgeCheck);
   const failing = judged.filter((check) => check.verdict === "fail").map((check) => check.name);
   const pending = judged.filter((check) => check.verdict === "pending").map((check) => check.name);
@@ -501,7 +540,23 @@ export function judgePr(view: PrView, conductorBranch: string): PrVerdict {
 
   const baseOk = view.baseRefName === conductorBranch;
   const stateOk = view.state === "OPEN";
+  const readyOk = view.isDraft !== true;
+  const requested = view.reviewRequests.map(reviewerName);
+  const requestsOk = requested.length === 0;
+  const approvedBy = view.latestReviews.filter((r) => reviewState(r) === "APPROVED").map(reviewerName);
+  const changesRequestedBy = view.latestReviews
+    .filter((r) => reviewState(r) === "CHANGES_REQUESTED")
+    .map(reviewerName);
+  const approvalOk = !options.requireApproval || (approvedBy.length > 0 && changesRequestedBy.length === 0);
+
   const problems: string[] = [];
+  if (!readyOk) problems.push("PR が Draft です（Ready for Review になっていません）");
+  if (!requestsOk) problems.push(`レビューの依頼が残っています: ${requested.join(", ")}`);
+  if (options.requireApproval && changesRequestedBy.length > 0) {
+    problems.push(`変更が要求されています: ${changesRequestedBy.join(", ")}`);
+  } else if (!approvalOk) {
+    problems.push("承認（Approve）がありません");
+  }
   if (!baseOk) {
     problems.push(`PR のマージ先が conductor ブランチではありません（期待: ${conductorBranch} / 実際: ${view.baseRefName}）`);
   }
@@ -513,6 +568,10 @@ export function judgePr(view: PrView, conductorBranch: string): PrVerdict {
     ok: problems.length === 0,
     baseOk,
     stateOk,
+    readyOk,
+    requestsOk,
+    requested,
+    approval: { required: options.requireApproval, ok: approvalOk, approvedBy, changesRequestedBy },
     checks: { status, failing, pending, total: judged.length },
     problems,
   };

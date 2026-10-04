@@ -394,8 +394,9 @@ const CONDUCTOR = "hikyaku/001-test/conductor";
 
 function prView(overrides: Record<string, unknown> = {}) {
   return {
-    number: 7, state: "OPEN", baseRefName: CONDUCTOR, headRefName: "hikyaku/001-test/architect",
+    number: 7, state: "OPEN", isDraft: false, baseRefName: CONDUCTOR, headRefName: "hikyaku/001-test/architect",
     statusCheckRollup: [{ __typename: "CheckRun", name: "typecheck", status: "COMPLETED", conclusion: "SUCCESS" }],
+    reviewRequests: [], latestReviews: [],
     ...overrides,
   } as Parameters<typeof judgePr>[0];
 }
@@ -412,6 +413,57 @@ test("conductor: マージ先が conductor ブランチでなければ取り込�
   assert.equal(verdict.ok, false);
   assert.equal(verdict.baseOk, false);
   assert.match(verdict.problems[0] ?? "", /期待: hikyaku\/001-test\/conductor \/ 実際: main/);
+});
+
+test("conductor: Draft の PR は取り込めない", () => {
+  const verdict = judgePr(prView({ isDraft: true }), CONDUCTOR);
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.readyOk, false);
+  assert.match(verdict.problems.join("\n"), /Draft/);
+});
+
+test("conductor: レビューの依頼が残っていれば（人・チーム・Bot のどれでも）取り込めない", () => {
+  const requests = [
+    { __typename: "User", login: "alice" },
+    { __typename: "Team", name: "Platform", slug: "platform" },
+    { __typename: "Bot", login: "copilot-pull-request-reviewer" },
+  ];
+  const verdict = judgePr(prView({ reviewRequests: requests }), CONDUCTOR);
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.requestsOk, false);
+  assert.deepEqual(verdict.requested, ["alice", "platform", "copilot-pull-request-reviewer"]);
+  assert.match(verdict.problems.join("\n"), /レビューの依頼が残っています: alice, platform, copilot-pull-request-reviewer/);
+});
+
+test("conductor: 承認は既定では不問で、コメントだけのレビューや変更の要求でも取り込める", () => {
+  const reviews = [
+    { author: { login: "copilot-pull-request-reviewer" }, state: "COMMENTED" },
+    { author: { login: "bob" }, state: "CHANGES_REQUESTED" },
+  ];
+  const verdict = judgePr(prView({ latestReviews: reviews }), CONDUCTOR);
+  assert.equal(verdict.ok, true);
+  assert.equal(verdict.approval.required, false);
+});
+
+test("conductor: 承認を必須にすると、承認が1人以上あり、変更の要求が残っていない場合だけ取り込める", () => {
+  const strict = { requireApproval: true };
+  const approve = { author: { login: "alice" }, state: "APPROVED" };
+  const comment = { author: { login: "copilot-pull-request-reviewer" }, state: "COMMENTED" };
+  const changes = { author: { login: "bob" }, state: "CHANGES_REQUESTED" };
+
+  const none = judgePr(prView(), CONDUCTOR, strict);
+  assert.equal(none.ok, false);
+  assert.match(none.problems.join("\n"), /承認（Approve）がありません/);
+  assert.equal(judgePr(prView({ latestReviews: [comment] }), CONDUCTOR, strict).ok, false);
+
+  const approved = judgePr(prView({ latestReviews: [comment, approve] }), CONDUCTOR, strict);
+  assert.equal(approved.ok, true);
+  assert.deepEqual(approved.approval.approvedBy, ["alice"]);
+
+  const blocked = judgePr(prView({ latestReviews: [approve, changes] }), CONDUCTOR, strict);
+  assert.equal(blocked.ok, false);
+  assert.deepEqual(blocked.approval.changesRequestedBy, ["bob"]);
+  assert.match(blocked.problems.join("\n"), /変更が要求されています: bob/);
 });
 
 test("conductor: 開いていない PR は取り込めない", () => {
@@ -487,6 +539,32 @@ test("CLI: conductor check-pr は gh pr view の結果で取り込めるかを�
   assert.equal(failing.status, 2);
   assert.match(failing.stdout, /CI: fail/);
   assert.match(failing.stderr, /CI が失敗しています: typecheck/);
+
+  const draft = withGh(prView({ isDraft: true, reviewRequests: [{ __typename: "User", login: "alice" }] }));
+  assert.equal(draft.status, 2);
+  assert.match(draft.stderr, /Draft/);
+  assert.match(draft.stderr, /レビューの依頼が残っています: alice/);
+
+  // 古い gh などで新しいフィールドが欠けても落ちない
+  const sparse = withGh({ number: 7, state: "OPEN", baseRefName: CONDUCTOR, headRefName: "x" }, "--json");
+  assert.equal(sparse.status, 0, sparse.stderr);
+});
+
+test("CLI: [conductor] require_approval を設定すると check-pr が承認を求める", (t) => {
+  const directory = workspace(t, true);
+  const bin = temporaryBin(t, directory);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[conductor]\nrequire_approval = true\n');
+  writeFileSync(join(bin, "gh"), `#!/bin/sh\ncat <<'EOF'\n${JSON.stringify(prView())}\nEOF\n`);
+  chmodSync(join(bin, "gh"), 0o755);
+  const saved = process.env["PATH"];
+  process.env["PATH"] = `${bin}:${saved}`;
+  try {
+    const result = cli(directory, "conductor", "check-pr", "7", "001");
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /承認（Approve）がありません/);
+  } finally {
+    process.env["PATH"] = saved;
+  }
 });
 
 test("CLI: conductor check-pr は gh が PR を取得できなければ終了コード 1", (t) => {

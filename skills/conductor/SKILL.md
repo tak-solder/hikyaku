@@ -219,8 +219,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {phase} {cycle
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor check-pr {PR の番号か URL} {cycle} --json
 ```
 
-  - **マージ先が conductor ブランチであること**、PR が開いていること、**CI が失敗も待機もしていないこと**を
-    確かめる。満たしていなければ終了コード 2 になり、理由が `problems` に入る
+  - **マージ先が conductor ブランチであること**、PR が開いていること、**Draft でない（Ready for Review の）こと**、
+    **レビューの依頼が残っていないこと**、**CI が失敗も待機もしていないこと**を確かめる。
+    `[conductor] require_approval = true` なら、1人以上の承認があり変更の要求が残っていないことも求める
+    （既定では承認は不問）。満たしていなければ終了コード 2 になり、理由が `problems` に入る
   - 取り込みはローカルの `git merge` と push で行うので、GitHub のブランチ保護や必須チェックは働かない。
     この検証がその代わりになる
   - `checks.status` が `pending` なら、`gh pr checks {PR} --watch` を Bash の `run_in_background` で
@@ -228,7 +230,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor check-pr {PR の番�
   - `none`（CI が1つも無い）は失敗にならない。ただし PR を作った直後はチェックが登録されていないことが
     あるので、一度だけ少し待って再実行する。それでも `none` なら、最後の PR の本文に
     「フェーズの PR に CI が走っていなかった」と書く
-  - `fail` や、マージ先の食い違いは、取り込まずに `problems` を示して人間に上げる（自分で直さない）
+  - Draft・レビューの依頼・承認の不足は、監督が解消できない（`gh pr ready` で Draft を外したり、
+    依頼を取り下げたりしない）。取り込まずに `problems` を示して人間に上げ、人間が対応したら
+    `check-pr` をやり直す
+  - `fail` や、マージ先の食い違いも、取り込まずに `problems` を示して人間に上げる（自分で直さない）
 
 - [ ] 検証を通った PR を conductor ブランチに取り込む
 

@@ -18,9 +18,9 @@ ARCHITECT 以降を監督セッションに任せる conductor を追加する�
 - **`hikyaku conductor launch`**: 子（`claude -p`）の起動・再開コマンドを組み立てて返す。自分では実行しない。子に既定で許可するのは、スキルが使う `git` のサブコマンドと Hikyaku CLI の実行などに限る（`git -c` や `node -e` の形は許可しない）
 - **`hikyaku conductor parse`**: 子の結果ファイルから gate / done / blocked を取り出し、gate なら問いの振り分けを返す。ブロックが規約どおりでなければ `violation` を返す
 - **`launch` / `parse` の `--expect-digest`**: 監督が起動時に人間と合意したときの設定のダイジェスト（profile と `.hikyaku.config` の内容から作る）を渡す。設定が変わっていればエラーで止まる
-- **`hikyaku conductor check-pr`**: フェーズの PR を conductor ブランチに取り込む前に、マージ先が conductor ブランチであること・PR が開いていること・CI が失敗も待機もしていないことを `gh pr view` で確かめる。満たさなければ終了コード 2。監督はローカルの `git merge` で取り込むため、ブランチ保護の必須チェックが働かない。その代わりの検証
+- **`hikyaku conductor check-pr`**: フェーズの PR を conductor ブランチに取り込む前に、マージ先が conductor ブランチであること・PR が開いていること・Draft でないこと・レビューの依頼（人・チーム・Bot）が残っていないこと・CI が失敗も待機もしていないことを `gh pr view` で確かめる。`[conductor] require_approval = true` なら、1人以上の承認があり変更の要求が残っていないことも求める。満たさなければ終了コード 2。監督はローカルの `git merge` で取り込むため、ブランチ保護の必須チェックが働かない。その代わりの検証
 - **`hikyaku conductor lint`**: 子として動くスキルの問いのタグと、conductor の ID の表の食い違いを検出する（プラグイン本体の開発用。CI の check-scripts が実行する）
-- **`[conductor]` 設定**: `escalate` / `delegate`（問いの ID ごとに人間・監督への振り分けを上書きする）、`allowed_tools`（子に許可するツールを足す）、`budget_per_run`（呼び出しごとの費用の上限。既定 0 で上限なし）、`model` と `[conductor.models]`（子のモデル。全フェーズの既定と、フェーズごとの上書き。未指定なら Claude Code の既定）
+- **`[conductor]` 設定**: `escalate` / `delegate`（問いの ID ごとに人間・監督への振り分けを上書きする）、`allowed_tools`（子に許可するツールを足す）、`budget_per_run`（呼び出しごとの費用の上限。既定 0 で上限なし）、`require_approval`（PR を取り込む条件に承認を加える。既定 false）、`model` と `[conductor.models]`（子のモデル。全フェーズの既定と、フェーズごとの上書き。未指定なら Claude Code の既定）
 
 ### Changed
 
