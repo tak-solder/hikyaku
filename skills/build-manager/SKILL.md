@@ -6,7 +6,7 @@ disable-model-invocation: false
 argument-hint: "[{cycle}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.2.1"
+  version: "2.3.0"
 ---
 
 # Hikyaku Build Manager
@@ -73,6 +73,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist read {cycle}
 
 ビルドの追加:
 - タイトル、スコープ（やること / やらないこと / 受け入れ基準）を定義する
+- user-stories.md の受け入れ基準（`US-N.M`）のうち、このビルドで満たすものを「対応する受け入れ基準」に書く
+- 「やらないこと」には、user-stories.md の「スコープ外」に当たるものも含める
 - 依存関係を特定する（どのビルドの完了後に実行可能か）
 - buildID の採番はスクリプトが行う（`max(既存) + 1`）
 
@@ -82,7 +84,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist read {cycle}
 - **完了済み（`PR` 列が非空）のビルドは更新しない。** スクリプトも拒否する
 
 ビルドの分割:
-- 元ビルドに残す範囲と新ビルドに移す範囲を定義する
+- 元ビルドに残す範囲と新ビルドに移す範囲を定義する。「対応する受け入れ基準」も移した範囲に合わせて分ける
 - 新ビルドは元ビルドに依存するのが一般的だが、スコープに応じて判断する
 - 元ビルドに依存していたビルドの依存を、新ビルドに付け替える必要がないか確認する
 
@@ -126,7 +128,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist add {cycle} \
 
 - [ ] `tasklist_review` が有効な場合（express / standard / thorough）、`doc-reviewer` を起動する（`context: tasklist`）
   - この時点ではまだファイルに書き込まれていない。`--dry-run` の出力（変更後の一覧・依存グラフ）と issue.md の本文をプロンプトに直接含めて渡す
-  - 参照として渡す: `cycles/{cycle}/design/design-delta.md`（存在する場合）,
+  - 参照として渡す: `cycles/{cycle}/planning/user-stories.md`, `cycles/{cycle}/design/design-delta.md`（存在する場合）,
     `{HIKYAKU_ROOT}/bp-guide/README.md`（存在する場合。無ければ `bp guide --markdown` の出力を
     プロンプトに含める）
   - BP のレビュー対象は入力値（列挙したファイル数がスコープと合っているか、加算要素の

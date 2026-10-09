@@ -39,12 +39,12 @@
 
 | 昇格先 | 何を昇格させるか | 主な素材 |
 |---|---|---|
-| `overview` | アーキテクチャに影響した変更。責務・境界・データフローの変化 | design-delta / handoff |
-| `learnings` | 再現条件が明確な落とし穴 | handoff / retrospective の L-N |
-| `constraints` | 実装中に判明した新たな制約（数値で書けるもの） | handoff |
+| `overview` | アーキテクチャに影響した変更。責務・境界・データフローの変化 | design-delta / handoff の「overview への影響」 |
+| `learnings` | 再現条件が明確な落とし穴 | handoff の「踏んだ落とし穴」/ retrospective の L-N |
+| `constraints` | 実装中に判明した新たな制約（数値で書けるもの） | handoff の「新たな制約」 |
 | `conventions` ほか規約系 | 以後の書き方・進め方の取り決め | retrospective の `doc:` 分類 |
 | `instructions.md` | このリポジトリで Hikyaku を回すときの手順・前提 | retrospective の `workflow` 分類 |
-| ADR | `status: accepted` → `implemented` に更新 | design |
+| ADR | `status: accepted` → `implemented` に更新。覆された判断は旧エントリを `superseded` にし、新エントリを起こす | design / handoff の「覆した設計判断」 |
 | document-guide | このサイクルで新規作成したドキュメントの行を更新 | — |
 
 昇格先は `document-guide.md` が宣言する論理名だけです。そこに無い論理名へは昇格させません（勝手にドキュメントを作らないため）。「未作成」で登録されている論理名へ昇格させる場合は新規作成になるので、その旨も併せて承認を得ます。

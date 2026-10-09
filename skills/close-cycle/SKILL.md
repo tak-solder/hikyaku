@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "[{cycle}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.2.1"
+  version: "2.3.0"
 ---
 
 # Hikyaku Close Cycle
@@ -150,6 +150,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title close {cycle}
   - `workflow` は本セッションが直接捌く。`記録のみ` は読ませる必要がない
   - ビルドが10本あれば retrospective.md は12ファイルになる。委任してコンテキストを
     守る意味が、渡す量を絞らないと消える
+- [ ] handoff.md からは「昇格素材（close-cycle 向け）」の節だけを拾わせる
+  - 前半の「後続ビルド向け」はビルド間の引き継ぎで、昇格の素材ではない
+  - 節ごとに昇格先が決まっている（下の表）。節の外に書かれた発見は、内容で昇格先を判断させる
 - [ ] エージェントには「候補リスト」だけを返させ、本文の執筆は本セッションで行う
 - [ ] `workflow` 分類の改善提案は、本セッションが各 retrospective.md から直接読む
 
@@ -161,12 +164,12 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title close {cycle}
 
 | 昇格先 | 何を昇格させるか | 主な素材 |
 |---|---|---|
-| overview | アーキテクチャに影響した変更。責務・境界・データフローの変化 | design-delta / handoff |
-| learnings | 再現条件が明確な落とし穴 | handoff / retrospective の L-N |
-| constraints | 実装中に判明した新たな制約（数値で書けるもの） | handoff |
+| overview | アーキテクチャに影響した変更。責務・境界・データフローの変化 | design-delta / handoff の「overview への影響」 |
+| learnings | 再現条件が明確な落とし穴 | handoff の「踏んだ落とし穴」/ retrospective の L-N |
+| constraints | 実装中に判明した新たな制約（数値で書けるもの） | handoff の「新たな制約」 |
 | conventions ほか規約系 | 以後の書き方・進め方の取り決め | retrospective の `doc:` 分類 |
 | `instructions.md` | このリポジトリで Hikyaku を回すときの手順・前提 | retrospective の `workflow` 分類 |
-| ADR | `status: accepted` → `implemented` に更新 | design |
+| ADR | `status: accepted` → `implemented` に更新。覆された判断は旧エントリを `superseded` にし、新エントリを起こす | design / handoff の「覆した設計判断」 |
 | document-guide | このサイクルで新規作成したドキュメントの行を更新 | — |
 
 `doc:` 分類の論理名は `document-guide.md` が正。**そこに無い論理名は昇格先にしない**

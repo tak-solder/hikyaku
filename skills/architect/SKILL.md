@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "[{cycle}] [build-{NN}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.2.1"
+  version: "2.3.0"
 ---
 
 # Hikyaku Architect
@@ -302,6 +302,7 @@ codebase-survey.md・planning/・永続ドキュメントに明記されてい�
   - 書かない: 実装コード / ビルド分割（tasklist が正）/ 恒久的な設計判断（ADR が正）/
     既に永続側にある内容の再掲
   - 「永続ドキュメントのどこを更新する予定か」は close-cycle と cycle-scanner の入力になる
+  - user-stories.md の「スコープ外」に挙げたものは設計に含めない。必要だと判断したら、設計に入れずに企画フェーズへの差し戻しをユーザーに提案する
 - [ ] コミット & push する
 
 → Step 5 へ。
@@ -343,6 +344,10 @@ codebase-survey.md・planning/・永続ドキュメントに明記されてい�
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate {cycle}
 ```
+
+user-stories.md の受け入れ基準に番号があれば、`validate` はどのビルドにも割り当てられていない
+受け入れ基準を報告する。報告されたら、該当するビルドの「対応する受け入れ基準」に足すか、
+満たすビルドを追加する（build-manager を再度呼び出す）。
 
 → 承認を得たら Step 6 へ。フィードバックの内容に応じて対応する:
 - 設計へのフィードバック → Step 3 に戻る

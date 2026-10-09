@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "[{cycle}] [{buildID}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.2.1"
+  version: "2.3.0"
 ---
 
 # Hikyaku Builder
@@ -258,6 +258,7 @@ Agent に渡すフォーマット指定:
 ## {テスト対象クラス/モジュール名}
 
 ### {メソッド名}: {シナリオ名}
+- 対応: US-1.1（検証する user-stories.md の受け入れ基準。補助的なシナリオは「—」）
 - Given: （前提条件）
 - When: （操作）
 - Then: （期待結果）
@@ -267,6 +268,7 @@ Agent に渡すフォーマット指定:
 - 正常系・異常系・境界値を網羅する
 - Given/When/Then は具体的な値を含める（例: `Given: メールアドレス "user@example.com" のユーザーが登録済み`）
 - 1シナリオ = 1つの検証観点に絞る。表形式は使わないこと
+- issue.md の「対応する受け入れ基準」に挙がった番号は、どれも1つ以上のシナリオの「対応」に現れるようにする
 ````
 
 - [ ] コミット & push する
@@ -360,7 +362,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr base build-{NN} {cycle} --re
 - [ ] 統合した指摘をユーザーに提示し、対応を決める
   - 今修正する — 修正して Step 5 に戻る
   - 新ビルド化して後で対応 — `/hikyaku:build-manager` を呼び出して新ビルドを追加する
-  - そのまま進める — 指摘を `handoff.md` の「既知の制約・注意点」に記録する
+  - そのまま進める — 指摘を `handoff.md` の「意図的に残した未対応」に記録する
 
 → Step 7 へ。
 
@@ -368,13 +370,13 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr base build-{NN} {cycle} --re
 
 - [ ] `cycles/{cycle}/build-{NN}/handoff.md` を作成する
   - テンプレートは [templates.md](references/templates.md) を参照
-  - 書く: 実装内容の要約 / 後続ビルドが知るべき変更 / 意図的に残した未対応 /
-    覆した設計判断とその理由 / 実装中に判明した新たな制約
+  - 前半は後続ビルド向け: 実装内容の要約 / 公開インターフェース / 環境変更 / 意図的に残した未対応
+  - 後半は close-cycle 向けの昇格素材: overview への影響 / 新たな制約 / 踏んだ落とし穴 / 覆した設計判断とその理由
   - 書かない: 実装の全詳細（コードが正）/ 一般的な進捗報告
 
-handoff.md は close-cycle の昇格素材になる。恒久的な価値のある発見（落とし穴、
-アーキテクチャへの影響、新たな制約）はここに書いておけば、close-cycle が
-learnings / overview / constraints へ昇格させる。あなたが永続ドキュメントを
+handoff.md の後半は節ごとに昇格先が決まっている（overview・constraints・learnings・ADR）。
+どこに書くか迷う発見は、後から読む人が何を直すことになるかで節を選ぶと、close-cycle が
+仕分けし直さずに昇格させられる。あなたが永続ドキュメントを
 直接書き換えることはない。
 
 - [ ] コミット & push する
