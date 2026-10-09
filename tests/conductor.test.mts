@@ -239,6 +239,8 @@ budget_per_run = 2.5
   for (const flag of ["--session-id", "--disallowedTools", "--append-system-prompt-file", "--permission-prompts"]) {
     assert.ok(output.argv.includes(flag), flag);
   }
+  const disallowed = output.argv.indexOf("--disallowedTools");
+  assert.deepEqual(output.argv.slice(disallowed + 1, disallowed + 4), ["AskUserQuestion", "ScheduleWakeup", "CronCreate"]);
   assert.equal(output.argv[output.argv.indexOf("--max-budget-usd") + 1], "2.5");
   assert.ok(output.command.endsWith("< /dev/null > r.json"));
   assert.deepEqual(snapshot(directory), before);
@@ -247,6 +249,32 @@ budget_per_run = 2.5
     directory, "conductor", "launch", "architect", "001", "build-01", "--expect-digest", expected, "--json",
   ));
   assert.equal(returned.prompt, "/hikyaku:architect 001-test build-01");
+});
+
+test("CLI: conductor launch の architect add は指摘のファイルを必須とし、プロンプトの add の後ろに続ける", (t) => {
+  const directory = workspace(t, true);
+  const expected = digest(directory);
+  const missing = cli(directory, "conductor", "launch", "architect", "001", "add", "--expect-digest", expected);
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /--message で渡してください/);
+
+  write(directory, "findings.md", "PR #9 の指摘: 削除の取り消しができない\n");
+  const output = JSON.parse(succeeds(
+    directory, "conductor", "launch", "architect", "001", "add", "--message", join(directory, "findings.md"),
+    "--expect-digest", expected, "--json",
+  ));
+  assert.equal(output.prompt, "/hikyaku:architect 001-test add");
+  assert.equal(output.argv[2], "/hikyaku:architect 001-test add\n\nPR #9 の指摘: 削除の取り消しができない");
+  assert.ok(output.argv.includes("--session-id"));
+
+  // 再開は通常どおり、回答だけを渡す
+  write(directory, "answer.md", "回答（委任された判断）: 承認\n");
+  const resumed = JSON.parse(succeeds(
+    directory, "conductor", "launch", "architect", "001", "add", "--resume", output.sessionId,
+    "--message", join(directory, "answer.md"), "--expect-digest", expected, "--json",
+  ));
+  assert.equal(resumed.argv[2], "回答（委任された判断）: 承認");
+  assert.ok(resumed.argv.includes("--resume"));
 });
 
 test("CLI: conductor launch は再開時に回答ファイルを渡し、組で指定されなければ拒否する", (t) => {

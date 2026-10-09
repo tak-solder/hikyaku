@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 各エントリには「何が変わったか」と「利用者に必要な対応」を書きます。設計判断の経緯は issue と `docs/` を参照してください。
 
+## [2.4.1]
+
+conductor を実際に回したときに見つかった問題を直し、最後の PR に付いた指摘へビルドを足して対応する入口を足した。
+
+### Added
+
+- **architect の指摘からの追加設計（`/hikyaku:architect {cycle} add {指摘}`）**: 全ビルドを終えたあとに付いたレビューの指摘を受けて、対応するビルドを足す。architect のブランチで作業し、並行サイクルの確認と既存コードの調査は行わない。設計の変更が要るときだけ質問・設計判断・承認を経て、build-manager でビルドを追加し、PR を作る。完了したビルドは更新しない
+- **conductor**: 最後の PR が開いたまま再実行されると、指摘にビルドを足して対応するかを人間に尋ね、対応する指摘を受け取って architect を追加設計として起動する。追加したフェーズの PR は、最後の PR の本文に追記する
+- **`hikyaku conductor launch architect {cycle} add --message {指摘のファイル}`**: 追加設計の子を起動する。初回の起動でも `--message` が必須で、中身がプロンプトの `add` の後ろに続けて渡る
+
+### Fixed
+
+- **`hikyaku conductor launch`**: 子に `ScheduleWakeup` / `CronCreate` を使わせない。子が gate を出したあとタイマーで回答を待つと、`claude -p` が終了せず、結果ファイルも完了の通知も監督に届かなかった。非対話規約にも、ブロックを出したらそのままターンを終えることを書いた
+
+### Migration
+
+- 対応は不要。設定・ファイル形式に変更はない
+
 ## [2.4.0]
 
 ARCHITECT 以降を監督セッションに任せる conductor を追加する（[issue #40](https://github.com/tak-solder/hikyaku/issues/40)）。

@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "[{cycle}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.4.0"
+  version: "2.4.1"
 ---
 
 # Hikyaku Conductor
@@ -315,8 +315,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify conductor {cycle}
 gh pr list --head {conductor ブランチ} --base {baseBranch} --state open --json number,url
 ```
 
-  - **見つかったら、PR を作らない。** その URL を人間に示し、下の「レビュアーをアサインする」手順だけ
-    実行して（依頼済みの相手には重ねて依頼しないので、何度実行しても同じ）、案内して**終了**する
+  - **見つかったら、PR を作らない。** 「最後の PR が既にあるとき」へ進む
   - 見つからなければ、次の手順で作る（閉じられた PR や、マージ済みの PR は対象にしない）
 - [ ] conductor ブランチ → デフォルトブランチの PR を作る
   - タイトルは `hikyaku pr title conductor {cycle}` で生成する
@@ -332,6 +331,31 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers conductor 
 ```
 - [ ] PR の URL を示し、「マージしたら `/hikyaku:conductor {cycle}` を実行すると CLOSE から再開する」と
   案内して**終了**する
+
+#### 最後の PR が既にあるとき
+
+監督が落ちて再実行された場合と、最後の PR に付いた指摘へビルドを足して対応する場合に来る。
+
+- [ ] 最後の PR の本文に無い、conductor ブランチに取り込んだフェーズの PR があれば（指摘を受けて足した
+  architect とビルドの PR）、本文の一覧に追記する（`gh pr edit {PR} --body-file {ファイル}`）。
+  レビュアーのアサイン（上の手順。依頼済みの相手には重ねて依頼しない）を行い、PR の URL を示して
+  **終了**する
+- [ ] 追記するものが無ければ、PR の URL を示し、最後の PR の指摘にビルドを足して対応するかを人間に
+  尋ねる（`AskUserQuestion`）。対応しないなら、マージ後の再開を案内して**終了**する
+- [ ] 対応するなら、対応する指摘を人間から受け取る（PR のコメントの URL と内容。監督は指摘を選ばない）。
+  architect のブランチ（`branch verify architect {cycle}` の `expected`）が残っていれば、前回の追加設計が
+  途中で止まっている。そのことも人間に示す
+- [ ] 指摘をスクラッチパッドのファイルに書き、architect を指摘からの追加設計として起動する。ブランチは
+  Step 2 の architect と同じく、conductor ブランチから用意する（残っていればそれに切り替える）
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch architect {cycle} add \
+  --message {指摘のファイル} --expect-digest {digest} --json
+```
+
+  - 以後は Step 3 と同じ。architect の PR を検証して conductor ブランチに取り込み、Step 1 から
+    追加したビルドを進める。最後のビルドを取り込むと、またこの節に来て本文に追記する
+  - 再開（`--resume`）では、通常どおり回答のファイルだけを `--message` に渡す
 
 ### Step 5: 完了
 
