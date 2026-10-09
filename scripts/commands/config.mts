@@ -75,6 +75,7 @@ register({
         "",
         `branch       ${config.branch.prefix}${config.branch.separator}{cycle}${config.branch.separator}{phase}`,
         `pr.title     ${config.pr.title}`,
+        `pr.reviewers ${config.pr.reviewers.length === 0 ? "(アサインしない)" : config.pr.reviewers.join(", ")}`,
         `session      ${config.session.title === "" ? "(変更しない)" : config.session.title}`,
         `external     ${config.external.target}`,
       );

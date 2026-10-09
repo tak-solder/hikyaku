@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "[show|tune]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.3.0"
+  version: "2.4.0"
 ---
 
 # Hikyaku BP Guide
@@ -183,6 +183,13 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate
 - [ ] コミットする前に、もう一度ブランチを確認する（`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify bp-guide`）
 - [ ] コミットして PR を作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title bp-guide` で生成）
   - PR 本文に、変更の根拠（どのビルドの乖離から判断したか）を書く
+- [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers bp-guide --pr {PR の URL}
+```
+
+  失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
 - [ ] 完了後、次を案内する
 
 ```

@@ -99,12 +99,12 @@ export function renderOverview(version: string): string {
   }
 
   for (const command of top) {
-    lines.push(`  ${command.name.padEnd(18)}${command.summary}`);
+    lines.push(`  ${command.name.padEnd(22)}${command.summary}`);
   }
   for (const list of grouped.values()) {
     lines.push("");
     for (const command of list) {
-      lines.push(`  ${command.name.padEnd(18)}${command.summary}`);
+      lines.push(`  ${command.name.padEnd(22)}${command.summary}`);
     }
   }
 
@@ -130,7 +130,7 @@ export function renderNamespaceHelp(prefix: string): string | undefined {
   if (list.length === 0) return undefined;
   const lines = [`${prefix} コマンド:`, ""];
   for (const command of list) {
-    lines.push(`  ${command.name.padEnd(18)}${command.summary}`);
+    lines.push(`  ${command.name.padEnd(22)}${command.summary}`);
   }
   return lines.join("\n");
 }

@@ -6,7 +6,7 @@ disable-model-invocation: false
 argument-hint: "[{cycle}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.3.0"
+  version: "2.4.0"
 ---
 
 # Hikyaku Build Manager
@@ -136,7 +136,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist add {cycle} \
   - 明確な不整合・入力値の乖離は反映する（主観的な指摘は無視してよい）。
     反映が必要な場合は Step 1 からやり直し、`bp estimate` を再実行する
 
-- [ ] 以下をユーザーに提示して承認を得る
+- [ ] 以下をユーザーに提示して承認を得る（G6）
   - tasklist の変更差分 — スクリプトが返した一覧
   - 依存グラフの変更 — スクリプトが返した Mermaid グラフ
   - issue.md の内容 — 新規作成なら全文、更新なら変更箇所

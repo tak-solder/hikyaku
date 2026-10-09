@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "[{cycle}] [{buildID}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.3.0"
+  version: "2.4.0"
 ---
 
 # Hikyaku Builder
@@ -49,7 +49,7 @@ HIKYAKU_ROOT は `.hikyaku.config` から解決されるので、引数では受
 
 `$ARGUMENTS[0]` でサイクルが指定されていればそれを渡す。省略された場合は
 現在のブランチ → `.hikyaku.local` → 唯一の進行中サイクルの順で決まる。
-決められないときは進行中サイクルの一覧を添えてエラーになるので、ユーザーに尋ねてから
+決められないときは進行中サイクルの一覧を添えてエラーになるので、ユーザーに尋ねてから（ask: cycle）
 指定し直す。推測して進めない（別サイクルへコミットする事故になる）。
 
 出力の `cycle` と `cycleSource` を、作業対象としてユーザーに1行で示す。
@@ -83,7 +83,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle}
 Step 2 でブランチを決めたあと、もう一度 `next` を実行して確認する。
 
 依存関係がないビルドは並行実行できる。`next` が「着手中」と表示したビルドは、
-他セッションが作業している可能性がある。選ぶ前にユーザーに確認する。待機中の行に
+他セッションが作業している可能性がある。選ぶ前にユーザーに確認する（ask: build-select）。待機中の行に
 `ブランチあり` が付いているものも同様（他セッションが積んで作業している可能性）。
 
 → Step 1 へ。
@@ -129,7 +129,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify build-{NN} {cycle
 |---|---|
 | `ok: true` | そのまま続ける |
 | `ok: false` かつ `onBaseBranch: true` | `expected` の名前でブランチを作成して続ける |
-| `ok: false` かつ `onBaseBranch` が `false` / `null` | ユーザーに尋ねる（下記） |
+| `ok: false` かつ `onBaseBranch` が `false` / `null` | ユーザーに尋ねる（下記）（ask: branch） |
 
 3つ目はユーザーの判断であって、あなたの判断ではない。現在のブランチが実行環境に
 割り当てられたものだと分かっていても、**自分で決めずに必ず尋ねる。**
@@ -206,7 +206,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title build-{NN} {cycle
 
 ### Step 3: 実装計画とテストシナリオの作成
 
-- [ ] 不明点があれば `cycles/{cycle}/build-{NN}/questions.md` でユーザーに質問する
+- [ ] 不明点があれば `cycles/{cycle}/build-{NN}/questions.md` でユーザーに質問する（ask: questions）
 - [ ] `cycles/{cycle}/build-{NN}/plan.md` を作成する
   - テンプレートは [templates.md](references/templates.md) を参照
   - 含めるもの: 依存パッケージの選定、クラス設計（メソッドシグネチャ）、非機能要件
@@ -359,7 +359,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr base build-{NN} {cycle} --re
 - [ ] 指摘を統合する
   - 同一箇所への重複指摘は1件に統合し、`security-reviewer` の指摘を優先する
   - 「確度が低い懸念」は「確度: 要確認」ラベルを保持したまま別枠で提示する
-- [ ] 統合した指摘をユーザーに提示し、対応を決める
+- [ ] 統合した指摘をユーザーに提示し、対応を決める（ask: review-findings）
   - 今修正する — 修正して Step 5 に戻る
   - 新ビルド化して後で対応 — `/hikyaku:build-manager` を呼び出して新ビルドを追加する
   - そのまま進める — 指摘を `handoff.md` の「意図的に残した未対応」に記録する
@@ -409,6 +409,13 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr base build-{NN} {cycle}
   - 本文の末尾に上の参照行を入れる
   - PR 作成前の承認は取らない。PR はレビューのための提案であって不可逆ではなく、
     ユーザーが `/hikyaku:builder` を実行した時点で PR 作成まで依頼されている
+- [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers build-{NN} {cycle} --pr {PR の URL}
+```
+
+  失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
 
 - [ ] tasklist.md の PR 列を更新し、同じブランチへコミット & push する
 
@@ -494,7 +501,7 @@ Build {NN} が完了しました。
 満たせない、あるいは設計が前提にしている事実が実際のコードと食い違っていて設計の判断が
 変わる、と分かった場合の手順。ビルドの分割や追加で済むスコープの問題は上の「ビルド管理」で扱う。
 
-- [ ] **自分で設計を変えずに、ユーザーに提示して方針を確認する。** 次の選択肢を、何と何が
+- [ ] **自分で設計を変えずに、ユーザーに提示して方針を確認する（ask: design-conflict）。** 次の選択肢を、何と何が
   矛盾しているかの説明とともに示す
   1. 設計に合わせる（要件のほうを改める）
   2. 要件に合わせて、このビルドの中で設計を改める

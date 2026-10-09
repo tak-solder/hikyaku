@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "[{cycle}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.3.0"
+  version: "2.4.0"
 ---
 
 # Hikyaku Planner
@@ -258,6 +258,13 @@ GitHub MCP ツールで適用し、`cycle link {cycle} --external {URL}` で記�
 
 - [ ] PR を作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title plan {cycle}` で生成）
   - `external ref` が返した行（`Refs #12` など）を本文の末尾に入れる。空なら入れない
+- [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers plan {cycle} --pr {PR の URL}
+```
+
+  失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
 
 このフェーズの PR はドキュメントのみで、速やかにマージすることを想定している。
 デフォルトブランチに入っていない情報は他サイクルから見えないため。

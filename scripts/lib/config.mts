@@ -25,6 +25,13 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { BranchNaming } from "./branch.mts";
+import {
+  checkConductorAsks,
+  CONDUCTOR_PHASES,
+  DEFAULT_CONDUCTOR,
+  type ConductorConfig,
+  type ConductorPhase,
+} from "./conductor.mts";
 import { HikyakuError } from "./errors.mts";
 import { repoRoot } from "./paths.mts";
 import { parseToml, TomlError, type TomlTable, type TomlValue } from "./toml.mts";
@@ -182,6 +189,13 @@ export const DEFAULT_SECURITY_TRIGGERS = `- 個人情報・秘密情報を扱う
 - 決済（支払い、カード情報、請求、返金）`;
 
 export const DEFAULT_PR_TITLE = "[hikyaku] {cycle}: {phase} {title}";
+
+/**
+ * レビュアーのアサインをオフにできる単位。PR を作るスキルに対応する。
+ * build は build-NN の全て、conductor は監督が作る最後の PR
+ */
+export const REVIEWER_SKIP_TARGETS = ["init", "bp-guide", "create", "plan", "architect", "build", "close", "conductor"] as const;
+export type ReviewerSkipTarget = (typeof REVIEWER_SKIP_TARGETS)[number];
 /** セッション名の既定。空文字にするとセッション名を変更しない */
 export const DEFAULT_SESSION_TITLE = "{cycle} {phase} {title}";
 export const DEFAULT_BRANCH_PREFIX = "hikyaku";
@@ -228,11 +242,12 @@ export interface ResolvedConfig {
   gates: Gates;
   reviews: Reviews;
   branch: BranchNaming;
-  pr: { title: string };
+  pr: { title: string; reviewers: string[]; reviewersSkip: ReviewerSkipTarget[] };
   /** セッション名のテンプレート。空文字なら変更しない */
   session: { title: string };
   security: { triggers: string };
   external: { target: ExternalTarget; githubRepo?: string; asanaProjectGid?: string };
+  conductor: ConductorConfig;
   /**
    * ルート設定の ask に並んでいて、まだ答えが記録されていないキー。
    * create-cycle が尋ねる対象。サイクルを重ねた結果ここに残っていれば、
@@ -297,6 +312,127 @@ function readInteger(table: TomlTable | undefined, key: string, where: string): 
     throw new HikyakuError(`${where}.${key} は整数で指定してください`);
   }
   return value;
+}
+
+function readNumber(table: TomlTable | undefined, key: string, where: string): number | undefined {
+  const value = table?.[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new HikyakuError(`${where}.${key} は数値で指定してください`);
+  }
+  return value;
+}
+
+function readStringArray(table: TomlTable | undefined, key: string, where: string): string[] | undefined {
+  const value = table?.[key];
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new HikyakuError(`${where}.${key} は文字列の配列で指定してください`);
+  }
+  return value as string[];
+}
+
+/**
+ * [conductor] を読む。配列はキー単位のマージなので、サイクル設定に書くと
+ * ルート設定の配列を置き換える（足し合わせない）
+ */
+function readConductor(table: TomlTable | undefined): ConductorConfig {
+  const where = "[conductor]";
+  const budget = readNumber(table, "budget_per_run", where) ?? DEFAULT_CONDUCTOR.budgetPerRun;
+  if (budget < 0) {
+    throw new HikyakuError(`${where}.budget_per_run は 0 以上で指定してください（0 は上限なし）`);
+  }
+  const conductor: ConductorConfig = {
+    escalate: readStringArray(table, "escalate", where) ?? DEFAULT_CONDUCTOR.escalate,
+    delegate: readStringArray(table, "delegate", where) ?? DEFAULT_CONDUCTOR.delegate,
+    allowedTools: readStringArray(table, "allowed_tools", where) ?? DEFAULT_CONDUCTOR.allowedTools,
+    budgetPerRun: budget,
+    requireApproval: readBoolean(table, "require_approval", where) ?? DEFAULT_CONDUCTOR.requireApproval,
+    phaseReviewers: readReviewers(table, "phase_reviewers", where),
+    reviewTimeoutMinutes: readTimeout(table, where),
+    model: readModel(table, "model", where),
+    models: readConductorModels(readConductorModelsTable(table, where)),
+  };
+  checkConductorAsks(conductor, where);
+  return conductor;
+}
+
+/**
+ * レビュアーの指定を読む。人（login）、チーム（org/team）、Copilot（@copilot）を並べる。
+ * 空白やカンマを含む値は gh に渡すときに別の値として解釈されるので、その場で拒否する
+ */
+function readReviewers(table: TomlTable | undefined, key: string, where: string): string[] {
+  const values = readStringArray(table, key, where) ?? [];
+  for (const value of values) {
+    if (value === "" || /[\s,]/.test(value)) {
+      throw new HikyakuError(
+        `${where}.${key} に指定できない値があります: ${JSON.stringify(value)}`,
+        "人は login、チームは org/team、Copilot は @copilot で、1要素に1つずつ書いてください。",
+      );
+    }
+  }
+  return values;
+}
+
+/** [pr] reviewers_skip を読む。名前のタイプミスを黙って捨てると、オフにしたつもりのスキルにアサインされる */
+function readReviewerSkip(table: TomlTable | undefined): ReviewerSkipTarget[] {
+  const values = readStringArray(table, "reviewers_skip", "[pr]") ?? [];
+  for (const value of values) {
+    if (!(REVIEWER_SKIP_TARGETS as readonly string[]).includes(value)) {
+      throw new HikyakuError(
+        `[pr].reviewers_skip に指定できない値があります: ${value}`,
+        `使用できる値: ${REVIEWER_SKIP_TARGETS.join(" | ")}`,
+      );
+    }
+  }
+  return values as ReviewerSkipTarget[];
+}
+
+function readTimeout(table: TomlTable | undefined, where: string): number {
+  const value = readNumber(table, "review_timeout", where) ?? DEFAULT_CONDUCTOR.reviewTimeoutMinutes;
+  if (value < 0) throw new HikyakuError(`${where}.review_timeout は 0 以上で指定してください（0 は待たない）`);
+  return value;
+}
+
+function readModel(table: TomlTable | undefined, key: string, where: string): string | undefined {
+  const value = readString(table, key, where);
+  if (value !== undefined && value.trim() === "") {
+    throw new HikyakuError(`${where}.${key} に空文字は指定できません`, "Claude Code の既定に任せるなら、キーごと消してください。");
+  }
+  return value;
+}
+
+/**
+ * [conductor.models] を読む。フェーズ名のタイプミスを黙って捨てると、指定したつもりの
+ * モデルが効かないまま既定のモデルで動くので、未知のキーはエラーにする
+ */
+/** [conductor.models] を取り出す。models = "opus" のようにテーブル以外で書かれたら、黙って無視せず止める */
+function readConductorModelsTable(table: TomlTable | undefined, where: string): TomlTable | undefined {
+  if (table?.["models"] === undefined) return undefined;
+  const models = readTable(table, "models");
+  if (models === undefined) {
+    throw new HikyakuError(
+      `${where}.models はテーブルで指定してください`,
+      "全フェーズの既定は [conductor] の model に、フェーズごとの上書きは [conductor.models] の下に build = \"opus\" の形で書きます。",
+    );
+  }
+  return models;
+}
+
+function readConductorModels(table: TomlTable | undefined): Partial<Record<ConductorPhase, string>> {
+  const where = "[conductor.models]";
+  const models: Partial<Record<ConductorPhase, string>> = {};
+  for (const key of Object.keys(table ?? {})) {
+    if (!(CONDUCTOR_PHASES as readonly string[]).includes(key)) {
+      throw new HikyakuError(
+        `${where} に指定できないキーです: ${key}`,
+        `使用できるキー: ${CONDUCTOR_PHASES.join(" | ")}`,
+      );
+    }
+    const model = readModel(table, key, where);
+    if (model !== undefined) models[key as ConductorPhase] = model;
+  }
+  return models;
 }
 
 function checkEnum<T extends string>(
@@ -626,7 +762,11 @@ function finalize(
     gates,
     reviews,
     branch: readBranchNaming(readTable(merged, "branch"), DEFAULT_NAMING),
-    pr: { title: readString(readTable(merged, "pr"), "title", "[pr]") ?? DEFAULT_PR_TITLE },
+    pr: {
+      title: readString(readTable(merged, "pr"), "title", "[pr]") ?? DEFAULT_PR_TITLE,
+      reviewers: readReviewers(readTable(merged, "pr"), "reviewers", "[pr]"),
+      reviewersSkip: readReviewerSkip(readTable(merged, "pr")),
+    },
     session: {
       title:
         readString(readTable(merged, "session"), "title", "[session]") ?? DEFAULT_SESSION_TITLE,
@@ -639,6 +779,7 @@ function finalize(
       githubRepo: readString(externalTable, "github_repo", "[external]"),
       asanaProjectGid: readString(externalTable, "asana_project_gid", "[external]"),
     },
+    conductor: readConductor(readTable(merged, "conductor")),
     askAtCreate,
     sources,
   };

@@ -6,7 +6,7 @@ disable-model-invocation: false
 argument-hint: "[{slug}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.3.0"
+  version: "2.4.0"
 ---
 
 # Hikyaku Create Cycle
@@ -182,6 +182,13 @@ Hikyaku の規則に従う / 現在のブランチで作業する / 別のブラ
 （別の作業のブランチに紛れ込んだ状態と、セッションの中からは区別できないため）。
 
 - [ ] コミットして PR を作成する
+- [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers create {NNN}-{slug} --pr {PR の URL}
+```
+
+  失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
 
 cycles.md がデフォルトブランチに入らないと、他サイクルからこのサイクルが見えない。
 並行サイクルの検出が機能しなくなるため、この PR は速やかにマージする。

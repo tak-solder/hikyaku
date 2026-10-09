@@ -6,7 +6,7 @@ disable-model-invocation: false
 argument-hint: "{cycle} {SUB_DIR}"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.3.0"
+  version: "2.4.0"
 ---
 
 # Hikyaku Retrospective
@@ -80,7 +80,7 @@ economy だけが `skip`、express / standard / thorough は `auto`。
 
 ### Step 1: ユーザーに振り返りの実施を確認
 
-- [ ] ユーザーに振り返りを実施するか確認する
+- [ ] ユーザーに振り返りを実施するか確認する（ask: retrospective）
 
 ```
 振り返りを実施しますか？（y/n）
