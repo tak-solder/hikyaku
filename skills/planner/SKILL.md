@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "[{cycle}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.2.1"
+  version: "2.3.0"
 ---
 
 # Hikyaku Planner
@@ -214,6 +214,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title plan {cycle}
   - フォーマットは [templates.md](references/templates.md) を参照
   - Step 3 の4項目を冒頭の「概要」セクションに反映する
   - このサイクルのスコープに閉じる。将来やりたいことは書かない
+  - やらないと決めたことは、理由とともに「スコープ外」に残す（ストーリーにはしない）
+  - 受け入れ基準に `US-N.M` の番号を振る。後続フェーズはこの番号で受け入れ基準を参照する
 - [ ] コミット & push する
 
 成果物を1つ作るごとにコミット & push すること。コミットされていなければ、

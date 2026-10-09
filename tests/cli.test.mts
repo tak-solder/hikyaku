@@ -110,6 +110,23 @@ test("CLI: validate は正常時 0、不整合は JSON と終了コード 2、�
   assert.ok(readFileSync(join(directory, tasklist), "utf8").includes("基盤"));
 });
 
+test("CLI: validate は番号付きの受け入れ基準がビルドに割り当てられているかを検査する", (t) => {
+  const directory = workspace(t, true);
+  const cycle = "docs/hikyaku/cycles/001-test";
+  write(directory, `${cycle}/planning/user-stories.md`, "## US-1: 認証\n- [ ] US-1.1: ログインできる\n- [ ] US-1.2: ログアウトできる\n");
+  // ビルド分割の前は割り当てが無くて当然なので通る
+  assert.equal(JSON.parse(succeeds(directory, "validate", "--json")).ok, true);
+
+  succeeds(directory, "tasklist", "add", "001", "--title", "認証");
+  write(directory, `${cycle}/build-01/issue.md`, "# Build 01: 認証\n\n## 対応する受け入れ基準\n\n- US-1.1\n");
+  const result = cli(directory, "validate", "--json");
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /割り当てられていない受け入れ基準があります: US-1\.2/);
+
+  write(directory, `${cycle}/build-01/issue.md`, "# Build 01: 認証\n\n## 対応する受け入れ基準\n\n- US-1.1, US-1.2\n");
+  assert.equal(JSON.parse(succeeds(directory, "validate", "--json")).ok, true);
+});
+
 test("CLI: validate は手編集されたサイクル間の循環依存を検出する", (t) => {
   const directory = workspace(t, true);
   succeeds(directory, "cycle", "new", "second", "--profile", "standard", "--depends", "001");

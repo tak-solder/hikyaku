@@ -21,6 +21,8 @@ import { HikyakuError, ValidationError } from "../lib/errors.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { buildDirName, loadTasklist, validateGraph } from "../lib/tasklist.mts";
+import { definedCriteria, ISSUE_CRITERIA_HEADING, validateTraceability } from "../lib/traceability.mts";
+import type { TraceabilityIssue } from "../lib/traceability.mts";
 
 interface Problem {
   scope: string;
@@ -44,6 +46,9 @@ register({
     "  - 各サイクルのディレクトリが存在するか",
     "  - 各 tasklist.md の依存グラフに循環や存在しない依存が無いか",
     "  - tasklist.md に登録されたビルドの issue.md が存在するか",
+    "  - user-stories.md の受け入れ基準に番号（US-N.M）があれば、番号が重複していないか、",
+    `    issue.md の「${ISSUE_CRITERIA_HEADING}」が存在しない番号を参照していないか、`,
+    "    どのビルドにも割り当てられていない受け入れ基準が無いか",
     "",
     "スキル内の検証は Hikyaku が書いたものしか見ませんが、これを CI から",
     "呼べば人間が手で編集した内容の不整合も拾えます。",
@@ -119,12 +124,27 @@ register({
       }
       // ディレクトリではなく issue.md の有無を見る。git は空ディレクトリを追跡
       // しないため、ディレクトリの存在は clone 後に再現しない
+      const issues: TraceabilityIssue[] = [];
       for (const build of builds) {
         const issuePath = join(directory, buildDirName(build.id), "issue.md");
         if (!existsSync(issuePath)) {
           problems.push({
             scope: `${name}/${buildDirName(build.id)}`,
             message: "tasklist.md に登録されていますが issue.md がありません",
+          });
+          continue;
+        }
+        issues.push({ id: build.id, text: readFileSync(issuePath, "utf8") });
+      }
+
+      const storiesPath = join(directory, "planning", "user-stories.md");
+      if (existsSync(storiesPath)) {
+        const defined = definedCriteria(readFileSync(storiesPath, "utf8"));
+        for (const problem of validateTraceability(defined, issues)) {
+          problems.push({
+            scope:
+              problem.build === undefined ? `${name}/user-stories` : `${name}/${buildDirName(problem.build)}`,
+            message: problem.message,
           });
         }
       }
