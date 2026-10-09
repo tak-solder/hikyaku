@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 各エントリには「何が変わったか」と「利用者に必要な対応」を書きます。設計判断の経緯は issue と `docs/` を参照してください。
 
+## [2.2.1]
+
+スキルとエージェント定義を監査し、実装やほかの指示ファイルと食い違っていた記述を直した。あわせて、本文の強調を各ファイル数カ所に絞った。
+
+### Fixed
+
+- **architect（references/templates.md）**: ADR のテンプレートを SKILL.md の運用に揃えた。`hikyaku` 管理では判断ごとに日付ファイル（`{YYYYMMDD}-{slug}.md`）を作り、`status: accepted` で書き、覆すときは旧エントリを `superseded` にする。Step 4c が参照していた design-delta.md のテンプレートを追加した。Hikyaku が作らない tech-stack / db-schema / interfaces のテンプレートを削除した
+- **architect**: 差し戻しからの再設計では、Step 6 のブランチ確認も `branch verify build-{NN}` で行う。コードと食い違う参考ドキュメントは handoff.md ではなく codebase-survey.md に記録する。既存の ADR を覆す場合は、新しいエントリとして記録する
+- **retrospective**: `retrospective = "prompt"` を「デフォルト」と書いていた誤りを直した（既定は profile により `auto` か `skip`）
+- **doc-reviewer**: コードレビューの参照先を builder Step 8 から Step 6 に直した。参照するドキュメントを v1 のファイル名（`interfaces.md` / `decisions.md` / `AD-N`）から論理名に改めた
+- **code-reviewer**: `conventions.md` を論理名 `conventions` に改めた（実体が AGENTS.md の場合がある）
+- **init / close-cycle**: 完了時の案内から、create-cycle が受け取らない `--profile` を削除した
+- **planner / architect / builder / close-cycle / init / bp-guide**: 実行手順に素の `hikyaku` で書かれていたコマンドを `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts"` 形式に揃えた（`hikyaku` はユーザーのシェル関数で、スキルの実行環境には無い）
+- **builder（references/retry-policy.md）**: 上限2回に合わせ、報告フォーマットから3回目の行を削除した
+- **bp-guide**: Step 4 の「承認前に書き込まない」を「承認前にコミットしない」に改めた（`bp test` のために変更案を一時的に書く手順と矛盾していたため）
+
+### Changed
+
+- 全スキルとエージェント定義で太字を、手順を誤ると取り返しのつかない制約（ブランチ確認、PR への同梱、承認前に書き込まない等）に絞った。文言は変えていない
+- v1 / v2 の経緯を書いていた箇所を、現在のルールだけの記述にした
+- BP とセッションの説明から「1セッション20万トークン」を削除した。基準は「1セッションで実装から PR 作成までを完結できるか」で、実際の大きさは基準表と振り返りの実績で調整する（実運用では1セッションが20万トークンを超えることが多く、目安として機能していなかったため）。`hikyaku init` が生成する `bp-guide/README.md` の冒頭文も同じ表現にした
+
+### Migration
+
+- 対応は不要。設定・ファイル形式・CLI に変更はない
+- BP のしきい値と既定値は変わらない。生成済みの `bp-guide/README.md` はワークスペースの持ち物なので書き換わらない。20万トークンの記述を消したい場合は手で直す
+- 既存の `AD-N` 形式の ADR を `repo` 管理で使っている場合はそのまま使える（テンプレートは `hikyaku` 管理のときだけ適用される）
+
 ## [2.2.0]
 
 builder から architect への差し戻し経路を定義した（[issue #41](https://github.com/tak-solder/hikyaku/issues/41)）。

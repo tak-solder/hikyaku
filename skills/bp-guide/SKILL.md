@@ -6,14 +6,14 @@ disable-model-invocation: true
 argument-hint: "[show|tune]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.2.0"
+  version: "2.2.1"
 ---
 
 # Hikyaku BP Guide
 
 ワークスペースの BP 基準表（`{HIKYAKU_ROOT}/bp-guide/`）を運用する。
 
-**このスキルはワークフロー（PLAN → ARCHITECT → BUILD → CLOSE）の外にある。** サイクルに
+このスキルはワークフロー（PLAN → ARCHITECT → BUILD → CLOSE）の外にある。サイクルに
 属さず、どのフェーズからも呼ばれない。基準表はワークスペース全体に効くので、走行中の
 サイクルの途中で動かすと、そのサイクルの中で見積もりの比較が成立しなくなる。
 だから専用の入口を持つ。
@@ -30,7 +30,7 @@ metadata:
 
 ## 入力値の問題か、基準表の問題か
 
-**見積もりの乖離には2種類あり、直す場所が違う。**
+見積もりの乖離には2種類あり、直す場所が違う。
 
 | 乖離の種類 | 見え方 | 直す場所 |
 |---|---|---|
@@ -72,9 +72,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify bp-guide
 
 `bp-guide` はサイクルに属さないフェーズで、ブランチは `init` と同じ形（`{prefix}{separator}bp-guide`）。
 `ok: true` ならそのまま、`onBaseBranch: true` なら `expected` の名前で作成する。
-`onBaseBranch` が `false` / `null`（既に別の作業ブランチに居る）なら、**必ずユーザーに尋ねる**。
+`onBaseBranch` が `false` / `null`（既に別の作業ブランチに居る）なら、必ずユーザーに尋ねる。
 Hikyaku の規則に従う / 現在のブランチで作業する / 別のブランチを指定する、の3つを提示し、
-**どれが妥当かは示唆しない。**
+どれが妥当かは示唆しない。
 
 - [ ] `bp-guide/` が無ければ生成する
 
@@ -98,7 +98,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" bp history
 ```
 
 各ビルドについて architect / builder 段階の見積もり、実績、乖離、新規ファイル数・実装行数の
-「見積 → 実測」、セッションが完結したかが並ぶ。**読めない項目は「—」で出る。推測で埋めない。**
+「見積 → 実測」、セッションが完結したかが並ぶ。読めない項目は「—」で出る。推測で埋めない。
 
 - [ ] 乖離のあるビルドの `retrospective.md` を読み、「乖離の要因」を確認する
   - 入力値の読み違えか、基準表の問題かは、そこに分けて書かれている（書かれていなければ
@@ -112,7 +112,7 @@ Step 3 へ進む。実績無しにしきい値を動かすのは推測なので�
 
 ### Step 3: 変更案の作成
 
-- [ ] 素材から変更案を作り、**根拠を添えて**ユーザーと決める
+- [ ] 素材から変更案を作り、根拠を添えてユーザーと決める
 
 変更の種類ごとに書く場所が違う。
 
@@ -142,16 +142,16 @@ upper = [3, 6, 10]
 bp = [0, 1, 3, 4]
 ```
 
-- [ ] 変更ごとに、**それを確かめる期待値ケース**を `cases.toml` に足す
+- [ ] 変更ごとに、それを確かめる期待値ケースを `cases.toml` に足す
   - 動かしたしきい値の境界の両側、追加した加算要素が効く入力と効かない入力
-  - 既存のケースが変更で壊れるなら、期待値を直すのではなく、**なぜ変わってよいか**を
+  - 既存のケースが変更で壊れるなら、期待値を直すのではなく、なぜ変わってよいかを
     ユーザーに確認する（既存ケースは過去の判断の記録）
 
 → Step 4 へ。
 
 ### Step 4: 反映と検証（承認必須）
 
-**承認前に書き込まない。**
+**承認前にコミットしない。**
 
 - [ ] 変更後の `rules.toml` / `cases.toml` の差分と、次の2つの結果を提示して承認を得る
 
@@ -174,14 +174,14 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate
 通らなければ Step 3 に戻る。
 
 この承認は profile の管轄外で、常に行う。基準表はワークスペース全体の見積もりに効き、
-**何を基準にするかは人間の判断**だから。
+何を基準にするかは人間の判断だから。
 
 → Step 5 へ。
 
 ### Step 5: コミットと PR
 
-- [ ] コミットする前に、もう一度ブランチを確認する（`hikyaku branch verify bp-guide`）
-- [ ] コミットして PR を作成する（タイトルは `hikyaku pr title bp-guide` で生成）
+- [ ] コミットする前に、もう一度ブランチを確認する（`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify bp-guide`）
+- [ ] コミットして PR を作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title bp-guide` で生成）
   - PR 本文に、変更の根拠（どのビルドの乖離から判断したか）を書く
 - [ ] 完了後、次を案内する
 
@@ -193,6 +193,6 @@ BP 基準表を更新しました。この PR がマージされてから作成�
 ## 共通ルール
 
 - **`rules.toml` の値を推測で動かさない。** 根拠は `bp history` の実績か、ユーザーの指示
-- **`README.md` の表を手で直さない。** `rules.toml` を直して `bp render` する。手で直すと `validate` が止める
-- **既存の期待値ケースを黙って書き換えない。** 期待値が変わるのは基準の変更で、その判断はユーザーのもの
+- `README.md` の表を手で直さない。`rules.toml` を直して `bp render` する。手で直すと `validate` が止める
+- 既存の期待値ケースを黙って書き換えない。期待値が変わるのは基準の変更で、その判断はユーザーのもの
 - 走行中のサイクルには触らない。plan.md や issue.md の BP を書き換えて回るのは、このスキルの仕事ではない

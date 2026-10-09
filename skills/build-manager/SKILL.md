@@ -6,14 +6,14 @@ disable-model-invocation: false
 argument-hint: "[{cycle}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.2.0"
+  version: "2.2.1"
 ---
 
 # Hikyaku Build Manager
 
 対象サイクルの `tasklist.md` と各ビルドの `issue.md` を管理する。
 
-**このスキルは hikyaku:architect および hikyaku:builder からモデル呼び出しで使用される内部スキルです。**
+このスキルは hikyaku:architect および hikyaku:builder からモデル呼び出しで使用される内部スキルです。
 ユーザーが直接呼び出すことは想定していません。hikyaku ワークフロー以外のコンテキストから呼び出された場合は、その旨をユーザーに伝えて終了してください。
 
 ## あなたの責務
@@ -28,9 +28,9 @@ BP見積もりと分割単位の判断、issue.md の内容の作成、レビュ
 
 ## 操作
 
-- **ビルドの追加**: 新しいビルドを追加し、issue.md を作成する
-- **ビルドの更新**: 既存ビルドのスコープ・依存関係・BPを変更する
-- **ビルドの分割**: 「元ビルドの update + 新ビルドの add」で表現する（専用の操作は無い）
+- ビルドの追加: 新しいビルドを追加し、issue.md を作成する
+- ビルドの更新: 既存ビルドのスコープ・依存関係・BPを変更する
+- ビルドの分割: 「元ビルドの update + 新ビルドの add」で表現する（専用の操作は無い）
 
 1回の呼び出しで複数の操作を組み合わせてよい。
 
@@ -71,17 +71,17 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist read {cycle}
 
 呼び出し元のコンテキスト（会話履歴）に基づき、必要な変更を整理する。
 
-**ビルドの追加:**
+ビルドの追加:
 - タイトル、スコープ（やること / やらないこと / 受け入れ基準）を定義する
 - 依存関係を特定する（どのビルドの完了後に実行可能か）
 - buildID の採番はスクリプトが行う（`max(既存) + 1`）
 
-**ビルドの更新:**
+ビルドの更新:
 - 対象ビルドの `issue.md` を読み込む
 - スコープ・依存関係・BPの変更内容を整理する
 - **完了済み（`PR` 列が非空）のビルドは更新しない。** スクリプトも拒否する
 
-**ビルドの分割:**
+ビルドの分割:
 - 元ビルドに残す範囲と新ビルドに移す範囲を定義する
 - 新ビルドは元ビルドに依存するのが一般的だが、スコープに応じて判断する
 - 元ビルドに依存していたビルドの依存を、新ビルドに付け替える必要がないか確認する
@@ -90,7 +90,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist read {cycle}
 
 ### Step 2: BP見積もり
 
-- [ ] [bp-guide.md](references/bp-guide.md) の手順に従い、**入力値を見積もってコマンドに渡す**
+- [ ] [bp-guide.md](references/bp-guide.md) の手順に従い、入力値を見積もってコマンドに渡す
   - ビルドが関わるワークスペース（パッケージ）を特定する
   - ワークスペースごとに、指標（新規ファイル数、実装行数、API操作数、画面数、DBテーブル数）と
     加算要素（影響ファイル数、基盤セットアップ、外部API連携、大規模リファクタ、基準表にあれば
@@ -102,9 +102,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" bp estimate {cycle} \
   --new-files 5 --lines 800 --impact-files 7 --setup --markdown
 ```
 
-  - 表への当てはめはコマンドが行う。**自分で表を読んで BP にしない**
+  - 表への当てはめはコマンドが行う。自分で表を読んで BP にしない
   - 複数ワークスペースにまたがるなら、ワークスペースごとに実行して BP を合計する
-  - 出力の内訳表（`--markdown`）を issue.md の「BP見積もり」に**そのまま貼る**。
+  - 出力の内訳表（`--markdown`）を issue.md の「BP見積もり」にそのまま貼る。
     転記しないのは、レビューが入力値を検証するときに算出の根拠が要るため
 - [ ] 合計BPが `bp_max + 1` 以上（デフォルト: 9 以上）の場合は分割が必須
 - [ ] `bp_max − 2` 以上 `bp_max` 以下（デフォルト: 6〜8）は、以下のいずれかに該当する場合のみ分割せずに許容する:
@@ -124,21 +124,21 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist add {cycle} \
   --title "..." --bp 3 --deps 1,2 --dry-run
 ```
 
-- [ ] **`tasklist_review` が有効な場合**（express / standard / thorough）、`doc-reviewer` を起動する（`context: tasklist`）
-  - **この時点ではまだファイルに書き込まれていない。** `--dry-run` の出力（変更後の一覧・依存グラフ）と issue.md の本文をプロンプトに直接含めて渡す
+- [ ] `tasklist_review` が有効な場合（express / standard / thorough）、`doc-reviewer` を起動する（`context: tasklist`）
+  - この時点ではまだファイルに書き込まれていない。`--dry-run` の出力（変更後の一覧・依存グラフ）と issue.md の本文をプロンプトに直接含めて渡す
   - 参照として渡す: `cycles/{cycle}/design/design-delta.md`（存在する場合）,
     `{HIKYAKU_ROOT}/bp-guide/README.md`（存在する場合。無ければ `bp guide --markdown` の出力を
     プロンプトに含める）
-  - **BP のレビュー対象は入力値**（列挙したファイル数がスコープと合っているか、加算要素の
+  - BP のレビュー対象は入力値（列挙したファイル数がスコープと合っているか、加算要素の
     取りこぼしが無いか）。表への当てはめはコマンドが行っているので、そこは見ない
   - 明確な不整合・入力値の乖離は反映する（主観的な指摘は無視してよい）。
     反映が必要な場合は Step 1 からやり直し、`bp estimate` を再実行する
 
 - [ ] 以下をユーザーに提示して承認を得る
-  - **tasklist の変更差分** — スクリプトが返した一覧
-  - **依存グラフの変更** — スクリプトが返した Mermaid グラフ
-  - **issue.md の内容** — 新規作成なら全文、更新なら変更箇所
-  - **（doc-reviewer を起動した場合）レビュー結果とその対応**
+  - tasklist の変更差分 — スクリプトが返した一覧
+  - 依存グラフの変更 — スクリプトが返した Mermaid グラフ
+  - issue.md の内容 — 新規作成なら全文、更新なら変更箇所
+  - （doc-reviewer を起動した場合）レビュー結果とその対応
 
 この承認（G6）は profile の管轄外で、どのプロファイルでも省略しない。
 `tasklist_review` の有無に関わらず、この承認自体は必ず行う。
@@ -152,14 +152,14 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist add {cycle} \
 - [ ] `issue.md` を作成・更新する（テンプレートは [templates.md](references/templates.md) を参照）
 - [ ] 成果物をコミット & push する
 
-**成果物を1つ作るごとにコミット & push すること。** コミットされていなければ、
+成果物を1つ作るごとにコミット & push すること。コミットされていなければ、
 中断時に他セッションから進捗が見えず、再開点を検出できない。
 
 ## 共通ルール
 
 ### buildID
 - 採番はスクリプトが行う（`max(既存) + 1`）
-- 既存 buildID のリナンバリングは **行わない**
+- 既存 buildID のリナンバリングは行わない
 - ディレクトリ名はゼロ埋め2桁（buildID 3 → `build-03`）
 
 ### 依存グラフ
@@ -178,13 +178,13 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist add {cycle} \
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external sync {cycle}
 ```
 
-**投影の単位は「サイクルに1つの親 issue」と「各ビルドの子 issue」。**
+投影の単位は「サイクルに1つの親 issue」と「各ビルドの子 issue」。
 親が無ければスクリプトが先に作る。親には tasklist へのリンクとビルド一覧が入る。
 
-**投影は片方向で、マスターは常にファイル側。** 失敗してもワークフローは止めず、
+投影は片方向で、マスターは常にファイル側。失敗してもワークフローは止めず、
 警告だけ出して続行する。読み取りと完了判定に外部システムを使うことは無い。
 
-**gh CLI が無い環境では、スクリプトは投影内容だけを返す**（`applied: false` /
+gh CLI が無い環境では、スクリプトは投影内容だけを返す（`applied: false` /
 `reason: "gh-not-found"`）。その場合は GitHub MCP ツールで適用する。
 
 1. 親（サイクル）→ 子（各ビルド）の順に作成・更新する
