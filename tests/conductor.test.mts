@@ -239,6 +239,8 @@ budget_per_run = 2.5
   for (const flag of ["--session-id", "--disallowedTools", "--append-system-prompt-file", "--permission-prompts"]) {
     assert.ok(output.argv.includes(flag), flag);
   }
+  const disallowed = output.argv.indexOf("--disallowedTools");
+  assert.deepEqual(output.argv.slice(disallowed + 1, disallowed + 4), ["AskUserQuestion", "ScheduleWakeup", "CronCreate"]);
   assert.equal(output.argv[output.argv.indexOf("--max-budget-usd") + 1], "2.5");
   assert.ok(output.command.endsWith("< /dev/null > r.json"));
   assert.deepEqual(snapshot(directory), before);

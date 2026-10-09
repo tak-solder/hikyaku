@@ -15,7 +15,7 @@ ARCHITECT 以降を監督セッションに任せる conductor を追加する�
 - **`/hikyaku:conductor`**: PLAN 済みのサイクルを、ARCHITECT から最後のビルドまで非対話の子セッション（`claude -p`）に実行させる監督スキル。子の問いは `conductor parse` の振り分けに従って監督が答えるか人間に上げ、同意ゲート（G6 / G8 / G10）は起動時の合意によって監督に委任される。サイクルの統合ブランチ（`{cycle}/conductor`）を切り、各フェーズのブランチはそこから切って PR もそこへ向ける。監督は検証を済ませた PR を conductor ブランチに取り込み、デフォルトブランチにはマージしない。最後のビルドを取り込んだら conductor ブランチ → デフォルトブランチの PR を作って止まり、人間がマージしたあと再実行すると CLOSE から再開する
 - **`skills/conductor/references/headless-protocol.md`**: 非対話で起動された子セッションが、問いの箇所で gate / done / blocked のブロックを出して止まるための規約
 - **`hikyaku conductor asks`**: 子が出しうる問いと、監督・人間への振り分けを、サイクルの profile と設定を重ねて一覧する。子に許可するツールの一覧と、委任の範囲を決める設定のダイジェストも返す
-- **`hikyaku conductor launch`**: 子（`claude -p`）の起動・再開コマンドを組み立てて返す。自分では実行しない。子に既定で許可するのは、スキルが使う `git` のサブコマンドと Hikyaku CLI の実行などに限る（`git -c` や `node -e` の形は許可しない）
+- **`hikyaku conductor launch`**: 子（`claude -p`）の起動・再開コマンドを組み立てて返す。自分では実行しない。子に既定で許可するのは、スキルが使う `git` のサブコマンドと Hikyaku CLI の実行などに限る（`git -c` や `node -e` の形は許可しない）。子には `AskUserQuestion` と、回答をタイマーで待つ `ScheduleWakeup` / `CronCreate` を使わせない（待たれると子が終了せず、結果が監督に届かない）
 - **`hikyaku conductor parse`**: 子の結果ファイルから gate / done / blocked を取り出し、gate なら問いの振り分けを返す。ブロックが規約どおりでなければ `violation` を返す
 - **`launch` / `parse` の `--expect-digest`**: 監督が起動時に人間と合意したときの設定のダイジェスト（profile と `.hikyaku.config` の内容から作る）を渡す。設定が変わっていればエラーで止まる
 - **`hikyaku pr request-reviewers <phase> [<cycle>] --pr <PR>`**: PR を作った直後に、設定のレビュアーをアサインする。PR の実際のマージ先が conductor ブランチなら `[conductor] phase_reviewers`、それ以外なら `[pr] reviewers` を使う。PR の作成者本人・依頼済み・レビュー済みの相手には依頼せず、`--dry-run` で依頼予定だけを返す。依頼は `gh pr edit --add-reviewer` で行うので `@copilot` も使える

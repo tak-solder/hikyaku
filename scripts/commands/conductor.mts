@@ -34,6 +34,12 @@ import { normalizeBuildId } from "../lib/tasklist.mts";
 import type { ResolvedConfig } from "../lib/config.mts";
 import { openCycle, type CycleContext } from "../lib/workspace.mts";
 
+/**
+ * 子に使わせないツール。問いは gate を出して終了し、回答は --resume で受け取る。
+ * タイマー（ScheduleWakeup / CronCreate）で回答を待たれると、claude -p が終了せず、
+ * 結果ファイルも完了の通知も監督に届かない
+ */
+const DISALLOWED_TOOLS = ["AskUserQuestion", "ScheduleWakeup", "CronCreate"];
 
 register({
   name: "conductor asks",
@@ -123,7 +129,9 @@ register({
     "組み立てるコマンドには次が必ず入ります。",
     "",
     "  --append-system-prompt-file   非対話規約（skills/conductor/references/headless-protocol.md）",
-    "  --disallowedTools AskUserQuestion",
+    `  --disallowedTools             ${DISALLOWED_TOOLS.join(" ")}`,
+    "                                子は回答を同じプロセスで待たず、ブロックを出して終了する。",
+    "                                タイマーで待つと結果ファイルが書かれず、監督に完了が届かない",
     "  --permission-mode acceptEdits と --permission-prompts none",
     "  --allowedTools                既定に [conductor] allowed_tools を足したもの。既定の node は",
     "                                Hikyaku CLI の実行だけで、node -e などは許可しない",
@@ -175,7 +183,7 @@ register({
       "--append-system-prompt-file",
       protocol,
       "--disallowedTools",
-      "AskUserQuestion",
+      ...DISALLOWED_TOOLS,
       "--permission-mode",
       "acceptEdits",
       "--permission-prompts",
