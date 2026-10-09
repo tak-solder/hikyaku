@@ -65,7 +65,7 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | コマンド | いつ使うか |
 |---|---|
 | `doctor` | 環境が動く状態かを確認したいとき。導入直後と、動かないとき |
-| `validate [<cycle>]` | ファイルの整合性を確認したいとき。[CI](../operations/ci.md) から呼ぶと効く。`bp-guide/` の構文・README の表の古さ・期待値の不一致も見る |
+| `validate [<cycle>]` | ファイルの整合性を確認したいとき。[CI](../operations/ci.md) から呼ぶと効く。`bp-guide/` の構文・README の表の古さ・期待値の不一致と、受け入れ基準の割り当て漏れも見る |
 | `docs validate` | ドキュメントガイドのパスだけを確認したいとき |
 
 ## ドキュメント

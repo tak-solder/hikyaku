@@ -6,7 +6,7 @@ disable-model-invocation: true
 argument-hint: "[{cycle}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.3.0"
+  version: "2.4.0"
 ---
 
 # Hikyaku Planner
@@ -18,9 +18,9 @@ metadata:
 Hikyaku は PLAN → ARCHITECT → BUILD → CLOSE の4フェーズで構成される、
 AIエージェント協働開発ワークフロー。
 
-- 各フェーズは **別セッション（＝別のAI）** が担当する（1セッション20万トークンが目安）
+- 各フェーズは別セッション（＝別のAI）が担当する
 - フェーズ間の情報引き継ぎはファイルで行う
-- **1サイクル = 1チケット**。複数のサイクルを並行して回せる
+- 1サイクル = 1チケット。複数のサイクルを並行して回せる
 
 ```
 /hikyaku:init          → ワークスペースを初期化（初回のみ）
@@ -52,17 +52,17 @@ AIエージェント協働開発ワークフロー。
             └── build-01/        # BUILD が作る
 ```
 
-**永続ドキュメント（overview / decisions / constraints / learnings / conventions 等）は
-HIKYAKU_ROOT の外にある。** 所在は `document-guide.md` が宣言する。
+永続ドキュメント（overview / decisions / constraints / learnings / conventions 等）は
+HIKYAKU_ROOT の外にある。 所在は `document-guide.md` が宣言する。
 
 ### あなたの役割
 
 ユーザーは既にチケットや企画メモを持っている。あなたの仕事は、それを読み込んで
-**次の設計フェーズ（ARCHITECT）が作業を開始できる形に構造化すること**。
+次の設計フェーズ（ARCHITECT）が作業を開始できる形に構造化すること。
 
-**やらないこと:**
+やらないこと:
 - 技術的な実現方法の決定（設計フェーズの仕事）
-- **永続ドキュメントへの書き込み**（close-cycle だけが行う）
+- 永続ドキュメントへの書き込み（close-cycle だけが行う）
 - このサイクル外のストーリーを書くこと（バックログ管理はスコープ外）
 
 ## 作業ステップ
@@ -79,17 +79,17 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json
 HIKYAKU_ROOT は `.hikyaku.config` から解決されるので、引数では受け取らない。
 
 `$ARGUMENTS[0]` でサイクルが指定されていればそれを渡す。省略された場合は
-**現在のブランチ → `.hikyaku.local` → 唯一の進行中サイクル** の順で決まる。
-決められないときは進行中サイクルの一覧を添えてエラーになるので、**ユーザーに尋ねてから**
+現在のブランチ → `.hikyaku.local` → 唯一の進行中サイクルの順で決まる。
+決められないときは進行中サイクルの一覧を添えてエラーになるので、ユーザーに尋ねてから
 指定し直す。推測して進めない（別サイクルへコミットする事故になる）。
 
 出力の `cycle` と `cycleSource` を、作業対象としてユーザーに1行で示す。
 
 ここで次のエラーが出た場合は代行する。
 
-- **未初期化**（`.hikyaku.config` が無い / `document-guide.md` が無い）
+- 未初期化（`.hikyaku.config` が無い / `document-guide.md` が無い）
   → `/hikyaku:init` を実行して初期化を代行する
-- **サイクルが未作成**（「サイクルがまだありません」）
+- サイクルが未作成（「サイクルがまだありません」）
   → `/hikyaku:create-cycle` を実行して代行する
   - 代行した場合、create-cycle は PR を作らない。成果物が cycles.md の1行だけなので、
     このスキルの PR に畳む
@@ -106,7 +106,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {cycle}
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context plan {cycle}
 ```
 
-企画では**永続ドキュメントをほとんど読まない**。実装済みの現実を前提に置く場面では
+企画では永続ドキュメントをほとんど読まない。実装済みの現実を前提に置く場面では
 ないため、返るのは `constraints`（確定済みの非機能要件を再度質問しないため）と
 `glossary`（語を既存の定義に揃えるため）だけ。
 
@@ -126,20 +126,20 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context plan {cycle}
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify plan {cycle}
 ```
 
-出力の `ok` と `onBaseBranch` で分岐する。**自分で決めず、この表に従う。**
+出力の `ok` と `onBaseBranch` で分岐する。自分で決めず、この表に従う。
 
 | 状況 | 対応 |
 |---|---|
 | `ok: true` | そのまま続ける |
 | `ok: false` かつ `onBaseBranch: true` | `expected` の名前でブランチを作成して続ける |
-| `ok: false` かつ `onBaseBranch` が `false` / `null` | **ユーザーに尋ねる**（下記） |
+| `ok: false` かつ `onBaseBranch` が `false` / `null` | ユーザーに尋ねる（下記） |
 
-3つ目は**ユーザーの判断であって、あなたの判断ではない。** 現在のブランチが実行環境に
+3つ目はユーザーの判断であって、あなたの判断ではない。現在のブランチが実行環境に
 割り当てられたものだと分かっていても、**自分で決めずに必ず尋ねる。**
 
 実行環境が割り当てたブランチと、別の作業のブランチに紛れ込んだ状態は、セッションの中からは
-区別できない。「今回は前者だから問題ない」という推測を一度でも通すと、**後者もまったく
-同じ理屈で通る。** それを防ぐための確認なので、確認を省いた時点で意味が無くなる。
+区別できない。「今回は前者だから問題ない」という推測を一度でも通すと、後者もまったく
+同じ理屈で通る。 それを防ぐための確認なので、確認を省いた時点で意味が無くなる。
 
 尋ねる手段（`AskUserQuestion` など）があればそれを使い、次の3つを提示する。
 **どれが妥当かの示唆を添えない。選ぶのはユーザー。**
@@ -148,8 +148,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify plan {cycle}
 2. 現在のブランチで作業する
 3. 別のブランチを指定する
 
-**ユーザーが 2 または 3 を選んだあとで**、`next` の「着手中」検出が効かなくなることを
-伝える（ブランチ名から導出しているため）。**完了判定と中断検出には影響しない。**
+ユーザーが 2 または 3 を選んだあとで、`next` の「着手中」検出が効かなくなることを
+伝える（ブランチ名から導出しているため）。完了判定と中断検出には影響しない。
 
 ブランチを決めたら、成果物をコミットする直前にもう一度この確認を行う。
 
@@ -159,10 +159,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify plan {cycle}
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
 ```
 
-**中断からの再開の場合**、このコマンドがどこまで進んだかを教えてくれる。
+中断からの再開の場合、このコマンドがどこまで進んだかを教えてくれる。
 既存の成果物があれば読み込んで途中から再開する。
 
-**ブランチを決めたあとに実行する。** 成果物の有無は作業ツリーを見て判定するため、
+ブランチを決めたあとに実行する。成果物の有無は作業ツリーを見て判定するため、
 デフォルトブランチに居るまま実行すると、別セッションが push 済みの成果物が見えない。
 中断からの再開なのに最初からやり直すことになる。
 
@@ -179,7 +179,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title plan {cycle}
 
 ### Step 2: インプットの読み込み
 
-- [ ] cycles.md に記録された**チケット**を確認する
+- [ ] cycles.md に記録されたチケットを確認する
 - [ ] ユーザーが指定したドキュメント（企画書、仕様メモ、Issue、Slack抜粋など）を読み込む
   - 指定がない場合はユーザーにインプットの場所を確認する。自分で探索しない
 - [ ] Step 0 の `context` が `constraints` を返していれば読む
@@ -192,11 +192,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title plan {cycle}
 質問ループに入る前に、インプットから読み取った内容を要約して提示し、認識のズレを先に解消する。
 
 - [ ] 以下の4項目を簡潔にまとめてユーザーに提示する
-  - **何を実現したいか**: ユーザーが何ができるようになる機能か
-  - **背景・目的**: なぜこの機能が必要か
-  - **対象画面・対象データ**: どの画面・どのデータに関わるか
-  - **制約・要件**: あれば（`constraints` に既にあるものは再掲せず参照する）
-  - インプットから読み取れない補完には **「（推測）」** を付ける
+  - 何を実現したいか: ユーザーが何ができるようになる機能か
+  - 背景・目的: なぜこの機能が必要か
+  - 対象画面・対象データ: どの画面・どのデータに関わるか
+  - 制約・要件: あれば（`constraints` に既にあるものは再掲せず参照する）
+  - インプットから読み取れない補完には「（推測）」を付ける
 - [ ] ユーザーから誤り・補足を聞き、認識を合わせる
 
 → Step 4 へ。
@@ -207,14 +207,16 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title plan {cycle}
 
 - [ ] 構造化に必要な情報を質問する
   - 1ラウンドの質問数に上限はない。聞くべきことは1回でまとめて聞く
-  - 確認観点: **目的**, **対象ユーザー**, **コア機能**, **スコープ境界**, **優先度**, **制約条件**
+  - 確認観点: 目的, 対象ユーザー, コア機能, スコープ境界, 優先度, 制約条件
   - 質問が発生した場合のみ `cycles/{cycle}/planning/questions.md` に記録する
-  - **未回答の質問を放置しない。** 未回答なら明示的にそう記す
+  - 未回答の質問を放置しない。未回答なら明示的にそう記す
 - [ ] `cycles/{cycle}/planning/user-stories.md` を作成する
   - フォーマットは [templates.md](references/templates.md) を参照
   - Step 3 の4項目を冒頭の「概要」セクションに反映する
-  - **このサイクルのスコープに閉じる。** 将来やりたいことは書かない
-- [ ] **コミット & push する**
+  - このサイクルのスコープに閉じる。将来やりたいことは書かない
+  - やらないと決めたことは、理由とともに「スコープ外」に残す（ストーリーにはしない）
+  - 受け入れ基準に `US-N.M` の番号を振る。後続フェーズはこの番号で受け入れ基準を参照する
+- [ ] コミット & push する
 
 成果物を1つ作るごとにコミット & push すること。コミットされていなければ、
 中断時に他セッションから進捗が見えず、再開点を検出できない。
@@ -223,11 +225,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title plan {cycle}
 
 ### Step 5: レビューと承認
 
-- [ ] **`user_stories_review` が有効な場合**（express / standard / thorough）、`doc-reviewer` を起動する（`context: user-stories`）
+- [ ] `user_stories_review` が有効な場合（express / standard / thorough）、`doc-reviewer` を起動する（`context: user-stories`）
   - 渡す情報: `cycles/{cycle}/planning/user-stories.md`, `planning/questions.md`
   - 出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/agents/doc-reviewer.md` を参照
   - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
-- [ ] **ユーザーに提示して承認を得る（G1）**
+- [ ] ユーザーに提示して承認を得る（G1）
   - このゲートは**どのプロファイルでも省略しない**。要件の合意は後段の承認では
     代替できない（設計も plan も「その要件で正しいか」を前提に置くため）
   - `user_stories_gate` を個別キーで `false` にした場合のみ省略する
@@ -239,7 +241,7 @@ profile ごとの有効・無効は Step 0 の `config --json` の `gates` / `re
 ### Step 6: 振り返りと PR
 
 - [ ] `retrospective` 設定に従って `/hikyaku:retrospective {cycle} planning` を呼び出す
-- [ ] コミット前にブランチを確認する（`hikyaku branch verify plan {cycle}`）
+- [ ] コミット前にブランチを確認する（`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify plan {cycle}`）
 - [ ] 外部連携が有効なら、親 issue を作る
 
 ```bash
@@ -247,14 +249,14 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external sync {cycle}
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref plan {cycle}
 ```
 
-**親 issue はここで作る。** この時点なら user-stories があって親の要約として成立し、
+親 issue はここで作る。この時点なら user-stories があって親の要約として成立し、
 以降のすべての PR が親を参照できる。参照は `cycles.md` の外部列に記録され、この PR で
 デフォルトブランチに入るので、並行セッションからも見える。
 
 gh CLI が無い環境では投影内容だけが返る（`reason: "gh-not-found"`）。その場合は
 GitHub MCP ツールで適用し、`cycle link {cycle} --external {URL}` で記録する。
 
-- [ ] PR を作成する（タイトルは `hikyaku pr title plan {cycle}` で生成）
+- [ ] PR を作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title plan {cycle}` で生成）
   - `external ref` が返した行（`Refs #12` など）を本文の末尾に入れる。空なら入れない
 - [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
 
@@ -264,7 +266,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers plan {cycl
 
   失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
 
-**このフェーズの PR はドキュメントのみで、速やかにマージすることを想定している。**
+このフェーズの PR はドキュメントのみで、速やかにマージすることを想定している。
 デフォルトブランチに入っていない情報は他サイクルから見えないため。
 
 - [ ] 完了後、以下を案内する

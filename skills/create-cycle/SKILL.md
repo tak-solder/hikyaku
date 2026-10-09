@@ -6,14 +6,14 @@ disable-model-invocation: false
 argument-hint: "[{slug}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.3.0"
+  version: "2.4.0"
 ---
 
 # Hikyaku Create Cycle
 
 新しいサイクル（PLAN → ARCHITECT → BUILD → CLOSE の1周）を作成する。
 
-**1サイクル = 1チケット**を想定している。バックログ管理は Hikyaku のスコープ外で、
+1サイクル = 1チケットを想定している。バックログ管理は Hikyaku のスコープ外で、
 チケットは外部システム（GitHub issue / Asana など）に残る。
 
 ## 作業ステップ
@@ -34,7 +34,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config --json
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active
 ```
 
-**`completed` のまま放置されているサイクルがあれば警告する**（ブロックはしない）。
+`completed` のまま放置されているサイクルがあれば警告する（ブロックはしない）。
 実装は済んでいるのに永続ドキュメントへの昇格が終わっていない状態で、この期間に
 他サイクルが古い `overview` を「実装済みの現実」として読む危険がある。
 
@@ -48,13 +48,13 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active
 
 ### Step 1: サイクルの定義
 
-- [ ] **チケット**を確認する。ユーザーが提示していなければ尋ねる
+- [ ] チケットを確認する。ユーザーが提示していなければ尋ねる
   - チケット番号・URL、または「チケット無し」
-- [ ] **slug** を決める（英数字とハイフン。例: `billing`, `user-auth`）
+- [ ] slug を決める（英数字とハイフン。例: `billing`, `user-auth`）
   - `$ARGUMENTS[0]` があればそれを使う
   - 無ければチケットの内容から提案し、確認を得る
-- [ ] **一行要約**を書く（cycles.md の索引に載る）
-- [ ] **サイクル間の依存**があれば特定する
+- [ ] 一行要約を書く（cycles.md の索引に載る）
+- [ ] サイクル間の依存があれば特定する
   - 依存はサイクルレベルに留める。ビルドレベルのクロスサイクル依存は扱わない
     （依存グラフが2次元になって破綻するため）
   - 依存が満たされた = 依存先サイクルが `closed`
@@ -82,7 +82,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active
             → 影響範囲が大きい、慎重に進めたい
 ```
 
-profile は**サイクルの属性**であり、作成時に決まって以後変わらない。
+profile はサイクルの属性であり、作成時に決まって以後変わらない。
 
 → Step 3 へ。
 
@@ -98,7 +98,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle new {slug} \
 
 - [ ] 出力の `askAtCreate` が空でなければ、そのキーをユーザーに尋ねる
 
-ルート設定の `ask` に並んでいるキーは、**このサイクルの値をここで決める**という
+ルート設定の `ask` に並んでいるキーは、このサイクルの値をここで決めるという
 意味なので、勝手に既定で通さない。出力に各キーの既定値と対応するオプションが
 並ぶので、1つずつ尋ねてから、オプションを付けて `--dry-run` をやり直す。
 
@@ -108,7 +108,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle new {slug} \
   --base-branch {回答} --external {回答} --external-repo {回答} --dry-run
 ```
 
-尋ねるときは、**出力の既定値をそのまま採る選択肢も必ず提示する**。profile と同じで、
+尋ねるときは、出力の既定値をそのまま採る選択肢も必ず提示する。profile と同じで、
 ルート設定の値は推奨の提示にすぎない。何を答えてもそのサイクルの `.hikyaku.config`
 に記録され、以後そのサイクルの全フェーズで使われる。
 
@@ -119,7 +119,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle new {slug} \
 
 スクリプトが採番し、ディレクトリを作り、cycles.md に追記する。決めた値があれば
 `{サイクル}/.hikyaku.config` も書き出す。
-cycles.md には**作成時の Hikyaku バージョン**も記録される。ディレクトリ構造や
+cycles.md には作成時の Hikyaku バージョンも記録される。ディレクトリ構造や
 ファイル形式は作成時に決まるため、後からそれを解釈するのに必要になる。
 
 - [ ] 作業サイクルとして記録する
@@ -132,22 +132,22 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {NNN}-{slug}
 
 ### Step 4: このまま PLAN へ進むか確認する
 
-- [ ] ユーザーに確認する（**既定は「はい」**）
+- [ ] ユーザーに確認する（既定は「はい」）
 
 ```
 サイクル {NNN}-{slug} を作成しました（profile: {profile}）。
 このまま企画フェーズ（PLAN）に進みますか？ [Y/n]
 ```
 
-**planner から代行された場合はこの確認をしない。** 既に PLAN の途中なので、
+planner から代行された場合はこの確認をしない。既に PLAN の途中なので、
 そのまま planner へ戻る（この後のステップもすべて飛ばす）。
 
-- **はい** → Step 5 へ
-- **いいえ** → Step 6 へ
+- はい → Step 5 へ
+- いいえ → Step 6 へ
 
 ### Step 5: PLAN へ続ける
 
-このサイクルの成果物は cycles.md の1行だけなので、**独立した PR にはしない**。
+このサイクルの成果物は cycles.md の1行だけなので、独立した PR にはしない。
 `create` ブランチは作らず、最初から plan のブランチで作業して PLAN の PR に畳む。
 
 ```bash
@@ -155,9 +155,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify plan {NNN}-{slug}
 ```
 
 `ok: true` ならそのまま、`onBaseBranch: true` なら `expected` の名前で作成する。
-`onBaseBranch` が `false` / `null`（既に別の作業ブランチに居る）なら、**必ずユーザーに尋ねる**。
+`onBaseBranch` が `false` / `null`（既に別の作業ブランチに居る）なら、必ずユーザーに尋ねる。
 Hikyaku の規則に従う / 現在のブランチで作業する / 別のブランチを指定する、の3つを提示し、
-**どれが妥当かは示唆しない。** 実行環境が割り当てたブランチだと分かっていても自分で決めない
+どれが妥当かは示唆しない。実行環境が割り当てたブランチだと分かっていても自分で決めない
 （別の作業のブランチに紛れ込んだ状態と、セッションの中からは区別できないため）。
 
 - [ ] 決まったブランチで cycles.md の変更をコミットする
@@ -176,9 +176,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify create {NNN}-{slu
 ```
 
 `ok: true` ならそのまま、`onBaseBranch: true` なら `expected` の名前で作成する。
-`onBaseBranch` が `false` / `null`（既に別の作業ブランチに居る）なら、**必ずユーザーに尋ねる**。
+`onBaseBranch` が `false` / `null`（既に別の作業ブランチに居る）なら、必ずユーザーに尋ねる。
 Hikyaku の規則に従う / 現在のブランチで作業する / 別のブランチを指定する、の3つを提示し、
-**どれが妥当かは示唆しない。** 実行環境が割り当てたブランチだと分かっていても自分で決めない
+どれが妥当かは示唆しない。実行環境が割り当てたブランチだと分かっていても自分で決めない
 （別の作業のブランチに紛れ込んだ状態と、セッションの中からは区別できないため）。
 
 - [ ] コミットして PR を作成する
@@ -190,7 +190,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers create {NN
 
   失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
 
-**cycles.md がデフォルトブランチに入らないと、他サイクルからこのサイクルが見えない。**
+cycles.md がデフォルトブランチに入らないと、他サイクルからこのサイクルが見えない。
 並行サイクルの検出が機能しなくなるため、この PR は速やかにマージする。
 
 - [ ] 完了後、次を案内する
