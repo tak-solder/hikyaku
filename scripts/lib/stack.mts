@@ -12,6 +12,7 @@ import { loadConfig, type ResolvedConfig } from "./config.mts";
 import { HikyakuError } from "./errors.mts";
 import {
   defaultBranch,
+  isAncestor,
   listKnownBranches,
   localSha,
   nearestAncestorBranch,
@@ -85,9 +86,14 @@ export function scopeFor(args: ParsedArgs, phase: Phase, operand: string | undef
  *
  * 積んでいなければ undefined を返す（＝PR の base はデフォルトブランチ）。
  *
- * conductor ブランチ（/hikyaku:conductor の統合ブランチ）は、祖先として同じ距離に
- * ある候補より優先する。監督が fast-forward でフェーズのブランチを取り込むと、
- * 取り込んだブランチの先端と conductor の先端が同じコミットになるため。
+ * conductor ブランチ（/hikyaku:conductor の統合ブランチ）は、他の候補より先に別に判定する。
+ * conductor ブランチは統合の終点で、サイクルの最後までデフォルトブランチにマージされない。
+ * ところが最新の base から切った直後は先端が base 上のコミットになり（その後 base が
+ * 進めば祖先になり）、祖先関係だけで判定すると取り込み済みに見える。そこで conductor
+ * ブランチは、base の祖先であることに加えて、base の PR 列にビルドが1つ以上あるとき
+ * （conductor の PR がマージされ、ビルドの PR 列がデフォルトブランチに届いたあと）だけ
+ * 取り込み済みとみなす。未マージの plan のブランチから切ったときのように、取り込む前の
+ * フェーズのブランチと先端が同じなら、conductor ブランチを選ぶ。
  * conductor ブランチ自身の PR は常にデフォルトブランチへ向ける（統合の終点なので）。
  */
 export async function stackParent(
@@ -128,12 +134,43 @@ export async function stackParent(
   // PR を向けることになる。デフォルトブランチへフォールバックするほうが安全
   if (views.mergedIds === undefined && baseRefs.length === 0) return undefined;
 
-  // 同じ距離なら先に並んだ候補が選ばれるので、conductor ブランチを先頭に置く
-  const ordered = [
-    ...candidates.filter((branch) => parseBranch(config.branch, branch.name)?.phase === "conductor"),
-    ...candidates.filter((branch) => parseBranch(config.branch, branch.name)?.phase !== "conductor"),
-  ];
-  return nearestAncestorBranch(config.repoRoot, ordered, baseRefs);
+  const conductor = candidates.find((branch) => parseBranch(config.branch, branch.name)?.phase === "conductor");
+  const nearest = await nearestAncestorBranch(
+    config.repoRoot,
+    candidates.filter((branch) => branch !== conductor),
+    baseRefs,
+  );
+  if (conductor === undefined || !(await isUnmergedConductor(config.repoRoot, conductor, baseRefs, views.mergedIds))) {
+    return nearest;
+  }
+  // conductor ブランチの上にさらに積んだブランチのほうが近ければ、そちらを選ぶ
+  if (
+    nearest !== undefined &&
+    (await isAncestor(config.repoRoot, conductor.ref, nearest.ref)) &&
+    (await localSha(config.repoRoot, nearest.ref)) !== (await localSha(config.repoRoot, conductor.ref))
+  ) {
+    return nearest;
+  }
+  return conductor;
+}
+
+/**
+ * conductor ブランチが HEAD の祖先で、まだ base に取り込まれていないか。
+ * base の祖先でも、base の PR 列にビルドが無ければ（切った直後や、base だけが進んだとき）
+ * 取り込み済みにしない
+ */
+async function isUnmergedConductor(
+  repoRoot: string,
+  conductor: KnownBranch,
+  baseRefs: string[],
+  mergedIds: Set<string> | undefined,
+): Promise<boolean> {
+  if (!(await isAncestor(repoRoot, conductor.ref, "HEAD"))) return false;
+  if (mergedIds === undefined || mergedIds.size === 0) return true;
+  for (const baseRef of baseRefs) {
+    if (await isAncestor(repoRoot, conductor.ref, baseRef)) return false;
+  }
+  return true;
 }
 
 /**

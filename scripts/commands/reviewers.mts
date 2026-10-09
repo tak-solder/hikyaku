@@ -3,18 +3,11 @@
 import { flagBoolean, flagString } from "../lib/args.mts";
 import { branchName } from "../lib/branch.mts";
 import { HikyakuError } from "../lib/errors.mts";
-import { fetchPrGraphql, parsePrReviewState, run } from "../lib/github.mts";
+import { fetchPrGraphql, parsePrReviewState, reviewerLogin, run } from "../lib/github.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { planReviewers } from "../lib/reviewers.mts";
 import { requirePhase, scopeFor } from "../lib/stack.mts";
-
-function nameOf(entry: unknown): string | undefined {
-  const item = (typeof entry === "object" && entry !== null ? entry : {}) as Record<string, unknown>;
-  const author = typeof item["author"] === "object" && item["author"] !== null ? (item["author"] as Record<string, unknown>) : {};
-  const name = item["login"] ?? item["slug"] ?? item["name"] ?? author["login"];
-  return typeof name === "string" ? name : undefined;
-}
 
 register({
   name: "pr request-reviewers",
@@ -77,7 +70,7 @@ register({
     const graphql = await fetchPrGraphql(config.repoRoot, state.number);
 
     const names = (list: unknown): string[] =>
-      (Array.isArray(list) ? list : []).map(nameOf).filter((name): name is string => name !== undefined);
+      (Array.isArray(list) ? list : []).map(reviewerLogin).filter((name): name is string => name !== undefined);
 
     const plan = planReviewers({
       phase,

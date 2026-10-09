@@ -346,6 +346,26 @@ test("CLI: フェーズの PR は conductor ブランチへ、conductor ブラ�
   assert.equal(base("build-01"), "hikyaku/001-test/conductor");
 });
 
+test("CLI: デフォルトブランチから切ったばかりの conductor ブランチも、取り込み済みとみなさない", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\nbase_branch = "main"\n');
+  git(directory, "add", "-A");
+  git(directory, "commit", "-q", "-m", "init");
+  const base = (phase: string) => JSON.parse(succeeds(directory, "pr", "base", phase, "001", "--no-fetch", "--json")).base;
+
+  // plan の PR はマージ済み。最新の main から conductor ブランチを切る（先端が main と同じになる）
+  git(directory, "switch", "-q", "-c", "hikyaku/001-test/conductor");
+  git(directory, "switch", "-q", "-c", "hikyaku/001-test/architect");
+  git(directory, "commit", "-q", "--allow-empty", "-m", "architect");
+  assert.equal(base("architect"), "hikyaku/001-test/conductor");
+
+  // conductor ブランチを切ったあとに main だけが進んでも（conductor が main の祖先になっても）変わらない
+  git(directory, "switch", "-q", "main");
+  git(directory, "commit", "-q", "--allow-empty", "-m", "other work");
+  git(directory, "switch", "-q", "hikyaku/001-test/architect");
+  assert.equal(base("architect"), "hikyaku/001-test/conductor");
+});
+
 test("CLI: [conductor.models] のフェーズ、無ければ model を --model で渡し、どちらも無ければ渡さない", (t) => {
   const directory = workspace(t, true);
   succeeds(directory, "tasklist", "add", "001", "--title", "export", "--bp", "2");
@@ -374,6 +394,7 @@ architect = "opus"
 for (const [name, content, pattern] of [
   ["未知のフェーズ", '[conductor.models]\nplanner = "opus"\n', /指定できないキー/],
   ["空文字のモデル", '[conductor]\nmodel = ""\n', /空文字/],
+  ["テーブルでない models", '[conductor]\nmodels = "opus"\n', /models はテーブルで指定してください/],
 ] as const) {
   test(`CLI: [conductor] のモデル指定で${name}を拒否する`, (t) => {
     const directory = workspace(t, true);
@@ -486,12 +507,13 @@ function graphqlResponse(state: FakeState) {
 }
 
 const CONDUCTOR = "hikyaku/001-test/conductor";
+const HEAD_SHA = "0123456789abcdef0123456789abcdef01234567";
 
 function prView(overrides: Record<string, unknown> = {}) {
   return {
     number: 7, state: "OPEN", isDraft: false, baseRefName: CONDUCTOR, headRefName: "hikyaku/001-test/architect",
     statusCheckRollup: [{ __typename: "CheckRun", name: "typecheck", status: "COMPLETED", conclusion: "SUCCESS" }],
-    author: { login: "owner" }, reviewRequests: [], latestReviews: [],
+    headRefOid: HEAD_SHA, author: { login: "owner" }, reviewRequests: [], reviews: [], latestReviews: [],
     ...overrides,
   } as Parameters<typeof judgePr>[0];
 }
@@ -535,7 +557,7 @@ test("conductor: 承認は既定では不問で、コメントだけのレビュ
     { author: { login: "copilot-pull-request-reviewer" }, state: "COMMENTED" },
     { author: { login: "bob" }, state: "CHANGES_REQUESTED" },
   ];
-  const verdict = judgePr(prView({ latestReviews: reviews }), CONDUCTOR);
+  const verdict = judgePr(prView({ reviews }), CONDUCTOR);
   assert.equal(verdict.ok, true);
   assert.equal(verdict.approval.required, false);
 });
@@ -549,16 +571,46 @@ test("conductor: 承認を必須にすると、承認が1人以上あり、変�
   const none = judgePr(prView(), CONDUCTOR, strict);
   assert.equal(none.ok, false);
   assert.match(none.problems.join("\n"), /承認（Approve）がありません/);
-  assert.equal(judgePr(prView({ latestReviews: [comment] }), CONDUCTOR, strict).ok, false);
+  assert.equal(judgePr(prView({ reviews: [comment] }), CONDUCTOR, strict).ok, false);
 
-  const approved = judgePr(prView({ latestReviews: [comment, approve] }), CONDUCTOR, strict);
+  const approved = judgePr(prView({ reviews: [comment, approve] }), CONDUCTOR, strict);
   assert.equal(approved.ok, true);
   assert.deepEqual(approved.approval.approvedBy, ["alice"]);
 
-  const blocked = judgePr(prView({ latestReviews: [approve, changes] }), CONDUCTOR, strict);
+  const blocked = judgePr(prView({ reviews: [approve, changes] }), CONDUCTOR, strict);
   assert.equal(blocked.ok, false);
   assert.deepEqual(blocked.approval.changesRequestedBy, ["bob"]);
   assert.match(blocked.problems.join("\n"), /変更が要求されています: bob/);
+});
+
+test("conductor: 承認と変更の要求は、コメントだけのレビューで上書きされず、取り下げで消える", () => {
+  const strict = { requireApproval: true };
+  const at = (login: string, state: string, submittedAt: string) => ({ author: { login }, state, submittedAt });
+
+  const stillRequested = judgePr(prView({
+    reviews: [at("alice", "APPROVED", "2026-01-01T00:00:00Z"), at("bob", "CHANGES_REQUESTED", "2026-01-01T01:00:00Z"),
+      at("bob", "COMMENTED", "2026-01-01T02:00:00Z")],
+  }), CONDUCTOR, strict);
+  assert.equal(stillRequested.ok, false);
+  assert.deepEqual(stillRequested.approval.changesRequestedBy, ["bob"]);
+
+  const stillApproved = judgePr(prView({
+    reviews: [at("alice", "APPROVED", "2026-01-01T00:00:00Z"), at("alice", "COMMENTED", "2026-01-01T01:00:00Z")],
+  }), CONDUCTOR, strict);
+  assert.equal(stillApproved.ok, true);
+  assert.deepEqual(stillApproved.approval.approvedBy, ["alice"]);
+
+  // 後から承認し直せば変更の要求は消える。提出日時で並べるので、応答の順には依らない
+  const reapproved = judgePr(prView({
+    reviews: [at("bob", "APPROVED", "2026-01-01T03:00:00Z"), at("bob", "CHANGES_REQUESTED", "2026-01-01T01:00:00Z")],
+  }), CONDUCTOR, strict);
+  assert.equal(reapproved.ok, true);
+
+  const dismissed = judgePr(prView({
+    reviews: [at("alice", "DISMISSED", "2026-01-01T00:00:00Z")],
+  }), CONDUCTOR, strict);
+  assert.deepEqual(dismissed.approval.approvedBy, []);
+  assert.equal(dismissed.ok, false);
 });
 
 test("conductor: 開いていない PR は取り込めない", () => {
@@ -581,6 +633,11 @@ for (const [name, entry, status] of [
   ["成功した StatusContext", { __typename: "StatusContext", context: "ci/x", state: "SUCCESS" }, "pass"],
   ["中立の CheckRun", { __typename: "CheckRun", name: "t", status: "COMPLETED", conclusion: "NEUTRAL" }, "pass"],
   ["スキップされた CheckRun", { __typename: "CheckRun", name: "t", status: "COMPLETED", conclusion: "SKIPPED" }, "pass"],
+  ["承認待ちの CheckRun", { __typename: "CheckRun", name: "t", status: "WAITING", conclusion: "" }, "pending"],
+  ["status の無い CheckRun", { __typename: "CheckRun", name: "t", conclusion: "" }, "fail"],
+  ["知らない status の CheckRun", { __typename: "CheckRun", name: "t", status: "SOMETHING_NEW" }, "fail"],
+  ["state を持つ CheckRun", { __typename: "CheckRun", name: "t", state: "", status: "IN_PROGRESS" }, "pending"],
+  ["__typename の無い StatusContext", { context: "ci/x", state: "SUCCESS" }, "pass"],
 ] as const) {
   test(`conductor: CI の判定（${name}）`, () => {
     const verdict = judgePr(prView({ statusCheckRollup: [entry] }), CONDUCTOR);
@@ -601,6 +658,21 @@ test("conductor: CI は失敗が1つでもあれば失敗、次に待機中、�
   const none = judgePr(prView({ statusCheckRollup: [] }), CONDUCTOR);
   assert.equal(none.checks.status, "none");
   assert.equal(none.ok, true);
+});
+
+test("conductor: CI の状態を判定できないチェックは、待たずに失敗として名前と状態を示す", () => {
+  const verdict = judgePr(prView({ statusCheckRollup: [{ __typename: "CheckRun", name: "t", status: "SOMETHING_NEW" }] }), CONDUCTOR);
+  assert.equal(verdict.waiting, false);
+  assert.deepEqual(verdict.checks.failing, ["t（状態を判定できません: SOMETHING_NEW）"]);
+});
+
+test("conductor: チェックの登録を待つあいだは、CI が1つも無くても合格にせず waiting にする", () => {
+  const waiting = judgePr(prView({ statusCheckRollup: [] }), CONDUCTOR, { requireApproval: false, awaitChecks: true });
+  assert.equal(waiting.ok, false);
+  assert.equal(waiting.waiting, true);
+  assert.match(waiting.problems.join("\n"), /CI のチェックがまだ登録されていません/);
+  // チェックがあれば、待つ指定は効かない
+  assert.equal(judgePr(prView(), CONDUCTOR, { requireApproval: false, awaitChecks: true }).ok, true);
 });
 
 test("conductor: 未解決のレビュースレッドがあれば、待たずに取り込めない", () => {
@@ -826,7 +898,7 @@ test("CLI: conductor check-pr は gh の結果で取り込めるかを返し、�
 test("CLI: conductor check-pr は gh の応答に必須のフィールドが無い・型が違うときに、合格にせず終了コード 1 で止まる", (t) => {
   const directory = workspace(t, true);
   const full = prView() as unknown as Record<string, unknown>;
-  for (const field of ["isDraft", "statusCheckRollup", "latestReviews", "state", "baseRefName"]) {
+  for (const field of ["isDraft", "statusCheckRollup", "reviews", "headRefOid", "state", "baseRefName"]) {
     const { [field]: _removed, ...rest } = full;
     const result = useGh(t, directory, { view: rest }).cli("conductor", "check-pr", "7", "001", "--json");
     assert.equal(result.status, 1, `${field} が無い応答は合格にしない`);
@@ -837,7 +909,7 @@ test("CLI: conductor check-pr は gh の応答に必須のフィールドが無�
   assert.equal(useGh(t, directory, { view: "not json" }).cli("conductor", "check-pr", "7", "001").status, 1);
   assert.equal(useGh(t, directory, { view: "null" }).cli("conductor", "check-pr", "7", "001").status, 1);
   // 空配列は、CI もレビューも無い PR の正常な応答
-  const empty = useGh(t, directory, { view: { ...full, statusCheckRollup: [], latestReviews: [] } }).cli("conductor", "check-pr", "7", "001");
+  const empty = useGh(t, directory, { view: { ...full, statusCheckRollup: [], reviews: [] } }).cli("conductor", "check-pr", "7", "001");
   assert.equal(empty.status, 0, empty.stderr);
 });
 
@@ -870,7 +942,10 @@ test("CLI: 依頼先を読めない依頼は依頼が残っているものとし
 });
 
 test("github: gh pr view の応答は必須のフィールドが全て揃っているときだけ読み、空配列は正常として扱う", () => {
-  const valid = { number: 7, state: "OPEN", isDraft: false, baseRefName: "main", headRefName: "x", statusCheckRollup: [], latestReviews: [] };
+  const valid = {
+    number: 7, state: "OPEN", isDraft: false, baseRefName: "main", headRefName: "x", headRefOid: HEAD_SHA,
+    statusCheckRollup: [], reviews: [],
+  };
   assert.equal(parsePrView(valid).isDraft, false);
   for (const field of Object.keys(valid)) {
     const { [field]: _removed, ...rest } = valid as Record<string, unknown>;
@@ -879,6 +954,7 @@ test("github: gh pr view の応答は必須のフィールドが全て揃って�
   for (const raw of [null, [], "text", 1, undefined]) assert.throws(() => parsePrView(raw), /JSON のオブジェクトではありません/);
   assert.throws(() => parsePrView({ ...valid, isDraft: undefined }), /isDraft/);
   assert.throws(() => parsePrView({ ...valid, statusCheckRollup: null }), /statusCheckRollup/);
+  assert.throws(() => parsePrView({ ...valid, headRefOid: "main" }), /headRefOid/);
 });
 
 test("github: レビュアーのアサイン用の gh pr view の応答も、作成者や最新のレビューが無ければエラーにする", () => {
@@ -920,7 +996,7 @@ test("CLI: conductor check-pr は gh api graphql で未解決のレビュース�
 test("CLI: conductor check-pr --wait はレビューの依頼が消えるまで確かめ直し、消えたら成功する", (t) => {
   const directory = workspace(t, true);
   const gh = useGh(t, directory, { steps: [{ requests: ["@copilot"] }, { requests: ["@copilot"] }] });
-  const result = gh.cli("conductor", "check-pr", "7", "001", "--wait", "--interval", "0", "--timeout", "1", "--json");
+  const result = gh.cli("conductor", "check-pr", "7", "001", "--wait", "--interval", "1", "--timeout", "1", "--json");
   assert.equal(result.status, 0, result.stderr);
   const parsed = JSON.parse(result.stdout);
   assert.equal(parsed.ok, true);
@@ -928,10 +1004,34 @@ test("CLI: conductor check-pr --wait はレビューの依頼が消えるまで�
   assert.equal(gh.calls().filter((call) => call.startsWith("pr view")).length, 3);
 });
 
+test("CLI: conductor check-pr --wait は PR を作った直後にチェックが無ければ、登録されるまで待つ", (t) => {
+  const directory = workspace(t, true);
+  const gh = useGh(t, directory, { steps: [{ view: prView({ statusCheckRollup: [] }) }] });
+  const result = gh.cli("conductor", "check-pr", "7", "001", "--wait", "--interval", "1", "--timeout", "1", "--json");
+  assert.equal(result.status, 0, result.stderr);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.checks.status, "pass");
+  assert.equal(gh.calls().filter((call) => call.startsWith("pr view")).length, 2);
+
+  // 待たない設定なら、チェックが無くても none で合格にする
+  const once = useGh(t, directory, { view: prView({ statusCheckRollup: [] }) }).cli("conductor", "check-pr", "7", "001", "--json");
+  assert.equal(once.status, 0, once.stderr);
+  assert.equal(JSON.parse(once.stdout).checks.status, "none");
+});
+
+test("CLI: conductor check-pr は検証した head のコミットを返し、--interval は 1 秒未満を拒否する", (t) => {
+  const directory = workspace(t, true);
+  const result = useGh(t, directory, {}).cli("conductor", "check-pr", "7", "001", "--json");
+  assert.equal(JSON.parse(result.stdout).headSha, HEAD_SHA);
+  const rejected = useGh(t, directory, {}).cli("conductor", "check-pr", "7", "001", "--wait", "--interval", "0");
+  assert.equal(rejected.status, 1);
+  assert.match(rejected.stderr, /--interval は 1 以上/);
+});
+
 test("CLI: conductor check-pr --wait は上限を超えたら timedOut で終了コード 2、待たない設定なら1回で判定する", (t) => {
   const directory = workspace(t, true);
   const gh = useGh(t, directory, { requests: ["@copilot"] });
-  const timedOut = gh.cli("conductor", "check-pr", "7", "001", "--wait", "--interval", "0", "--timeout", "0", "--json");
+  const timedOut = gh.cli("conductor", "check-pr", "7", "001", "--wait", "--interval", "1", "--timeout", "0", "--json");
   assert.equal(timedOut.status, 2);
   assert.equal(JSON.parse(timedOut.stdout).timedOut, true);
   assert.match(timedOut.stderr, /待機の上限（0 分）を超えました/);
@@ -939,14 +1039,14 @@ test("CLI: conductor check-pr --wait は上限を超えたら timedOut で終了
 
   // 設定の review_timeout を上限の既定にする
   write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[conductor]\nreview_timeout = 0\n');
-  const configured = useGh(t, directory, { requests: ["@copilot"] }).cli("conductor", "check-pr", "7", "001", "--wait", "--interval", "0", "--json");
+  const configured = useGh(t, directory, { requests: ["@copilot"] }).cli("conductor", "check-pr", "7", "001", "--wait", "--interval", "1", "--json");
   assert.equal(JSON.parse(configured.stdout).timedOut, true);
 });
 
 test("CLI: conductor check-pr --wait は待っても解消しない問題（Draft・未解決の指摘）を見つけたらすぐ返す", (t) => {
   const directory = workspace(t, true);
   const gh = useGh(t, directory, { view: prView({ isDraft: true }), requests: ["@copilot"] });
-  const result = gh.cli("conductor", "check-pr", "7", "001", "--wait", "--interval", "0", "--timeout", "10", "--json");
+  const result = gh.cli("conductor", "check-pr", "7", "001", "--wait", "--interval", "1", "--timeout", "10", "--json");
   assert.equal(result.status, 2);
   assert.equal(JSON.parse(result.stdout).timedOut, false);
   assert.equal(gh.calls().filter((call) => call.startsWith("pr view")).length, 1);

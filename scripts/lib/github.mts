@@ -36,10 +36,24 @@ function requireFields(raw: unknown, what: string, checks: Record<string, (value
   return raw as Record<string, any>;
 }
 
+/**
+ * gh の応答に現れるレビュアー・依頼先・レビューから名前を取り出す。
+ * User・Bot は login、Team は slug（無ければ name）、レビューは author.login を持つ
+ */
+export function reviewerLogin(entry: unknown): string | undefined {
+  const item = (typeof entry === "object" && entry !== null ? entry : {}) as Record<string, unknown>;
+  const author = typeof item["author"] === "object" && item["author"] !== null ? (item["author"] as Record<string, unknown>) : {};
+  const name = item["login"] ?? item["slug"] ?? item["name"] ?? author["login"];
+  return typeof name === "string" ? name : undefined;
+}
+
 const isString = (value: unknown): boolean => typeof value === "string" && value !== "";
 const isArray = (value: unknown): boolean => Array.isArray(value);
 
-/** gh pr view --json number,state,isDraft,baseRefName,headRefName,statusCheckRollup,latestReviews の結果 */
+/** check-pr が gh pr view --json に渡すフィールド */
+export const PR_VIEW_FIELDS = "number,state,isDraft,baseRefName,headRefName,headRefOid,statusCheckRollup,reviews";
+
+/** gh pr view --json {PR_VIEW_FIELDS} の結果 */
 export function parsePrView(raw: unknown): PrView {
   const view = requireFields(raw, "gh pr view", {
     number: (value) => Number.isInteger(value),
@@ -47,8 +61,9 @@ export function parsePrView(raw: unknown): PrView {
     isDraft: (value) => typeof value === "boolean",
     baseRefName: isString,
     headRefName: isString,
+    headRefOid: (value) => typeof value === "string" && /^[0-9a-f]{40,64}$/.test(value),
     statusCheckRollup: isArray,
-    latestReviews: isArray,
+    reviews: isArray,
   });
   return {
     number: view["number"],
@@ -56,8 +71,9 @@ export function parsePrView(raw: unknown): PrView {
     isDraft: view["isDraft"],
     baseRefName: view["baseRefName"],
     headRefName: view["headRefName"],
+    headRefOid: view["headRefOid"],
     statusCheckRollup: view["statusCheckRollup"],
-    latestReviews: view["latestReviews"],
+    reviews: view["reviews"],
     reviewRequests: [],
   };
 }

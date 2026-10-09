@@ -12,6 +12,7 @@
 import { createHash } from "node:crypto";
 import type { Gates, Reviews } from "./config.mts";
 import { HikyakuError } from "./errors.mts";
+import { reviewerLogin } from "./github.mts";
 
 export type AskCategory = "route" | "confirm" | "consent" | "spec" | "failure" | "abandon" | "unknown";
 export type Handler = "supervisor" | "human";
@@ -459,11 +460,13 @@ export interface PrView {
   isDraft: boolean;
   baseRefName: string;
   headRefName: string;
+  /** PR の head のコミット。検証したコミットと取り込むコミットを一致させるために返す */
+  headRefOid: string;
   statusCheckRollup: unknown[];
   /** まだレビューしていないレビュアー（人・チーム・Copilot などの Bot）への依頼 */
   reviewRequests: unknown[];
-  /** レビュアーごとの最新のレビュー */
-  latestReviews: unknown[];
+  /** PR の全てのレビュー（古い順） */
+  reviews: unknown[];
   /** 未解決のレビュースレッド。取得していなければ undefined（確かめない） */
   reviewThreads?: { unresolved: ReviewThread[]; truncated: boolean };
 }
@@ -478,6 +481,11 @@ export interface ReviewThread {
 export interface PrOptions {
   /** 1人以上の承認が必要で、変更の要求が残っていないこと */
   requireApproval: boolean;
+  /**
+   * CI のチェックが1つも無いとき、失敗にも合格にもせず待つ。PR を作った直後は
+   * チェックがまだ登録されていないことがあるため、--wait の最初の猶予のあいだだけ立てる
+   */
+  awaitChecks?: boolean;
 }
 
 export interface PrVerdict {
@@ -515,16 +523,26 @@ function judgeCheck(entry: unknown): { name: string; verdict: CheckVerdict } {
   const text = (key: string): string => (typeof item[key] === "string" ? (item[key] as string).toUpperCase() : "");
   const name = String(item["name"] ?? item["context"] ?? "（名前なし）");
 
-  if (item["__typename"] === "StatusContext" || "state" in item) {
+  // 形は __typename で見分ける。無いときだけ、CheckRun に無い state の有無で見分ける
+  const typename = item["__typename"];
+  if (typename === "StatusContext" || (typename === undefined && "state" in item && !("status" in item))) {
     const state = text("state");
     if (state === "SUCCESS") return { name, verdict: "pass" };
     if (state === "PENDING" || state === "EXPECTED") return { name, verdict: "pending" };
     return { name, verdict: "fail" };
   }
-  if (text("status") !== "COMPLETED") return { name, verdict: "pending" };
-  // 完了していても、成功・中立・スキップ以外（失敗・取り消し・タイムアウトなど）は通っていない
-  return { name, verdict: ["SUCCESS", "NEUTRAL", "SKIPPED"].includes(text("conclusion")) ? "pass" : "fail" };
+  const status = text("status");
+  if (status === "COMPLETED") {
+    // 完了していても、成功・中立・スキップ以外（失敗・取り消し・タイムアウトなど）は通っていない
+    return { name, verdict: ["SUCCESS", "NEUTRAL", "SKIPPED"].includes(text("conclusion")) ? "pass" : "fail" };
+  }
+  if (PENDING_CHECK_STATUSES.includes(status)) return { name, verdict: "pending" };
+  // 知らない状態を実行中として扱うと、--wait が上限まで待ち続けて本当の原因が見えなくなる
+  return { name: `${name}（状態を判定できません: ${status === "" ? "なし" : status}）`, verdict: "fail" };
 }
+
+/** CheckRun の status のうち、待てば完了しうるもの */
+const PENDING_CHECK_STATUSES = ["QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED", "PENDING"];
 
 /**
  * PR が conductor ブランチに取り込める状態かを判定する。
@@ -536,17 +554,40 @@ function judgeCheck(entry: unknown): { name: string; verdict: CheckVerdict } {
  *
  * 承認は既定では不問。requireApproval のときは、1人以上の承認があり、変更の要求が
  * 残っていないことを求める。reviewDecision はブランチ保護で承認が必須のときしか
- * 値が入らないので使わず、レビュアーごとの最新のレビュー（latestReviews）から判定する
+ * 値が入らないので使わず、レビュアーごとの最新の意見（latestOpinions）から判定する
  */
 function reviewerName(entry: unknown): string {
-  const item = (typeof entry === "object" && entry !== null ? entry : {}) as Record<string, unknown>;
-  const author = typeof item["author"] === "object" && item["author"] !== null ? (item["author"] as Record<string, unknown>) : {};
-  return String(item["login"] ?? item["slug"] ?? item["name"] ?? author["login"] ?? "（名前なし）");
+  return reviewerLogin(entry) ?? "（名前なし）";
 }
 
 function reviewState(entry: unknown): string {
   const state = (entry as Record<string, unknown> | null)?.["state"];
   return typeof state === "string" ? state.toUpperCase() : "";
+}
+
+/**
+ * レビュアーごとに、意見（承認・変更の要求・取り下げ）を示した最新のレビューの状態を返す。
+ * latestReviews はコメントだけのレビューも最新として数えるので、変更を要求したあとに
+ * コメントを返すと要求が消えて見える。GraphQL の latestOpinionatedReviews と同じ考え方で、
+ * コメントだけのレビューは意見を上書きしない。取り下げ（DISMISSED）は意見なしに戻す
+ */
+export function latestOpinions(reviews: unknown[]): Map<string, "APPROVED" | "CHANGES_REQUESTED"> {
+  const submittedAt = (entry: unknown): string => {
+    const value = (entry as Record<string, unknown> | null)?.["submittedAt"];
+    return typeof value === "string" ? value : "";
+  };
+  // gh は古い順に返すが、念のため提出日時で並べ直す（日時が無いものは元の順のまま）
+  const ordered = reviews
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => submittedAt(a.entry).localeCompare(submittedAt(b.entry)) || a.index - b.index)
+    .map(({ entry }) => entry);
+  const opinions = new Map<string, "APPROVED" | "CHANGES_REQUESTED">();
+  for (const entry of ordered) {
+    const state = reviewState(entry);
+    if (state === "APPROVED" || state === "CHANGES_REQUESTED") opinions.set(reviewerName(entry), state);
+    else if (state === "DISMISSED") opinions.delete(reviewerName(entry));
+  }
+  return opinions;
 }
 
 export function judgePr(
@@ -559,6 +600,7 @@ export function judgePr(
   const pending = judged.filter((check) => check.verdict === "pending").map((check) => check.name);
   const status: ChecksStatus =
     failing.length > 0 ? "fail" : pending.length > 0 ? "pending" : judged.length === 0 ? "none" : "pass";
+  const awaitingChecks = status === "none" && options.awaitChecks === true;
 
   const baseOk = view.baseRefName === conductorBranch;
   const stateOk = view.state === "OPEN";
@@ -566,10 +608,9 @@ export function judgePr(
   const readyOk = view.isDraft === false;
   const requested = view.reviewRequests.map(reviewerName);
   const requestsOk = requested.length === 0;
-  const approvedBy = view.latestReviews.filter((r) => reviewState(r) === "APPROVED").map(reviewerName);
-  const changesRequestedBy = view.latestReviews
-    .filter((r) => reviewState(r) === "CHANGES_REQUESTED")
-    .map(reviewerName);
+  const opinions = [...latestOpinions(view.reviews)];
+  const approvedBy = opinions.filter(([, state]) => state === "APPROVED").map(([name]) => name);
+  const changesRequestedBy = opinions.filter(([, state]) => state === "CHANGES_REQUESTED").map(([name]) => name);
   const approvalOk = !options.requireApproval || (approvedBy.length > 0 && changesRequestedBy.length === 0);
 
   const unresolved = view.reviewThreads?.unresolved ?? [];
@@ -601,6 +642,7 @@ export function judgePr(
   }
   if (!requestsOk) waits.push(`レビューの依頼が残っています: ${requested.join(", ")}`);
   if (status === "pending") waits.push(`CI がまだ終わっていません: ${pending.join(", ")}`);
+  if (awaitingChecks) waits.push("CI のチェックがまだ登録されていません");
   const problems = [...blocks, ...waits];
 
   return {

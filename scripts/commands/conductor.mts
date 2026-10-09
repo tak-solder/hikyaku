@@ -20,11 +20,12 @@ import {
   resolveAsk,
   settingsDigest,
   shellQuote,
+  type PrVerdict,
   type PrView,
   type ResolvedAsk,
 } from "../lib/conductor.mts";
 import { branchName } from "../lib/branch.mts";
-import { fetchPrGraphql, parsePrView, run } from "../lib/github.mts";
+import { fetchPrGraphql, parsePrView, PR_VIEW_FIELDS, run } from "../lib/github.mts";
 import { HikyakuError, ValidationError } from "../lib/errors.mts";
 import { emit, table } from "../lib/output.mts";
 import { pluginRoot } from "../lib/paths.mts";
@@ -261,12 +262,15 @@ register({
   },
 });
 
+/** --wait のとき、CI のチェックが1つも無くても none と判定せずに待つ時間（PR を作った直後の猶予） */
+const CHECKS_GRACE_SECONDS = 60;
+
 async function fetchPrView(cwd: string, pr: string): Promise<PrView> {
   let stdout: string;
   try {
     ({ stdout } = await run(
       "gh",
-      ["pr", "view", pr, "--json", "number,state,isDraft,baseRefName,headRefName,statusCheckRollup,latestReviews"],
+      ["pr", "view", pr, "--json", PR_VIEW_FIELDS],
       { cwd, timeout: 30_000 },
     ));
   } catch (error) {
@@ -304,7 +308,12 @@ register({
     "  レビュー指摘 未解決のレビュースレッドが無いこと",
     "  CI           失敗しているチェックも、まだ終わっていないチェックも無いこと",
     "  承認         既定では不問。[conductor] require_approval = true のときは、1人以上の承認があり、",
-    "               変更の要求が残っていないこと（レビュアーごとの最新のレビューで判定する）",
+    "               変更の要求が残っていないこと（レビュアーごとに、承認・変更の要求・取り下げの",
+    "               うち最新のもので判定する。コメントだけのレビューは意見を上書きしない）",
+    "",
+    "結果の headSha は、検証した PR の head のコミットです。取り込むときはブランチ名ではなく",
+    "このコミットを指定してください（検証のあとに push されたコミットや、push されていない",
+    "ローカルのコミットを取り込まないため）。",
     "",
     "満たしていなければ終了コード 2 で、理由を problems に返します。gh の応答に必須の",
     "フィールドが無い、型が違うなど、状態を取得できなかったときは判定せず、終了コード 1 で",
@@ -314,14 +323,15 @@ register({
     "そのためブランチ保護の必須チェックが働きません。このコマンドがその代わりです。",
     "",
     "--wait を付けると、待てば解消しうる問題（CI の実行中、レビューの依頼が残っている）だけで",
-    "止まっているあいだ、--interval 秒（既定 30）ごとに確かめ直します。Draft・未解決の指摘・",
+    "止まっているあいだ、--interval 秒（既定 30。1 以上）ごとに確かめ直します。Draft・未解決の指摘・",
     "CI の失敗・マージ先の食い違いは待っても解消しないので、見つけた時点で返します。",
     "上限は --timeout 分（既定は [conductor] review_timeout。0 なら待たない）で、超えたら",
     "timedOut: true で返します。最大で数十分かかるので、バックグラウンドで実行してください。",
     "",
     "CI が1つも無い場合（paths フィルタで走らない、CI の無いリポジトリなど）は",
     "確かめるものが無いので失敗にせず、checks.status を none で返します。PR を作った直後は",
-    "チェックがまだ登録されていないことがあるので、none のときは少し待って再実行してください。",
+    `チェックがまだ登録されていないことがあるので、--wait のときは最初の ${CHECKS_GRACE_SECONDS} 秒`,
+    "（上限がそれより短ければ上限まで）、チェックが現れるのを待ってから none と判定します。",
   ].join("\n"),
   run: async ({ args, operands }) => {
     const pr = operands[0];
@@ -329,21 +339,30 @@ register({
     const { config, context } = openCycle(args, operands[1]);
     const conductorBranch = branchName(config.branch, "conductor", context.name);
 
-    const number = (name: string, fallback: number): number => {
+    const number = (name: string, fallback: number, min: number): number => {
       const raw = flagString(args, name);
       if (raw === undefined) return fallback;
       const value = Number(raw);
-      if (!Number.isFinite(value) || value < 0) throw new HikyakuError(`--${name} は 0 以上の数値で指定してください（現在: ${raw}）`);
+      if (!Number.isFinite(value) || value < min) {
+        throw new HikyakuError(`--${name} は ${min} 以上の数値で指定してください（現在: ${raw}）`);
+      }
       return value;
     };
     const wait = flagBoolean(args, "wait");
-    const timeoutMinutes = number("timeout", config.conductor.reviewTimeoutMinutes);
-    const intervalSeconds = number("interval", 30);
+    const timeoutMinutes = number("timeout", config.conductor.reviewTimeoutMinutes, 0);
+    // 0 を許すと、gh の呼び出しを間を空けずに繰り返し、GitHub の rate limit に当たる
+    const intervalSeconds = number("interval", 30, 1);
 
     const started = Date.now();
+    const graceMs = Math.min(CHECKS_GRACE_SECONDS * 1000, timeoutMinutes * 60_000);
+    const judge = (view: PrView): PrVerdict =>
+      judgePr(view, conductorBranch, {
+        requireApproval: config.conductor.requireApproval,
+        awaitChecks: wait && Date.now() - started < graceMs,
+      });
     let timedOut = false;
     let view = await fetchPrView(config.repoRoot, pr);
-    let verdict = judgePr(view, conductorBranch, { requireApproval: config.conductor.requireApproval });
+    let verdict = judge(view);
     while (wait && !verdict.ok && verdict.waiting) {
       if (Date.now() - started >= timeoutMinutes * 60_000) {
         timedOut = true;
@@ -352,18 +371,19 @@ register({
       }
       await new Promise((resolve) => setTimeout(resolve, intervalSeconds * 1000));
       view = await fetchPrView(config.repoRoot, pr);
-      verdict = judgePr(view, conductorBranch, { requireApproval: config.conductor.requireApproval });
+      verdict = judge(view);
     }
     const waitedSeconds = Math.round((Date.now() - started) / 1000);
 
     emit(
       {
         cycle: context.name, pr: view.number, base: view.baseRefName, head: view.headRefName,
-        conductorBranch, waitedSeconds, timedOut, ...verdict,
+        headSha: view.headRefOid, conductorBranch, waitedSeconds, timedOut, ...verdict,
       },
       () =>
         [
           `PR #${view.number}（${view.headRefName} → ${view.baseRefName}）`,
+          `head: ${view.headRefOid}`,
           `マージ先: ${verdict.baseOk ? "✓" : "✗"} ${conductorBranch}`,
           `状態: ${verdict.stateOk ? "✓" : "✗"} ${view.state}`,
           `Ready for Review: ${verdict.readyOk ? "✓" : "✗"}`,

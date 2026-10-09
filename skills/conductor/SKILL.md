@@ -244,23 +244,33 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor check-pr {PR の番�
   - **終了コード 1**（`gh` の応答に必須のフィールドが無い、型が違う、取得できないなど、状態を判定できなかった）
     も、取り込まない。判定できなかった PR を、CI なし・依頼なし・Ready として合格させない。エラーの内容を
     人間に示して上げる
-  - `none`（CI が1つも無い）は失敗にならない。ただし PR を作った直後はチェックが登録されていないことが
-    あるので、一度だけ少し待って再実行する。それでも `none` なら、最後の PR の本文に
-    「フェーズの PR に CI が走っていなかった」と書く
+  - `none`（CI が1つも無い）は失敗にならない。PR を作った直後にチェックがまだ登録されていない場合は、
+    `--wait` が最初の少しのあいだ待ってから判定するので、再実行は要らない。`none` で通ったら、最後の PR の
+    本文に「フェーズの PR に CI が走っていなかった」と書く
+  - 結果の `headSha` は、検証した PR の head のコミット。取り込みにはブランチ名ではなくこれを使う
 
 - [ ] 検証を通った PR を conductor ブランチに取り込む
 
 ```bash
+git fetch origin {フェーズのブランチ}
+git rev-parse {フェーズのブランチ} origin/{フェーズのブランチ}
+```
+
+  - 2行とも `headSha` と一致することを確かめる。一致しなければ取り込まず、人間に上げる。
+    ローカルに push されていないコミットがある、または検証のあとに push されたコミットがあるので、
+    検証していないコミットを取り込むことになる。`check-pr` をやり直すかは人間が決める
+
+```bash
 git switch {conductor}
 git pull --ff-only
-git merge --no-ff {フェーズのブランチ} -m "{フェーズ} を conductor に取り込む（{PR の URL}）"
+git merge --no-ff {headSha} -m "{フェーズ} を conductor に取り込む（{PR の URL}）"
 git push origin {conductor}
 git branch -d {フェーズのブランチ}
 git push origin --delete {フェーズのブランチ}
 ```
 
-  - `--no-ff` で取り込み、取り込んだブランチは消す。残すと、次のフェーズの PR の向き先
-    （`pr base`）を導くときの候補に混ざる
+  - ブランチ名ではなく、`check-pr` が検証したコミット（`headSha`）を `--no-ff` で取り込む
+  - 取り込んだブランチは消す。残すと、次のフェーズの PR の向き先（`pr base`）を導くときの候補に混ざる
   - push すると、GitHub はその PR をマージ済みとして扱う
   - 取り込んだ PR の `check-pr` の結果（CI の件数と状態）は、Step 4 の最後の PR の本文に1行で残す
   - 差し戻しの再設計（`architect {cycle} build-NN`）は PR を作らない。取り込まずに Step 1 へ

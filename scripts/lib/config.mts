@@ -351,7 +351,7 @@ function readConductor(table: TomlTable | undefined): ConductorConfig {
     phaseReviewers: readReviewers(table, "phase_reviewers", where),
     reviewTimeoutMinutes: readTimeout(table, where),
     model: readModel(table, "model", where),
-    models: readConductorModels(readTable(table ?? {}, "models")),
+    models: readConductorModels(readConductorModelsTable(table, where)),
   };
   checkConductorAsks(conductor, where);
   return conductor;
@@ -406,6 +406,19 @@ function readModel(table: TomlTable | undefined, key: string, where: string): st
  * [conductor.models] を読む。フェーズ名のタイプミスを黙って捨てると、指定したつもりの
  * モデルが効かないまま既定のモデルで動くので、未知のキーはエラーにする
  */
+/** [conductor.models] を取り出す。models = "opus" のようにテーブル以外で書かれたら、黙って無視せず止める */
+function readConductorModelsTable(table: TomlTable | undefined, where: string): TomlTable | undefined {
+  if (table?.["models"] === undefined) return undefined;
+  const models = readTable(table, "models");
+  if (models === undefined) {
+    throw new HikyakuError(
+      `${where}.models はテーブルで指定してください`,
+      "全フェーズの既定は [conductor] の model に、フェーズごとの上書きは [conductor.models] の下に build = \"opus\" の形で書きます。",
+    );
+  }
+  return models;
+}
+
 function readConductorModels(table: TomlTable | undefined): Partial<Record<ConductorPhase, string>> {
   const where = "[conductor.models]";
   const models: Partial<Record<ConductorPhase, string>> = {};

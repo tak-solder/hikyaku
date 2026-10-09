@@ -5,13 +5,14 @@
  * CLI が担い、スキルは結果に従って依頼するだけにする。
  */
 
-import type { ReviewerSkipTarget } from "./config.mts";
+import { REVIEWER_SKIP_TARGETS, type ReviewerSkipTarget } from "./config.mts";
 
 /** フェーズ名を、アサインをオフにできる単位に直す。build-NN は build */
 export function skipTargetOf(phase: string): ReviewerSkipTarget | undefined {
   if (/^build-\d+$/.test(phase)) return "build";
-  const fixed = ["init", "bp-guide", "create", "plan", "architect", "close", "conductor"];
-  return fixed.includes(phase) ? (phase as ReviewerSkipTarget) : undefined;
+  return phase !== "build" && (REVIEWER_SKIP_TARGETS as readonly string[]).includes(phase)
+    ? (phase as ReviewerSkipTarget)
+    : undefined;
 }
 
 export type ReviewerSource = "pr" | "conductor" | "none";
