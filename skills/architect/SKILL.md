@@ -3,7 +3,7 @@ name: architect
 description: "Hikyaku 設計フェーズ: 企画成果物と既存コードを入力に、このサイクルの設計差分（design-delta）とビルド分割を出力する"
 user-invocable: true
 disable-model-invocation: true
-argument-hint: "[{cycle}] [build-{NN}]"
+argument-hint: "[{cycle}] [build-{NN} | add {指摘}]"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
   version: "2.4.0"
@@ -69,6 +69,29 @@ close-cycle が行う。並行サイクルはこの status を見て「決まっ
 - 案内: `/hikyaku:builder {cycle} {NN}` を案内する。同じブランチで builder を起動し直せば、
   Step 3 からやり直せる
 
+## 指摘からの追加設計
+
+`$ARGUMENTS[1]` が `add` の場合は、全ビルドを終えたあとに付いたレビューの指摘を受けて、
+対応するビルドを足す設計として進める。`add` に続く引数の残り（改行以降も含む）が、対応する指摘の
+内容。指摘が渡されていなければ、指摘を添えて `/hikyaku:architect {cycle} add {指摘}` で起動し直すよう
+案内して終了する（推測で埋めない）。
+
+通常の設計との違いは次のとおり。ここに書いていないステップは通常どおり行う。
+
+- 前提: `cycle status` が `building`（全ビルドが完了している）か `completed` であること。
+  `closed` / `abandoned` なら何もせず終了する。完了していないビルドがあれば、指摘はそのビルドか、
+  そのビルドの後に扱うよう案内して終了する
+- ブランチ: `branch verify architect {cycle}` の `expected`（architect のブランチ）で作業する。
+  無ければ、全ビルドを取り込んだブランチ（通常はデフォルトブランチ。conductor では conductor ブランチ）
+  から作る。既にあれば中断からの再開として、ブランチ上の差分から済んだ手順を飛ばす
+- 入力: 渡された指摘を必ず読む。企画成果物・`codebase-survey.md`・`design-delta.md`・`tasklist.md` も読む
+- Step 1・Step 2: 行わない（調査は済んでいる）。指摘に関わるファイルだけを読む
+- Step 3〜Step 5a: 指摘への対応に設計の変更が要るときだけ行う。要らなければ Step 5b へ進む。
+  設計を変えたら、`design-delta.md` にどの指摘を受けて何を変えたかを1段落で残す
+- Step 5b: 指摘に対応するビルドを build-manager で追加する。既存のビルドは完了しているので更新しない。
+  issue.md の「やること」に、対応する指摘（PR のコメントの URL があればそれも）を書く
+- Step 6: 通常どおり PR を作る。向き先は `pr base` に従う（conductor では conductor ブランチ）
+
 ## 作業ステップ
 
 ### Step 0: 設定の解決と入力の読み込み
@@ -119,7 +142,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context architect {cycle}
 コードと矛盾したら常にコードを正とする（勝手に直さず、codebase-survey.md に記録する）。
 
 - [ ] ブランチを作成し、命名規則どおりか確認する（差し戻しからの再設計では
-  `branch verify build-{NN} {cycle}`。上の「差し戻しからの再設計」を参照）
+  `branch verify build-{NN} {cycle}`。上の「差し戻しからの再設計」を参照。指摘からの追加設計は
+  上の「指摘からの追加設計」を参照）
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify architect {cycle}

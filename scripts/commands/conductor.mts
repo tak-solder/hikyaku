@@ -112,19 +112,23 @@ register({
   name: "conductor launch",
   summary: "子セッション（claude -p）の起動コマンドを組み立てる。自分では実行しない",
   usage:
-    "hikyaku conductor launch <architect|builder|close-cycle> [<cycle>] [<build>] --expect-digest <digest> " +
-    "[--resume <session-id> --message <file>] [--out <file>] [--root <path>] [--json]",
+    "hikyaku conductor launch <architect|builder|close-cycle> [<cycle>] [<build>|add] --expect-digest <digest> " +
+    "[--resume <session-id>] [--message <file>] [--out <file>] [--root <path>] [--json]",
   details: [
     "実行すべきコマンド行と session-id を返します。起動は呼び出し元（監督）が行います。",
     "起動を監督の Bash に置くのは、許可ルール（Bash(claude -p:*)）で人間が制御できる",
     "場所で権限を広げるためです。",
     "",
     "  architect     /hikyaku:architect <cycle> [build-NN]（build を渡すと差し戻しからの再設計）",
+    "                /hikyaku:architect <cycle> add <指摘>（add を渡すと指摘からの追加設計）",
     "  builder       /hikyaku:builder <cycle> <build>（build は必須）",
     "  close-cycle   /hikyaku:close-cycle <cycle>",
     "",
     "--resume と --message は、gate で止まった子を再開するときに組で渡します。",
     "--message のファイルの中身が、子への回答としてそのまま渡ります。",
+    "",
+    "architect の add（指摘からの追加設計）では、--resume なしの初回の起動にも --message が要ります。",
+    "ファイルの中身（対応する指摘）が、プロンプトの add の後ろに続けて渡ります。",
     "",
     "組み立てるコマンドには次が必ず入ります。",
     "",
@@ -152,10 +156,17 @@ register({
     const { config, context } = openCycle(args, operands[1]);
     requireDigest(args, config);
     const prompt = buildPrompt(phase, context, operands[2]);
+    const adding = phase === "architect" && operands[2] === "add";
 
     const resume = flagString(args, "resume");
     const messageFile = flagString(args, "message");
-    if ((resume === undefined) !== (messageFile === undefined)) {
+    if (adding && resume === undefined && messageFile === undefined) {
+      throw new HikyakuError(
+        "architect の add には、対応する指摘を書いたファイルを --message で渡してください",
+        "指摘の内容が、子への最初のプロンプトとして渡ります。",
+      );
+    }
+    if (!(adding && resume === undefined) && (resume === undefined) !== (messageFile === undefined)) {
       throw new HikyakuError(
         "--resume と --message は組で指定してください",
         "gate で止まった子を再開するときは、子の session-id と回答を書いたファイルの両方が要ります。",
@@ -178,7 +189,7 @@ register({
     const argv = [
       "claude",
       "-p",
-      message ?? prompt,
+      resume === undefined ? (message === undefined ? prompt : `${prompt}\n\n${message}`) : (message as string),
       ...(resume === undefined ? ["--session-id", sessionId] : ["--resume", sessionId]),
       "--append-system-prompt-file",
       protocol,
@@ -491,6 +502,7 @@ function requireConductorPhase(raw: string | undefined): ConductorPhase {
 function buildPrompt(phase: ConductorPhase, context: CycleContext, rawBuild: string | undefined): string {
   if (phase === "close-cycle") return `/hikyaku:close-cycle ${context.name}`;
 
+  if (phase === "architect" && rawBuild === "add") return `/hikyaku:architect ${context.name} add`;
   if (rawBuild === undefined) {
     if (phase === "builder") {
       throw new HikyakuError("builder にはビルドを指定してください", "hikyaku next で着手できるビルドを確認できます。");
