@@ -13,10 +13,135 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Codex 用の `.codex-plugin/plugin.json`、`.agents/plugins/marketplace.json`、`codex/skills/*/SKILL.md` を追加した。Codex では専用入口から従来の Hikyaku 手順を読み、パス・引数・内部スキル・エージェント委任の表記を Codex の機能に読み替える
 - `codex/compatibility.md` に Codex での実行規約を追加し、`docs/getting-started-codex.md` に導入と起動方法を記載した
 
+### Changed
+
+- Codex 用マニフェストと全9スキルのバージョンを 2.4.1 に揃え、共通手順の差し戻し・受け入れ基準の追跡・PR レビュアー割り当て・指摘からの追加設計に対応した
+- Codex 実行規約に architect の引数の読み替えと、conductor が Claude Code 専用であることを明記した
+- CI で Codex 用のバージョン整合・更新と、入口から参照する手順の存在を検証するようにした
+
 ### Migration
 
 - Claude Code 利用者の操作は変わらない。従来の `/hikyaku:...` と `skills/`・`agents/` の手順は維持する
-- Codex 利用者はマーケットプレイスからプラグインをインストールし、`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要
+- Codex 利用者はマーケットプレイスからプラグインをインストールし、`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要。Codex では各フェーズを個別に実行し、conductor は Claude Code で使う
+
+## [2.4.1]
+
+conductor を実際に回したときに見つかった問題を直し、最後の PR に付いた指摘へビルドを足して対応する入口を足した。
+
+### Added
+
+- **architect の指摘からの追加設計（`/hikyaku:architect {cycle} add {指摘}`）**: 全ビルドを終えたあとに付いたレビューの指摘を受けて、対応するビルドを足す。architect のブランチで作業し、並行サイクルの確認と既存コードの調査は行わない。設計の変更が要るときだけ質問・設計判断・承認を経て、build-manager でビルドを追加し、PR を作る。完了したビルドは更新しない
+- **conductor**: 最後の PR が開いたまま再実行されると、指摘にビルドを足して対応するかを人間に尋ね、対応する指摘を受け取って architect を追加設計として起動する。追加したフェーズの PR は、最後の PR の本文に追記する
+- **`hikyaku conductor launch architect {cycle} add --message {指摘のファイル}`**: 追加設計の子を起動する。初回の起動でも `--message` が必須で、中身がプロンプトの `add` の後ろに続けて渡る
+
+### Fixed
+
+- **`hikyaku conductor launch`**: 子に `ScheduleWakeup` / `CronCreate` を使わせない。子が gate を出したあとタイマーで回答を待つと、`claude -p` が終了せず、結果ファイルも完了の通知も監督に届かなかった。非対話規約にも、ブロックを出したらそのままターンを終えることを書いた
+
+### Migration
+
+- 対応は不要。設定・ファイル形式に変更はない
+
+## [2.4.0]
+
+ARCHITECT 以降を監督セッションに任せる conductor を追加する（[issue #40](https://github.com/tak-solder/hikyaku/issues/40)）。
+
+### Added
+
+- **`/hikyaku:conductor`**: PLAN 済みのサイクルを、ARCHITECT から最後のビルドまで非対話の子セッション（`claude -p`）に実行させる監督スキル。子の問いは `conductor parse` の振り分けに従って監督が答えるか人間に上げ、同意ゲート（G6 / G8 / G10）は起動時の合意によって監督に委任される。サイクルの統合ブランチ（`{cycle}/conductor`）を切り、各フェーズのブランチはそこから切って PR もそこへ向ける。監督は検証を済ませた PR を conductor ブランチに取り込み、デフォルトブランチにはマージしない。最後のビルドを取り込んだら conductor ブランチ → デフォルトブランチの PR を作って止まり、人間がマージしたあと再実行すると CLOSE から再開する
+- **`skills/conductor/references/headless-protocol.md`**: 非対話で起動された子セッションが、問いの箇所で gate / done / blocked のブロックを出して止まるための規約
+- **`hikyaku conductor asks`**: 子が出しうる問いと、監督・人間への振り分けを、サイクルの profile と設定を重ねて一覧する。子に許可するツールの一覧と、委任の範囲を決める設定のダイジェストも返す
+- **`hikyaku conductor launch`**: 子（`claude -p`）の起動・再開コマンドを組み立てて返す。自分では実行しない。子に既定で許可するのは、スキルが使う `git` のサブコマンドと Hikyaku CLI の実行などに限る（`git -c` や `node -e` の形は許可しない）
+- **`hikyaku conductor parse`**: 子の結果ファイルから gate / done / blocked を取り出し、gate なら問いの振り分けを返す。ブロックが規約どおりでなければ `violation` を返す
+- **`launch` / `parse` の `--expect-digest`**: 監督が起動時に人間と合意したときの設定のダイジェスト（profile と `.hikyaku.config` の内容から作る）を渡す。設定が変わっていればエラーで止まる
+- **`hikyaku pr request-reviewers <phase> [<cycle>] --pr <PR>`**: PR を作った直後に、設定のレビュアーをアサインする。PR の実際のマージ先が conductor ブランチなら `[conductor] phase_reviewers`、それ以外なら `[pr] reviewers` を使う。PR の作成者本人・依頼済み・レビュー済みの相手には依頼せず、`--dry-run` で依頼予定だけを返す。依頼は `gh pr edit --add-reviewer` で行うので `@copilot` も使える
+- **`[pr] reviewers` / `reviewers_skip`**: PR を作る全てのスキルがアサインするレビュアーと、スキル（`init` / `bp-guide` / `create` / `plan` / `architect` / `build` / `close` / `conductor`）ごとにアサインをオフにする設定。既定は空で、設定しなければ挙動は変わらない
+- **`[conductor] phase_reviewers` / `review_timeout`**: conductor ブランチ向けのフェーズの PR にアサインするレビュアーと、レビューの依頼や CI を待つ上限（分。既定 15）
+- **`hikyaku conductor check-pr`**（`gh` の応答に必須のフィールドが無い、型が違うなどの場合は、判定せず終了コード 1 で止まる。Draft は `isDraft` が `false` と確認できたときだけ Ready とみなす）: フェーズの PR を conductor ブランチに取り込む前に、マージ先が conductor ブランチであること・PR が開いていること・Draft でないこと・レビューの依頼（人・チーム・Bot）が残っていないこと・未解決のレビュースレッドが無いこと・CI が失敗も待機もしていないことを `gh` で確かめる。`--wait` は、待てば解消しうる問題（CI の実行中、レビューの依頼が残っている）だけで止まっているあいだ確かめ直し、上限（`review_timeout`）を超えたら `timedOut` で返す。`[conductor] require_approval = true` なら、1人以上の承認があり変更の要求が残っていないことも求める。承認と変更の要求は、レビュアーごとに承認・変更の要求・取り下げのうち最新のもので判定し、コメントだけのレビューでは上書きしない。CI のチェックの状態を判定できなければ失敗とする。`--wait` のときは、PR を作った直後にチェックがまだ登録されていなくても最初の 60 秒は待つ。`--interval` は 1 秒以上。結果の `headSha`（検証した PR の head のコミット）を、監督は取り込みに使う。満たさなければ終了コード 2。監督はローカルの `git merge` で取り込むため、ブランチ保護の必須チェックが働かない。その代わりの検証
+- **`hikyaku conductor lint`**: 子として動くスキルの問いのタグと、conductor の ID の表の食い違いを検出する（プラグイン本体の開発用。CI の check-scripts が実行する）
+- **`[conductor]` 設定**: `escalate` / `delegate`（問いの ID ごとに人間・監督への振り分けを上書きする）、`allowed_tools`（子に許可するツールを足す）、`budget_per_run`（呼び出しごとの費用の上限。既定 0 で上限なし）、`require_approval`（PR を取り込む条件に承認を加える。既定 false）、`model` と `[conductor.models]`（子のモデル。全フェーズの既定と、フェーズごとの上書き。未指定なら Claude Code の既定）
+
+### Changed
+
+- **PR を作るスキル（planner / architect / builder / close-cycle / create-cycle / init / bp-guide）**: PR を作った直後に `hikyaku pr request-reviewers` を呼ぶ手順を足した。設定が空なら何もしない
+- **ブランチのフェーズ名に `conductor` を追加**: `branch verify conductor` / `pr title conductor` などで conductor の統合ブランチを扱える。`context` は読むべきフェーズではないとして拒否する。`pr base` は、conductor ブランチの上に積んだフェーズでは conductor ブランチを返し、conductor ブランチ自身の PR は常にデフォルトブランチへ向ける。conductor ブランチは、デフォルトブランチから切った直後でも、デフォルトブランチの `PR` 列にビルドが記録されるまでは取り込み済みとみなさない
+- **architect / builder / build-manager / close-cycle / retrospective**: ユーザーに尋ねる箇所に `（G8）` や `（ask: branch）` の形で ID を付けた。手順は変わらない
+
+### Migration
+
+- conductor を使わない場合、対応は不要。`[pr] reviewers` を設定しなければ、既存のスキルの挙動は変わらない（PR を作った直後に `pr request-reviewers` が呼ばれるが、何もしない）
+- conductor を使う場合は、監督のセッションで `Bash(claude -p:*)` を許可する。テストのコマンドが子の既定の許可（`git` / `ls` / `cat` と Hikyaku CLI の実行など。`node` は Hikyaku CLI 以外を許可しない）に含まれなければ、`[conductor] allowed_tools` に足してコミットする。手順は [conductor](docs/workflow/conductor.md) にある
+
+## [2.3.0]
+
+各フェーズの成果物の形式を見直した。受け入れ基準をフェーズをまたいで番号で追跡できるようにし、handoff.md を昇格先ごとの節に分け、企画でやらないと決めたことの書き場所を作った。
+
+### Added
+
+- **`hikyaku validate`**: `user-stories.md` の受け入れ基準に番号（`US-N.M`）があれば、番号の重複、`issue.md` の「対応する受け入れ基準」からの存在しない番号への参照、どのビルドにも割り当てられていない受け入れ基準を検出する。番号が1つも無いサイクルは検査しない。ビルド分割の前（tasklist が空）は割り当ての網羅を見ない
+- **planner（user-stories.md）**: 受け入れ基準に `US-{ストーリー番号}.{連番}` の番号を振る。やらないと決めたことは、ストーリーにせず「スコープ外」の節に理由とともに書く（MoSCoW の Won't はここに入る）
+- **build-manager（issue.md）**: 「対応する受け入れ基準」の節を追加した。そのビルドで満たす user-stories.md の番号を書く。見出しは `validate` が読むので変えない
+- **builder（test-spec.md）**: 各シナリオに、検証する受け入れ基準の番号を書く「対応」欄を追加した
+- **doc-reviewer**: user-stories では受け入れ基準の番号不備とスコープ外との矛盾を、architecture ではスコープ外に挙げたものを設計に含めていないかを、tasklist では「対応する受け入れ基準」の中身が issue.md のスコープで満たせるかを、test-spec では番号が各シナリオに現れるかを見る
+
+### Changed
+
+- **builder（handoff.md）**: 節を読み手で分けた。前半の「後続ビルド向け」は実装内容の要約・公開インターフェース・実装中の判断・環境変更・意図的に残した未対応、後半の「昇格素材（close-cycle 向け）」は overview への影響・新たな制約・踏んだ落とし穴・覆した設計判断。「技術的判断の記録（ADR-N）」は、本物の ADR と紛らわしいため「実装中の判断」に、「既知の制約・注意点」は「意図的に残した未対応」と「新たな制約」に分けた
+- **close-cycle**: handoff.md からは「昇格素材」の節だけを拾い、節ごとの昇格先（overview / constraints / learnings / ADR）に振り分ける。覆された設計判断は、旧 ADR を `superseded` にして新エントリを起こす
+- **architect**: user-stories.md の「スコープ外」に挙げたものは設計に含めない。分割後の `validate` で割り当て漏れが報告されたら、既存ビルドへの割り当てかビルドの追加で埋める
+
+### Migration
+
+- 対応は不要。番号の無い user-stories.md を持つ既存サイクルは、これまでどおり検査されない
+- 番号を振った user-stories.md で、`issue.md` に「対応する受け入れ基準」の節が無いビルドがあると `validate` が失敗する。2.3.0 より前に作ったサイクルの途中で番号を足す場合は、既存の issue.md にも節を足す（基盤整備などで対応しないビルドは「なし（理由）」と書く）
+- 2.3.0 より前に書かれた handoff.md も、close-cycle はそのまま読める（節の外の発見は内容で昇格先を判断する）
+
+## [2.2.1]
+
+スキルとエージェント定義を監査し、実装やほかの指示ファイルと食い違っていた記述を直した。あわせて、本文の強調を各ファイル数カ所に絞った。
+
+### Fixed
+
+- **architect（references/templates.md）**: ADR のテンプレートを SKILL.md の運用に揃えた。`hikyaku` 管理では判断ごとに日付ファイル（`{YYYYMMDD}-{slug}.md`）を作り、`status: accepted` で書き、覆すときは旧エントリを `superseded` にする。Step 4c が参照していた design-delta.md のテンプレートを追加した。Hikyaku が作らない tech-stack / db-schema / interfaces のテンプレートを削除した
+- **architect**: 差し戻しからの再設計では、Step 6 のブランチ確認も `branch verify build-{NN}` で行う。コードと食い違う参考ドキュメントは handoff.md ではなく codebase-survey.md に記録する。既存の ADR を覆す場合は、新しいエントリとして記録する
+- **retrospective**: `retrospective = "prompt"` を「デフォルト」と書いていた誤りを直した（既定は profile により `auto` か `skip`）
+- **doc-reviewer**: コードレビューの参照先を builder Step 8 から Step 6 に直した。参照するドキュメントを v1 のファイル名（`interfaces.md` / `decisions.md` / `AD-N`）から論理名に改めた
+- **code-reviewer**: `conventions.md` を論理名 `conventions` に改めた（実体が AGENTS.md の場合がある）
+- **init / close-cycle**: 完了時の案内から、create-cycle が受け取らない `--profile` を削除した
+- **planner / architect / builder / close-cycle / init / bp-guide**: 実行手順に素の `hikyaku` で書かれていたコマンドを `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts"` 形式に揃えた（`hikyaku` はユーザーのシェル関数で、スキルの実行環境には無い）
+- **builder（references/retry-policy.md）**: 上限2回に合わせ、報告フォーマットから3回目の行を削除した
+- **bp-guide**: Step 4 の「承認前に書き込まない」を「承認前にコミットしない」に改めた（`bp test` のために変更案を一時的に書く手順と矛盾していたため）
+
+### Changed
+
+- 全スキルとエージェント定義で太字を、手順を誤ると取り返しのつかない制約（ブランチ確認、PR への同梱、承認前に書き込まない等）に絞った。文言は変えていない
+- v1 / v2 の経緯を書いていた箇所を、現在のルールだけの記述にした
+- BP とセッションの説明から「1セッション20万トークン」を削除した。基準は「1セッションで実装から PR 作成までを完結できるか」で、実際の大きさは基準表と振り返りの実績で調整する（実運用では1セッションが20万トークンを超えることが多く、目安として機能していなかったため）。`hikyaku init` が生成する `bp-guide/README.md` の冒頭文も同じ表現にした
+
+### Migration
+
+- 対応は不要。設定・ファイル形式・CLI に変更はない
+- BP のしきい値と既定値は変わらない。生成済みの `bp-guide/README.md` はワークスペースの持ち物なので書き換わらない。20万トークンの記述を消したい場合は手で直す
+- 既存の `AD-N` 形式の ADR を `repo` 管理で使っている場合はそのまま使える（テンプレートは `hikyaku` 管理のときだけ適用される）
+
+## [2.2.0]
+
+builder から architect への差し戻し経路を定義した（[issue #41](https://github.com/tak-solder/hikyaku/issues/41)）。
+
+### Added
+
+- **`{cycle}/return.md`**: builder が architect に差し戻すときに書く記録。差し戻し元のビルドのブランチにだけコミットし、デフォルトブランチにはマージしない。1行目の見出し `# 差し戻し: build-NN` から差し戻し元のビルドを読む。テンプレートは builder の references にある
+- **builder**: 設計どおりでは要件を満たせないと分かったら、自分で設計を変えずに「設計に合わせる / このビルドの中で設計を改める / architect に差し戻す」を確認する。差し戻すなら `return.md` を書いて止まる（handoff.md・振り返り・PR・`tasklist done` は行わない）。Step 2 で差し戻し中と分かったら、作業を始めずに architect を案内する
+- **architect**: `/hikyaku:architect {cycle} build-NN` で、差し戻しからの再設計として動く。差し戻し元のビルドのブランチ上で再設計し（architect 用のブランチも PR も作らない）、最後に `return.md` と差し戻し元の plan.md / test-spec.md を削除する
+
+### Changed
+
+- **`hikyaku cycle status` / `cycle list` / `next`**: 作業ツリーに `return.md` があれば、フェーズは `building` のまま「差し戻し中: build-NN」と表示し、再開コマンドに `/hikyaku:architect {cycle} build-NN` を案内する。`next` は差し戻し中に着手可能なビルドを返さない。JSON 出力に `returned` を追加した
+
+### Migration
+
+- 対応は不要。`return.md` が無いサイクルの挙動は変わらない
+- 差し戻しは差し戻し元のブランチの上でだけ検出される。他のブランチやチェックアウトから差し戻しに気づく仕組みは無い
 
 ## [2.1.0]
 

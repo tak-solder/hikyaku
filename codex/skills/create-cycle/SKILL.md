@@ -3,7 +3,7 @@ name: create-cycle
 description: "新しい Hikyaku サイクルを作成する。利用者がサイクル作成を依頼したとき、または planner の手順から必要になったときに使う。"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.1.0"
+  version: "2.4.1"
 ---
 
 # Hikyaku create-cycle (Codex)

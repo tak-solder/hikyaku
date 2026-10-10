@@ -3,7 +3,7 @@ name: build-manager
 description: "Hikyaku の内部手順としてビルドの追加・更新・分割を行う。architect または builder の実行中に必要になったときだけ使う。"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.1.0"
+  version: "2.4.1"
 ---
 
 # Hikyaku build-manager (Codex)

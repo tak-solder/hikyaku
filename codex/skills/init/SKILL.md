@@ -3,7 +3,7 @@ name: init
 description: "ワークスペースを初期化する。利用者が Hikyaku の導入または初期化を明示的に依頼したときに使う。"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.1.0"
+  version: "2.4.1"
 ---
 
 # Hikyaku init (Codex)

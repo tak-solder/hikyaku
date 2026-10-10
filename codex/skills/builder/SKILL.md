@@ -3,7 +3,7 @@ name: builder
 description: "Hikyaku の BUILD フェーズで指定ビルドを実装し PR を作る。利用者がビルドの実装を依頼したときに使う。"
 metadata:
   repository: https://github.com/tak-solder/hikyaku
-  version: "2.1.0"
+  version: "2.4.1"
 ---
 
 # Hikyaku builder (Codex)

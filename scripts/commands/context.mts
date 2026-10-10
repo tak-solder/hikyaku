@@ -163,7 +163,8 @@ register({
         "使用できる値: plan | architect | build-NN | close",
       );
     }
-    if (!isPhase(rawPhase) || isCyclelessPhase(rawPhase) || rawPhase === "create") {
+    // conductor は統合ブランチの名前で、読むべきドキュメントを持つフェーズではない
+    if (!isPhase(rawPhase) || isCyclelessPhase(rawPhase) || rawPhase === "create" || rawPhase === "conductor") {
       throw new HikyakuError(
         `読むべきドキュメントを持たないフェーズです: ${rawPhase}`,
         "使用できる値: plan | architect | build-NN | close",

@@ -115,3 +115,57 @@ jobs:
           fi
 
           echo "Version correctly bumped: $base -> $current"
+
+      - name: Check Codex versions and skill references
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { existsSync, readFileSync, readdirSync } from 'node:fs';
+          import { resolve, dirname } from 'node:path';
+
+          const read = path => readFileSync(path, 'utf8');
+          const manifest = JSON.parse(read('current/.codex-plugin/plugin.json'));
+          const version = manifest.version;
+          const semver = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+          assert.match(version, semver);
+          assert.equal(manifest.skills, './codex/skills/');
+          const skills = readdirSync('current/codex/skills', { withFileTypes: true })
+            .filter(entry => entry.isDirectory()).map(entry => entry.name);
+          assert.ok(skills.length > 0, 'Codex skills must not be empty');
+          for (const name of skills) {
+            const path = `current/codex/skills/${name}/SKILL.md`;
+            const source = read(path);
+            const frontmatter = source.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1];
+            assert.ok(frontmatter, `${path}: missing frontmatter`);
+            assert.equal(frontmatter.match(/^name: (.+)$/m)?.[1], name, `${path}: name`);
+            assert.equal(frontmatter.match(/^  version: "([^"]+)"$/m)?.[1], version, `${path}: version`);
+            const required = ['../../compatibility.md', `../../../skills/${name}/SKILL.md`];
+            const links = [...source.matchAll(/\]\(([^)]+)\)/g)].map(match => match[1]);
+            for (const target of required) assert.ok(links.includes(target), `${path}: missing ${target}`);
+            for (const target of links.filter(link => link.startsWith('.'))) {
+              assert.ok(existsSync(resolve(dirname(path), target)), `${path}: broken link ${target}`);
+            }
+          }
+
+          // Codex のバージョンは Claude Code とは独立して検証する。初回追加には比較対象がない。
+          if (existsSync('base/.codex-plugin/plugin.json')) {
+            const snapshot = directory => {
+              if (!existsSync(directory)) return null;
+              return readdirSync(directory, { withFileTypes: true })
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map(entry => [entry.name, entry.isDirectory()
+                  ? snapshot(`${directory}/${entry.name}`) : read(`${directory}/${entry.name}`)]);
+            };
+            const changed = ['codex', '.codex-plugin', '.agents/plugins'].some(directory =>
+              JSON.stringify(snapshot(`current/${directory}`)) !== JSON.stringify(snapshot(`base/${directory}`)));
+            if (changed) {
+              const previous = JSON.parse(read('base/.codex-plugin/plugin.json')).version;
+              assert.match(previous, semver);
+              const a = version.split('.').map(BigInt);
+              const b = previous.split('.').map(BigInt);
+              const index = a.findIndex((part, i) => part !== b[i]);
+              assert.ok(index >= 0 && a[index] > b[index], `Codex version must increase: ${previous} -> ${version}`);
+            }
+          }
+          console.log(`Codex ${version}: ${skills.length} skills and references verified`);
+          NODE

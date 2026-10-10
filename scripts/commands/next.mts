@@ -3,7 +3,7 @@
 import { flagBoolean } from "../lib/args.mts";
 import { branchName, buildPhase } from "../lib/branch.mts";
 import { listRemoteBranches } from "../lib/git.mts";
-import { deriveState, suggestCommand } from "../lib/phase.mts";
+import { deriveState, phaseLabel, suggestCommand, suggestFor } from "../lib/phase.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import {
@@ -48,6 +48,9 @@ register({
     "着手中の表示には origin のブランチ一覧を使いますが、これも判定には影響しません。",
     "マージ後にブランチを削除しない設定のリポジトリでは残存ブランチが「着手中」に",
     "見えるため、PR 列が非空のビルドは着手中として扱いません。",
+    "",
+    "作業ツリーに差し戻しの記録（return.md）があれば、着手可能なビルドを返しません。",
+    "設計を見直している最中なので、どのビルドもその上に積むべきではないためです。",
   ].join("\n"),
   run: async ({ args, operands }) => {
     const { config, context: ctx } = openCycle(args, operands[0]);
@@ -69,7 +72,8 @@ register({
       branchName(config.branch, buildPhase(build.id), ctx.name);
     const hasBranch = (build: BuildRecord): boolean => remote.names.includes(branchFor(build));
 
-    const available = ready.filter((build) => !hasBranch(build));
+    // 差し戻し中は設計が確定していないので、どのビルドにも着手させない
+    const available = state.returned !== undefined ? [] : ready.filter((build) => !hasBranch(build));
     const inProgress = ready.filter((build) => hasBranch(build));
     // 待機中のビルドにブランチがあるなら、他セッションが積んで作業している可能性がある
     const blockedWithBranch = blocked.filter((build) => hasBranch(build));
@@ -83,6 +87,7 @@ register({
       {
         cycle: ctx.name,
         phase: state.phase,
+        returned: state.returned ?? null,
         available: available.map((b) => b.id),
         inProgress: inProgress.map((b) => b.id),
         blocked: blocked.map((b) => b.id),
@@ -105,7 +110,17 @@ register({
         remoteUnavailable: remote.unavailable,
       },
       () => {
-        const lines = [`cycle ${ctx.name}: ${state.phase}`, ""];
+        const lines = [`cycle ${ctx.name}: ${phaseLabel(state)}`, ""];
+
+        if (state.returned !== undefined) {
+          lines.push(
+            "設計の前提が崩れたため、architect に差し戻されています。",
+            "再設計が終わるまで、どのビルドにも着手できません。",
+            "",
+            `  ${suggestFor(state, ctx.name)}`,
+          );
+          return lines.join("\n");
+        }
 
         if (state.phase !== "building") {
           lines.push(

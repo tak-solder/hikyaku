@@ -52,7 +52,7 @@ node --version
 /hikyaku:close-cycle     → 永続ドキュメントへ昇格し、サイクルを closed に
 ```
 
-`init` と `create-cycle` は明示的に制御したいときの入口で、planner が必要に応じて代行します。実質の最短経路は4フェーズです。ワークフローの外には `/hikyaku:bp-guide` があり、ビルド分割の基準（BP）をリポジトリに合わせて調整します。
+`init` と `create-cycle` は明示的に制御したいときの入口で、planner が必要に応じて代行します。実質の最短経路は4フェーズです。PLAN を終えたあとは、Claude Code の `/hikyaku:conductor` で ARCHITECT から最後のビルドまでを任せることもできます（[conductor](docs/workflow/conductor.md)）。ワークフローの外には `/hikyaku:bp-guide` があり、ビルド分割の基準（BP）をリポジトリに合わせて調整します。
 
 最初の1サイクルを通す手順は [Getting Started](docs/getting-started.md) にあります。
 
