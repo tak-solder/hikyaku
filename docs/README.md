@@ -1,8 +1,10 @@
 # Hikyaku ドキュメント
 
+Codex での導入と起動は [Codex で使い始める](getting-started-codex.md) を参照してください。
+
 Hikyaku を自分のリポジトリで使うためのドキュメントです。プラグイン本体の開発については [AGENTS.md](../AGENTS.md) を参照してください。
 
-コマンド例に出てくる `hikyaku` は、シェルから CLI を叩くための関数です。定義方法は [実行方法](reference/cli.md#実行方法) にあります。スキル（`/hikyaku:planner` など）を使うだけなら設定は要りません。
+コマンド例に出てくる `hikyaku` は、シェルから CLI を叩くための関数です。定義方法は [実行方法](reference/cli.md#実行方法) にあります。Claude Code のスキル（`/hikyaku:planner` など）を使うだけなら設定は要りません。
 
 ## はじめて使う
 

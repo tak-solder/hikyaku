@@ -1,0 +1,20 @@
+{
+  "name": "hikyaku",
+  "interface": {
+    "displayName": "Hikyaku"
+  },
+  "plugins": [
+    {
+      "name": "hikyaku",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

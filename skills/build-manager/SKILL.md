@@ -4,9 +4,6 @@ description: "Hikyaku ビルド管理: ビルドの追加・更新・分割と�
 user-invocable: false
 disable-model-invocation: false
 argument-hint: "[{cycle}]"
-metadata:
-  repository: https://github.com/tak-solder/hikyaku
-  version: "2.4.1"
 ---
 
 # Hikyaku Build Manager

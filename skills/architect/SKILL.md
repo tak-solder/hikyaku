@@ -4,9 +4,6 @@ description: "Hikyaku 設計フェーズ: 企画成果物と既存コードを�
 user-invocable: true
 disable-model-invocation: true
 argument-hint: "[{cycle}] [build-{NN} | add {指摘}]"
-metadata:
-  repository: https://github.com/tak-solder/hikyaku
-  version: "2.4.1"
 ---
 
 # Hikyaku Architect
