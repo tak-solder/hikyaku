@@ -4,9 +4,6 @@ description: "Hikyaku 企画フェーズ: チケットと既存の企画ドキ�
 user-invocable: true
 disable-model-invocation: true
 argument-hint: "[{cycle}]"
-metadata:
-  repository: https://github.com/tak-solder/hikyaku
-  version: "2.4.1"
 ---
 
 # Hikyaku Planner

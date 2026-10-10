@@ -1,9 +1,6 @@
 ---
 name: planner
 description: "Hikyaku の PLAN フェーズを実行し、ユーザーストーリーを作る。利用者が企画フェーズの開始を依頼したときに使う。"
-metadata:
-  repository: https://github.com/tak-solder/hikyaku
-  version: "2.4.1"
 ---
 
 # Hikyaku planner (Codex)

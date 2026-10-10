@@ -18,28 +18,14 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           path: base
 
-      - name: Check skill and plugin versions are unified
+      - name: Check plugin version format
         run: |
-          versions=()
-          for skill_file in current/skills/*/SKILL.md; do
-            version=$(yq --front-matter=extract '.metadata.version' "$skill_file")
-            skill_name=$(basename "$(dirname "$skill_file")")
-            echo "$skill_name: $version"
-            versions+=("$version")
-          done
-
-          plugin_version=$(jq -r '.version' current/.claude-plugin/plugin.json)
-          echo "plugin.json: $plugin_version"
-          versions+=("$plugin_version")
-
-          first="${versions[0]}"
-          for v in "${versions[@]}"; do
-            if [ "$v" != "$first" ]; then
-              echo "::error::Skill versions and plugin.json version are not unified. All must have the same version."
-              exit 1
-            fi
-          done
-          echo "All versions are unified: $first"
+          version=$(jq -r '.version' current/.claude-plugin/plugin.json)
+          if ! [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::Invalid Claude Code plugin version: $version"
+            exit 1
+          fi
+          echo "Claude Code plugin version: $version"
 
       - name: Check version bump if skills, agents, scripts, or plugin manifest changed
         run: |
@@ -84,7 +70,7 @@ jobs:
             echo "$scripts_changed"
           fi
 
-          # Extract current version from plugin.json (single source of truth, already verified unified)
+          # Extract current version from plugin.json (single source of truth)
           current=$(jq -r '.version' current/.claude-plugin/plugin.json)
           base=$(jq -r '.version' base/.claude-plugin/plugin.json)
 
@@ -92,7 +78,7 @@ jobs:
           echo "Current version: $current"
 
           if [ "$current" = "$base" ]; then
-            echo "::error::skills/, agents/, scripts/, or .claude-plugin/ has changes but version was not bumped. Please update the version in all SKILL.md files and plugin.json."
+            echo "::error::skills/, agents/, scripts/, or .claude-plugin/ has changes but version was not bumped. Please update the version in .claude-plugin/plugin.json."
             exit 1
           fi
 
@@ -138,7 +124,6 @@ jobs:
             const frontmatter = source.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1];
             assert.ok(frontmatter, `${path}: missing frontmatter`);
             assert.equal(frontmatter.match(/^name: (.+)$/m)?.[1], name, `${path}: name`);
-            assert.equal(frontmatter.match(/^  version: "([^"]+)"$/m)?.[1], version, `${path}: version`);
             const required = ['../../compatibility.md', `../../../skills/${name}/SKILL.md`];
             const links = [...source.matchAll(/\]\(([^)]+)\)/g)].map(match => match[1]);
             for (const target of required) assert.ok(links.includes(target), `${path}: missing ${target}`);

@@ -1,9 +1,6 @@
 ---
 name: architect
 description: "Hikyaku の ARCHITECT フェーズを実行し、設計差分とビルド分割を作る。利用者が設計フェーズの開始、builder からの差し戻しの再設計、またはレビュー指摘からの追加設計を依頼したときに使う。"
-metadata:
-  repository: https://github.com/tak-solder/hikyaku
-  version: "2.4.1"
 ---
 
 # Hikyaku architect (Codex)

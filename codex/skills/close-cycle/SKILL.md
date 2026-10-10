@@ -1,9 +1,6 @@
 ---
 name: close-cycle
 description: "Hikyaku の CLOSE フェーズで実装済み成果を永続ドキュメントへ昇格する。利用者がサイクル終了を依頼したときに使う。"
-metadata:
-  repository: https://github.com/tak-solder/hikyaku
-  version: "2.4.1"
 ---
 
 # Hikyaku close-cycle (Codex)

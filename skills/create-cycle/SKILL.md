@@ -4,9 +4,6 @@ description: "Hikyaku サイクル作成: チケットを起点に新しいサ�
 user-invocable: true
 disable-model-invocation: false
 argument-hint: "[{slug}]"
-metadata:
-  repository: https://github.com/tak-solder/hikyaku
-  version: "2.4.1"
 ---
 
 # Hikyaku Create Cycle

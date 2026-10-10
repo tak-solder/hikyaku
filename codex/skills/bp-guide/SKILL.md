@@ -1,9 +1,6 @@
 ---
 name: bp-guide
 description: "Hikyaku の BP 基準表を確認または調整する。利用者が BP 基準表の運用を依頼したときに使う。"
-metadata:
-  repository: https://github.com/tak-solder/hikyaku
-  version: "2.4.1"
 ---
 
 # Hikyaku bp-guide (Codex)

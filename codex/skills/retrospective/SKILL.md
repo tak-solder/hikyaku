@@ -1,9 +1,6 @@
 ---
 name: retrospective
 description: "Hikyaku の内部手順としてフェーズ末の振り返りを記録する。planner・architect・builder・close-cycle の実行中に必要になったときだけ使う。"
-metadata:
-  repository: https://github.com/tak-solder/hikyaku
-  version: "2.4.1"
 ---
 
 # Hikyaku retrospective (Codex)
