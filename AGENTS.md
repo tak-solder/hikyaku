@@ -53,9 +53,9 @@
 
 ## 作業時の注意
 
-- Claude Code 用の開発の取り込み先は `main`、Codex 用は `codex` です。
+- Claude Code 用の開発の取り込み先は `main`、Codex 用は `codex-plugin` です。
 - `main` 向け PR で `skills/`, `agents/`, `scripts/`, `.claude-plugin/` を変更したときは、`.claude-plugin/plugin.json` の `version` を更新してください。
-- `codex` 向け PR で `skills/`, `agents/`, `scripts/`, `codex/`, `.codex-plugin/`, `.agents/plugins/` を変更したときは、`.codex-plugin/plugin.json` の `version` を更新してください。共通手順・エージェント・CLI の変更も Codex に影響します。
+- `codex-plugin` 向け PR で `skills/`, `agents/`, `scripts/`, `codex/`, `.codex-plugin/`, `.agents/plugins/` を変更したときは、`.codex-plugin/plugin.json` の `version` を更新してください。共通手順・エージェント・CLI の変更も Codex に影響します。
 - バージョンは `MAJOR.MINOR.PATCH` の形式で、変更の内容に応じて適切にインクリメントしてください。スキルのフロントマターに `metadata` は置かず、各プラグインのマニフェストで管理します。両ホストのバージョンが一致する必要はありません。
 - Codex 向けの共通部分の変更では、入口と `codex/compatibility.md` で読み替えられるか確認し、必要なら同じ PR で修正してください。バージョン検証だけでは動作の互換性は保証されません。
 - `docs/`, `README.md`, `AGENTS.md`, `CHANGELOG.md` だけの変更ではバージョンを上げません（プラグインの挙動が変わらないため）。
