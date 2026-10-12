@@ -6,15 +6,16 @@ Node.js v22.18.0 以上が必要です。Codex のプラグインには TypeScri
 
 ## インストール
 
-Codex 用プラグインは `codex` ブランチで開発します。このブランチを clone して Codex CLI にローカルのマーケットプレイスとして追加し、`/plugins` から Hikyaku をインストールします。
+Codex 用プラグインは `codex-plugin` ブランチで配布します。Codex CLI にこのブランチをマーケットプレイスとして追加し、`/plugins` から Hikyaku をインストールします。
 
 ```bash
-git clone --branch codex https://github.com/tak-solder/hikyaku.git hikyaku-codex
-codex plugin marketplace add ./hikyaku-codex
+codex plugin marketplace add tak-solder/hikyaku@codex-plugin
 codex
 ```
 
-既に clone したリポジトリを使う場合は `codex` ブランチをチェックアウトし、`codex plugin marketplace add /path/to/hikyaku` として追加できます。インストール後は新しいセッションを開いてください。プラグインの実ファイルの場所を固定してコマンドに埋め込む必要はありません。
+マーケットプレイスは Codex のホームディレクトリ配下に clone されるため、自分で clone したリポジトリを残しておく必要はありません。新しいバージョンは `codex plugin marketplace upgrade` で取り込みます。インストールや更新のあとは新しいセッションを開いてください。
+
+手元で変更を試す場合は、`codex-plugin` ブランチをチェックアウトしたリポジトリを `codex plugin marketplace add /path/to/hikyaku` で追加します。この場合はコピーされず、指定したディレクトリがそのまま参照されます。
 
 ## スキルを起動する
 

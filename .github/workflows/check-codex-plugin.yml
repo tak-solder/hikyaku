@@ -3,7 +3,7 @@ name: Check Codex Plugin
 on:
   pull_request:
     branches:
-      - codex
+      - codex-plugin
 
 jobs:
   check-codex:
