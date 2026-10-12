@@ -1,6 +1,6 @@
 # conductor — ARCHITECT 以降を任せる
 
-`/hikyaku:conductor` は、PLAN を終えたサイクルを ARCHITECT から最後のビルドまで進めます。あなたが開いているセッションが監督になり、各フェーズは監督が起動する非対話の子セッション（`claude -p`）が、いつもの architect / builder / close-cycle のスキルのまま実行します。
+`/hikyaku:conductor` は Claude Code 専用で、PLAN を終えたサイクルを ARCHITECT から最後のビルドまで進めます。あなたが開いているセッションが監督になり、各フェーズは監督が起動する非対話の子セッション（`claude -p`）が、いつもの architect / builder / close-cycle のスキルのまま実行します。Codex では各フェーズを個別に実行します（[Codex で使い始める](../getting-started-codex.md)）。
 
 子が承認や確認を求める箇所で止まると、監督が成果物を読んで答えます。人間が答えるのは、要件のすり合わせ（PLAN）と、監督が自分で答えてはいけない問いだけです。
 

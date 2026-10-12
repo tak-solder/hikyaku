@@ -4,9 +4,6 @@ description: "Hikyaku 実装フェーズ: 1ビルド = 1セッションでコー
 user-invocable: true
 disable-model-invocation: true
 argument-hint: "[{cycle}] [{buildID}]"
-metadata:
-  repository: https://github.com/tak-solder/hikyaku
-  version: "2.4.1"
 ---
 
 # Hikyaku Builder
