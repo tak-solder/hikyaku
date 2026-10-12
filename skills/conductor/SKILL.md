@@ -4,9 +4,6 @@ description: "Hikyaku 監督: PLAN 済みのサイクルを、ARCHITECT → BUIL
 user-invocable: true
 disable-model-invocation: true
 argument-hint: "[{cycle}]"
-metadata:
-  repository: https://github.com/tak-solder/hikyaku
-  version: "2.4.1"
 ---
 
 # Hikyaku Conductor

@@ -65,3 +65,5 @@ economy が省くのは `doc-reviewer` と `retrospective` です。調査系（
 ## 定義の場所
 
 エージェントの定義は `agents/{name}.md`、内部スキルは `skills/{name}/SKILL.md` にあります。出力フォーマットや判定基準を確認したい場合はそちらを参照してください。
+
+Codex では `codex/skills/{name}/SKILL.md` が入口になり、同じ手順と判定基準を読みます。起動方法は [Codex で使い始める](../getting-started-codex.md) を参照してください。

@@ -4,9 +4,6 @@ description: "Hikyaku BP 基準表の運用: ビルドの見積もりと実績�
 user-invocable: true
 disable-model-invocation: true
 argument-hint: "[show|tune]"
-metadata:
-  repository: https://github.com/tak-solder/hikyaku
-  version: "2.4.1"
 ---
 
 # Hikyaku BP Guide

@@ -53,9 +53,11 @@
 
 ## 作業時の注意
 
-- `skills/`, `agents/`, `scripts/` 配下のファイルを変更したときは、各スキルのフロントマターに記載されているバージョンと `.claude-plugin/plugin.json` の `version` を更新してください。
-    - バージョンは `MAJOR.MINOR.PATCH` の形式で、変更の内容に応じて適切にインクリメントしてください。
-    - すべてのスキルのバージョンと plugin.json のバージョンは統一してください。つまり、1つでもスキルまたはエージェントを変更したら、すべてのスキルと plugin.json のバージョンを更新する必要があります。
+- Claude Code 用の開発の取り込み先は `main`、Codex 用は `codex` です。
+- `main` 向け PR で `skills/`, `agents/`, `scripts/`, `.claude-plugin/` を変更したときは、`.claude-plugin/plugin.json` の `version` を更新してください。
+- `codex` 向け PR で `skills/`, `agents/`, `scripts/`, `codex/`, `.codex-plugin/`, `.agents/plugins/` を変更したときは、`.codex-plugin/plugin.json` の `version` を更新してください。共通手順・エージェント・CLI の変更も Codex に影響します。
+- バージョンは `MAJOR.MINOR.PATCH` の形式で、変更の内容に応じて適切にインクリメントしてください。スキルのフロントマターに `metadata` は置かず、各プラグインのマニフェストで管理します。両ホストのバージョンが一致する必要はありません。
+- Codex 向けの共通部分の変更では、入口と `codex/compatibility.md` で読み替えられるか確認し、必要なら同じ PR で修正してください。バージョン検証だけでは動作の互換性は保証されません。
 - `docs/`, `README.md`, `AGENTS.md`, `CHANGELOG.md` だけの変更ではバージョンを上げません（プラグインの挙動が変わらないため）。
 - バージョンを上げる際は`CHANGELOG.md`に変更内容を記載してください。
     - **何が変わったか**（どのスキル・エージェント・設定キーがどうなったか）を具体的に書いてください。
@@ -64,14 +66,19 @@
 
 ## プラグイン構成
 
-このリポジトリは Claude Code のプラグイン仕様（[plugins.md](https://code.claude.com/docs/en/plugins.md), [plugins-reference.md](https://code.claude.com/docs/en/plugins-reference.md)）に準拠しています。
+このリポジトリは Claude Code のプラグイン仕様（[plugins.md](https://code.claude.com/docs/en/plugins.md), [plugins-reference.md](https://code.claude.com/docs/en/plugins-reference.md)）と [Codex のプラグイン仕様](https://developers.openai.com/plugins/build/plugins) に準拠しています。
 
 ```
 ./
 ├── .claude-plugin/
 │   ├── plugin.json            # プラグインマニフェスト
 │   └── marketplace.json       # マーケットプレイス定義（リポジトリ自身を単一プラグイン構成のマーケットプレイスとして配布）
+├── .codex-plugin/plugin.json  # Codex 用マニフェスト。Codex 用スキルだけを指定
+├── .agents/plugins/marketplace.json # Codex 用マーケットプレイス定義
 ├── agents/<name>.md           # スキルから委任される各サブエージェント定義
+├── codex/
+│   ├── compatibility.md       # Codex での呼び出しとパスの読み替え
+│   └── skills/<name>/SKILL.md # Codex 専用入口。詳細は skills/ を参照
 ├── scripts/                   # CLI（実行時依存ゼロ）
 │   ├── hikyaku.mts
 │   ├── lib/

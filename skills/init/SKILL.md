@@ -4,9 +4,6 @@ description: "Hikyaku 初期化: ワークスペースを作成し、リポジ�
 user-invocable: true
 disable-model-invocation: false
 argument-hint: "[{HIKYAKU_ROOT}]"
-metadata:
-  repository: https://github.com/tak-solder/hikyaku
-  version: "2.4.1"
 ---
 
 # Hikyaku Init

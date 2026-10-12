@@ -4,9 +4,6 @@ description: "Hikyaku 振り返り: セッション中のスキル外指示を�
 user-invocable: false
 disable-model-invocation: false
 argument-hint: "{cycle} {SUB_DIR}"
-metadata:
-  repository: https://github.com/tak-solder/hikyaku
-  version: "2.4.1"
 ---
 
 # Hikyaku Retrospective
