@@ -17,14 +17,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - 共通手順の 2.4.1 を取り込み、差し戻し・受け入れ基準の追跡・PR レビュアー割り当て・指摘からの追加設計に対応した
 - Codex 実行規約に architect の引数の読み替えと、conductor が Claude Code 専用であることを明記した
-- Codex 向けの CI を `check-codex-plugin.yml` に分離し、`codex` ブランチ向け PR でマニフェストのバージョン形式・更新と入口の参照先を検証するようにした。更新検出の対象は Codex 固有のファイルに加え、共通の `skills/`・`agents/`・`scripts/` も含む。スクリプトの型チェック・テストも `codex` 向け PR で実行する
+- Codex 向けの CI を `check-codex-plugin.yml` に分離し、`codex-plugin` ブランチ向け PR でマニフェストのバージョン形式・更新と入口の参照先を検証するようにした。更新検出の対象は Codex 固有のファイルに加え、共通の `skills/`・`agents/`・`scripts/` も含む。スクリプトの型チェック・テストも `codex-plugin` 向け PR で実行する
 - Claude Code 用の全10スキルと Codex 用の全9スキルから、フロントマターの `metadata`（`repository` / `version`）を削除した。バージョンは各プラグインのマニフェストに集約し、Claude Code 用・Codex 用の両マニフェストを 2.4.2 に更新した。開発ルールと CI もスキル内のバージョンを要求しない形に揃えた
 
 ### Migration
 
 - `SKILL.md` の `metadata.version` を参照する独自ツールは、対象ホストの `.claude-plugin/plugin.json` または `.codex-plugin/plugin.json` の `version` を参照するよう変更する
 - Claude Code 利用者の操作は変わらない。従来の `/hikyaku:...` と `skills/`・`agents/` の手順は維持する
-- Codex 利用者は `codex` ブランチを clone してローカルのマーケットプレイスを追加し、プラグインをインストールする。`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要。Codex では各フェーズを個別に実行し、conductor は Claude Code で使う
+- Codex 利用者は `codex plugin marketplace add tak-solder/hikyaku@codex-plugin` でマーケットプレイスを追加し、プラグインをインストールする。`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要。Codex では各フェーズを個別に実行し、conductor は Claude Code で使う
 
 ## [2.4.1]
 
