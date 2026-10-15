@@ -1,0 +1,51 @@
+name: Sync Codex Plugin
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: sync-codex-plugin
+
+jobs:
+  open-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Open PR from main to codex-plugin
+        env:
+          # GITHUB_TOKEN で作った PR では pull_request のワークフロー（check-codex-plugin など）が起動しない。
+          # CI を走らせたい場合は、PR 作成権限を持つ PAT を CODEX_SYNC_TOKEN に登録する
+          GH_TOKEN: ${{ secrets.CODEX_SYNC_TOKEN || github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # 既に開いている PR は main への push で自動的に更新されるため、作り直さない
+          existing=$(gh pr list --base codex-plugin --head main --state open --json url --jq '.[0].url // empty')
+          if [ -n "$existing" ]; then
+            echo "PR already exists: $existing"
+            exit 0
+          fi
+
+          ahead=$(gh api "repos/${GH_REPO}/compare/codex-plugin...main" --jq '.ahead_by')
+          if [ "$ahead" -eq 0 ]; then
+            echo "codex-plugin already contains main — skipping."
+            exit 0
+          fi
+
+          gh pr create \
+            --base codex-plugin \
+            --head main \
+            --title "main の変更を codex-plugin に取り込む" \
+            --body "$(cat <<'EOF'
+          main への push を受けて自動作成した PR です。
+
+          - `skills/`, `agents/`, `scripts/`, `codex/`, `.codex-plugin/`, `.agents/plugins/` に変更がある場合は、`.codex-plugin/plugin.json` の `version` を上げてください
+          - 共通手順の変更が入口と `codex/compatibility.md` で読み替えられるか確認してください
+          EOF
+          )"
