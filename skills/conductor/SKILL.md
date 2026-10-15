@@ -1,8 +1,7 @@
 ---
 name: conductor
-description: "Hikyaku 監督: PLAN 済みのサイクルを、ARCHITECT → BUILD を非対話の子セッション（claude -p）に実行させて進める。子の問いには監督が答え、取り返しのつかない判断だけを人間に上げる"
+description: "Hikyaku 監督: PLAN 済みのサイクルを、ARCHITECT → BUILD を非対話の子セッション（claude -p）に実行させて進める。子の問いには監督が答え、取り返しのつかない判断だけを人間に上げる。モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。"
 user-invocable: true
-disable-model-invocation: true
 argument-hint: "[{cycle}]"
 ---
 

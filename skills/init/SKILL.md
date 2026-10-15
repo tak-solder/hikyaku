@@ -1,8 +1,7 @@
 ---
 name: init
-description: "Hikyaku 初期化: ワークスペースを作成し、リポジトリ既存の設計ドキュメントを document-guide.md に登録する。v1 からの移行もここで行う。"
+description: "Hikyaku 初期化: ワークスペースを作成し、リポジトリ既存の設計ドキュメントを document-guide.md に登録する。v1 からの移行もここで行う。モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。"
 user-invocable: true
-disable-model-invocation: false
 argument-hint: "[{HIKYAKU_ROOT}]"
 ---
 

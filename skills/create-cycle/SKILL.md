@@ -1,8 +1,7 @@
 ---
 name: create-cycle
-description: "Hikyaku サイクル作成: チケットを起点に新しいサイクルを採番し、profile と、ルート設定の ask に並んだキー（base_branch / ブランチ規則 / PR タイトル / セッション名 / 外部投影先）を決めて cycles.md に登録する。"
+description: "Hikyaku サイクル作成: チケットを起点に新しいサイクルを採番し、profile と、ルート設定の ask に並んだキー（base_branch / ブランチ規則 / PR タイトル / セッション名 / 外部投影先）を決めて cycles.md に登録する。モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。"
 user-invocable: true
-disable-model-invocation: false
 argument-hint: "[{slug}]"
 ---
 

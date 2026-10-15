@@ -1,8 +1,7 @@
 ---
 name: architect
-description: "Hikyaku 設計フェーズ: 企画成果物と既存コードを入力に、このサイクルの設計差分（design-delta）とビルド分割を出力する"
+description: "Hikyaku 設計フェーズ: 企画成果物と既存コードを入力に、このサイクルの設計差分（design-delta）とビルド分割を出力する。モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。"
 user-invocable: true
-disable-model-invocation: true
 argument-hint: "[{cycle}] [build-{NN} | add {指摘}]"
 ---
 
