@@ -1,8 +1,7 @@
 ---
 name: bp-guide
-description: "Hikyaku BP 基準表の運用: ビルドの見積もりと実績を突き合わせ、ワークスペースの BP 基準表（bp-guide/rules.toml）を調整し、期待値テストを整備する。サイクルには属さない。"
+description: "Hikyaku BP 基準表の運用: ビルドの見積もりと実績を突き合わせ、ワークスペースの BP 基準表（bp-guide/rules.toml）を調整し、期待値テストを整備する。サイクルには属さない。モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。"
 user-invocable: true
-disable-model-invocation: true
 argument-hint: "[show|tune]"
 ---
 

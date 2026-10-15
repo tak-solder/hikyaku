@@ -1,8 +1,7 @@
 ---
 name: build-manager
-description: "Hikyaku ビルド管理: ビルドの追加・更新・分割と依存グラフ管理を行う内部スキル。hikyaku:architect / hikyaku:builder から呼び出される。"
+description: "Hikyaku ビルド管理: ビルドの追加・更新・分割と依存グラフ管理を行う内部スキル。hikyaku:architect / hikyaku:builder から呼び出される。モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。"
 user-invocable: false
-disable-model-invocation: false
 argument-hint: "[{cycle}]"
 ---
 
