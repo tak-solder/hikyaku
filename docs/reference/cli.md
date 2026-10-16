@@ -149,6 +149,8 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 
 `review run` は `claude -p` や `codex exec` を起動し、生の出力を `.git` の中（`git rev-parse --git-path hikyaku/reviews` の下）に保存して返します。出力の解析や指摘の統合はしません。自由な文章なので、判断は呼び出したセッションが行います。空の結果、エラー、タイムアウトは終了コード 1 になります。origin/HEAD が無いときの `/security-review` のように、失敗が空の結果として返る場合があり、それを指摘0件と取り違えないためです。`max_rounds` を超える `--round` もエラーになります。
 
+環境変数 `HIKYAKU_REVIEW_PROVIDER` を設定すると、設定ファイルの `provider` より優先されます。設定したプロバイダの CLI が使えない環境のためのもので、詳しくは [.hikyaku.config](../configuration/config-file.md#review) を参照してください。
+
 ## 外部連携
 
 | コマンド | いつ使うか |

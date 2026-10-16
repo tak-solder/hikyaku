@@ -213,6 +213,10 @@ effort = "high"
 
 未知のキーやテーブル名はエラーになります。
 
+設定したプロバイダの CLI が使えない環境もあります。たとえば Claude Code のクラウド環境では、`provider = "codex"` にしていても `codex` を起動できません。そうした環境では、環境変数 `HIKYAKU_REVIEW_PROVIDER`（`claude` / `codex` / `auto`）を設定すると、設定ファイルのどの `provider` よりも優先されます。全種類のレビューにまとめて効き、モデルとエフォートは切り替え先のプロバイダのテーブルから取られます。値がどこから来たかは `hikyaku review resolve` と `hikyaku config` に表示されます。変数は Claude Code を起動した環境に設定してください。conductor の子のセッションにもそのまま渡ります。
+
+CLI を起動できなかったときに、Hikyaku が黙って別のプロバイダに切り替えることはしません。設定したつもりのプロバイダでレビューされていないことに気づけなくなるためです。レビューは失敗として報告され、そのメッセージで `HIKYAKU_REVIEW_PROVIDER` が案内されます。
+
 ## [review.security]
 
 ```toml

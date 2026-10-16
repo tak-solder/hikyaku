@@ -4,7 +4,15 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { flagBoolean, flagInteger, flagList, flagString, type ParsedArgs } from "../lib/args.mts";
-import { REVIEW_KINDS, REVIEW_PROVIDERS, type ResolvedConfig, type ReviewKind, type ReviewProvider } from "../lib/config.mts";
+import {
+  REVIEW_KINDS,
+  REVIEW_PROVIDER_ENV,
+  REVIEW_PROVIDERS,
+  type ResolvedConfig,
+  type ReviewKind,
+  type ReviewProvider,
+  type ReviewProviderSource,
+} from "../lib/config.mts";
 import { shellQuote } from "../lib/conductor.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { defaultBranch, gitPath } from "../lib/git.mts";
@@ -112,6 +120,7 @@ function describe(resolved: Resolved & { kind: ReviewKind }): string[] {
   const { plan } = resolved;
   const lines = [
     `${plan.kind}: ${plan.provider}（${plan.mode === "agent" ? "サブエージェント" : "別プロセス"}・${styleLabel(plan)}）`,
+    `  出所    ${sourceLabel(plan.providerSource)}`,
     `  model   ${plan.model ?? "(プロバイダの既定)"}`,
     `  effort  ${plan.effort ?? "(プロバイダの既定)"}`,
   ];
@@ -130,6 +139,13 @@ function describe(resolved: Resolved & { kind: ReviewKind }): string[] {
     lines.push(`  /security-review  ${resolved.security.native ? "使う" : "使わない"}（${resolved.security.reason}）`);
   }
   return lines;
+}
+
+export function sourceLabel(source: ReviewProviderSource): string {
+  if (source === "env") return `環境変数 ${REVIEW_PROVIDER_ENV}`;
+  if (source === "kind") return "[review.<種類>] の provider";
+  if (source === "review") return "[review] の provider";
+  return "既定（auto = メインのセッションと同じ）";
 }
 
 function styleLabel(plan: ReviewPlan): string {
@@ -272,7 +288,17 @@ register({
     if (!outcome.ok) {
       throw new HikyakuError(
         `${plan.kind} のレビューに失敗しました（${plan.provider}・${seconds} 秒）: ${outcome.problem}`,
-        [`実行: ${commandLine}`, `出力: ${outputPath}`, "パス（指摘0件）として扱わず、ユーザーに報告してください。"].join("\n"),
+        [
+          `実行: ${commandLine}`,
+          `出力: ${outputPath}`,
+          "パス（指摘0件）として扱わず、ユーザーに報告してください。",
+          ...(outcome.launchFailed
+            ? [
+                `${plan.provider} の CLI が使えない環境なら、環境変数 ${REVIEW_PROVIDER_ENV} で別のプロバイダを指定できます`,
+                `（例: ${REVIEW_PROVIDER_ENV}=${plan.provider === "codex" ? "claude" : "codex"}）。設定ファイルより優先されます。`,
+              ]
+            : []),
+        ].join("\n"),
       );
     }
     emit({ ...plan, round, dryRun, commandLine, output: outputPath, seconds, result: outcome.text }, () =>
@@ -311,23 +337,37 @@ function buildPrompt(args: ParsedArgs, resolved: Resolved, config: ResolvedConfi
  * レビューを実行する。stdin は閉じて渡す。開いたままだと claude -p が入力を待ち、
  * 待ちきれなかった警告が出力の JSON に混ざる
  */
-function execute(invocation: ReviewInvocation, cwd: string, timeoutMinutes: number): Promise<ReviewOutcome> {
+function execute(
+  invocation: ReviewInvocation,
+  cwd: string,
+  timeoutMinutes: number,
+): Promise<ReviewOutcome & { launchFailed?: boolean }> {
   return new Promise((resolvePromise) => {
-    const child = spawn(invocation.command, invocation.args, {
-      cwd,
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: timeoutMinutes * 60_000,
-    });
+    const child = spawn(invocation.command, invocation.args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    // spawn の timeout オプションは使わない。起動に失敗したときにタイマーが残り、プロセスが終われなくなる
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+    }, timeoutMinutes * 60_000);
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
     child.stderr.setEncoding("utf8").on("data", (chunk: string) => (stderr += chunk));
     child.on("error", (error) => {
-      resolvePromise({ ok: false, text: "", problem: `${invocation.command} を起動できません: ${error.message}` });
+      clearTimeout(timer);
+      resolvePromise({
+        ok: false,
+        text: "",
+        problem: `${invocation.command} を起動できません: ${error.message}`,
+        launchFailed: true,
+      });
     });
     child.on("close", (code, signal) => {
+      clearTimeout(timer);
       if (signal !== null) {
-        resolvePromise({ ok: false, text: stdout, problem: `[review] timeout（${timeoutMinutes} 分）を超えたか、中断されました（${signal}）` });
+        const reason = timedOut ? `[review] timeout（${timeoutMinutes} 分）を超えました` : `中断されました（${signal}）`;
+        resolvePromise({ ok: false, text: stdout, problem: reason });
         return;
       }
       const outcome =

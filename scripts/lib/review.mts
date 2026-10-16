@@ -18,7 +18,13 @@
  * 観点を書いた指示文（skills/builder/references/security-review.md）を渡す形で代える。
  */
 
-import type { ReviewKind, ReviewKindSettings, ReviewModelSettings, ReviewProvider } from "./config.mts";
+import type {
+  ReviewKind,
+  ReviewKindSettings,
+  ReviewModelSettings,
+  ReviewProvider,
+  ReviewProviderSource,
+} from "./config.mts";
 
 /**
  * 起動の形。
@@ -49,6 +55,8 @@ export interface ReviewPlanInput {
 export interface ReviewPlan {
   kind: ReviewKind;
   provider: ReviewProvider;
+  /** provider の値の出所。auto は default / review / kind のどれかに auto が書かれていたことを示す */
+  providerSource: ReviewProviderSource;
   mode: ReviewMode;
   style: ReviewStyle;
   model: string | undefined;
@@ -71,6 +79,7 @@ export function planReview(input: ReviewPlanInput): ReviewPlan {
   return {
     kind,
     provider,
+    providerSource: settings.providerSource,
     mode,
     style,
     model: models.model,

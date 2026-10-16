@@ -1,7 +1,7 @@
 /** config — 解決済みの設定を出力する */
 
 import { flagString } from "../lib/args.mts";
-import { loadConfig } from "../lib/config.mts";
+import { loadConfig, REVIEW_PROVIDER_ENV } from "../lib/config.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { describeSource, openCycleIfAny } from "../lib/workspace.mts";
@@ -83,7 +83,8 @@ register({
               return model === undefined && effort === undefined ? "" : `  ${provider}: ${[model, effort].filter(Boolean).join(" / ")}`;
             })
             .join("");
-          return `  ${kind.padEnd(9)}${settings.provider}${rounds}${models}`;
+          const source = settings.providerSource === "env" ? `（環境変数 ${REVIEW_PROVIDER_ENV}）` : "";
+          return `  ${kind.padEnd(9)}${settings.provider}${source}${rounds}${models}`;
         }),
         "",
         `branch       ${config.branch.prefix}${config.branch.separator}{cycle}${config.branch.separator}{phase}`,

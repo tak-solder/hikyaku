@@ -103,8 +103,12 @@ export interface ReviewModelSettings {
   effort?: string;
 }
 
+/** provider の値がどこから来たか。設定ファイルと違う結果になったときに理由を示すため */
+export type ReviewProviderSource = "env" | "kind" | "review" | "default";
+
 export interface ReviewKindSettings {
   provider: ReviewProviderChoice;
+  providerSource: ReviewProviderSource;
   /** 1 = 1回だけ / n = パスするまで最大 n 回 / 0 = 無制限 */
   maxRounds: number;
   /** 2ラウンド目以降、指摘への対応を確認せずに直すか */
@@ -122,6 +126,12 @@ export interface ReviewSettings {
 }
 
 export const DEFAULT_REVIEW_TIMEOUT_MINUTES = 30;
+
+/**
+ * provider を全種類まとめて上書きする環境変数。設定ファイルより優先する。
+ * クラウド環境のように、設定したプロバイダの CLI が使えない場所でリポジトリの設定を変えずに済ませるため
+ */
+export const REVIEW_PROVIDER_ENV = "HIKYAKU_REVIEW_PROVIDER";
 
 interface ProfileDefinition {
   gates: Gates;
@@ -542,7 +552,11 @@ function readMaxRounds(table: TomlTable | undefined, where: string): number | un
  * の順に重ねる。モデルとエフォートをプロバイダごとに分けるのは、provider だけを切り替えたときに
  * 互換性のないモデル名やエフォートが渡らないようにするため。
  */
-function readReview(table: TomlTable | undefined, reviewRounds: number): ReviewSettings {
+function readReview(
+  table: TomlTable | undefined,
+  reviewRounds: number,
+  env: NodeJS.ProcessEnv = process.env,
+): ReviewSettings {
   const where = "[review]";
   assertKnownKeys(table, ["provider", "max_rounds", "auto_fix", "timeout", ...REVIEW_PROVIDERS, ...REVIEW_KINDS], where);
 
@@ -550,7 +564,11 @@ function readReview(table: TomlTable | undefined, reviewRounds: number): ReviewS
   if (timeout <= 0) throw new HikyakuError(`${where}.timeout は 0 より大きい分数で指定してください`);
 
   const providers: ReviewProviderChoice[] = ["auto", ...REVIEW_PROVIDERS];
-  const baseProvider = readEnum(table, "provider", providers, where) ?? "auto";
+  const configured = readEnum(table, "provider", providers, where);
+  const rawEnv = env[REVIEW_PROVIDER_ENV]?.trim();
+  // 不正な値を黙って捨てると、設定ファイルのプロバイダに戻って同じように失敗する
+  const envProvider =
+    rawEnv === undefined || rawEnv === "" ? undefined : checkEnum(rawEnv, providers, `環境変数 ${REVIEW_PROVIDER_ENV}`);
   const baseRounds = readMaxRounds(table, where) ?? reviewRounds;
   const baseAutoFix = readBoolean(table, "auto_fix", where) ?? false;
   const baseModels = Object.fromEntries(
@@ -575,7 +593,7 @@ function readReview(table: TomlTable | undefined, reviewRounds: number): ReviewS
       name === "doc" ? `使用できるキー: ${allowed.join(" | ")}（ドキュメントのレビューは1回だけで、回数は設定できません）` : undefined,
     );
     return {
-      provider: readEnum(kindTable, "provider", providers, kindWhere) ?? baseProvider,
+      ...resolveProvider(envProvider, readEnum(kindTable, "provider", providers, kindWhere), configured),
       maxRounds: name === "doc" ? 1 : (readMaxRounds(kindTable, kindWhere) ?? baseRounds),
       autoFix: name === "doc" ? false : (readBoolean(kindTable, "auto_fix", kindWhere) ?? baseAutoFix),
       models: Object.fromEntries(
@@ -593,6 +611,17 @@ function readReview(table: TomlTable | undefined, reviewRounds: number): ReviewS
   };
 
   return { timeoutMinutes: timeout, code: kind("code"), security: kind("security"), doc: kind("doc") };
+}
+
+function resolveProvider(
+  fromEnv: ReviewProviderChoice | undefined,
+  fromKind: ReviewProviderChoice | undefined,
+  fromReview: ReviewProviderChoice | undefined,
+): { provider: ReviewProviderChoice; providerSource: ReviewProviderSource } {
+  if (fromEnv !== undefined) return { provider: fromEnv, providerSource: "env" };
+  if (fromKind !== undefined) return { provider: fromKind, providerSource: "kind" };
+  if (fromReview !== undefined) return { provider: fromReview, providerSource: "review" };
+  return { provider: "auto", providerSource: "default" };
 }
 
 function checkEnum<T extends string>(

@@ -18,7 +18,7 @@ import { cli, succeeds, temporaryDirectory, testEnvironment, workspace, write } 
 const cliPath = fileURLToPath(new URL("../scripts/hikyaku.mts", import.meta.url));
 
 function settings(overrides: Partial<ReviewKindSettings> = {}): ReviewKindSettings {
-  return { provider: "auto", maxRounds: 1, autoFix: false, models: { claude: {}, codex: {} }, ...overrides };
+  return { provider: "auto", providerSource: "default", maxRounds: 1, autoFix: false, models: { claude: {}, codex: {} }, ...overrides };
 }
 
 const ROOT_CONFIG = 'hikyaku_root = "docs/hikyaku"\nbase_branch = "main"\n';
@@ -228,8 +228,11 @@ function stubs(t: TestContext, claudeOutput: string): string {
 }
 
 function runWith(directory: string, bin: string, ...args: string[]) {
-  const env = testEnvironment();
-  env.PATH = `${bin}${delimiter}${env.PATH ?? ""}`;
+  return runEnv(directory, { PATH: `${bin}${delimiter}${process.env.PATH ?? ""}` }, ...args);
+}
+
+function runEnv(directory: string, extra: NodeJS.ProcessEnv, ...args: string[]) {
+  const env = { ...testEnvironment(), ...extra };
   const result = spawnSync(process.execPath, [cliPath, ...args], { cwd: directory, encoding: "utf8", env, timeout: 20_000 });
   assert.ifError(result.error);
   return result;
@@ -297,4 +300,39 @@ test("review run --dry-run: コマンドだけを返し、何も実行しない"
   assert.equal(resolved.provider, "codex");
   assert.equal(resolved.security.native, false);
   assert.equal(resolved.enabled, "recommended");
+});
+
+test("環境変数 HIKYAKU_REVIEW_PROVIDER: 設定ファイルの provider より優先し、出所を示す", (t) => {
+  const directory = buildBranch(t, '[review]\nprovider = "codex"\n[review.security]\nprovider = "codex"\n[review.claude]\neffort = "low"\n');
+  const plain = JSON.parse(succeeds(directory, "review", "resolve", "security", "build-01", "--self", "claude", "--no-fetch", "--json"));
+  assert.deepEqual([plain.provider, plain.providerSource], ["codex", "kind"]);
+
+  const overridden = runEnv(directory, { HIKYAKU_REVIEW_PROVIDER: "claude" }, "review", "resolve", "security", "build-01", "--self", "codex", "--no-fetch", "--json");
+  assert.equal(overridden.status, 0, overridden.stderr);
+  const resolved = JSON.parse(overridden.stdout);
+  assert.deepEqual([resolved.provider, resolved.providerSource], ["claude", "env"]);
+  // モデルとエフォートは切り替え先のプロバイダの設定が使われる
+  assert.equal(resolved.effort, "low");
+
+  const text = runEnv(directory, { HIKYAKU_REVIEW_PROVIDER: "claude" }, "review", "resolve", "code", "build-01", "--self", "claude", "--no-fetch");
+  assert.match(text.stdout, /出所 +環境変数 HIKYAKU_REVIEW_PROVIDER/);
+  const config = runEnv(directory, { HIKYAKU_REVIEW_PROVIDER: "auto" }, "config", "001");
+  assert.match(config.stdout, /code +auto（環境変数 HIKYAKU_REVIEW_PROVIDER）/);
+
+  const empty = runEnv(directory, { HIKYAKU_REVIEW_PROVIDER: "" }, "review", "resolve", "code", "build-01", "--self", "claude", "--no-fetch", "--json");
+  assert.equal(JSON.parse(empty.stdout).providerSource, "review");
+
+  const invalid = runEnv(directory, { HIKYAKU_REVIEW_PROVIDER: "gemini" }, "config", "001");
+  assert.equal(invalid.status, 1);
+  assert.match(invalid.stderr, /環境変数 HIKYAKU_REVIEW_PROVIDER の値が不正/);
+});
+
+test("review run: CLI を起動できないときは失敗にし、環境変数での切り替えを案内する", (t) => {
+  const directory = buildBranch(t, '[review.code]\nprovider = "codex"\n');
+  // codex の無い PATH（git だけは使えるようにする）
+  const bin = temporaryDirectory(t);
+  const result = runEnv(directory, { PATH: `${bin}${delimiter}/usr/bin${delimiter}/bin` }, "review", "run", "code", "build-01", "--self", "claude", "--no-fetch");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /codex を起動できません/);
+  assert.match(result.stderr, /HIKYAKU_REVIEW_PROVIDER=claude/);
 });
