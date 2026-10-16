@@ -391,3 +391,20 @@ test("provider_for: メインのプロバイダごとにレビューの実行先
   const env = runEnv(directory, { HIKYAKU_REVIEW_PROVIDER: "claude" }, "review", "resolve", "code", "build-01", "--self", "claude", "--no-fetch", "--json");
   assert.deepEqual([JSON.parse(env.stdout).provider, JSON.parse(env.stdout).providerSource], ["claude", "env"]);
 });
+
+test("review run: 同じラウンドの再実行で、前回の Codex の出力を今回の結果として読まない", (t) => {
+  const directory = buildBranch(t, '[review.code]\nprovider = "codex"\n');
+  const bin = stubs(t, "{}");
+  const first = runWith(directory, bin, "review", "run", "code", "build-01", "--self", "claude", "--no-fetch", "--json");
+  assert.equal(first.status, 0, first.stderr);
+  const output: string = JSON.parse(first.stdout).output;
+  assert.ok(existsSync(output.replace(/\.md$/, ".raw")));
+
+  // 2回目の Codex は -o に何も書かずに正常終了する
+  write(bin, "codex", "#!/bin/sh\nexit 0\n");
+  chmodSync(join(bin, "codex"), 0o755);
+  const second = runWith(directory, bin, "review", "run", "code", "build-01", "--self", "claude", "--no-fetch");
+  assert.equal(second.status, 1);
+  assert.match(second.stderr, /codex が結果を書き出しませんでした/);
+  assert.equal(readFileSync(output, "utf8"), "");
+});

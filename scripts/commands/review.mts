@@ -1,7 +1,7 @@
 /** review resolve / review run — コードとセキュリティ（と別プロバイダの doc）のレビューを起動する */
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { flagBoolean, flagInteger, flagList, flagString, type ParsedArgs } from "../lib/args.mts";
 import {
@@ -283,6 +283,9 @@ register({
     }
 
     mkdirSync(dirname(outputPath), { recursive: true });
+    // 出力先はラウンドと種類で決まる固定のパスなので、同じラウンドを再実行すると前回のファイルが残っている。
+    // 今回のプロセスが何も書かずに終わったとき、前回の結果を今回のものとして読まないよう先に消す
+    for (const path of [outputPath, rawPath]) rmSync(path, { force: true });
     const started = Date.now();
     const outcome = await execute(invocation, config.repoRoot, resolved.timeoutMinutes);
     const seconds = Math.round((Date.now() - started) / 1000);
