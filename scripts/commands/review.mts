@@ -120,7 +120,7 @@ function describe(resolved: Resolved & { kind: ReviewKind }): string[] {
   const { plan } = resolved;
   const lines = [
     `${plan.kind}: ${plan.provider}（${plan.mode === "agent" ? "サブエージェント" : "別プロセス"}・${styleLabel(plan)}）`,
-    `  出所    ${sourceLabel(plan.providerSource)}`,
+    `  出所    ${sourceLabel(plan)}`,
     `  model   ${plan.model ?? "(プロバイダの既定)"}`,
     `  effort  ${plan.effort ?? "(プロバイダの既定)"}`,
   ];
@@ -141,9 +141,12 @@ function describe(resolved: Resolved & { kind: ReviewKind }): string[] {
   return lines;
 }
 
-export function sourceLabel(source: ReviewProviderSource): string {
+export function sourceLabel(plan: Pick<ReviewPlan, "kind" | "providerSource" | "providerKey">): string {
+  const source: ReviewProviderSource = plan.providerSource;
   if (source === "env") return `環境変数 ${REVIEW_PROVIDER_ENV}`;
-  if (source === "kind") return "[review.<種類>] の provider";
+  if (source === "kind.provider_for") return `[review.${plan.kind}.provider_for] の ${plan.providerKey}`;
+  if (source === "kind") return `[review.${plan.kind}] の provider`;
+  if (source === "review.provider_for") return `[review.provider_for] の ${plan.providerKey}`;
   if (source === "review") return "[review] の provider";
   return "既定（auto = メインのセッションと同じ）";
 }
@@ -162,7 +165,7 @@ register({
   details: [
     "[review] の設定を重ねて、レビューの起動方法を決めます。実行はしません。",
     "",
-    "--self にはメインのセッションのプロバイダを渡します（provider = \"auto\" の解決に使います）。",
+    "--self にはメインのセッションのプロバイダを渡します（provider = \"auto\" と provider_for の解決に使います）。",
     "",
     "  mode: agent    メインのセッションのサブエージェント（doc-reviewer）で実行する",
     "  mode: process  review run で別プロセスとして実行する",

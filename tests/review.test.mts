@@ -4,7 +4,7 @@ import { chmodSync, existsSync, readFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
-import type { ReviewKindSettings } from "../scripts/lib/config.mts";
+import type { ReviewKindSettings, ReviewProviderChoice } from "../scripts/lib/config.mts";
 import {
   buildInvocation,
   nativeSecurityReason,
@@ -17,8 +17,26 @@ import { cli, succeeds, temporaryDirectory, testEnvironment, workspace, write } 
 
 const cliPath = fileURLToPath(new URL("../scripts/hikyaku.mts", import.meta.url));
 
-function settings(overrides: Partial<ReviewKindSettings> = {}): ReviewKindSettings {
-  return { provider: "auto", providerSource: "default", maxRounds: 1, autoFix: false, models: { claude: {}, codex: {} }, ...overrides };
+function settings(
+  overrides: Partial<ReviewKindSettings> & { provider?: ReviewProviderChoice } = {},
+): ReviewKindSettings {
+  const { provider, ...rest } = overrides;
+  return {
+    providers: [
+      ...(provider === undefined ? [] : [{ source: "review" as const, provider }]),
+      { source: "default", provider: "auto" },
+    ],
+    maxRounds: 1,
+    autoFix: false,
+    models: { claude: {}, codex: {} },
+    ...rest,
+  };
+}
+
+/** --self を渡したときに決まるプロバイダ（review resolve の JSON） */
+function resolvedProvider(directory: string, kind: string, self: string): { provider: string; providerSource: string } {
+  const plan = JSON.parse(succeeds(directory, "review", "resolve", kind, "build-01", "--self", self, "--no-fetch", "--json"));
+  return { provider: plan.provider, providerSource: plan.providerSource };
 }
 
 const ROOT_CONFIG = 'hikyaku_root = "docs/hikyaku"\nbase_branch = "main"\n';
@@ -32,7 +50,7 @@ test("レビュー設定: profile ごとの max_rounds が既定になり、[rev
   const directory = workspace(t, true);
   const standard = reviewConfig(directory) as { code: ReviewKindSettings; doc: ReviewKindSettings; timeoutMinutes: number };
   assert.equal(standard.code.maxRounds, 2);
-  assert.equal(standard.code.provider, "auto");
+  assert.deepEqual(standard.code.providers, [{ source: "default", provider: "auto" }]);
   assert.equal(standard.code.autoFix, false);
   assert.equal(standard.doc.maxRounds, 1);
   assert.equal(standard.timeoutMinutes, 30);
@@ -75,12 +93,12 @@ test("レビュー設定: モデルとエフォートは種類×プロバイダ 
       "",
     ].join("\n"),
   ) as Record<"code" | "security" | "doc", ReviewKindSettings>;
-  assert.equal(review.code.provider, "claude");
+  assert.deepEqual(review.code.providers[0], { source: "kind", provider: "claude" });
   assert.deepEqual(review.code.models.claude, { model: "opus", effort: "max" });
-  assert.equal(review.security.provider, "codex");
+  assert.deepEqual(review.security.providers[0], { source: "review", provider: "codex" });
   // Codex の effort はモデル依存なので検証しない
   assert.deepEqual(review.security.models.codex, { effort: "ultra" });
-  assert.equal(review.doc.provider, "auto");
+  assert.deepEqual(review.doc.providers[0], { source: "kind", provider: "auto" });
   assert.deepEqual(review.doc.models.codex, { model: "gpt-a", effort: "ultra" });
 });
 
@@ -96,6 +114,9 @@ test("レビュー設定: 不正な値・未知のキーを黙って捨てずに
     ["[review.codex]\nreasoning = \"high\"\n", /\[review\.codex\] に指定できないキー/],
     ['[review]\ncode = "codex"\n', /\[review\.code\]/],
     ["[review]\ntimeout = 0\n", /timeout/],
+    ['[review.provider_for]\nclaude = "auto"\n', /provider_for\]\.claude の値が不正/],
+    ['[review.provider_for]\ngemini = "codex"\n', /\[review\.provider_for\] に指定できないキー/],
+    ['[review]\nprovider_for = "codex"\n', /\[review\.provider_for\]/],
   ];
   for (const [body, pattern] of cases) {
     write(directory, ".hikyaku.config", ROOT_CONFIG + body);
@@ -335,4 +356,38 @@ test("review run: CLI を起動できないときは失敗にし、環境変数�
   assert.equal(result.status, 1);
   assert.match(result.stderr, /codex を起動できません/);
   assert.match(result.stderr, /HIKYAKU_REVIEW_PROVIDER=claude/);
+});
+
+test("provider_for: メインのプロバイダごとにレビューの実行先を決め、行が無ければ provider に戻る", (t) => {
+  const directory = buildBranch(
+    t,
+    [
+      "[review]",
+      'provider = "auto"',
+      "[review.provider_for]",
+      'claude = "codex"',
+      "[review.security]",
+      'provider = "claude"',
+      "[review.doc.provider_for]",
+      'codex = "claude"',
+      "",
+    ].join("\n"),
+  );
+  // Claude で開発していれば Codex でレビューする。Codex の行は無いので auto（Codex のまま）
+  assert.deepEqual(resolvedProvider(directory, "code", "claude"), { provider: "codex", providerSource: "review.provider_for" });
+  assert.deepEqual(resolvedProvider(directory, "code", "codex"), { provider: "codex", providerSource: "review" });
+  // 種類の provider は [review.provider_for] より強い
+  assert.deepEqual(resolvedProvider(directory, "security", "claude"), { provider: "claude", providerSource: "kind" });
+  // 種類の provider_for は種類の provider より強く、行が無ければ下の段へ進む
+  assert.deepEqual(resolvedProvider(directory, "doc", "codex"), { provider: "claude", providerSource: "kind.provider_for" });
+  assert.deepEqual(resolvedProvider(directory, "doc", "claude"), { provider: "codex", providerSource: "review.provider_for" });
+
+  const text = succeeds(directory, "review", "resolve", "code", "build-01", "--self", "claude", "--no-fetch");
+  assert.match(text, /出所 +\[review\.provider_for\] の claude/);
+  const config = succeeds(directory, "config", "001");
+  assert.match(config, /code +provider_for（claude→codex） > auto +回数/);
+
+  // 環境変数は provider_for より強い
+  const env = runEnv(directory, { HIKYAKU_REVIEW_PROVIDER: "claude" }, "review", "resolve", "code", "build-01", "--self", "claude", "--no-fetch", "--json");
+  assert.deepEqual([JSON.parse(env.stdout).provider, JSON.parse(env.stdout).providerSource], ["claude", "env"]);
 });

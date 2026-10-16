@@ -145,7 +145,7 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | `review resolve <kind> <phase> [<cycle>] --self <provider>` | レビューをどのプロバイダ・モデル・回数で、どう起動するか確かめるとき |
 | `review run <kind> <phase> [<cycle>] --self <provider>` | コードやセキュリティのレビューを別プロセスで実行するとき（builder が呼ぶ）。別プロバイダの doc-reviewer も同じ |
 
-`<kind>` は `code` / `security` / `doc` です。`--self` にはメインのセッションのプロバイダ（`claude` / `codex`）を渡します。`[review]` の `provider = "auto"` をこれで解決します（[.hikyaku.config](../configuration/config-file.md#review)）。
+`<kind>` は `code` / `security` / `doc` です。`--self` にはメインのセッションのプロバイダ（`claude` / `codex`）を渡します。`[review]` の `provider = "auto"` と `provider_for` をこれで解決します（[.hikyaku.config](../configuration/config-file.md#review)）。
 
 `review run` は `claude -p` や `codex exec` を起動し、生の出力を `.git` の中（`git rev-parse --git-path hikyaku/reviews` の下）に保存して返します。出力の解析や指摘の統合はしません。自由な文章なので、判断は呼び出したセッションが行います。空の結果、エラー、タイムアウトは終了コード 1 になります。origin/HEAD が無いときの `/security-review` のように、失敗が空の結果として返る場合があり、それを指摘0件と取り違えないためです。`max_rounds` を超える `--round` もエラーになります。
 

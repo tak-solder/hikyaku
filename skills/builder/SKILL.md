@@ -324,7 +324,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve code build-{NN} 
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve security build-{NN} {cycle} --self claude --json
 ```
 
-`--self` にはメインのセッションのプロバイダを渡す（`provider = "auto"` の解決に使う）。
+`--self` にはメインのセッションのプロバイダを渡す（`provider = "auto"` と `provider_for` の解決に使う）。
 `enabled` は `code_review` / `security_review` の値、`maxRounds` は回数の上限（0 は無制限）、
 `autoFix` は2ラウンド目以降の確認を省くかどうか。`base.ref` が差分の基準で、
 スタックしていればスタック元になる。**デフォルトブランチを決め打ちしない。**

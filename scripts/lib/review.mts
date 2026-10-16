@@ -18,12 +18,13 @@
  * 観点を書いた指示文（skills/builder/references/security-review.md）を渡す形で代える。
  */
 
-import type {
-  ReviewKind,
-  ReviewKindSettings,
-  ReviewModelSettings,
-  ReviewProvider,
-  ReviewProviderSource,
+import {
+  resolveReviewProvider,
+  type ReviewKind,
+  type ReviewKindSettings,
+  type ReviewModelSettings,
+  type ReviewProvider,
+  type ReviewProviderSource,
 } from "./config.mts";
 
 /**
@@ -55,8 +56,10 @@ export interface ReviewPlanInput {
 export interface ReviewPlan {
   kind: ReviewKind;
   provider: ReviewProvider;
-  /** provider の値の出所。auto は default / review / kind のどれかに auto が書かれていたことを示す */
+  /** provider の値の出所 */
   providerSource: ReviewProviderSource;
+  /** provider_for で決まったとき、使った行のキー（メインのプロバイダ） */
+  providerKey: ReviewProvider | undefined;
   mode: ReviewMode;
   style: ReviewStyle;
   model: string | undefined;
@@ -67,7 +70,8 @@ export interface ReviewPlan {
 
 export function planReview(input: ReviewPlanInput): ReviewPlan {
   const { kind, self, settings } = input;
-  const provider = settings.provider === "auto" ? self : settings.provider;
+  const resolved = resolveReviewProvider(settings, self);
+  const provider = resolved.provider;
   const models: ReviewModelSettings = settings.models[provider];
   // doc はメインと同じプロバイダなら今までどおりサブエージェントで動かす。
   // code / security は実装したコンテキストから切り離すため、常に別プロセスにする
@@ -79,7 +83,8 @@ export function planReview(input: ReviewPlanInput): ReviewPlan {
   return {
     kind,
     provider,
-    providerSource: settings.providerSource,
+    providerSource: resolved.source,
+    providerKey: resolved.key,
     mode,
     style,
     model: models.model,

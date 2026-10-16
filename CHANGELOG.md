@@ -34,8 +34,9 @@ builder のコードレビューとセキュリティレビューを、Claude Co
 
 ### Added
 
-- **`[review]` 設定**: `provider`（`auto` / `claude` / `codex`）、`max_rounds`（`1` / `n` / `0` = 無制限）、`auto_fix`、`timeout`（分）を持つ。モデルとエフォートは `[review.claude]` / `[review.codex]` に書き、`[review.code]` / `[review.security]` / `[review.doc]` と `[review.<種類>.<プロバイダ>]` で種類ごとに上書きできる。未知のキーはエラーになる
+- **`[review]` 設定**: `provider`（`auto` / `claude` / `codex`）、`max_rounds`（`1` / `n` / `0` = 無制限）、`auto_fix`、`timeout`（分）を持つ。モデルとエフォートは `[review.claude]` / `[review.codex]` に書き、`[review.code]` / `[review.security]` / `[review.doc]` と `[review.<種類>.<プロバイダ>]` で種類ごとに上書きできる。未知のキーはエラーになる。`config --json` の `review.<種類>.providers` は、プロバイダを決める規則を優先順に並べたもの（`provider_for` はメインのプロバイダが決まるまで解決できないため）
 - **`hikyaku review resolve` / `review run`**: レビューの起動方法を解決し、`claude -p "/code-review ..."`・`/security-review`・`codex exec review` を別プロセスで実行する。生の出力は `.git` の中に保存する。空の結果・エラー・タイムアウトは終了コード 1 にし、指摘0件と取り違えないようにした
+- **`[review.provider_for]`**: メインのセッションのプロバイダごとに、レビューの実行先を書く（例: `claude = "codex"`、`codex = "claude"`）。行が無ければ `provider` に戻る。種類ごとに `[review.<種類>.provider_for]` でも書ける。「もう一方」のような相対の指定にしないのは、プロバイダが増えたときに意味が決まらなくなるため
 - **環境変数 `HIKYAKU_REVIEW_PROVIDER`**: 設定ファイルの `provider` より優先し、全種類のレビューのプロバイダを上書きする。クラウド環境など、設定したプロバイダの CLI が使えない場所のため。値の出所は `review resolve` と `config` に表示する。CLI を起動できないときに別のプロバイダへ自動で切り替えることはせず、失敗のメッセージでこの変数を案内する
 - プロファイルに code / security の `max_rounds` の既定値を足した（express / economy = 1、standard = 2、thorough = 3）
 - `skills/builder/references/security-review.md`: `/security-review` を使えないとき（スタックしたビルド、origin/HEAD が無いリポジトリ、Codex）に渡すセキュリティの観点

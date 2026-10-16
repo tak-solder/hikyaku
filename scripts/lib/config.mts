@@ -104,11 +104,29 @@ export interface ReviewModelSettings {
 }
 
 /** provider の値がどこから来たか。設定ファイルと違う結果になったときに理由を示すため */
-export type ReviewProviderSource = "env" | "kind" | "review" | "default";
+export type ReviewProviderSource =
+  | "env"
+  | "kind.provider_for"
+  | "kind"
+  | "review.provider_for"
+  | "review"
+  | "default";
+
+/**
+ * provider を決める規則の1段。
+ *   provider     その値をそのまま使う
+ *   providerFor  メインのプロバイダの行があればその値を使い、無ければ次の段へ進む
+ *
+ * provider_for はメインのプロバイダが分からないと決まらないので、設定の段階では規則の列のまま持ち、
+ * --self を受け取る review resolve / run で解決する（resolveReviewProvider）
+ */
+export type ReviewProviderRule =
+  | { source: "env" | "kind" | "review" | "default"; provider: ReviewProviderChoice }
+  | { source: "kind.provider_for" | "review.provider_for"; providerFor: Partial<Record<ReviewProvider, ReviewProvider>> };
 
 export interface ReviewKindSettings {
-  provider: ReviewProviderChoice;
-  providerSource: ReviewProviderSource;
+  /** 優先順に並んだ規則。最後は必ず default（auto） */
+  providers: ReviewProviderRule[];
   /** 1 = 1回だけ / n = パスするまで最大 n 回 / 0 = 無制限 */
   maxRounds: number;
   /** 2ラウンド目以降、指摘への対応を確認せずに直すか */
@@ -558,13 +576,18 @@ function readReview(
   env: NodeJS.ProcessEnv = process.env,
 ): ReviewSettings {
   const where = "[review]";
-  assertKnownKeys(table, ["provider", "max_rounds", "auto_fix", "timeout", ...REVIEW_PROVIDERS, ...REVIEW_KINDS], where);
+  assertKnownKeys(
+    table,
+    ["provider", "provider_for", "max_rounds", "auto_fix", "timeout", ...REVIEW_PROVIDERS, ...REVIEW_KINDS],
+    where,
+  );
 
   const timeout = readNumber(table, "timeout", where) ?? DEFAULT_REVIEW_TIMEOUT_MINUTES;
   if (timeout <= 0) throw new HikyakuError(`${where}.timeout は 0 より大きい分数で指定してください`);
 
   const providers: ReviewProviderChoice[] = ["auto", ...REVIEW_PROVIDERS];
   const configured = readEnum(table, "provider", providers, where);
+  const configuredFor = readProviderFor(requireTable(table, "provider_for", where), "[review.provider_for]");
   const rawEnv = env[REVIEW_PROVIDER_ENV]?.trim();
   // 不正な値を黙って捨てると、設定ファイルのプロバイダに戻って同じように失敗する
   const envProvider =
@@ -584,8 +607,15 @@ function readReview(
     // doc は1回だけのレビューで、回数の設定は持たない（指摘への対応は各フェーズの承認で決める）
     const allowed =
       name === "doc"
-        ? ["provider", ...REVIEW_PROVIDERS]
-        : ["provider", "max_rounds", "auto_fix", ...REVIEW_PROVIDERS, ...(name === "security" ? ["triggers"] : [])];
+        ? ["provider", "provider_for", ...REVIEW_PROVIDERS]
+        : [
+            "provider",
+            "provider_for",
+            "max_rounds",
+            "auto_fix",
+            ...REVIEW_PROVIDERS,
+            ...(name === "security" ? ["triggers"] : []),
+          ];
     assertKnownKeys(
       kindTable,
       allowed,
@@ -593,7 +623,13 @@ function readReview(
       name === "doc" ? `使用できるキー: ${allowed.join(" | ")}（ドキュメントのレビューは1回だけで、回数は設定できません）` : undefined,
     );
     return {
-      ...resolveProvider(envProvider, readEnum(kindTable, "provider", providers, kindWhere), configured),
+      providers: providerRules([
+        envProvider === undefined ? undefined : { source: "env", provider: envProvider },
+        ruleFor("kind.provider_for", readProviderFor(requireTable(kindTable, "provider_for", kindWhere), `[review.${name}.provider_for]`)),
+        ruleOf("kind", readEnum(kindTable, "provider", providers, kindWhere)),
+        ruleFor("review.provider_for", configuredFor),
+        ruleOf("review", configured),
+      ]),
       maxRounds: name === "doc" ? 1 : (readMaxRounds(kindTable, kindWhere) ?? baseRounds),
       autoFix: name === "doc" ? false : (readBoolean(kindTable, "auto_fix", kindWhere) ?? baseAutoFix),
       models: Object.fromEntries(
@@ -613,15 +649,75 @@ function readReview(
   return { timeoutMinutes: timeout, code: kind("code"), security: kind("security"), doc: kind("doc") };
 }
 
-function resolveProvider(
-  fromEnv: ReviewProviderChoice | undefined,
-  fromKind: ReviewProviderChoice | undefined,
-  fromReview: ReviewProviderChoice | undefined,
-): { provider: ReviewProviderChoice; providerSource: ReviewProviderSource } {
-  if (fromEnv !== undefined) return { provider: fromEnv, providerSource: "env" };
-  if (fromKind !== undefined) return { provider: fromKind, providerSource: "kind" };
-  if (fromReview !== undefined) return { provider: fromReview, providerSource: "review" };
-  return { provider: "auto", providerSource: "default" };
+/**
+ * [review.provider_for] を読む。キーはメインのプロバイダ、値はレビューの実行先。
+ * 「もう一方」のような相対の指定にしないのは、プロバイダが増えたときに意味が決まらなくなるため
+ */
+function readProviderFor(
+  table: TomlTable | undefined,
+  where: string,
+): Partial<Record<ReviewProvider, ReviewProvider>> | undefined {
+  if (table === undefined) return undefined;
+  assertKnownKeys(table, REVIEW_PROVIDERS, where, `キーにはメインのセッションのプロバイダ（${REVIEW_PROVIDERS.join(" | ")}）を書きます`);
+  const map: Partial<Record<ReviewProvider, ReviewProvider>> = {};
+  for (const key of REVIEW_PROVIDERS) {
+    const value = readEnum(table, key, REVIEW_PROVIDERS, where);
+    if (value !== undefined) map[key] = value;
+  }
+  return map;
+}
+
+function ruleOf(source: "kind" | "review", provider: ReviewProviderChoice | undefined): ReviewProviderRule | undefined {
+  return provider === undefined ? undefined : { source, provider };
+}
+
+function ruleFor(
+  source: "kind.provider_for" | "review.provider_for",
+  providerFor: Partial<Record<ReviewProvider, ReviewProvider>> | undefined,
+): ReviewProviderRule | undefined {
+  return providerFor === undefined ? undefined : { source, providerFor };
+}
+
+function providerRules(rules: (ReviewProviderRule | undefined)[]): ReviewProviderRule[] {
+  return [...rules.filter((rule): rule is ReviewProviderRule => rule !== undefined), { source: "default", provider: "auto" }];
+}
+
+/** 規則の列を1行で表す（config の表示用）。左ほど優先 */
+export function describeProviderRules(rules: ReviewProviderRule[]): string {
+  // provider の段で必ず決まるので、それより後ろの段は表示しない
+  const end = rules.findIndex((rule) => !("providerFor" in rule));
+  return rules
+    .slice(0, end + 1)
+    .map((rule) => {
+      if ("providerFor" in rule) {
+        const pairs = REVIEW_PROVIDERS.filter((key) => rule.providerFor[key] !== undefined).map(
+          (key) => `${key}→${rule.providerFor[key]}`,
+        );
+        return `provider_for（${pairs.length === 0 ? "空" : pairs.join(", ")}）`;
+      }
+      return rule.source === "env" ? `${rule.provider}（環境変数 ${REVIEW_PROVIDER_ENV}）` : rule.provider;
+    })
+    .join(" > ");
+}
+
+export interface ResolvedReviewProvider {
+  provider: ReviewProvider;
+  source: ReviewProviderSource;
+  /** provider_for で決まったとき、使った行のキー（メインのプロバイダ） */
+  key: ReviewProvider | undefined;
+}
+
+/** 規則の列を、メインのプロバイダ（--self）で解決する。auto はメインと同じ */
+export function resolveReviewProvider(settings: ReviewKindSettings, self: ReviewProvider): ResolvedReviewProvider {
+  for (const rule of settings.providers) {
+    if ("providerFor" in rule) {
+      const target = rule.providerFor[self];
+      if (target !== undefined) return { provider: target, source: rule.source, key: self };
+      continue;
+    }
+    return { provider: rule.provider === "auto" ? self : rule.provider, source: rule.source, key: undefined };
+  }
+  return { provider: self, source: "default", key: undefined };
 }
 
 function checkEnum<T extends string>(
