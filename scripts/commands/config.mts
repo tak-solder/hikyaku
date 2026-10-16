@@ -73,6 +73,19 @@ register({
         `  retrospective        ${config.reviews.retrospective}`,
         `  validate             ${config.reviews.validate}`,
         "",
+        `[review]（timeout ${config.review.timeoutMinutes} 分）:`,
+        ...(["code", "security", "doc"] as const).map((kind) => {
+          const settings = config.review[kind];
+          const rounds = kind === "doc" ? "" : `  回数 ${settings.maxRounds === 0 ? "無制限" : settings.maxRounds}${settings.autoFix ? "（auto_fix）" : ""}`;
+          const models = (["claude", "codex"] as const)
+            .map((provider) => {
+              const { model, effort } = settings.models[provider];
+              return model === undefined && effort === undefined ? "" : `  ${provider}: ${[model, effort].filter(Boolean).join(" / ")}`;
+            })
+            .join("");
+          return `  ${kind.padEnd(9)}${settings.provider}${rounds}${models}`;
+        }),
+        "",
         `branch       ${config.branch.prefix}${config.branch.separator}{cycle}${config.branch.separator}{phase}`,
         `pr.title     ${config.pr.title}`,
         `pr.reviewers ${config.pr.reviewers.length === 0 ? "(アサインしない)" : config.pr.reviewers.join(", ")}`,

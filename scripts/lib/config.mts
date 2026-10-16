@@ -85,9 +85,49 @@ export interface Reviews {
   validate: ValidateMode;
 }
 
+/** レビューを実行するプロバイダ。auto はメインのセッションと同じものを使う */
+export type ReviewProvider = "claude" | "codex";
+export const REVIEW_PROVIDERS: ReviewProvider[] = ["claude", "codex"];
+export type ReviewProviderChoice = "auto" | ReviewProvider;
+
+/** プロバイダを選べるレビューの種類。doc は doc-reviewer エージェント */
+export type ReviewKind = "code" | "security" | "doc";
+export const REVIEW_KINDS: ReviewKind[] = ["code", "security", "doc"];
+
+/** Claude の effort。ultra はクラウドのレビューになるので受け付けない */
+export const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+
+/** 空なら各プロバイダの既定に任せる */
+export interface ReviewModelSettings {
+  model?: string;
+  effort?: string;
+}
+
+export interface ReviewKindSettings {
+  provider: ReviewProviderChoice;
+  /** 1 = 1回だけ / n = パスするまで最大 n 回 / 0 = 無制限 */
+  maxRounds: number;
+  /** 2ラウンド目以降、指摘への対応を確認せずに直すか */
+  autoFix: boolean;
+  /** [review.<kind>.<provider>] → [review.<provider>] の順に重ねた値 */
+  models: Record<ReviewProvider, ReviewModelSettings>;
+}
+
+export interface ReviewSettings {
+  /** レビューのプロセス1回あたりの上限（分） */
+  timeoutMinutes: number;
+  code: ReviewKindSettings;
+  security: ReviewKindSettings;
+  doc: ReviewKindSettings;
+}
+
+export const DEFAULT_REVIEW_TIMEOUT_MINUTES = 30;
+
 interface ProfileDefinition {
   gates: Gates;
   reviews: Reviews;
+  /** code / security の max_rounds の既定 */
+  reviewRounds: number;
 }
 
 const PROFILES: Record<ProfileName, ProfileDefinition> = {
@@ -113,6 +153,7 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
       retrospective: "auto",
       validate: "manual",
     },
+    reviewRounds: 1,
   },
   // AI 実行コストを節約する。中間成果物のレビューを起動しないが人間は見る。
   // code だけは全プロファイルで残す（コードの差分は承認ゲートが拾える粒度を超えるため）。
@@ -136,6 +177,7 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
       retrospective: "skip",
       validate: "manual",
     },
+    reviewRounds: 1,
   },
   // 完成した成果物の単位で、人間も AI も見る
   standard: {
@@ -157,6 +199,7 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
       retrospective: "auto",
       validate: "phase",
     },
+    reviewRounds: 2,
   },
   // 判定基準が厳しくなるのではなく、チェックポイントが細かくなる。
   // 完成前の中間状態（codebase-survey だけ / plan だけ / 各ステップ）でも止まり、
@@ -180,6 +223,7 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
       retrospective: "auto",
       validate: "step",
     },
+    reviewRounds: 3,
   },
 };
 
@@ -246,6 +290,8 @@ export interface ResolvedConfig {
   /** セッション名のテンプレート。空文字なら変更しない */
   session: { title: string };
   security: { triggers: string };
+  /** [review] — 各レビューのプロバイダ・モデル・回数 */
+  review: ReviewSettings;
   external: { target: ExternalTarget; githubRepo?: string; asanaProjectGid?: string };
   conductor: ConductorConfig;
   /**
@@ -433,6 +479,120 @@ function readConductorModels(table: TomlTable | undefined): Partial<Record<Condu
     if (model !== undefined) models[key as ConductorPhase] = model;
   }
   return models;
+}
+
+/** テーブルに許可していないキーが無いか。タイプミスを黙って捨てると、設定したつもりの値が効かない */
+function assertKnownKeys(table: TomlTable | undefined, allowed: string[], where: string, hint?: string): void {
+  for (const key of Object.keys(table ?? {})) {
+    if (!allowed.includes(key)) {
+      throw new HikyakuError(`${where} に指定できないキーです: ${key}`, hint ?? `使用できるキー: ${allowed.join(" | ")}`);
+    }
+  }
+}
+
+/** テーブルとして書くべきキーを取り出す。値で書かれたら黙って無視せず止める */
+function requireTable(table: TomlTable | undefined, key: string, where: string): TomlTable | undefined {
+  if (table?.[key] === undefined) return undefined;
+  const value = readTable(table, key);
+  if (value === undefined) {
+    const path = where === "config" ? key : `${where.slice(1, -1)}.${key}`;
+    throw new HikyakuError(`${key} はテーブル（[${path}]）で指定してください`);
+  }
+  return value;
+}
+
+/** [...claude] / [...codex] を読む。空文字はキーが無いのと同じ（各プロバイダの既定に任せる） */
+function readReviewModel(
+  table: TomlTable | undefined,
+  provider: ReviewProvider,
+  where: string,
+  fallback: ReviewModelSettings,
+): ReviewModelSettings {
+  assertKnownKeys(table, ["model", "effort"], where);
+  const model = readString(table, "model", where)?.trim();
+  const effort = readString(table, "effort", where)?.trim();
+  // Codex の effort はモデルによって使える値が変わるので検証しない
+  if (provider === "claude" && effort !== undefined && effort !== "") {
+    checkEnum(effort, CLAUDE_EFFORTS, `${where}.effort`);
+  }
+  const out: ReviewModelSettings = { ...fallback };
+  if (model !== undefined) {
+    if (model === "") delete out.model;
+    else out.model = model;
+  }
+  if (effort !== undefined) {
+    if (effort === "") delete out.effort;
+    else out.effort = effort;
+  }
+  return out;
+}
+
+function readMaxRounds(table: TomlTable | undefined, where: string): number | undefined {
+  const value = readInteger(table, "max_rounds", where);
+  if (value !== undefined && value < 0) {
+    throw new HikyakuError(`${where}.max_rounds は 0 以上の整数で指定してください（0 は無制限）`);
+  }
+  return value;
+}
+
+/**
+ * [review] を読む。
+ *
+ * 値は「[review.<kind>.<provider>] → [review.<kind>] → [review.<provider>] / [review] → profile」
+ * の順に重ねる。モデルとエフォートをプロバイダごとに分けるのは、provider だけを切り替えたときに
+ * 互換性のないモデル名やエフォートが渡らないようにするため。
+ */
+function readReview(table: TomlTable | undefined, reviewRounds: number): ReviewSettings {
+  const where = "[review]";
+  assertKnownKeys(table, ["provider", "max_rounds", "auto_fix", "timeout", ...REVIEW_PROVIDERS, ...REVIEW_KINDS], where);
+
+  const timeout = readNumber(table, "timeout", where) ?? DEFAULT_REVIEW_TIMEOUT_MINUTES;
+  if (timeout <= 0) throw new HikyakuError(`${where}.timeout は 0 より大きい分数で指定してください`);
+
+  const providers: ReviewProviderChoice[] = ["auto", ...REVIEW_PROVIDERS];
+  const baseProvider = readEnum(table, "provider", providers, where) ?? "auto";
+  const baseRounds = readMaxRounds(table, where) ?? reviewRounds;
+  const baseAutoFix = readBoolean(table, "auto_fix", where) ?? false;
+  const baseModels = Object.fromEntries(
+    REVIEW_PROVIDERS.map((provider) => [
+      provider,
+      readReviewModel(requireTable(table, provider, where), provider, `[review.${provider}]`, {}),
+    ]),
+  ) as Record<ReviewProvider, ReviewModelSettings>;
+
+  const kind = (name: ReviewKind): ReviewKindSettings => {
+    const kindWhere = `[review.${name}]`;
+    const kindTable = requireTable(table, name, where);
+    // doc は1回だけのレビューで、回数の設定は持たない（指摘への対応は各フェーズの承認で決める）
+    const allowed =
+      name === "doc"
+        ? ["provider", ...REVIEW_PROVIDERS]
+        : ["provider", "max_rounds", "auto_fix", ...REVIEW_PROVIDERS, ...(name === "security" ? ["triggers"] : [])];
+    assertKnownKeys(
+      kindTable,
+      allowed,
+      kindWhere,
+      name === "doc" ? `使用できるキー: ${allowed.join(" | ")}（ドキュメントのレビューは1回だけで、回数は設定できません）` : undefined,
+    );
+    return {
+      provider: readEnum(kindTable, "provider", providers, kindWhere) ?? baseProvider,
+      maxRounds: name === "doc" ? 1 : (readMaxRounds(kindTable, kindWhere) ?? baseRounds),
+      autoFix: name === "doc" ? false : (readBoolean(kindTable, "auto_fix", kindWhere) ?? baseAutoFix),
+      models: Object.fromEntries(
+        REVIEW_PROVIDERS.map((provider) => [
+          provider,
+          readReviewModel(
+            requireTable(kindTable, provider, kindWhere),
+            provider,
+            `[review.${name}.${provider}]`,
+            baseModels[provider],
+          ),
+        ]),
+      ) as Record<ReviewProvider, ReviewModelSettings>,
+    };
+  };
+
+  return { timeoutMinutes: timeout, code: kind("code"), security: kind("security"), doc: kind("doc") };
 }
 
 function checkEnum<T extends string>(
@@ -750,7 +910,8 @@ function finalize(
       readEnum(merged, "validate", ["manual", "phase", "step"], "config") ?? preset.reviews.validate,
   };
 
-  const securityTable = readTable(readTable(merged, "review") ?? {}, "security");
+  const reviewTable = requireTable(merged, "review", "config");
+  const securityTable = readTable(reviewTable ?? {}, "security");
   const externalTable = readTable(merged, "external");
 
   return {
@@ -774,6 +935,7 @@ function finalize(
     security: {
       triggers: readString(securityTable, "triggers", "[review.security]") ?? DEFAULT_SECURITY_TRIGGERS,
     },
+    review: readReview(reviewTable, preset.reviewRounds),
     external: {
       target: readEnum(externalTable, "target", ["none", "github", "asana"], "[external]") ?? "none",
       githubRepo: readString(externalTable, "github_repo", "[external]"),

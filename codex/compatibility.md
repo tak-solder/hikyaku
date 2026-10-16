@@ -9,6 +9,7 @@
 5. 元の手順にある `AskUserQuestion`、`Read`、`Bash` 等のツール名は、Codex で利用可能な同等の機能に読み替える。セッション名を変更する機能が無い場合は、元の手順どおりその操作を省く。
 6. `agents/<name>.md` を使う箇所では、その本文を役割・判定基準・出力形式としてサブエージェントへ渡す。Claude 固有の `model`、`tools`、`color` は Codex の設定値として使わない。委任時は対象ファイル、担当範囲、必要な戻り値を明示し、元の手順が要求する複数案・独立レビュー・結果の統合を保つ。サブエージェントが使えない環境では同じ観点を順に自分で処理し、その制約を報告する。
 7. 元のスキルの `user-invocable`、`argument-hint` は Claude Code 固有の起動設定である。Codex では各入口の `description` と、このファイルの「内部手順は呼び出し元からのみ実行する」という条件を使う。利用者から依頼されていない次のフェーズを自動開始しない。
+8. 元の手順の `hikyaku review resolve` / `review run` に付いた `--self claude` は `--self codex` に読み替える。これは `[review]` の `provider = "auto"` をメインのセッションのプロバイダとして解決するための値である。`review run` は `claude -p` や `codex exec` を別プロセスとして起動し、ネットワークに接続する。サンドボックスに阻まれたら、承認を得てサンドボックスの外で実行し直す。失敗（終了コード 1）は指摘0件として扱わない。`run_in_background` の指示は、Codex で同等の機能が無ければ通常の実行に読み替える。
 
 conductor は Claude Code 専用で、Codex 用入口はない。`/hikyaku:conductor` の案内は `$hikyaku:conductor` に読み替えず、Codex では architect / builder / close-cycle を個別のセッションで実行するよう案内する。`conductor launch` が生成する `claude -p` のコマンドを Codex の子セッションに置き換えて実行しない。通常の対話実行では、問いの ID（`ask:` / `G8` 等）は識別子として扱い、conductor の非対話規約や承認の委任は適用しない。
 

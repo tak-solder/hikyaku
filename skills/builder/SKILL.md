@@ -225,6 +225,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" bp estimate {cycle} \
 - [ ] コミット & push する
 
 - [ ] `plan_review` が有効な場合（express / standard / thorough）、ここで `doc-reviewer` を起動し plan.md をレビューする（`context: plan`）
+  - 起動方法は `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc build-{NN} {cycle} --self claude --json` で決める。
+    `mode: agent` ならサブエージェントとして起動する。`mode: process` なら
+    `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run doc build-{NN} {cycle} --self claude --context plan --files <渡す情報のパスをカンマ区切りで>`
+    を実行し、返った本文をレビュー結果として扱う。終了コード 1 は失敗で、指摘0件として扱わずユーザーに報告する
   - 渡す情報: `plan.md`, `issue.md`, `design-delta.md`, 依存ビルドの `handoff.md`,
     `{HIKYAKU_ROOT}/bp-guide/README.md`（存在する場合。無ければ `bp guide --markdown` の出力を
     プロンプトに含める）, Step 0 で取得した `bpMax`
@@ -270,6 +274,10 @@ Agent に渡すフォーマット指定:
 - [ ] コミット & push する
 
 - [ ] `test_spec_review` が有効な場合（express / standard / thorough）、ここで `doc-reviewer` を起動し test-spec.md をレビューする（`context: test-spec`）
+  - 起動方法は `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc build-{NN} {cycle} --self claude --json` で決める。
+    `mode: agent` ならサブエージェントとして起動する。`mode: process` なら
+    `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run doc build-{NN} {cycle} --self claude --context test-spec --files <渡す情報のパスをカンマ区切りで>`
+    を実行し、返った本文をレビュー結果として扱う。終了コード 1 は失敗で、指摘0件として扱わずユーザーに報告する
   - 渡す情報: `test-spec.md`, `plan.md`, `issue.md`, `design-delta.md`
   - plan.md のレビューは上で完了済みなので、ここでは行わない
   - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
@@ -302,9 +310,27 @@ Agent に渡すフォーマット指定:
 ### Step 6: コードレビュー
 
 機械的検証だけでは検出できない品質・規約・セキュリティ観点をレビューする。
+レビューそのものは Claude Code / Codex に組み込みのレビュー機能が行う。
+どのプロバイダ・モデル・エフォートで何回まで回すかは `[review]` の設定で決まり、
+CLI が起動方法を解決する。
 
-- [ ] `code_review` が有効な場合（全プロファイル）、`code-reviewer` を起動する
-- [ ] `security_review` の判定
+- [ ] ローカルでコミットする（push はしない）
+  - どちらのプロバイダのレビューも、コミット済みの差分を対象にするため
+  - 未追跡のファイルも含め、実装したものは全てコミットに含める
+- [ ] 起動方法を解決する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve code build-{NN} {cycle} --self claude --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve security build-{NN} {cycle} --self claude --json
+```
+
+`--self` にはメインのセッションのプロバイダを渡す（`provider = "auto"` の解決に使う）。
+`enabled` は `code_review` / `security_review` の値、`maxRounds` は回数の上限（0 は無制限）、
+`autoFix` は2ラウンド目以降の確認を省くかどうか。`base.ref` が差分の基準で、
+スタックしていればスタック元になる。**デフォルトブランチを決め打ちしない。**
+
+- [ ] `code` の `enabled` が true なら（全プロファイル）、code のレビューを行う
+- [ ] `security` の `enabled` で、security のレビューを行うか判定する
 
 | 設定値 | 挙動 |
 |---|---|
@@ -330,35 +356,41 @@ Agent に渡すフォーマット指定:
 security_review を起動しますか？ [Y/n]
 ```
 
-- [ ] レビューの差分基準にする ref を取得し、`{BASE_BRANCH}` として渡す
+- [ ] スコープ準拠を自分で確認する
+  - 組み込みのレビュー機能には指示文を渡せず、plan.md を読まない。スコープの確認はここで行う
+  - `git diff --stat $(git merge-base {base.ref} HEAD)..HEAD` の変更ファイルを、plan.md の
+    実装ステップと issue.md のスコープ外と突き合わせる
+  - 計画に無い変更・スコープ外の変更は、レビューの指摘と同じ扱いで下の統合に加える
+- [ ] レビューを実行する（ラウンド n。初回は 1）
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr base build-{NN} {cycle} --ref
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run code build-{NN} {cycle} --self claude --round {n}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run security build-{NN} {cycle} --self claude --round {n}
 ```
 
-`--ref` を付ける。 PR の base に渡すのはブランチ名だが、`git merge-base` に渡すには
-ローカルで解決できる ref が要る。リモート追跡参照しか無いブランチを名前のまま渡すと
-解決に失敗し、コミット済み差分が空のままレビューされる。
-
-**デフォルトブランチを決め打ちしない。** スタックしている場合はスタック元が返る。
-デフォルトブランチを基準にすると、先行ビルドの差分までレビュー対象に混入する。
-
-- [ ] エージェントは以下すべてで当該ブランチの変更を確認する（漏らさないため）
-  - `git status` — 変更ファイル一覧（未追跡含む）
-  - `git diff` — unstaged 差分
-  - `git diff --cached` — staged 差分
-  - `git diff $(git merge-base {BASE_BRANCH} HEAD)..HEAD` — base からのコミット済み差分
-  - 新規追加ファイル（未追跡）は Read tool で内容を読む
-- [ ] 担当範囲
-  - `code-reviewer`: スコープ準拠 / 規約準拠 / バグ・ロジック誤り / 冗長性
-  - `security-reviewer`: OWASP 系のセキュリティパターン違反
+  - 2つを **Bash の `run_in_background` で並列に実行する**（数分かかることがある。`timeout` は最大値）
+  - 生の出力は `.git` の中に保存され、パスと本文が返る。コミットはしない
+  - **終了コード 1 は失敗であって、パス（指摘0件）ではない。** 空の結果やタイムアウトも失敗になる。
+    メッセージをユーザーに報告して判断を仰ぐ
 - [ ] 指摘を統合する
-  - 同一箇所への重複指摘は1件に統合し、`security-reviewer` の指摘を優先する
+  - 同一箇所への重複指摘は1件に統合し、security の指摘を優先する。
+    同じプロバイダが同じ指摘を2回出力することもある
   - 「確度が低い懸念」は「確度: 要確認」ラベルを保持したまま別枠で提示する
+  - 2ラウンド目以降は、前のラウンドの出力（返ったパスと同じディレクトリの `round-{n-1}-*.md`）と比べる
+- [ ] 指摘が0件なら、パスとして Step 7 へ
 - [ ] 統合した指摘をユーザーに提示し、対応を決める（ask: review-findings）
-  - 今修正する — 修正して Step 5 に戻る
+  - 今修正する — 修正し、Step 5 の検証を通し、追加でコミットして、ラウンド n+1 のレビューへ
   - 新ビルド化して後で対応 — `/hikyaku:build-manager` を呼び出して新ビルドを追加する
   - そのまま進める — 指摘を `handoff.md` の「意図的に残した未対応」に記録する
+  - `autoFix` が true で2ラウンド目以降なら、確認を省いて「今修正する」として扱う。
+    ただし「確度: 要確認」の懸念と、次の打ち切りに当たる場合は確認する
+- [ ] 次のラウンドへ進む前に、打ち切るか判定する
+  - `maxRounds` が 0 でなく、n が `maxRounds` に達した — 残った指摘を示して対応を決める（ask: review-findings）。
+    選べるのは「修正して再レビューせずに進める」「新ビルド化」「そのまま進める」
+  - 前のラウンドと同じ指摘が繰り返された — 修正しても解消していない。`maxRounds` が 0（無制限）でも
+    打ち切り、その指摘を示して対応を決める（ask: review-findings）
+
+残った指摘すべてで「新ビルド化」か「そのまま進める」を選んだら、パスとして扱う。
 
 → Step 7 へ。
 

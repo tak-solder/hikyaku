@@ -28,6 +28,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Claude Code 利用者の操作は変わらない。従来の `/hikyaku:...` と `skills/`・`agents/` の手順は維持する
 - Codex 利用者は `codex plugin marketplace add tak-solder/hikyaku@codex-plugin` でマーケットプレイスを追加し、プラグインをインストールする。`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要。Codex では各フェーズを個別に実行し、conductor は Claude Code で使う
 
+## [2.6.0]
+
+builder のコードレビューとセキュリティレビューを、Claude Code と Codex に組み込みのレビュー機能へ移した。どのプロバイダで、どのモデル・エフォートで、何回まで回すかを設定できる（[#57](https://github.com/tak-solder/hikyaku/issues/57)）。
+
+### Added
+
+- **`[review]` 設定**: `provider`（`auto` / `claude` / `codex`）、`max_rounds`（`1` / `n` / `0` = 無制限）、`auto_fix`、`timeout`（分）を持つ。モデルとエフォートは `[review.claude]` / `[review.codex]` に書き、`[review.code]` / `[review.security]` / `[review.doc]` と `[review.<種類>.<プロバイダ>]` で種類ごとに上書きできる。未知のキーはエラーになる
+- **`hikyaku review resolve` / `review run`**: レビューの起動方法を解決し、`claude -p "/code-review ..."`・`/security-review`・`codex exec review` を別プロセスで実行する。生の出力は `.git` の中に保存する。空の結果・エラー・タイムアウトは終了コード 1 にし、指摘0件と取り違えないようにした
+- プロファイルに code / security の `max_rounds` の既定値を足した（express / economy = 1、standard = 2、thorough = 3）
+- `skills/builder/references/security-review.md`: `/security-review` を使えないとき（スタックしたビルド、origin/HEAD が無いリポジトリ、Codex）に渡すセキュリティの観点
+
+### Changed
+
+- builder の Step 6 は、実装をローカルでコミットしてからネイティブのレビューを並列に実行し、`max_rounds` まで繰り返す。前の回と同じ指摘が繰り返されたら回数に関わらず止めて対応を尋ねる。plan.md のスコープ準拠は builder 自身が差分と突き合わせて確かめる
+- doc-reviewer を起動する planner / architect / build-manager / builder は、`hikyaku review resolve doc` で起動方法を決める。メインと同じプロバイダなら従来どおりサブエージェント、別のプロバイダなら定義の本文を指示文にして別プロセスで実行する
+- `codex/compatibility.md` に、`--self claude` を `--self codex` に読み替える規約を足した
+
+### Removed
+
+- `code-reviewer` と `security-reviewer` のエージェントを削除した
+
+### Migration
+
+- 既定のままなら対応は不要。コードとセキュリティのレビューは、メインのセッションと同じプロバイダのネイティブのレビュー機能で行われる。standard では最大2回、thorough では最大3回、指摘がなくなるまで再レビューするようになる。従来どおり1回にするなら `[review] max_rounds = 1` を書く
+- 別のプロバイダでレビューするには、そのプロバイダの CLI（`claude` または `codex`）を PATH に入れ、ログインしておく
+- `/security-review` は origin リモートを使う。origin/HEAD が無いリポジトリでは自動で指示文の形に切り替わる
+- エージェント `hikyaku:code-reviewer` / `hikyaku:security-reviewer` を直接呼んでいた独自の手順は、`hikyaku review run` に置き換える
+
 ## [2.4.1]
 
 conductor を実際に回したときに見つかった問題を直し、最後の PR に付いた指摘へビルドを足して対応する入口を足した。

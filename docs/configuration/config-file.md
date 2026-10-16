@@ -116,8 +116,8 @@ security_review = "on"
 | `tasklist_review` | bool | doc-reviewer（tasklist） |
 | `plan_review` | bool | doc-reviewer（plan） |
 | `test_spec_review` | bool | doc-reviewer（test-spec） |
-| `code_review` | bool | code-reviewer |
-| `security_review` | `off` / `recommended` / `on` | security-reviewer |
+| `code_review` | bool | コードレビュー（[review]） |
+| `security_review` | `off` / `recommended` / `on` | セキュリティレビュー（[review]） |
 | `retrospective` | `skip` / `prompt` / `auto` | 振り返りの実行 |
 | `validate` | `manual` / `phase` / `step` | `hikyaku validate` の実行タイミング |
 
@@ -176,6 +176,43 @@ title = "{cycle} {phase} {title}"
 
 セッション名の変更手段を持たない環境では、スキル側がスキップします。
 
+## [review]
+
+```toml
+[review]
+provider = "auto"   # auto | claude | codex
+max_rounds = 1      # 0 は無制限。未設定ならプロファイルの既定
+auto_fix = false
+timeout = 30        # レビューのプロセス1回あたりの上限（分）
+
+[review.claude]
+model = ""          # 空ならそのプロバイダの既定
+effort = ""
+
+[review.codex]
+model = ""
+effort = ""
+
+[review.code]       # 種類ごとの上書き。security / doc も同じ形
+provider = "codex"
+max_rounds = 3
+
+[review.code.codex] # 種類 × プロバイダの上書き
+effort = "high"
+```
+
+コードレビューとセキュリティレビューは、Claude Code と Codex に組み込みのレビュー機能が行います。Claude なら `/code-review` と `/security-review`、Codex なら `codex exec review` です。`[review]` はそれをどちらのプロバイダで、どのモデルとエフォートで、何回まで回すかを決めます。ドキュメントのレビュー（doc-reviewer）の起動先もここで選べます。
+
+`provider` の `auto` は、メインのセッションと同じプロバイダを使うという意味です。`claude` や `codex` を指定すると、Claude Code で開発しながら Codex にレビューさせる、あるいはその逆ができます。コードとセキュリティのレビューは、同じプロバイダでも常に別のプロセスとして起動します。実装したセッションのコンテキストからレビューを切り離すためです。ドキュメントのレビューは、メインと同じプロバイダなら従来どおりサブエージェントで動き、別のプロバイダを選んだときだけ別のプロセスになります。
+
+`model` と `effort` はプロバイダごとのテーブルに書きます。モデル名もエフォートの値もプロバイダ間で互換性がないので、`provider` だけを切り替えても、もう一方の値が渡らないようにしてあります。値は `[review.<種類>.<プロバイダ>]`、`[review.<プロバイダ>]`、プロバイダの既定の順に決まり、空文字はキーが無いのと同じです。Claude の `effort` は `low` / `medium` / `high` / `xhigh` / `max` のどれかで、それ以外はエラーになります。Codex の `effort` は使える値がモデルによって変わるため、検証せずにそのまま渡します。
+
+`max_rounds` はコードとセキュリティのレビューを何回まで回すかです。`1` なら1回だけ、`n` なら指摘がなくなるまで最大 n 回、`0` なら無制限です。未設定のときは [プロファイル](profiles.md#レビュー) の既定に従います。無制限でも、前の回と同じ指摘が繰り返されたら builder はそこで止めて対応を尋ねます。`auto_fix = true` にすると、2回目以降は指摘への対応を確認せずに直します。ただし確度の低い懸念と、打ち切りにあたる場面では確認します。ドキュメントのレビューは1回だけで、`[review.doc]` には `max_rounds` と `auto_fix` を書けません。
+
+組み込みのレビュー機能には指示文を渡せないため、plan.md のスコープから外れていないかは builder 自身が確かめます。また Claude の `/security-review` は origin のデフォルトブランチとの差分しか見ないので、スタックしたビルドや origin/HEAD が無いリポジトリでは使いません。その場合と Codex のセキュリティレビューでは、観点を書いた指示文を渡す形に切り替わります。どの形で起動されるかは `hikyaku review resolve` で確認できます。
+
+未知のキーやテーブル名はエラーになります。
+
 ## [review.security]
 
 ```toml
@@ -188,7 +225,7 @@ triggers = """
 """
 ```
 
-`security_review = "recommended"` のときに起動を確認する判定基準です。設定すると既定値を丸ごと置き換えます。機微情報の定義はプロダクトごとに異なるため、自然言語で記述します。
+`security_review = "recommended"` のときに起動を確認する判定基準です。セキュリティレビューを指示文の形で起動するときは、その指示文にも含まれます。設定すると既定値を丸ごと置き換えます。機微情報の定義はプロダクトごとに異なるため、自然言語で記述します。
 
 未設定時の既定は次の3カテゴリです。
 
