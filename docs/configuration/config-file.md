@@ -213,12 +213,13 @@ effort = "high"
 
 プロバイダは次の順に決まり、最初に決まったものが使われます。
 
-1. 環境変数 `HIKYAKU_REVIEW_PROVIDER`
-2. `[review.<種類>.provider_for]` のメインのプロバイダの行
-3. `[review.<種類>]` の `provider`
-4. `[review.provider_for]` のメインのプロバイダの行
-5. `[review]` の `provider`
-6. 既定の `auto`
+1. クラウド環境の判定（`CLAUDE_CODE_REMOTE=true` なら `claude`、`CODEX_ENVIRONMENT_ID` があれば `codex`）
+2. 環境変数 `HIKYAKU_REVIEW_PROVIDER`
+3. `[review.<種類>.provider_for]` のメインのプロバイダの行
+4. `[review.<種類>]` の `provider`
+5. `[review.provider_for]` のメインのプロバイダの行
+6. `[review]` の `provider`
+7. 既定の `auto`
 
 `model` と `effort` はプロバイダごとのテーブルに書きます。モデル名もエフォートの値もプロバイダ間で互換性がないので、`provider` だけを切り替えても、もう一方の値が渡らないようにしてあります。値は `[review.<種類>.<プロバイダ>]`、`[review.<プロバイダ>]`、プロバイダの既定の順に決まり、空文字はキーが無いのと同じです。Claude の `effort` は `low` / `medium` / `high` / `xhigh` / `max` のどれかで、それ以外はエラーになります。Codex の `effort` は使える値がモデルによって変わるため、検証せずにそのまま渡します。
 
@@ -228,7 +229,9 @@ effort = "high"
 
 未知のキーやテーブル名はエラーになります。
 
-設定したプロバイダの CLI が使えない環境もあります。たとえば Claude Code のクラウド環境では、`provider = "codex"` にしていても `codex` を起動できません。そうした環境では、環境変数 `HIKYAKU_REVIEW_PROVIDER`（`claude` / `codex` / `auto`）を設定すると、設定ファイルのどの `provider` と `provider_for` よりも優先されます。全種類のレビューにまとめて効き、モデルとエフォートは切り替え先のプロバイダのテーブルから取られます。値がどこから来たかは `hikyaku review resolve` と `hikyaku config` に表示されます。変数は Claude Code を起動した環境に設定してください。conductor の子のセッションにもそのまま渡ります。
+各プロバイダのクラウド環境には、もう一方のプロバイダの CLI がありません。そのため Claude Code のクラウド環境（環境変数 `CLAUDE_CODE_REMOTE` が `true`）ではプロバイダを `claude` に、Codex のクラウド環境（環境変数 `CODEX_ENVIRONMENT_ID` が空でない）では `codex` に固定します。この判定は設定ファイルにも `HIKYAKU_REVIEW_PROVIDER` にも優先するので、`provider = "codex"` のまま Claude Code のクラウド環境で動かしても、レビューは Claude で行われます。
+
+ローカルでも、設定したプロバイダの CLI が入っていないことがあります。そうした環境では、環境変数 `HIKYAKU_REVIEW_PROVIDER`（`claude` / `codex` / `auto`）を設定すると、設定ファイルのどの `provider` と `provider_for` よりも優先されます。全種類のレビューにまとめて効き、モデルとエフォートは切り替え先のプロバイダのテーブルから取られます。値がどこから来たかは `hikyaku review resolve` と `hikyaku config` に表示されます。変数は Claude Code を起動した環境に設定してください。conductor の子のセッションにもそのまま渡ります。
 
 CLI を起動できなかったときに、Hikyaku が黙って別のプロバイダに切り替えることはしません。設定したつもりのプロバイダでレビューされていないことに気づけなくなるためです。レビューは失敗として報告され、そのメッセージで `HIKYAKU_REVIEW_PROVIDER` が案内されます。
 

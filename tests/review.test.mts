@@ -348,6 +348,44 @@ test("環境変数 HIKYAKU_REVIEW_PROVIDER: 設定ファイルの provider よ�
   assert.match(invalid.stderr, /環境変数 HIKYAKU_REVIEW_PROVIDER の値が不正/);
 });
 
+test("クラウド環境: そこで動いているプロバイダに固定し、HIKYAKU_REVIEW_PROVIDER と設定ファイルより優先する", (t) => {
+  const directory = buildBranch(
+    t,
+    '[review]\nprovider = "codex"\n[review.provider_for]\nclaude = "codex"\ncodex = "claude"\n[review.security]\nprovider = "claude"\n',
+  );
+  const claude = runEnv(directory, { CLAUDE_CODE_REMOTE: "true", HIKYAKU_REVIEW_PROVIDER: "codex" }, "review", "resolve", "code", "build-01", "--self", "claude", "--no-fetch", "--json");
+  assert.equal(claude.status, 0, claude.stderr);
+  assert.deepEqual([JSON.parse(claude.stdout).provider, JSON.parse(claude.stdout).providerSource], ["claude", "cloud"]);
+
+  const codex = runEnv(directory, { CODEX_ENVIRONMENT_ID: "env-123" }, "review", "resolve", "security", "build-01", "--self", "codex", "--no-fetch", "--json");
+  assert.equal(codex.status, 0, codex.stderr);
+  assert.deepEqual([JSON.parse(codex.stdout).provider, JSON.parse(codex.stdout).providerSource], ["codex", "cloud"]);
+
+  const text = runEnv(directory, { CODEX_ENVIRONMENT_ID: "env-123" }, "review", "resolve", "code", "build-01", "--self", "codex", "--no-fetch");
+  assert.match(text.stdout, /出所 +クラウド環境（CODEX_ENVIRONMENT_ID）/);
+  const config = runEnv(directory, { CLAUDE_CODE_REMOTE: "true" }, "config", "001");
+  assert.match(config.stdout, /code +claude（クラウド環境（CLAUDE_CODE_REMOTE））/);
+
+  // CLAUDE_CODE_REMOTE は true のときだけ、CODEX_ENVIRONMENT_ID は空でないときだけクラウド環境とみなす
+  for (const env of [{ CLAUDE_CODE_REMOTE: "false" }, { CLAUDE_CODE_REMOTE: "" }, { CODEX_ENVIRONMENT_ID: "" }]) {
+    const result = runEnv(directory, env, "review", "resolve", "code", "build-01", "--self", "claude", "--no-fetch", "--json");
+    assert.equal(JSON.parse(result.stdout).providerSource, "review.provider_for", JSON.stringify(env));
+  }
+});
+
+test("review run: クラウド環境で CLI を起動できないときは、環境変数での切り替えを案内しない", (t) => {
+  const directory = buildBranch(t, "");
+  const bin = temporaryDirectory(t);
+  const result = runEnv(
+    directory,
+    { CODEX_ENVIRONMENT_ID: "env-123", PATH: `${bin}${delimiter}/usr/bin${delimiter}/bin` },
+    "review", "run", "code", "build-01", "--self", "claude", "--no-fetch",
+  );
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /codex を起動できません/);
+  assert.doesNotMatch(result.stderr, /HIKYAKU_REVIEW_PROVIDER/);
+});
+
 test("review run: CLI を起動できないときは失敗にし、環境変数での切り替えを案内する", (t) => {
   const directory = buildBranch(t, '[review.code]\nprovider = "codex"\n');
   // codex の無い PATH（git だけは使えるようにする）

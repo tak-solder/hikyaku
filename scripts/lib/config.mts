@@ -105,6 +105,7 @@ export interface ReviewModelSettings {
 
 /** provider の値がどこから来たか。設定ファイルと違う結果になったときに理由を示すため */
 export type ReviewProviderSource =
+  | "cloud"
   | "env"
   | "kind.provider_for"
   | "kind"
@@ -121,6 +122,7 @@ export type ReviewProviderSource =
  * --self を受け取る review resolve / run で解決する（resolveReviewProvider）
  */
 export type ReviewProviderRule =
+  | { source: "cloud"; provider: ReviewProvider }
   | { source: "env" | "kind" | "review" | "default"; provider: ReviewProviderChoice }
   | { source: "kind.provider_for" | "review.provider_for"; providerFor: Partial<Record<ReviewProvider, ReviewProvider>> };
 
@@ -150,6 +152,30 @@ export const DEFAULT_REVIEW_TIMEOUT_MINUTES = 30;
  * クラウド環境のように、設定したプロバイダの CLI が使えない場所でリポジトリの設定を変えずに済ませるため
  */
 export const REVIEW_PROVIDER_ENV = "HIKYAKU_REVIEW_PROVIDER";
+
+/**
+ * 各プロバイダのクラウド環境を示す環境変数。クラウド環境では相手のプロバイダの CLI が無いので、
+ * そこで動いているプロバイダに固定する。HIKYAKU_REVIEW_PROVIDER と設定ファイルより優先する。
+ * 両方が立っていれば並びの先（claude）を使う
+ */
+export const REVIEW_CLOUD_ENVS: { provider: ReviewProvider; variable: string; matches: (value: string) => boolean }[] = [
+  { provider: "claude", variable: "CLAUDE_CODE_REMOTE", matches: (value) => value === "true" },
+  { provider: "codex", variable: "CODEX_ENVIRONMENT_ID", matches: (value) => value !== "" },
+];
+
+/** いま動いているクラウド環境。クラウド環境でなければ undefined */
+export function detectCloudEnv(env: NodeJS.ProcessEnv): (typeof REVIEW_CLOUD_ENVS)[number] | undefined {
+  return REVIEW_CLOUD_ENVS.find(({ variable, matches }) => {
+    const value = env[variable]?.trim();
+    return value !== undefined && matches(value);
+  });
+}
+
+/** クラウド環境の出所の表示名（例: 「クラウド環境（CLAUDE_CODE_REMOTE）」） */
+export function cloudEnvLabel(provider: ReviewProvider): string {
+  const variable = REVIEW_CLOUD_ENVS.find((entry) => entry.provider === provider)?.variable;
+  return `クラウド環境（${variable}）`;
+}
 
 interface ProfileDefinition {
   gates: Gates;
@@ -592,6 +618,7 @@ function readReview(
   // 不正な値を黙って捨てると、設定ファイルのプロバイダに戻って同じように失敗する
   const envProvider =
     rawEnv === undefined || rawEnv === "" ? undefined : checkEnum(rawEnv, providers, `環境変数 ${REVIEW_PROVIDER_ENV}`);
+  const cloud = detectCloudEnv(env);
   const baseRounds = readMaxRounds(table, where) ?? reviewRounds;
   const baseAutoFix = readBoolean(table, "auto_fix", where) ?? false;
   const baseModels = Object.fromEntries(
@@ -624,6 +651,7 @@ function readReview(
     );
     return {
       providers: providerRules([
+        cloud === undefined ? undefined : { source: "cloud", provider: cloud.provider },
         envProvider === undefined ? undefined : { source: "env", provider: envProvider },
         ruleFor("kind.provider_for", readProviderFor(requireTable(kindTable, "provider_for", kindWhere), `[review.${name}.provider_for]`)),
         ruleOf("kind", readEnum(kindTable, "provider", providers, kindWhere)),
@@ -695,6 +723,7 @@ export function describeProviderRules(rules: ReviewProviderRule[]): string {
         );
         return `provider_for（${pairs.length === 0 ? "空" : pairs.join(", ")}）`;
       }
+      if (rule.source === "cloud") return `${rule.provider}（${cloudEnvLabel(rule.provider)}）`;
       return rule.source === "env" ? `${rule.provider}（環境変数 ${REVIEW_PROVIDER_ENV}）` : rule.provider;
     })
     .join(" > ");

@@ -8,6 +8,7 @@ import {
   REVIEW_KINDS,
   REVIEW_PROVIDER_ENV,
   REVIEW_PROVIDERS,
+  cloudEnvLabel,
   type ResolvedConfig,
   type ReviewKind,
   type ReviewProvider,
@@ -141,8 +142,9 @@ function describe(resolved: Resolved & { kind: ReviewKind }): string[] {
   return lines;
 }
 
-export function sourceLabel(plan: Pick<ReviewPlan, "kind" | "providerSource" | "providerKey">): string {
+export function sourceLabel(plan: Pick<ReviewPlan, "kind" | "provider" | "providerSource" | "providerKey">): string {
   const source: ReviewProviderSource = plan.providerSource;
+  if (source === "cloud") return cloudEnvLabel(plan.provider);
   if (source === "env") return `環境変数 ${REVIEW_PROVIDER_ENV}`;
   if (source === "kind.provider_for") return `[review.${plan.kind}.provider_for] の ${plan.providerKey}`;
   if (source === "kind") return `[review.${plan.kind}] の provider`;
@@ -298,7 +300,8 @@ register({
           `実行: ${commandLine}`,
           `出力: ${outputPath}`,
           "パス（指摘0件）として扱わず、ユーザーに報告してください。",
-          ...(outcome.launchFailed
+          // クラウド環境ではプロバイダを固定するので、環境変数で切り替えても効かない
+          ...(outcome.launchFailed && plan.providerSource !== "cloud"
             ? [
                 `${plan.provider} の CLI が使えない環境なら、環境変数 ${REVIEW_PROVIDER_ENV} で別のプロバイダを指定できます`,
                 `（例: ${REVIEW_PROVIDER_ENV}=${plan.provider === "codex" ? "claude" : "codex"}）。設定ファイルより優先されます。`,
