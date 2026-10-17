@@ -47,6 +47,7 @@ builder のコードレビューとセキュリティレビューを、Claude Co
 - builder の Step 6 は、実装をローカルでコミットしてからネイティブのレビューを並列に実行し、`max_rounds` まで繰り返す。前の回と同じ指摘が繰り返されたら回数に関わらず止めて対応を尋ねる。plan.md のスコープ準拠は builder 自身が差分と突き合わせて確かめる
 - doc-reviewer を起動する planner / architect / build-manager / builder は、`hikyaku review resolve doc` で起動方法を決める。メインと同じプロバイダなら従来どおりサブエージェント、別のプロバイダなら定義の本文を指示文にして別プロセスで実行する
 - `codex/compatibility.md` に、`--self claude` を `--self codex` に読み替える規約を足した
+- `code-architect` / `code-explorer` / `doc-reviewer` のエージェント定義から `model: sonnet` を削除した。`CLAUDE_CODE_SUBAGENT_MODEL` を設定していればそのモデルで、していなければメインのセッションと同じモデルで動く。`cycle-scanner` は `haiku` のまま
 
 ### Removed
 
@@ -60,6 +61,7 @@ builder のコードレビューとセキュリティレビューを、Claude Co
 - それ以外で設定したプロバイダの CLI が無い環境では、`HIKYAKU_REVIEW_PROVIDER=claude` のように環境変数で切り替える
 - `/security-review` は origin リモートを使う。origin/HEAD が無いリポジトリでは自動で指示文の形に切り替わる
 - エージェント `hikyaku:code-reviewer` / `hikyaku:security-reviewer` を直接呼んでいた独自の手順は、`hikyaku review run` に置き換える
+- サブエージェントの既定のモデルが Sonnet 固定からメインのセッションのモデルに変わる。従来どおり Sonnet で動かしたい場合は、Claude Code を起動する環境で `CLAUDE_CODE_SUBAGENT_MODEL=sonnet` を設定する
 
 ## [2.4.1]
 

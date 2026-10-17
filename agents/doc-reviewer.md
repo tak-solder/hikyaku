@@ -2,7 +2,6 @@
 name: doc-reviewer
 description: Hikyaku の各フェーズ（planner/architect/build-manager/builder）から委任される中間成果物レビューエージェント。渡された context（user-stories / architecture / tasklist / plan / test-spec）に応じてドキュメントの整合性・網羅性・曖昧さ（architecture/planではセキュリティ設計の考慮漏れ、tasklist/planではBP見積もりの乖離も含む）を証拠ベースで報告する。
 tools: Glob, Grep, LS, Read
-model: sonnet
 color: yellow
 ---
 
