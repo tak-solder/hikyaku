@@ -222,6 +222,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title plan {cycle}
 ### Step 5: レビューと承認
 
 - [ ] `user_stories_review` が有効な場合（express / standard / thorough）、`doc-reviewer` を起動する（`context: user-stories`）
+  - 起動方法は `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc plan {cycle} --self claude --json` で決める。
+    `mode: agent` ならサブエージェントとして起動する。`mode: process` なら
+    `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run doc plan {cycle} --self claude --context user-stories --files <渡す情報のパスをカンマ区切りで>`
+    を実行し、返った本文をレビュー結果として扱う。終了コード 1 は失敗で、指摘0件として扱わずユーザーに報告する
   - 渡す情報: `cycles/{cycle}/planning/user-stories.md`, `planning/questions.md`
   - 出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/agents/doc-reviewer.md` を参照
   - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）

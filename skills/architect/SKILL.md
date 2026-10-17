@@ -332,6 +332,10 @@ codebase-survey.md・planning/・永続ドキュメントに明記されてい�
 #### Step 5a: 設計の承認（G4）
 
 - [ ] `architecture_review` が有効な場合（express / standard / thorough）、`doc-reviewer` を起動する（`context: architecture`）
+  - 起動方法は `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc architect {cycle} --self claude --json` で決める。
+    `mode: agent` ならサブエージェントとして起動する。`mode: process` なら
+    `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run doc architect {cycle} --self claude --context architecture --files <渡す情報のパスをカンマ区切りで>`
+    を実行し、返った本文をレビュー結果として扱う。終了コード 1 は失敗で、指摘0件として扱わずユーザーに報告する
   - 渡す情報: `design-delta.md`, `codebase-survey.md`, 今回追記した ADR, `user-stories.md`
   - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
 - [ ] `architecture_gate` が有効な場合（economy / standard / thorough）、ユーザーに提示して承認を得る（G4）

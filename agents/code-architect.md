@@ -2,7 +2,6 @@
 name: code-architect
 description: Hikyaku architect スキルの Step 4 で、指定された観点（Minimal / Clean / Pragmatic 等）に基づく単一の設計案を立案するエージェント。
 tools: Glob, Grep, LS, Read, BashOutput
-model: sonnet
 color: green
 ---
 
