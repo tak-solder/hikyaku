@@ -1,8 +1,7 @@
 ---
 name: retrospective
-description: "Hikyaku 振り返り: セッション中のスキル外指示を分析し、改善提案を分類・記録する内部スキル。各フェーズから呼び出される。"
+description: "Hikyaku 振り返り: セッション中のスキル外指示を分析し、改善提案を分類・記録する内部スキル。各フェーズから呼び出される。モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。"
 user-invocable: false
-disable-model-invocation: false
 argument-hint: "{cycle} {SUB_DIR}"
 ---
 

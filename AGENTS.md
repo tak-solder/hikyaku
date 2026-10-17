@@ -10,6 +10,8 @@
 
 ## Agent Skills
 
+このリポジトリの開発用 Codex スキルは `.agents/skills/` に置きます。`$sync-codex-plugin <PR番号またはURL>` は、`main → codex-plugin` の差分を調べ、main由来の `update-for-codex` ブランチでCodex向けの修正・検証を行い、pushしてmain向けPRを作成・更新します。既存ブランチは原則引き継ぎます。Claude側の変更が必要なら停止してユーザーに確認し、codex-pluginへのpushやPRのマージは行いません。配布する Hikyaku のスキル（`skills/` と `codex/skills/`）とは別に管理します。
+
 スキルを編集する際は次のページを参照して、仕様やベストプラクティスを遵守してください。
 
 - Agent Skills の仕様: https://agentskills.io/specification.md
