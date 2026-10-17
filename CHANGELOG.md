@@ -28,6 +28,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Claude Code 利用者の操作は変わらない。従来の `/hikyaku:...` と `skills/`・`agents/` の手順は維持する
 - Codex 利用者は `codex plugin marketplace add tak-solder/hikyaku@codex-plugin` でマーケットプレイスを追加し、プラグインをインストールする。`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要。Codex では各フェーズを個別に実行し、conductor は Claude Code で使う
 
+## [2.7.0]
+
+### Added
+
+- **navigator スキル（`/hikyaku:navigator [{cycle}]`）**: `cycle list` / `cycle status` / `next` で進行中のサイクルの状態を読み、サイクルごとの次の一手（init / planner / architect / builder / close-cycle / conductor）を提案する。選ばれたスキルを起動する。読むだけで、ファイルの書き込み・コミット・ブランチの切り替えはしない。`disable-model-invocation: true` で、明示的に起動したときだけ動く。Codex 用入口はまだない
+
+### Migration
+
+- 対応は不要。既存のスキルとコマンドは変わらない
+
 ## [2.6.0]
 
 builder のコードレビューとセキュリティレビューを、Claude Code と Codex に組み込みのレビュー機能へ移した。どのプロバイダで、どのモデル・エフォートで、何回まで回すかを設定できる（[#57](https://github.com/tak-solder/hikyaku/issues/57)）。
