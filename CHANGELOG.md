@@ -32,7 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
-- **navigator スキル（`/hikyaku:navigator [{cycle}]`）**: `cycle list` / `cycle status` / `next` で進行中のサイクルの状態を読み、サイクルごとの次の一手（init / planner / architect / builder / close-cycle / conductor）を提案する。選ばれたスキルを起動する。読むだけで、ファイルの書き込み・コミット・ブランチの切り替えはしない。`disable-model-invocation: true` で、明示的に起動したときだけ動く。Codex 用入口はまだない
+- **navigator スキル（`/hikyaku:navigator [{cycle}]`）**: `cycle list` / `cycle status` / `next` で進行中のサイクルの状態を読み、「{サイクル} を進める」「新しいサイクルを始める」「各サイクルの進捗を詳しく確認する」から選ばせる。サイクルを選ぶと、その状態に合ったスキル（planner / architect / builder / close-cycle）を起動する。読むだけで、ファイルの書き込み・コミット・ブランチの切り替えはしない。`disable-model-invocation: true` で、明示的に起動したときだけ動く。Codex 用入口はまだない
 
 ### Migration
 

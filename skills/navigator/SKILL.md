@@ -73,7 +73,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle} --json
 | 状態 | 次の一手 |
 |---|---|
 | 未初期化 | `/hikyaku:init` |
-| 進行中のサイクルなし | `/hikyaku:planner`（サイクルの作成も代行する）。profile やブランチ規則を先に決めたいなら `/hikyaku:create-cycle` |
+| 進行中のサイクルなし | 選択肢は「新しいサイクルを始める」だけになる |
 | `planning` | `/hikyaku:planner {cycle}` |
 | `architecting` | `/hikyaku:architect {cycle}`。ARCHITECT から最後のビルドまで任せたいなら `/hikyaku:conductor {cycle}` も候補 |
 | `building` かつ `returned` あり | `cycle status` の `suggestion`（差し戻し元を指定した architect） |
@@ -110,24 +110,43 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle} --json
 
 `ビルド` 列は `cycle list` の `progress` をそのまま使う。
 
-続けて、提案を `AskUserQuestion` で示す。並べ方は次のとおり。
+続けて `AskUserQuestion` で選んでもらう。選択肢はサイクル単位にし、スキルやビルドを直接並べない。
+細かい選択は、選ばれたあとで起動するスキルに任せる。
 
-1. **このチェックアウトで作業中のサイクル**（`config` の `cycle`）の次の一手を先頭にし、推奨として示す
-2. 再開（`resumeAt` あり・差し戻し）を、新しい着手より先に置く
-3. 残りはサイクル番号の小さい順に並べる
+| 選択肢 | 説明欄に書くこと | 載せる条件 |
+|---|---|---|
+| `{cycle} を進める` | Step 2 で決めた次の一手（例: 「build-02 を再開する」「close-cycle で昇格する」） | 起動できる次の一手があるサイクルごとに1つ |
+| 新しいサイクルを始める | planner で新しいサイクルを作って PLAN に入る。未初期化なら init から始めると書く | 常に |
+| 各サイクルの進捗を詳しく確認する | サイクルごとの成果物と着手状況を表示する | 進行中のサイクルがあるとき |
 
-選択肢は4つまで。収まらない分は表にだけ載せ、「その他」で選べることを添える。人間の作業
-（マージ待ち・他セッション作業中）は表にだけ載せ、選択肢には入れない。起動できるものが
-1つも無ければ、`AskUserQuestion` を使わずに状態と待っている作業を伝えて**終了**する。
+`{cycle} を進める` の並べ方:
 
-並行して進められるビルドが複数あるときは、ここで起動できるのは1つだけだと伝える。残りは
-別のセッションで `/hikyaku:builder {cycle} {NN}` を実行するよう案内する。Hikyaku は
-1ビルド = 1セッションで進めるため。
+1. このチェックアウトで作業中のサイクル（`config` の `cycle`）を先頭にし、推奨として示す
+2. 再開（`resumeAt` あり・差し戻し）があるサイクルを次に置く
+3. 残りはサイクル番号の小さい順
 
-### Step 4: 起動する
+選択肢は4つまでなので、`{cycle} を進める` は2つまで。収まらないサイクルは表にだけ載せ、
+「その他」にサイクル名を書けば選べると添える。
 
-- [ ] 選ばれたスキルを、Skill ツールで引数ごと呼び出す（例: skill `hikyaku:builder`、args `003 2`）
+次の一手が人の作業（マージ待ち・他のセッションが作業中）のサイクルは、表にだけ載せて選択肢にはしない。
 
-起動したあとは、そのスキルの手順に従う。navigator の役目はここで終わる。
+### Step 4: 選ばれたものを実行する
 
-「何もしない」が選ばれたら、表をそのまま残して終了する。
+**`{cycle} を進める`**: Step 2 で決めたスキルを、Skill ツールで引数ごと呼び出す
+（例: skill `hikyaku:builder`、args `003 2`）。
+
+- 再開・差し戻しのビルドは、ビルドを引数で指定する
+- 着手可能なビルドが複数あるときは、ビルドを付けずに `/hikyaku:builder {cycle}` を起動する。
+  builder がどのビルドに着手するかを尋ねる。並行して進めたい残りのビルドは、別のセッションで
+  `/hikyaku:builder {cycle} {NN}` を実行するよう添える（1ビルド = 1セッションで進めるため）
+- `architecting` は architect を起動する。ARCHITECT から最後のビルドまで任せる `/hikyaku:conductor {cycle}`
+  もあることを一言添える
+
+**新しいサイクルを始める**: `/hikyaku:planner` を引数なしで起動する（サイクルの作成も代行する）。
+未初期化なら代わりに `/hikyaku:init` を起動する。
+
+**各サイクルの進捗を詳しく確認する**: 各サイクルの `cycle status {cycle}` を `--json` なしで実行し、その出力を
+そのまま見せる。building のサイクルは `next {cycle}` の出力も添える。見せたら Step 3 の
+`AskUserQuestion` に戻る（この選択肢は外す）。
+
+起動したあとは、そのスキルの手順に従う。navigator の役目はそこで終わる。
