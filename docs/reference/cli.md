@@ -138,6 +138,19 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 
 `branch verify` / `pr title` / `session title` は対象サイクルの設定でテンプレートを展開します。`[branch]` / `[pr]` / `[session]` は[サイクルごとに変えられる](../configuration/config-file.md#サイクルごとに変える)ため、サイクルに属さない `init` と `bp-guide` を除いてサイクルの特定が必要です。ID や slug で渡してもディレクトリ名に解決されるので、`002` からも `hikyaku/002-billing/plan` が返ります。
 
+## レビュー
+
+| コマンド | いつ使うか |
+|---|---|
+| `review resolve <kind> <phase> [<cycle>] --self <provider>` | レビューをどのプロバイダ・モデル・回数で、どう起動するか確かめるとき |
+| `review run <kind> <phase> [<cycle>] --self <provider>` | コードやセキュリティのレビューを別プロセスで実行するとき（builder が呼ぶ）。別プロバイダの doc-reviewer も同じ |
+
+`<kind>` は `code` / `security` / `doc` です。`--self` にはメインのセッションのプロバイダ（`claude` / `codex`）を渡します。`[review]` の `provider = "auto"` と `provider_for` をこれで解決します（[.hikyaku.config](../configuration/config-file.md#review)）。
+
+`review run` は `claude -p` や `codex exec` を起動し、生の出力を `.git` の中（`git rev-parse --git-path hikyaku/reviews` の下）に保存して返します。出力の解析や指摘の統合はしません。自由な文章なので、判断は呼び出したセッションが行います。空の結果、エラー、タイムアウトは終了コード 1 になります。origin/HEAD が無いときの `/security-review` のように、失敗が空の結果として返る場合があり、それを指摘0件と取り違えないためです。`max_rounds` を超える `--round` もエラーになります。
+
+環境変数 `HIKYAKU_REVIEW_PROVIDER` を設定すると、設定ファイルの `provider` より優先されます。設定したプロバイダの CLI が使えない環境のためのものです。Claude Code と Codex のクラウド環境では、環境変数からそれを判定し、そこで動いているプロバイダに自動で固定します。詳しくは [.hikyaku.config](../configuration/config-file.md#review) を参照してください。
+
 ## 外部連携
 
 | コマンド | いつ使うか |

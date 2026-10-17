@@ -123,6 +123,13 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist add {cycle} \
 ```
 
 - [ ] `tasklist_review` が有効な場合（express / standard / thorough）、`doc-reviewer` を起動する（`context: tasklist`）
+  - 起動方法は `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc {phase} {cycle} --self claude --json` で決める。
+    `mode: agent` ならサブエージェントとして起動する。`mode: process` なら
+    `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run doc {phase} {cycle} --self claude --context tasklist --files <渡す情報のパスをカンマ区切りで>`
+    を実行し、返った本文をレビュー結果として扱う。終了コード 1 は失敗で、指摘0件として扱わずユーザーに報告する
+    （`{phase}` は呼び出し元のフェーズ。architect から呼ばれたら `architect`、builder からなら `build-{NN}`）。
+    `mode: process` では、プロンプトに直接含める `--dry-run` の出力と issue.md の本文を `git rev-parse --git-path hikyaku` の下の
+    一時ファイルに書き出し、そのパスも `--files` に含める
   - この時点ではまだファイルに書き込まれていない。`--dry-run` の出力（変更後の一覧・依存グラフ）と issue.md の本文をプロンプトに直接含めて渡す
   - 参照として渡す: `cycles/{cycle}/planning/user-stories.md`, `cycles/{cycle}/design/design-delta.md`（存在する場合）,
     `{HIKYAKU_ROOT}/bp-guide/README.md`（存在する場合。無ければ `bp guide --markdown` の出力を
