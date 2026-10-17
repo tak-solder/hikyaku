@@ -16,3 +16,5 @@ conductor は Claude Code 専用で、Codex 用入口はない。`/hikyaku:condu
 PR 作成後の `pr request-reviewers` も元の手順どおり実行し、失敗した場合は作成済み PR と失敗内容を利用者に伝える。
 
 CLI が返す次の操作の案内も 4 の規則で読み替える。ワークスペース内に書き出すドキュメントや設定ファイルの形式はホストに依存しない。
+
+navigator にも Codex 用入口はない。`/hikyaku:navigator` は `$hikyaku:navigator` に読み替えず、各フェーズの入口を案内する。再開箇所を確認するときは、共通 CLI の `cycle list` / `cycle status` / `next` を使う。

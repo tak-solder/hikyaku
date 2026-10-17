@@ -27,8 +27,10 @@ builder から設計を差し戻された場合は、「`$hikyaku:architect` で
 
 conductor は Claude Code 専用です。Codex では各フェーズを個別のセッションで実行してください。共通 CLI が conductor を案内しても、対応する Codex 用スキルはありません。
 
+navigator にも Codex 用の入口はありません。再開箇所は CLI の `cycle list` / `cycle status` / `next` で確認し、対応するフェーズのスキルを指定してください。
+
 PR 作成後は共通の設定に従ってレビュアーを割り当てます。設定方法は [設定ファイル](configuration/config-file.md) を参照してください。
 
 BP 基準表の確認・調整には `$hikyaku:bp-guide` を使います。`build-manager` と `retrospective` はフェーズの途中で呼ばれる内部手順です。
 
-Hikyaku CLI の一部の案内には Claude Code の `/hikyaku:...` 表記が残っています。Codex のスキルは、conductor を除き、その案内を対応する `$hikyaku:...` スキルとして解釈します。シェルから CLI を直接実行する場合は [実行方法](reference/cli.md#実行方法) を参照してください。
+Hikyaku CLI の一部の案内には Claude Code の `/hikyaku:...` 表記が残っています。Codex のスキルは、conductor と navigator を除き、その案内を対応する `$hikyaku:...` スキルとして解釈します。シェルから CLI を直接実行する場合は [実行方法](reference/cli.md#実行方法) を参照してください。
