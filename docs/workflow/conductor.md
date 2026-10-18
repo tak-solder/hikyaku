@@ -1,6 +1,6 @@
 # conductor — ARCHITECT 以降を任せる
 
-`/hikyaku:conductor` は Claude Code 専用で、PLAN を終えたサイクルを ARCHITECT から最後のビルドまで進めます。あなたが開いているセッションが監督になり、各フェーズは監督が起動する非対話の子セッション（`claude -p` / `codex exec`）が、いつもの architect / builder / close-cycle のスキルのまま実行します。監督を Codex で動かす場合は各フェーズを個別に実行します（[Codex で使い始める](../getting-started-codex.md)）。
+Claude Code の `/hikyaku:conductor` と Codex の `$hikyaku:conductor` は、PLAN を終えたサイクルを ARCHITECT から最後のビルドまで進めます。あなたが開いているセッションが監督になり、各フェーズは監督が起動する非対話の子セッション（`claude -p` / `codex exec`）が、いつもの architect / builder / close-cycle のスキルのまま実行します。Codex での起動方法は [Codex で使い始める](../getting-started-codex.md) を参照してください。
 
 子が承認や確認を求める箇所で止まると、監督が成果物を読んで答えます。人間が答えるのは、要件のすり合わせ（PLAN）と、監督が自分で答えてはいけない問いだけです。
 
@@ -131,13 +131,15 @@ CI が1つも無い場合（`paths` フィルタで走らない、CI の無い�
 
 ## Codex を子セッションに使う
 
-`.hikyaku.config` の `[conductor]` に `provider = "codex"` を指定すると、Claude Code の監督から Codex CLI を子として起動できます。クラウドでない環境での既定は `claude` です。Codex CLI のインストールと認証が必要です。`model` とフェーズ別モデルには、選択した CLI で使えるモデル名を指定します。
+`.hikyaku.config` の `[conductor]` に `provider = "codex"` を指定すると、Claude Code・Codex どちらの監督からも Codex CLI を子として起動できます。クラウドでない環境での既定は `claude` です。Codex CLI のインストールと認証が必要です。`model` とフェーズ別モデルには、選択した CLI で使えるモデル名を指定します。
 
 クラウド環境ではレビューと同じ `detectCloudEnv()` の判定を使い、`CLAUDE_CODE_REMOTE=true` なら Claude、`CODEX_ENVIRONMENT_ID` が空でなければ Codex に固定します。この判定は `provider` の明示指定より優先し、両方が該当するときは Claude を選びます。クラウドでない場合は `provider`、未指定なら `claude` を使います。`conductor asks` は実際の CLI と選択元（`providerSource`）を示します。
 
 Codex は `workspace-write` サンドボックスで動き、権限の確認には応答しません。Claude のツール許可リストとは制御の単位が異なります。`allowed_tools` は空配列、`budget_per_run` は 0 にしてください。それ以外は設定エラーになります。必要なテストや git・gh 操作がサンドボックスやネットワーク制限で実行できなければ、子は blocked で終了します。起動前に実行環境を確認してください。
 
-結果は Codex の JSONL から解析します。再開には結果の `thread_id` を使い、費用は取得できないため `costUsd` は null になります。
+Codex の監督は、シェルの長時間処理を継続する機能で子と PR 検証の終了を待ちます。子の会話の ID とシェルのプロセス ID は区別します。起動に失敗した場合や必要な継続機能が無い場合は、その制約を示して止まります。
+
+Codex の子の結果は JSONL から解析します。再開には結果の `thread_id` を使い、費用は取得できないため `costUsd` は null になります。
 
 ## 中断と再開
 
