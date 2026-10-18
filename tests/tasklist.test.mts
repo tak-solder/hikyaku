@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { HikyakuError } from "../scripts/lib/errors.mts";
-import { blockedBuilds, nextBuildId, parseTasklist, readyBuilds, renderTasklistFile, validateGraph } from "../scripts/lib/tasklist.mts";
+import { blockedBuilds, graphEdges, nextBuildId, parseTasklist, readyBuilds, renderTasklistFile, validateGraph } from "../scripts/lib/tasklist.mts";
 import { build } from "./helpers.mts";
 
 test("tasklist: ビルド ID と依存 ID の接頭辞・ゼロ埋めを同じように正規化する", () => {
@@ -52,4 +52,32 @@ test("tasklist: 複数ビルドの循環を検出し、合流するだけのグ�
 test("tasklist: 欠番を埋めず最大 ID の次を採番する", () => {
   assert.equal(nextBuildId([]), "1");
   assert.equal(nextBuildId([build("3"), build("1")]), "4");
+});
+
+test("tasklist: 依存グラフは推移的簡約をかけ、他の依存を経由して到達できる辺を描かない", () => {
+  const builds = [
+    build("1"),
+    build("2", { dependsOn: ["1"] }),
+    build("3", { dependsOn: ["1", "2"] }),
+    build("4", { dependsOn: ["1", "3"] }),
+    build("5", { dependsOn: ["2"] }),
+    build("6", { dependsOn: ["3", "5", "4"] }),
+  ];
+  assert.deepEqual(graphEdges(builds), [["1", "2"], ["2", "3"], ["3", "4"], ["2", "5"], ["5", "6"], ["4", "6"]]);
+  const graph = renderTasklistFile("001-test", builds);
+  assert.doesNotMatch(graph, /b01 --> b03/);
+  assert.doesNotMatch(graph, /b03 --> b06/);
+  assert.match(graph, /b04 --> b06/);
+  // dependencies 列は宣言のまま残す（着手可否と handoff の参照は直接依存で判定するため）
+  assert.deepEqual(parseTasklist(graph).find((b) => b.id === "6")?.dependsOn, ["3", "5", "4"]);
+});
+
+test("tasklist: 経由する依存が無ければ辺を残し、重複した依存宣言は1本にまとめる", () => {
+  const builds = [build("1"), build("2"), build("3", { dependsOn: ["1", "2", "1"] })];
+  assert.deepEqual(graphEdges(builds), [["1", "3"], ["2", "3"]]);
+});
+
+test("tasklist: 循環があるあいだは簡約せず、宣言された辺をそのまま描く", () => {
+  const builds = [build("1", { dependsOn: ["2"] }), build("2", { dependsOn: ["1"] }), build("3", { dependsOn: ["1", "2"] })];
+  assert.deepEqual(graphEdges(builds), [["2", "1"], ["1", "2"], ["1", "3"], ["2", "3"]]);
 });

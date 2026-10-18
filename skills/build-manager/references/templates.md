@@ -32,7 +32,6 @@ graph TD
   b02["build-02: 認証API"]
   b03["build-03: 投稿API"]
   b04["build-04: 共通ユーティリティ"]
-  b01 --> b02
   b04 --> b02
   b02 --> b03
   b01 --> b04
@@ -46,7 +45,7 @@ graph TD
 | `buildID` | 作成順の連番。`max(既存) + 1` で採番し、リナンバリングは行わない |
 | `title` | ビルド名 |
 | `BP` | ビルドポイント（`hikyaku bp estimate` の算出値。手順は [bp-guide.md](bp-guide.md)） |
-| `dependencies` | 依存ビルドID。実行順序はこの依存グラフで決まる |
+| `dependencies` | 直接の依存ビルドID。実行順序はこの依存グラフで決まる。グラフは推移的簡約で描かれるため、経由して到達できる依存（例の build-02 の依存 build-01）は線として現れない |
 | `issue` | `build-{NN}/issue.md` への相対リンク。作成時に記録し以後不変 |
 | `PR` | **着手可否と完了判定に使う唯一の列**。当該ビルドの PR に同梱して更新する |
 
