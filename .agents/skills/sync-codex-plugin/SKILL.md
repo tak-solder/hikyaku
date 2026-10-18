@@ -80,8 +80,9 @@ git diff --name-status <codex> <main>
 
 追加修正と、将来の `main → codex-plugin` 取り込みの影響を区別する。`AGENTS.md` と現行の `.github/workflows/check-codex-plugin.yml` を読み、Codex用マニフェストのバージョンを記録した `<codex>` と比較する。main向けPRではCodex用CIが自動起動しない可能性があるため、CIの成功だけで判断しない。
 
-- CI対象に差分がある場合、最終的なCodexバージョンがcodex-plugin側よりSemVerとして増えている必要がある。すでに適切に上がっていれば重複して上げない。Codex固有の追加修正がある場合は、その変更に応じた増分も確認する。
-- 変更するマニフェストは `.codex-plugin/plugin.json` のみ。Claude側の番号に揃えず、Claude側のマニフェストは変更しない。
+- **両版のバージョンを揃える。** `CHANGELOG.md` は共通のため、`.codex-plugin/plugin.json` の `version` を、取り込み対象のmainにある `.claude-plugin/plugin.json` の `version` と一致させる。Codex版だけの独立したバージョン番号は付けない。
+- CI対象に差分がある場合、最終的なCodexバージョンがcodex-plugin側よりSemVerとして増えている必要がある。Claude版と同じ番号ですでに条件を満たしていれば、追加で上げない。番号の一致とSemVer増分を両立できない場合は、Codex版だけを増減せず、理由と必要なバージョン更新を示してユーザーに判断を仰ぐ。
+- 変更するマニフェストは `.codex-plugin/plugin.json` のみ。Claude側のマニフェストは変更しない。
 - **CHANGELOGは原則更新しない。** `CHANGELOG.md` はClaude版・Codex版で共通の、利用者に変更内容を伝える文書である。両ホストで同じ振る舞いを保つことが同期の前提であり、取り込む変更はmain側の既存エントリで伝える。バージョン更新の要否とCHANGELOG更新の要否は独立して判断し、バージョンを上げること自体を追記理由にしない。
 - マニフェストのバージョン更新、同期の準備・検証、内部説明の整理だけを変更内容として記載しない。既存エントリと重複する説明や、「対応不要」「変更なし」だけの項目も追加しない。同期の判断・検証の詳細はPR本文に記す。
 - **CHANGELOGの変更が必要と判断した場合は、編集前にユーザーに確認する。** 利用者に伝える必要がある具体的な変更・影響、既存エントリでは不足する理由、追記・修正案を示し、承認を得てから変更する。Codex側だけにある記述の反映もこの確認の対象とし、確認待ちの変更を含むpush・PR作成は行わない。承認された場合もmain側の既存エントリを保持し、過去リリースを丸ごと書き換えない。`Migration` は利用者に必要な対応がある場合だけ記す。
@@ -89,7 +90,7 @@ git diff --name-status <codex> <main>
 
 ## 6. 検証する
 
-1. 作業差分を最新mainと比較し、禁止対象を編集していないこと、Claude側のバージョンが変わっていないこと、Codex側の必要な対応を失っていないことを確認する。引き継いだ変更も確認し、禁止対象の変更が含まれていたら勝手に破棄せず、push前に止めてユーザーに判断を仰ぐ。`git diff --check` と競合状態の確認も行う。
+1. 作業差分を最新mainと比較し、禁止対象を編集していないこと、Claude側のバージョンが変わっていないこと、両版のマニフェストの `version` が一致すること、Codex側の必要な対応を失っていないことを確認する。引き継いだ変更も確認し、禁止対象の変更が含まれていたら勝手に破棄せず、push前に止めてユーザーに判断を仰ぐ。`git diff --check` と競合状態の確認も行う。
 2. `.github/workflows/check-codex-plugin.yml` の現行の検証をローカルで実行する。`current` は作業結果、`base` は記録した `<codex>` のツリーとして入力を用意し、マニフェスト、SemVer増分、入口の名前、元手順と実行規約へのリンクを確認する。これは将来の取り込みのための事前検証であり、codex-pluginへのマージは行わない。
 3. main側の共通変更の影響に応じて `.github/workflows/check-scripts.yml` の必要なチェックを実行する。現在の構成では `npx tsc --noEmit`、`npm test`、CLIのversion/help、`node scripts/hikyaku.mts bp test --builtin`、`node scripts/hikyaku.mts conductor lint` が対象。現行CIを読み直して選ぶ。依存が必要ならlockfileに従い、検証目的で依存やlockfileを変更しない。失敗の修正にClaude側の編集が必要なら作業を止める。
 4. 影響表のシナリオで、入口から共通手順への引数・パス・内部呼び出し・終了条件を確認する。静的確認と実際のCodex上の動作確認を区別する。
