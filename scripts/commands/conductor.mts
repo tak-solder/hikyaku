@@ -32,7 +32,7 @@ import { emit, table } from "../lib/output.mts";
 import { pluginRoot } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
 import { normalizeBuildId } from "../lib/tasklist.mts";
-import type { ResolvedConfig } from "../lib/config.mts";
+import { cloudEnvLabel, type ResolvedConfig } from "../lib/config.mts";
 import { openCycle, type CycleContext } from "../lib/workspace.mts";
 
 /**
@@ -78,8 +78,9 @@ register({
     };
 
     const provider = config.conductor.provider;
+    const providerSource = config.conductor.providerSource;
     const sandbox = provider === "codex" ? "workspace-write" : null;
-    emit({ cycle: context.name, profile: config.profile, provider, sandbox, digest, allowedTools, models, review, asks }, () => {
+    emit({ cycle: context.name, profile: config.profile, provider, providerSource, sandbox, digest, allowedTools, models, review, asks }, () => {
       const ids = (filter: (ask: ResolvedAsk) => boolean): string =>
         asks.filter(filter).map((ask) => ask.id).join(" / ") || "なし";
       const consent = (ask: ResolvedAsk): boolean => ask.category === "consent";
@@ -90,7 +91,7 @@ register({
         `監督が判断するその他の問い: ${ids((a) => !consent(a) && a.enabled && a.handler === "supervisor")}`,
         `人間に上げる問い: ${ids((a) => a.enabled && a.handler === "human")}`,
         `この profile では出ない問い: ${ids((a) => !a.enabled)}`,
-        `子の CLI: ${provider}`,
+        `子の CLI: ${provider}（${providerSource === "cloud" ? cloudEnvLabel(provider) : providerSource === "config" ? "[conductor] provider" : "既定"}）`,
         provider === "codex"
           ? `子の権限: ${sandbox} サンドボックス（承認なし。Claude のツール許可リストは適用されません）`
           : `子に許可するツール: ${allowedTools.join(" ")}`,
@@ -136,7 +137,9 @@ register({
     "architect の add（指摘からの追加設計）では、--resume なしの初回の起動にも --message が要ります。",
     "ファイルの中身（対応する指摘）が、プロンプトの add の後ろに続けて渡ります。",
     "",
-    "[conductor] provider は claude（既定）または codex。Codex は codex exec --json で起動し、",
+    "[conductor] provider は claude（既定）または codex。クラウド環境ではレビューと同じ判定で、",
+    "CLAUDE_CODE_REMOTE=true / 空でない CODEX_ENVIRONMENT_ID の CLI に設定より優先して固定します。",
+    "Codex は codex exec --json で起動し、",
     'approval_policy="never" / sandbox_mode="workspace-write" を初回・再開とも明示します。',
     "Codex では非対話規約と Codex 用スキル入口のパスをプロンプトに含めます。",
     "初回の sessionId は null。parse の thread_id を次の --resume に渡してください。",
@@ -237,6 +240,7 @@ register({
       {
         phase,
         provider,
+        providerSource: config.conductor.providerSource,
         sandbox: provider === "codex" ? "workspace-write" : null,
         cycle: context.name,
         prompt,

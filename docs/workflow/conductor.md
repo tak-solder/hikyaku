@@ -131,7 +131,9 @@ CI が1つも無い場合（`paths` フィルタで走らない、CI の無い�
 
 ## Codex を子セッションに使う
 
-`.hikyaku.config` の `[conductor]` に `provider = "codex"` を指定すると、Claude Code の監督から Codex CLI を子として起動できます。既定は `claude` です。Codex CLI のインストールと認証が必要です。`model` とフェーズ別モデルには、選択した CLI で使えるモデル名を指定します。
+`.hikyaku.config` の `[conductor]` に `provider = "codex"` を指定すると、Claude Code の監督から Codex CLI を子として起動できます。クラウドでない環境での既定は `claude` です。Codex CLI のインストールと認証が必要です。`model` とフェーズ別モデルには、選択した CLI で使えるモデル名を指定します。
+
+クラウド環境ではレビューと同じ `detectCloudEnv()` の判定を使い、`CLAUDE_CODE_REMOTE=true` なら Claude、`CODEX_ENVIRONMENT_ID` が空でなければ Codex に固定します。この判定は `provider` の明示指定より優先し、両方が該当するときは Claude を選びます。クラウドでない場合は `provider`、未指定なら `claude` を使います。`conductor asks` は実際の CLI と選択元（`providerSource`）を示します。
 
 Codex は `workspace-write` サンドボックスで動き、権限の確認には応答しません。Claude のツール許可リストとは制御の単位が異なります。`allowed_tools` は空配列、`budget_per_run` は 0 にしてください。それ以外は設定エラーになります。必要なテストや git・gh 操作がサンドボックスやネットワーク制限で実行できなければ、子は blocked で終了します。起動前に実行環境を確認してください。
 

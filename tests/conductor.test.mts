@@ -20,6 +20,7 @@ import {
   settingsDigest,
   shellQuote,
 } from "../scripts/lib/conductor.mts";
+import { readConductor } from "../scripts/lib/config.mts";
 import { pluginRoot } from "../scripts/lib/paths.mts";
 import { parsePrReviewState, parsePrView } from "../scripts/lib/github.mts";
 import { planReviewers, skipTargetOf, type ReviewerInput } from "../scripts/lib/reviewers.mts";
@@ -1257,4 +1258,62 @@ test("CLI: 子の provider が変われば合意済み digest で launch / parse
     assert.equal(output.status, 1);
     assert.match(output.stderr, /変わ|変化|一致/);
   }
+});
+
+
+test("conductor: クラウド判定は明示 provider と既定値より優先し、レビューと同じ規則を使う", () => {
+  for (const [env, expected] of [
+    [{ CLAUDE_CODE_REMOTE: "true" }, "claude"],
+    [{ CODEX_ENVIRONMENT_ID: "env-123" }, "codex"],
+    [{ CLAUDE_CODE_REMOTE: " true ", CODEX_ENVIRONMENT_ID: "env-123" }, "claude"],
+    [{ CLAUDE_CODE_REMOTE: "false", CODEX_ENVIRONMENT_ID: " env-123 " }, "codex"],
+  ] as const) {
+    for (const provider of [undefined, "claude", "codex"]) {
+      const config = readConductor(provider === undefined ? undefined : { provider }, env);
+      assert.equal(config.provider, expected);
+      assert.equal(config.providerSource, "cloud");
+    }
+  }
+  for (const env of [{}, { CLAUDE_CODE_REMOTE: "false" }, { CLAUDE_CODE_REMOTE: "" }, { CODEX_ENVIRONMENT_ID: "   " }]) {
+    assert.equal(readConductor(undefined, env).provider, "claude");
+    assert.equal(readConductor(undefined, env).providerSource, "default");
+    assert.equal(readConductor({ provider: "codex" }, env).provider, "codex");
+    assert.equal(readConductor({ provider: "codex" }, env).providerSource, "config");
+  }
+});
+
+test("conductor: クラウドによる切り替え後の CLI で非対応設定を検査し、digest に反映する", () => {
+  const table = { provider: "claude", allowed_tools: ["Bash(npm test:*)"] };
+  assert.throws(() => readConductor(table, { CODEX_ENVIRONMENT_ID: "env-123" }), /allowed_tools/);
+  assert.throws(() => readConductor({ budget_per_run: 1 }, { CODEX_ENVIRONMENT_ID: "env-123" }), /budget_per_run/);
+  assert.equal(readConductor({ ...table, provider: "codex" }, { CLAUDE_CODE_REMOTE: "true" }).provider, "claude");
+  assert.throws(() => readConductor({ provider: "typo" }, { CODEX_ENVIRONMENT_ID: "env-123" }), /provider/);
+  const local = readConductor(undefined, {});
+  const cloud = readConductor(undefined, { CODEX_ENVIRONMENT_ID: "env-123" });
+  assert.notEqual(settingsDigest("standard", settings, local), settingsDigest("standard", settings, cloud));
+});
+
+test("CLI: conductor asks / launch / parse はクラウド判定した同じ provider を使う", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[conductor]\nprovider = "claude"\n');
+  const inCloud = (...args: string[]) => {
+    const output = spawnSync(process.execPath, [join(pluginRoot(), "scripts/hikyaku.mts"), "conductor", ...args], {
+      cwd: directory, encoding: "utf8", env: { ...testEnvironment(), CODEX_ENVIRONMENT_ID: "env-123" }, timeout: 10_000,
+    });
+    assert.ifError(output.error);
+    assert.equal(output.status, 0, output.stderr);
+    return output.stdout;
+  };
+  const asks = JSON.parse(inCloud("asks", "001", "--json"));
+  assert.equal(asks.provider, "codex");
+  assert.equal(asks.providerSource, "cloud");
+  assert.match(inCloud("asks", "001"), /クラウド環境（CODEX_ENVIRONMENT_ID）/);
+  const launch = JSON.parse(inCloud("launch", "architect", "001", "--expect-digest", asks.digest, "--json"));
+  assert.equal(launch.argv[0], "codex");
+  assert.equal(launch.providerSource, "cloud");
+  write(directory, "cloud-result.jsonl", codexResult('<hikyaku-done next="">\n完了\n</hikyaku-done>'));
+  const parsed = JSON.parse(inCloud("parse", "cloud-result.jsonl", "001", "--expect-digest", asks.digest, "--json"));
+  assert.equal(parsed.outcome, "done");
+  const local = cli(directory, "conductor", "launch", "architect", "001", "--expect-digest", asks.digest);
+  assert.equal(local.status, 1);
 });

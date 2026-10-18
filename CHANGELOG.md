@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
-- conductor の子セッションを `[conductor] provider = "codex"` で Codex CLI に切り替え可能にした。非対話規約、JSONL の結果解析と thread_id による再開に対応する。既定は Claude のまま。Codex では `allowed_tools` は空配列、`budget_per_run` は 0 のみ受け付ける
+- conductor の子セッションを `[conductor] provider = "codex"` で Codex CLI に切り替え可能にした。非対話規約、JSONL の結果解析と thread_id による再開に対応する。クラウドではレビューと同じ環境判定で、明示指定より優先して同じプロバイダーに固定する。クラウドでない環境の既定は Claude のまま。Codex では `allowed_tools` は空配列、`budget_per_run` は 0 のみ受け付ける
 
 - Codex 用の `.codex-plugin/plugin.json`、`.agents/plugins/marketplace.json`、`codex/skills/*/SKILL.md` を追加した。Codex では専用入口から従来の Hikyaku 手順を読み、パス・引数・内部スキル・エージェント委任の表記を Codex の機能に読み替える
 - `codex/compatibility.md` に Codex での実行規約を追加し、`docs/getting-started-codex.md` に導入と起動方法を記載した

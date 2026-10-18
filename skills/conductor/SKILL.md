@@ -68,6 +68,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor asks {cycle} --json
 ```
 
 出力の `digest` を控える（以後のすべての `launch` / `parse` に渡す）。
+クラウド判定は設定より優先する。子の CLI は設定ファイルの値から推測せず、`asks.provider` と `providerSource` を確認する。同じ環境で `launch` / `parse` を実行し、環境が変わって digest が一致しなければ人間に上げる。
 
 - [ ] 子がテストを実行できるかを確認する
   - `asks.provider` が `codex` の場合、Codex CLI のインストールと認証を確認する。権限は `workspace-write` サンドボックス・承認なしで、Claude の `allowedTools` による許可リストは適用されないことを人間に示す。必要なテスト・git・gh 操作をこの環境で実行できない場合は、設定や環境の見直しを案内して終了する。以下の許可リストとの照合は Claude の場合だけ行う

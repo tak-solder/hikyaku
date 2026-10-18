@@ -313,7 +313,9 @@ review_timeout = 15       # レビューの依頼や CI を待つ上限（分）
 
 `escalate` と `delegate` には問いの ID（`G8`、`review-findings` など）を並べます。使える ID と現在の振り分けは `hikyaku conductor asks <cycle>` で確認できます。表に無い ID や、同じ ID を両方に書いた場合はエラーになります。サイクルの中止（`abandon`）と ID の無い問い（`other`）は常に人間に上げるので、`delegate` には書けません。
 
-`provider = "codex"` は Codex CLI を子として使います。Codex は承認なし・`workspace-write` サンドボックスで動きます。`allowed_tools` は空配列、`budget_per_run` は 0 のみ受け付け、Claude のツール許可や費用上限には対応しません。実行環境の制限は [conductor](../workflow/conductor.md#codex-を子セッションに使う) を参照してください。
+クラウド環境ではレビューと同じ `detectCloudEnv()` の判定を使い、`CLAUDE_CODE_REMOTE=true` なら Claude、`CODEX_ENVIRONMENT_ID` が空でなければ Codex に固定します。この判定は `provider` の明示指定より優先し、両方が該当するときは Claude を選びます。クラウドでない場合は `provider`、未指定なら `claude` を使います。`conductor asks` は実際の CLI と選択元（`providerSource`）を示します。
+
+`provider = "codex"` はクラウドでない環境で Codex CLI を子として使います。Codex は承認なし・`workspace-write` サンドボックスで動きます。`allowed_tools` は空配列、`budget_per_run` は 0 のみ受け付け、Claude のツール許可や費用上限には対応しません。実行環境の制限は [conductor](../workflow/conductor.md#codex-を子セッションに使う) を参照してください。
 
 Claude の `allowed_tools` は `--allowedTools` に渡す書式で書きます（`"Bash(npm test:*)"` など）。子はこの設定を起動のたびに読むので、作業ツリーで一時的に足すのではなくコミットしておいてください。
 

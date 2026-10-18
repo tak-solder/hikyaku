@@ -131,6 +131,8 @@ export type ConductorPhase = (typeof CONDUCTOR_PHASES)[number];
 export interface ConductorConfig {
   /** 子セッションの CLI */
   provider: "claude" | "codex";
+  /** クラウド判定は設定・既定値より優先する */
+  providerSource: "cloud" | "config" | "default";
   /** 既定では監督が答える問いのうち、人間に上げるもの */
   escalate: string[];
   /** 既定では人間に上げる問いのうち、監督に任せるもの */
@@ -153,6 +155,7 @@ export interface ConductorConfig {
 
 export const DEFAULT_CONDUCTOR: ConductorConfig = {
   provider: "claude",
+  providerSource: "default",
   escalate: [],
   delegate: [],
   allowedTools: [],
