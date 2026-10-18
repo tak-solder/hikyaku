@@ -9,7 +9,7 @@
  */
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { relative } from "node:path";
+import { basename, relative, resolve } from "node:path";
 import { flagBoolean, flagString, type ParsedArgs } from "../lib/args.mts";
 import {
   BP_CASES_FILE,
@@ -38,11 +38,38 @@ import {
   runBpCases,
   upsertReadmeBlock,
 } from "../lib/bp.mts";
-import { collectBpRecords, numericValue } from "../lib/bp-history.mts";
+import {
+  type BpRecord,
+  collectBpRecords,
+  GROUP_KEYS,
+  type GroupKey,
+  groupRecords,
+  numericValue,
+  summarizeGroup,
+} from "../lib/bp-history.mts";
 import { loadConfig, type ResolvedConfig } from "../lib/config.mts";
 import { cycleDirName, loadCycles } from "../lib/cycles.mts";
 import { HikyakuError, ValidationError } from "../lib/errors.mts";
-import { diffStats } from "../lib/git.mts";
+import { summarizeDiff } from "../lib/bp-actual.mts";
+import { branchName } from "../lib/branch.mts";
+import { currentBranch, diffStats, mainWorktreeRoot, originUrl, worktreePaths } from "../lib/git.mts";
+import { pluginVersion } from "../lib/paths.mts";
+import {
+  type Candidate,
+  collectBranchSessions,
+  describeMissingCurrent,
+  formatTokens,
+  HOST_LABELS,
+  hostLabel,
+  lookupCurrent,
+  pickCurrent,
+  readMeasure,
+  renderSessionMarkdown,
+  SELECTION_RULE,
+  selectMain,
+  type SessionHost,
+  type SessionMeasure,
+} from "../lib/session.mts";
 import { emit, table } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { requirePhase, resolvePrBase, scopeFor } from "../lib/stack.mts";
@@ -360,24 +387,47 @@ register({
   },
 });
 
+function readGroupBy(args: ParsedArgs): GroupKey | undefined {
+  const raw = flagString(args, "group-by");
+  if (raw === undefined) return undefined;
+  if (!(GROUP_KEYS as string[]).includes(raw)) {
+    throw new HikyakuError(`--group-by は ${GROUP_KEYS.join(" | ")} のいずれかで指定してください（現在: ${raw}）`);
+  }
+  return raw as GroupKey;
+}
+
+/** 312400 → 312k。表の幅を抑えるため。正確な値は --json で見る */
+function kiloTokens(value: number | undefined): string {
+  return value === undefined ? "—" : `${Math.round(value / 1000)}k`;
+}
+
 register({
   name: "bp history",
-  summary: "各ビルドの retrospective.md から BP の見積もりと実績を集める",
-  usage: "hikyaku bp history [<cycle>] [--root <path>] [--json]",
+  summary: "各ビルドの retrospective.md から BP の見積もり・実績とセッションの実測を集める",
+  usage: "hikyaku bp history [<cycle>] [--group-by model|hikyaku|host] [--root <path>] [--json]",
   details: [
     "全サイクル（引数があればそのサイクル）の build-NN/retrospective.md から",
     "「BP見積もりの振り返り」を読み、見積もり（architect / builder 段階）・実績・",
-    "セッションの完結状況・内訳の実測値を並べます。",
+    "セッションの完結状況・内訳の実測値と、セッションの実測（bp session の表）を並べます。",
     "",
     "基準表を調整するかどうかの素材です。入力値（新規ファイル数・実装行数）は",
     "合っていたのに実績 BP が大きい、あるいは1セッションに収まらなかったビルドが",
     "続くなら基準表の問題、入力値そのものが外れているなら数え方の問題です。",
     "",
-    "読めない項目は「—」で出します。推測で埋めません。乖離の要因（文章）は",
+    "セッションの実測は、BP がコンテキストの消費量を当てられているかを見る素材です。",
+    "ピーク・開始時の固定分・呼び出し回数・コンパクション・モデル・Hikyaku の版を並べます。",
+    "",
+    "--group-by はモデル・Hikyaku の版・ホストごとに分けて並べ、各群の件数、実績 BP と",
+    "ピークの平均、ピークの範囲、実績 1BP あたりのピークを添えます。モデルの世代や",
+    "ホストが変わるとピークの出方が変わるので、混ぜたまま比べないためです。",
+    "",
+    "読めない項目は「—」で出します。推測で埋めません。セッションの実測表が無い",
+    "（この項目を足す前の）retrospective.md も「—」で読みます。乖離の要因（文章）は",
     "ここでは読まないので、該当する retrospective.md を直接読んでください。",
   ].join("\n"),
   run: ({ args, operands }) => {
     const config = loadConfig({ root: flagString(args, "root") });
+    const groupBy = readGroupBy(args);
     const all = loadCycles(config.hikyakuRoot);
     const filter = operands[0];
     const cycles =
@@ -394,7 +444,7 @@ register({
       .filter((label): label is string => label !== undefined);
 
     const records = collectBpRecords(config.hikyakuRoot, cycles);
-    const rows = records.map((r) => {
+    const rowOf = (r: BpRecord) => {
       const deviation = r.actual !== undefined && r.builder !== undefined ? r.actual - r.builder : undefined;
       const inputs = measuredLabels.map((label) => ({
         label,
@@ -402,15 +452,20 @@ register({
         measured: numericValue(r.measured[label]),
       }));
       return { ...r, deviation, inputs };
-    });
+    };
+    const rows = records.map(rowOf);
+    const groups =
+      groupBy === undefined
+        ? undefined
+        : groupRecords(records, groupBy).map((g) => ({ ...summarizeGroup(g.key, g.records), records: g.records.map(rowOf) }));
 
-    emit({ records: rows }, () => {
+    emit({ records: rows, groupBy: groupBy ?? null, groups: groups ?? null }, () => {
       if (rows.length === 0) return "BP見積もりの振り返りを持つ retrospective.md はまだありません。";
       const fmt = (n: number | undefined): string => (n === undefined ? "—" : String(n));
       const signed = (n: number | undefined): string => (n === undefined ? "—" : n > 0 ? `+${n}` : String(n));
-      const lines = [
+      const render = (subset: typeof rows): string =>
         table(
-          rows.map((r) => [
+          subset.map((r) => [
             r.cycle,
             r.build,
             fmt(r.architect),
@@ -418,6 +473,13 @@ register({
             fmt(r.actual),
             signed(r.deviation),
             ...r.inputs.map((i) => `${fmt(i.estimated)} → ${fmt(i.measured)}`),
+            kiloTokens(r.context.peak),
+            kiloTokens(r.context.first),
+            fmt(r.context.calls),
+            fmt(r.context.compactions),
+            r.context.model ?? "—",
+            r.context.hikyaku ?? "—",
+            r.context.host ?? "—",
             r.session ?? "—",
           ]),
           [
@@ -428,15 +490,36 @@ register({
             "実績",
             "乖離",
             ...measuredLabels.map((l) => `${l}（見積→実測）`),
+            "ピーク",
+            "固定分",
+            "呼び出し",
+            "コンパクション",
+            "モデル",
+            "Hikyaku",
+            "ホスト",
             "セッション",
           ],
-        ),
-      ];
+        );
+
+      const lines: string[] = [];
+      if (groups === undefined) {
+        lines.push(render(rows));
+      } else {
+        for (const group of groups) {
+          const avg = (n: number | undefined, digits = 1): string => (n === undefined ? "—" : n.toFixed(digits));
+          lines.push(
+            `■ ${groupBy}: ${group.key}（${group.count} 件）`,
+            `  実績 BP 平均 ${avg(group.meanActual)} / ピーク平均 ${kiloTokens(group.meanPeak)}（${kiloTokens(group.minPeak)}〜${kiloTokens(group.maxPeak)}）/ 実績 1BP あたりのピーク ${kiloTokens(group.peakPerBp)}（${group.paired} 件）`,
+            render(group.records),
+            "",
+          );
+        }
+      }
       const known = rows.filter((r) => r.deviation !== undefined);
       if (known.length > 0) {
-        const mean = known.reduce((s, r) => s + (r.deviation as number), 0) / known.length;
+        const meanDeviation = known.reduce((sum, r) => sum + (r.deviation as number), 0) / known.length;
         const under = known.filter((r) => (r.deviation as number) > 0).length;
-        lines.push("", `乖離の平均 ${mean >= 0 ? "+" : ""}${mean.toFixed(1)}（${known.length} 件、過小見積もり ${under} 件）`);
+        lines.push("", `乖離の平均 ${meanDeviation >= 0 ? "+" : ""}${meanDeviation.toFixed(1)}（${known.length} 件、過小見積もり ${under} 件）`);
       }
       lines.push("", "乖離の要因は各 retrospective.md の「乖離の要因」を読んでください。");
       return lines.join("\n");
@@ -454,11 +537,20 @@ register({
     "追加行数だけで、API 操作数や影響ファイル数、加算要素の該当は実装したセッションが",
     "申告するしかないためです。",
     "",
-    "  newFiles      新規追加されたファイル数        → bp estimate の --new-files",
-    "  changedFiles  差分に現れたファイル数（リネームは1件）",
-    "  addedLines    追加行数                        → bp estimate の --lines",
-    "  deletedLines  削除行数",
-    "  binaryFiles   行数を数えられないファイル数（addedLines には含まれません）",
+    "  newFiles             新規追加されたファイル数（生成物を除く）  → bp estimate の --new-files",
+    "  changedFiles         差分に現れたファイル数（生成物を除く。リネームは1件）",
+    "  addedLines           追加行数（生成物を除く。実装 + テスト）   → bp estimate の --lines",
+    "  deletedLines         削除行数（生成物を除く）",
+    "  binaryFiles          行数を数えられないファイル数（addedLines には含まれません）",
+    "  implementationLines  addedLines のうち実装の行数",
+    "  testLines            addedLines のうちテストの行数",
+    "  generatedFiles       数えなかった生成物のファイル数（generatedPaths に一覧）",
+    "",
+    "生成物（ロックファイル・スナップショット・生成コード）は書いた量ではないので数えません。",
+    "どれを生成物とし、どれをテストとするかは [bp_actual] の exclude / tests（パスの glob）で",
+    "決まり、既定値は hikyaku config --json の bpActual で確認できます。設定すると既定値を",
+    "置き換えます。テストを分けて返すのは、既定の基準表の「実装行数（テスト含む）」とは別に、",
+    "実装とテストの比率を振り返りの素材に残すためです（--lines に渡すのは従来どおり合計）。",
     "",
     "実績 BP は、この実測値に申告する値を添えて bp estimate に渡して求めます。",
     "見積もりと同じ経路を通るので比較が成立します。",
@@ -510,16 +602,19 @@ register({
       );
     }
 
-    const estimateArgs = `--${flagNameOf(MEASURED_METRIC_KEYS.newFiles)} ${stats.newFiles} --${flagNameOf(MEASURED_METRIC_KEYS.lines)} ${stats.addedLines}`;
+    const counted = summarizeDiff(stats.files, config.bpActual);
+    const estimateArgs = `--${flagNameOf(MEASURED_METRIC_KEYS.newFiles)} ${counted.newFiles} --${flagNameOf(MEASURED_METRIC_KEYS.lines)} ${counted.addedLines}`;
 
     emit(
       {
-        ...stats,
+        mergeBase: stats.mergeBase,
+        ...counted,
         estimateArgs,
         baseRef,
         base: resolved?.base ?? null,
         stackedOn: resolved?.stacked?.name ?? null,
         excluded: excluded === "" ? null : excluded,
+        patterns: config.bpActual,
         phase,
         cycle,
       },
@@ -528,13 +623,19 @@ register({
           `起点         ${baseRef}（merge-base ${stats.mergeBase.slice(0, 7)}）`,
           `除外         ${excluded === "" ? "(なし)" : excluded}`,
           "",
-          `新規ファイル数  ${stats.newFiles}`,
-          `変更ファイル数  ${stats.changedFiles}`,
-          `追加行数        ${stats.addedLines}`,
-          `削除行数        ${stats.deletedLines}`,
+          `新規ファイル数  ${counted.newFiles}（実装 ${counted.implementationNewFiles} / テスト ${counted.testNewFiles}）`,
+          `変更ファイル数  ${counted.changedFiles}（実装 ${counted.implementationFiles} / テスト ${counted.testFiles}）`,
+          `追加行数        ${counted.addedLines}（実装 ${counted.implementationLines} / テスト ${counted.testLines}）`,
+          `削除行数        ${counted.deletedLines}`,
         ];
-        if (stats.binaryFiles > 0) {
-          lines.push(`バイナリ        ${stats.binaryFiles}（行数は数えていません）`);
+        if (counted.binaryFiles > 0) {
+          lines.push(`バイナリ        ${counted.binaryFiles}（行数は数えていません）`);
+        }
+        if (counted.generatedFiles > 0) {
+          lines.push(
+            `生成物          ${counted.generatedFiles} ファイル・${counted.generatedLines} 行（数えていません）`,
+            ...counted.generatedPaths.map((path) => `  ${path}`),
+          );
         }
         if (resolved?.stacked !== undefined) {
           lines.push("", `（${resolved.stacked.name} に積んでいます。この分だけを数えました）`);
@@ -544,6 +645,251 @@ register({
           "実績 BP は、実装中に実際に発生した加算要素を添えて bp estimate で求めます:",
           `  hikyaku bp estimate ${cycle ?? ""} ${estimateArgs} [--<加算要素>]... --markdown`,
         );
+        return lines.join("\n");
+      },
+    );
+  },
+});
+
+function readHost(args: ParsedArgs): SessionHost | undefined {
+  const raw = flagString(args, "host");
+  if (raw === undefined) return undefined;
+  if (raw === "claude" || raw === "claude-code") return "claude-code";
+  if (raw === "codex") return "codex";
+  throw new HikyakuError(`--host は claude か codex で指定してください（現在: ${raw}）`);
+}
+
+function sessionJson(measure: SessionMeasure): Record<string, unknown> {
+  return {
+    host: measure.host,
+    hostVersion: measure.hostVersion ?? null,
+    client: measure.client ?? null,
+    path: measure.path,
+    sessionId: measure.sessionId ?? null,
+    kind: measure.kind,
+    model: measure.model ?? null,
+    models: measure.models,
+    peak: measure.peak,
+    first: measure.first,
+    latest: measure.latest,
+    calls: measure.calls,
+    outputTokens: measure.outputTokens,
+    compactions: measure.compactions,
+    window: measure.window ?? null,
+    callsByBranch: measure.callsByBranch,
+    startedAt: measure.startedAt ?? null,
+    endedAt: measure.endedAt ?? null,
+  };
+}
+
+interface SessionResult {
+  mode: "current" | "branch" | "transcript";
+  branch: string | undefined;
+  measure: SessionMeasure | undefined;
+  reason: string | undefined;
+  /** 本体をどう選んだか */
+  selection: string | undefined;
+  note: string | undefined;
+  candidates: Candidate[];
+  excluded: SessionMeasure[];
+  /** 測ったのが現在のセッションか（Hikyaku の版を添えられるのはこのときだけ） */
+  isCurrent: boolean;
+}
+
+async function measureSession(args: ParsedArgs, operands: string[]): Promise<SessionResult> {
+  const env = process.env;
+  const host = readHost(args);
+  const transcript = flagString(args, "transcript");
+
+  if (transcript !== undefined) {
+    const base: SessionResult = {
+      mode: "transcript", branch: undefined, measure: undefined, reason: undefined, selection: "--transcript で指定",
+      note: undefined, candidates: [], excluded: [], isCurrent: false,
+    };
+    if (!existsSync(transcript)) return { ...base, reason: `ファイルがありません: ${transcript}` };
+    const measure = readMeasure(transcript, host);
+    if (measure === undefined) {
+      return { ...base, reason: `API 呼び出しの記録を読み取れません: ${transcript}` };
+    }
+    const lookups = lookupCurrent(env, host);
+    const isCurrent = lookups.some((lookup) => lookup.path !== undefined && resolve(lookup.path) === resolve(transcript));
+    return { ...base, measure, note: "指定したファイル", isCurrent };
+  }
+
+  const lookups = lookupCurrent(env, host);
+  const current = pickCurrent(lookups);
+  const currentMeasure = current?.path === undefined ? undefined : readMeasure(current.path, current.host);
+
+  if (operands[0] === undefined) {
+    if (current === undefined) {
+      return {
+        mode: "current", branch: undefined, measure: undefined, reason: describeMissingCurrent(env, lookups),
+        selection: undefined, note: undefined, candidates: [], excluded: [], isCurrent: true,
+      };
+    }
+    return {
+      mode: "current", branch: undefined, measure: currentMeasure,
+      reason: currentMeasure === undefined ? `API 呼び出しの記録がまだありません: ${current.path}` : undefined,
+      selection: `${current.variable} で特定した現在のセッション`, note: "現在のセッション",
+      candidates: [], excluded: [], isCurrent: true,
+    };
+  }
+
+  const phase = requirePhase(operands[0]);
+  const { config, cycle } = scopeFor(args, phase, operands[1]);
+  const branch = branchName(config.branch, phase, cycle);
+  const mainRoot = (await mainWorktreeRoot(config.repoRoot)) ?? config.repoRoot;
+  const roots = [...new Set([mainRoot, config.repoRoot, ...(await worktreePaths(config.repoRoot))])];
+  const found = collectBranchSessions(env, { roots, originUrl: await originUrl(config.repoRoot) }, branch, host);
+
+  const candidates: Candidate[] = found.measures.map((measure) => ({
+    measure,
+    branchCalls: measure.callsByBranch[branch] ?? 0,
+    current: currentMeasure !== undefined && resolve(measure.path) === resolve(currentMeasure.path),
+  }));
+  // Codex はセッション開始時のブランチしか記録しない。ビルドのブランチをセッションの中で
+  // 作った場合でも、いまそのブランチにいる現在のセッションは候補に入れる
+  if (
+    currentMeasure !== undefined &&
+    currentMeasure.kind === "main" &&
+    !candidates.some((c) => c.current) &&
+    currentBranch(config.repoRoot) === branch
+  ) {
+    candidates.push({ measure: currentMeasure, branchCalls: currentMeasure.callsByBranch[branch] ?? currentMeasure.calls, current: true });
+  }
+
+  const selected = selectMain(candidates);
+  if (selected === undefined) {
+    const hints = [`ブランチ ${branch} のセッションが見つかりません`];
+    if (lookups.length > 0 && current === undefined) hints.push(describeMissingCurrent(env, lookups));
+    return {
+      mode: "branch", branch, measure: undefined, reason: hints.join("。"), selection: SELECTION_RULE,
+      note: undefined, candidates, excluded: found.excluded, isCurrent: false,
+    };
+  }
+  const others = candidates.length - 1;
+  return {
+    mode: "branch", branch, measure: selected.measure, reason: undefined, selection: SELECTION_RULE,
+    note: `${selected.current ? "現在のセッション。" : ""}本体${others > 0 ? `。ほか ${others} 件` : ""}`,
+    candidates, excluded: found.excluded, isCurrent: selected.current,
+  };
+}
+
+register({
+  name: "bp session",
+  summary: "セッションのコンテキストのピークを、ホストの記録から実測する",
+  usage: "hikyaku bp session [<phase> [<cycle>]] [--transcript <path>] [--host claude|codex] [--markdown] [--json]",
+  details: [
+    "BP の妥当性を確かめるための目的変数（メインセッションのコンテキストの実測）を返します。",
+    "見積もりの算出には使いません。",
+    "",
+    "  peak         API 呼び出しごとのコンテキストの最大値",
+    "  first        最初の呼び出しのコンテキスト（開始時の固定分）",
+    "  latest       最後の呼び出しのコンテキスト",
+    "  calls        API 呼び出し回数",
+    "  outputTokens 出力トークンの合計",
+    "  compactions  コンパクションの回数",
+    "  window       コンテキストウィンドウ（Codex のみ。Claude Code は記録しないので null）",
+    "  model / host / hostVersion",
+    "",
+    "引数なしでは現在のセッションを測ります。Claude Code は CLAUDE_CODE_SESSION_ID、",
+    "Codex は CODEX_THREAD_ID でトランスクリプト（rollout）を特定します。",
+    "",
+    "<phase> [<cycle>] を渡すと、そのフェーズのブランチに対応付くセッションを集めて",
+    "本体を選びます（過去のビルドの集計や、PR レビュー対応で別のセッションから測るとき）。",
+    "1ビルドには、レビュー用の別プロセスや中断後の再開など複数のセッションがあるので、",
+    `「${SELECTION_RULE}」という規則で選び、`,
+    "どれを採ったかと他の候補を出力に出します。現在のセッションがそのブランチにいれば候補に入ります。",
+    "",
+    "  Claude Code  各行の gitBranch で対応付けます。サブエージェントは数えません",
+    "  Codex        session_meta の git.branch（開始時のブランチ）で対応付けます。",
+    "               サブエージェントと guardian（codex-auto-review）は対象外です",
+    "",
+    "記録の場所は CLAUDE_CONFIG_DIR（既定 ~/.claude）と CODEX_HOME（既定 ~/.codex）から引きます。",
+    "--transcript で記録のファイルを直接指定できます（形式は中身から判定し、--host で固定できます）。",
+    "",
+    "**読めない・見つからないときは推測せず「計測不可」とその理由を返します**（終了コードは 0）。",
+    "Codex のクラウドでは rollout が保存されないため計測できません。",
+    "",
+    "--markdown は retrospective.md の「セッションの実測」に貼る表を出します。",
+    "Hikyaku の版は、測ったのが現在のセッションのときだけ埋めます（過去のセッションの版は分からないため）。",
+  ].join("\n"),
+  run: async ({ args, operands }) => {
+    const result = await measureSession(args, operands);
+    const hikyakuVersion = result.isCurrent ? pluginVersion() : undefined;
+    const markdown = renderSessionMarkdown({
+      measure: result.measure,
+      reason: result.reason,
+      hikyakuVersion,
+      note: result.note,
+    });
+
+    emit(
+      {
+        measured: result.measure !== undefined,
+        reason: result.reason ?? null,
+        mode: result.mode,
+        branch: result.branch ?? null,
+        selection: result.selection ?? null,
+        session: result.measure === undefined ? null : sessionJson(result.measure),
+        candidates: result.candidates.map((c) => ({
+          path: c.measure.path,
+          sessionId: c.measure.sessionId ?? null,
+          host: c.measure.host,
+          branchCalls: c.branchCalls,
+          calls: c.measure.calls,
+          peak: c.measure.peak,
+          current: c.current,
+          selected: c.measure === result.measure,
+        })),
+        excluded: result.excluded.map((m) => ({ path: m.path, sessionId: m.sessionId ?? null, kind: m.kind })),
+        hikyakuVersion: hikyakuVersion ?? null,
+        markdown,
+      },
+      () => {
+        if (flagBoolean(args, "markdown")) return markdown;
+        const lines: string[] = [];
+        if (result.branch !== undefined) lines.push(`ブランチ     ${result.branch}`);
+        if (result.measure === undefined) {
+          lines.push(`計測不可: ${result.reason ?? "理由不明"}`);
+          return lines.join("\n");
+        }
+        const m = result.measure;
+        lines.push(
+          `セッション   ${m.path}`,
+          `選び方       ${result.selection ?? "—"}`,
+          "",
+          `ピーク          ${formatTokens(m.peak)}`,
+          `開始時の固定分  ${formatTokens(m.first)}`,
+          `最新            ${formatTokens(m.latest)}`,
+          `呼び出し回数    ${m.calls}`,
+          `出力トークン    ${formatTokens(m.outputTokens)}`,
+          `コンパクション  ${m.compactions}`,
+          `ウィンドウ      ${m.window === undefined ? "—（記録なし）" : formatTokens(m.window)}`,
+          `モデル          ${m.models.length > 1 ? `${m.model}（ほか ${m.models.filter((x) => x !== m.model).join(", ")}）` : (m.model ?? "—")}`,
+          `ホスト          ${hostLabel(m)}${m.client === undefined ? "" : `（${m.client}）`}`,
+          `Hikyaku         ${hikyakuVersion ?? "—（現在のセッションではないため不明）"}`,
+        );
+        if (result.candidates.length > 1) {
+          lines.push(
+            "",
+            table(
+              result.candidates.map((c) => [
+                c.measure === m ? "✓" : "",
+                (c.measure.sessionId ?? basename(c.measure.path)).slice(0, 8),
+                HOST_LABELS[c.measure.host],
+                String(c.branchCalls),
+                String(c.measure.calls),
+                formatTokens(c.measure.peak),
+                c.current ? "現在" : "",
+              ]),
+              ["本体", "セッション", "ホスト", "ブランチでの呼び出し", "総呼び出し", "ピーク", ""],
+            ),
+          );
+        }
+        if (result.excluded.length > 0) {
+          lines.push("", `対象外: ${result.excluded.map((e) => `${(e.sessionId ?? basename(e.path)).slice(0, 8)}（${e.kind}）`).join(", ")}`);
+        }
         return lines.join("\n");
       },
     );

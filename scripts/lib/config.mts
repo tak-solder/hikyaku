@@ -24,6 +24,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { type ActualPatterns, DEFAULT_ACTUAL_EXCLUDE, DEFAULT_ACTUAL_TESTS } from "./bp-actual.mts";
 import type { BranchNaming } from "./branch.mts";
 import {
   checkConductorAsks,
@@ -350,6 +351,8 @@ export interface ResolvedConfig {
   conductor: ConductorConfig;
   /** [data_integrity] — ビルドのマージで本番データを壊さないための宣言 */
   dataIntegrity: DataIntegrityConfig;
+  /** [bp_actual] — bp actual が数えない生成物と、テストとして分けるパス */
+  bpActual: ActualPatterns;
   /**
    * ルート設定の ask に並んでいて、まだ答えが記録されていないキー。
    * create-cycle が尋ねる対象。サイクルを重ねた結果ここに残っていれば、
@@ -897,6 +900,22 @@ function mergeTables(base: TomlTable, override: TomlTable): TomlTable {
   return out;
 }
 
+/**
+ * [bp_actual] を読む。配列は既定値を置き換える（足し合わせない）。
+ * 既定値に足したいときは、既定値（hikyaku config --json の bpActual）を写してから足す
+ */
+function readBpActual(table: TomlTable | undefined): ActualPatterns {
+  const where = "[bp_actual]";
+  const read = (key: string, fallback: string[]): string[] => {
+    const values = readStringArray(table, key, where) ?? fallback;
+    if (values.some((pattern) => pattern.trim() === "")) {
+      throw new HikyakuError(`${where}.${key} に空のパターンがあります`);
+    }
+    return values;
+  };
+  return { exclude: read("exclude", DEFAULT_ACTUAL_EXCLUDE), tests: read("tests", DEFAULT_ACTUAL_TESTS) };
+}
+
 function readDataIntegrity(table: TomlTable | undefined): DataIntegrityConfig {
   const where = "[data_integrity]";
   const releaseBranches = readStringArray(table, "release_branches", where) ?? [];
@@ -1134,6 +1153,7 @@ function finalize(
     },
     conductor: readConductor(readTable(merged, "conductor")),
     dataIntegrity: readDataIntegrity(readTable(merged, "data_integrity")),
+    bpActual: readBpActual(readTable(merged, "bp_actual")),
     askAtCreate,
     sources,
   };

@@ -289,6 +289,20 @@ allow_unsafe_split = false        # 安全でない分割を許すか。サイ�
 
 安全でない分割を使ったビルドの `issue.md` には、マージ時点で何が壊れうるかと、それを解消するビルドが書かれます（[ARCHITECT](../workflow/architect.md#ビルド分割)）。緩和したサイクルの base_branch を、全ビルドが揃う前にリリースされるブランチへマージしないでください。サイクルの外の操作なので、Hikyaku は防げません。
 
+## [bp_actual]
+
+```toml
+[bp_actual]
+exclude = ["package-lock.json", "*.lock", "**/__snapshots__/**", "*.snap", "*.generated.*"]
+tests = ["**/tests/**", "*.test.*", "*_test.*"]
+```
+
+振り返りで `hikyaku bp actual` が差分を数えるときの振り分けです。`exclude` に当たるファイルは生成物として数えず、`tests` に当たるファイルはテストとして、それ以外は実装として行数を分けます（[BP の基準表](bp-guide.md#実績の測り方)）。両方に当たるファイルは生成物として扱います。テストのスナップショットを数えないためです。
+
+パターンはリポジトリルートからのパスに当てる glob です。`/` を含まないパターン（`*.lock`）はファイル名に当て、どのディレクトリにあっても当たります。`/` を含むパターンはパス全体に当て、`**/` は0個以上のディレクトリ、`*` は `/` をまたがない任意の文字列、`?` は `/` 以外の1文字です。
+
+書いた配列は既定値を置き換えます。既定値に足したいときは、`hikyaku config --json` の `bpActual` に出る既定値を写してから足してください。既定の `exclude` は主要なロックファイル（`package-lock.json`・`pnpm-lock.yaml`・`*.lock`・`go.sum` など）、スナップショット（`__snapshots__/`・`*.snap`）、生成コードと圧縮済みの成果物（`*.generated.*`・`*.pb.go`・`*.min.js`・`*.map` など）です。既定の `tests` は `test/`・`tests/`・`__tests__/`・`spec/`・`e2e/` の配下と、`*.test.*`・`*.spec.*`・`*_test.*`・`test_*.py` です。
+
 ## [conductor]
 
 ```toml

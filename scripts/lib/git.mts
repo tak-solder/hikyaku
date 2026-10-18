@@ -13,7 +13,7 @@
 
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 const run = promisify(execFile);
@@ -409,24 +409,29 @@ export async function nearestAncestorBranch(
   return nearest?.branch;
 }
 
+export interface DiffFile {
+  /** リポジトリルートからの相対パス。リネームは移動先 */
+  path: string;
+  /** 行数を数えられないファイル（バイナリ）は undefined */
+  added: number | undefined;
+  deleted: number | undefined;
+  /** base に無く、このブランチで追加されたファイル */
+  isNew: boolean;
+}
+
 export interface DiffStats {
   /** 比較の起点（merge-base のコミット SHA） */
   mergeBase: string;
-  /** 差分に現れたファイル数（リネームは1件） */
-  changedFiles: number;
-  /** 新規追加されたファイル数 */
-  newFiles: number;
-  addedLines: number;
-  deletedLines: number;
-  /** 行数を数えられないファイル数（バイナリ）。addedLines には含まれない */
-  binaryFiles: number;
+  /** 差分に現れたファイル（リネームは1件） */
+  files: DiffFile[];
 }
 
 /**
- * base から HEAD までの差分を数える。
+ * base から HEAD までの差分を、ファイルごとに数える。
  *
  * BP の実績を測るために使う。**数えるのはここの仕事で、LLM の仕事ではない。**
  * 差分を目で見た概算は、見積もりと突き合わせる意味を失わせる。
+ * 生成物やテストの振り分けは呼び出し元（bp-actual.mts）が行う。
  *
  * `..HEAD` ではなく merge-base からの差分を見るのは、base 側が先に進んでいても
  * このブランチが加えた分だけを数えるため。
@@ -450,37 +455,71 @@ export async function diffStats(
 
   const pathspec = ["--", ".", ...excludePaths.map((path) => `:(exclude)${path}`)];
 
-  const numstat = await tryGit(cwd, ["diff", "--numstat", `${mergeBase}..${head}`, ...pathspec]);
+  // -z ではパスが引用符でくくられず、リネームも「移動元\0移動先」で分かれて出る
+  const numstat = await tryGit(cwd, ["diff", "--numstat", "-z", `${mergeBase}..${head}`, ...pathspec]);
   if (!numstat.ok) return undefined;
-
-  let changedFiles = 0;
-  let addedLines = 0;
-  let deletedLines = 0;
-  let binaryFiles = 0;
-
-  for (const line of numstat.stdout.split("\n")) {
-    if (line.trim() === "") continue;
-    const [added = "", deleted = ""] = line.split("\t");
-    changedFiles += 1;
-    // バイナリは "-\t-\t<path>"。0 として足すと「変更なし」に見えるので分けて数える
-    if (added === "-" || deleted === "-") {
-      binaryFiles += 1;
-      continue;
-    }
-    addedLines += Number.parseInt(added, 10) || 0;
-    deletedLines += Number.parseInt(deleted, 10) || 0;
-  }
 
   const created = await tryGit(cwd, [
     "diff",
     "--name-only",
+    "-z",
     "--diff-filter=A",
     `${mergeBase}..${head}`,
     ...pathspec,
   ]);
-  const newFiles = created.ok
-    ? created.stdout.split("\n").filter((line) => line.trim() !== "").length
-    : 0;
+  const newPaths = new Set(created.ok ? created.stdout.split("\0").filter((path) => path !== "") : []);
 
-  return { mergeBase, changedFiles, newFiles, addedLines, deletedLines, binaryFiles };
+  const files: DiffFile[] = [];
+  const fields = numstat.stdout.split("\0");
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index] as string;
+    if (field.trim() === "") continue;
+    const [added = "", deleted = "", inline = ""] = field.split("\t");
+    let path = inline;
+    if (path === "") {
+      // リネーム・コピー: 次の2フィールドが移動元と移動先
+      path = fields[index + 2] ?? "";
+      index += 2;
+    }
+    // バイナリは "-\t-"。0 として足すと「変更なし」に見えるので undefined で分ける
+    const binary = added === "-" || deleted === "-";
+    files.push({
+      path,
+      added: binary ? undefined : Number.parseInt(added, 10) || 0,
+      deleted: binary ? undefined : Number.parseInt(deleted, 10) || 0,
+      isNew: newPaths.has(path),
+    });
+  }
+
+  return { mergeBase, files };
+}
+
+/**
+ * メインの作業ツリーのルート（worktree からでも、共有の .git の親）。
+ * セッションの記録は作業ツリーごとのディレクトリに分かれるので、探す範囲を決めるのに使う
+ */
+export async function mainWorktreeRoot(cwd: string): Promise<string | undefined> {
+  const result = await tryGit(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  if (!result.ok) return undefined;
+  const common = result.stdout.trim();
+  return common === "" ? undefined : dirname(common);
+}
+
+/** いま登録されている worktree のパス（メインを含む） */
+export async function worktreePaths(cwd: string): Promise<string[]> {
+  const result = await tryGit(cwd, ["worktree", "list", "--porcelain"]);
+  if (!result.ok) return [];
+  return result.stdout
+    .split("\n")
+    .filter((line) => line.startsWith("worktree "))
+    .map((line) => line.slice("worktree ".length).trim())
+    .filter((path) => path !== "");
+}
+
+/** origin の URL。無ければ undefined */
+export async function originUrl(cwd: string): Promise<string | undefined> {
+  const result = await tryGit(cwd, ["remote", "get-url", "origin"]);
+  if (!result.ok) return undefined;
+  const url = result.stdout.trim();
+  return url === "" ? undefined : url;
 }
