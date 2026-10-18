@@ -81,6 +81,7 @@ export const ASKS: AskDefinition[] = [
   { id: "questions", category: "spec", where: "architect / builder: 質問ループ" },
   { id: "adr-status", category: "spec", where: "architect / close-cycle: ADR に status 欄が無い" },
   { id: "design-conflict", category: "spec", where: "builder: 設計どおりでは要件を満たせない" },
+  { id: "unsafe-split", category: "spec", where: "build-manager: データ安全を保つ分割が見つからない" },
   { id: "review-findings", category: "spec", where: "builder: コードレビュー指摘への対応" },
   { id: "retry-limit", category: "failure", where: "builder: リトライの上限に達した" },
   { id: "abandon", category: "abandon", where: "close-cycle: 未完了のまま締める" },

@@ -28,6 +28,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Claude Code 利用者の操作は変わらない。従来の `/hikyaku:...` と `skills/`・`agents/` の手順は維持する
 - Codex 利用者は `codex plugin marketplace add tak-solder/hikyaku@codex-plugin` でマーケットプレイスを追加し、プラグインをインストールする。`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要。Codex では各フェーズを個別に実行し、conductor は Claude Code で使う
 
+## [2.8.0]
+
+### Added
+
+- **`[data_integrity]` 設定**: `release_branches`（リリースされるブランチの glob。ルート設定のみ。デフォルトブランチは暗黙に含まれる）と `allow_unsafe_split`（既定 `false`。サイクル設定で上書き可）を追加した。`hikyaku config --json` の `unsafeSplit` が、安全でない分割を許すかを返す。許すのは `allow_unsafe_split = true` で、base_branch がリリースされるブランチに一致せず、デフォルトブランチ（`origin/HEAD`）を特定できるときだけ（[#65](https://github.com/tak-solder/hikyaku/issues/65)）
+- **`hikyaku validate` の検査**: issue.md の「マージ時点で残る危険」について、そのサイクルで安全でない分割が許されているか、「解消するビルド: build-NN」が書かれ、実在し、そのビルドに依存しているかを検査する
+- **問い `unsafe-split`**: build-manager が、BP の上限を超えるのにマージ時点のデータ安全を保つ分割を見つけられないときに尋ねる。conductor では既定で監督が答え、上限を超えたまま1ビルドにまとめる側を選ぶ
+
+### Changed
+
+- architect / build-manager / builder: 各ビルドは、PR をマージした時点で既存機能に影響せず、本番データが壊れたり不整合を起こしたりしない単位に分割・実装することを原則にした。design-delta.md にはデータの形を変える設計の移行の段階を書き、builder は plan.md の非機能要件に「マージ時点のデータ安全」の根拠を書いて、コードレビュー前に差分と突き合わせる
+- build-manager: BP 6〜8 で分割せずに許容する理由に「分割するとマージ時点でデータの安全を保てない」を加えた。issue.md のテンプレートに「マージ時点で残る危険」の節（安全でない分割を使ったビルドだけ）を加えた
+- doc-reviewer: `context: tasklist` と `context: plan` で、マージ時点のデータ安全の不備を報告するようにした
+
+### Migration
+
+- 既定では緩和されないので、設定を書かなければ全サイクルで原則（マージ時点で本番データを壊さない分割）が適用される
+- `feature/*` のようなまだリリースしないブランチを base_branch にするサイクルで中間状態を許したいときは、そのサイクルの `.hikyaku.config` に `[data_integrity] allow_unsafe_split = true` を書く。デフォルトブランチ以外にもリリースされるブランチ（`release/*` など）があれば、ルートの `.hikyaku.config` の `[data_integrity] release_branches` に書く
+- `origin/HEAD` が無いクローンでは緩和されない。`git remote set-head origin --auto` で設定する
+
 ## [2.7.0]
 
 ### Added
