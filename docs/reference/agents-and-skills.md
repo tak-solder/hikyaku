@@ -39,25 +39,34 @@ architect のビルド分割ステップと、builder の実装中にスコー�
 | `code-explorer` | architect | 既存コード調査。`overview` が渡されると差分調査に切り替わる |
 | `code-architect` | architect | 指定観点（Minimal / Clean / Pragmatic など）の単一設計案を返す |
 | `doc-reviewer` | planner / architect / build-manager / builder | 中間成果物の整合性・網羅性・曖昧さを証拠ベースで報告する |
-| `code-reviewer` | builder | スコープ・規約・バグ・冗長性を証拠ベースで報告する |
-| `security-reviewer` | builder | OWASP 系のセキュリティ指摘 |
 
 `code-explorer` が返す Key Files は本セッション自身が読みます。要約だけで設計を進めると、規約やインターフェースの解像度が落ちるためです。
 
 `doc-reviewer` は渡された context（`user-stories` / `architecture` / `tasklist` / `plan` / `test-spec`）に応じて観点を切り替えます。architecture と plan ではセキュリティ設計の考慮漏れも見ます。tasklist は BP見積もりの妥当性と分割の網羅性が対象で、tasklist.md・issue.md がまだファイルに書き込まれていない段階でレビューするため、build-manager が内容をプロンプトへ直接渡します。plan と test-spec はそれぞれの成果物の完成直後にレビューされ、`plan` は plan.md 作成直後、`test-spec` は test-spec.md 作成後という位置は、どのプロファイルでも変わりません。plan は受け入れ基準の網羅とスコープ逸脱に加えて、plan.md に書かれた BP 見積もりの入力値の妥当性も見ます（tasklist は issue.md のスコープ記述から、plan は実装計画から、それぞれ内訳表の入力値が記述と合っているかを見ます。表への当てはめはコマンドが行うので対象外です）。test-spec は plan.md・issue.md に対するテストシナリオの網羅性が対象です。
 
-`code-reviewer` と `security-reviewer` は並列で起動し、指摘は統合されます。同じ箇所への重複は1件に束ねられ、セキュリティの指摘が優先されます。担当が分かれているので、`code-reviewer` はセキュリティ観点を扱いません。
+`doc-reviewer` は `[review.doc]` で別のプロバイダを選んだときだけ、定義の本文を指示文にして `claude -p` か `codex exec` で起動されます（[.hikyaku.config](../configuration/config-file.md#review)）。
+
+## コードとセキュリティのレビュー
+
+builder のコードレビューとセキュリティレビューは、Hikyaku のエージェントではなく、Claude Code と Codex に組み込みのレビュー機能が行います。起動は `hikyaku review run` が受け持ち、2つのレビューは並列に動いて、指摘は builder が統合します。同じ箇所への重複は1件に束ねられ、セキュリティの指摘が優先されます。
+
+| レビュー | Claude | Codex |
+|---|---|---|
+| コード | `/code-review` | `codex exec review --base` |
+| セキュリティ | `/security-review`。スタックしたビルドなどでは観点の指示文 | 観点の指示文を渡した `codex exec review` |
+
+セキュリティの観点の指示文は `skills/builder/references/security-review.md` にあります。plan.md のスコープから外れていないかは、組み込みのレビュー機能に指示文を渡せないため、builder 自身が確かめます。
 
 ## プロファイルとの対応
 
-| エージェント | express | economy | standard | thorough |
+| エージェント・レビュー | express | economy | standard | thorough |
 |---|---|---|---|---|
 | `cycle-scanner` | 他サイクルがあれば起動 | 同左 | 同左 | 同左 |
 | `code-explorer` | 既存コードがあれば起動 | 同左 | 同左 | 同左 |
 | `code-architect` | 分岐がある判断で起動 | 同左 | 同左 | 同左 |
 | `doc-reviewer` | ✓ | ✗ | ✓ | ✓ |
-| `code-reviewer` | ✓ | ✓ | ✓ | ✓ |
-| `security-reviewer` | 推奨時のみ確認 | 推奨時のみ確認 | 推奨時のみ確認 | 常に起動 |
+| コードレビュー | ✓ | ✓ | ✓ | ✓ |
+| セキュリティレビュー | 推奨時のみ確認 | 推奨時のみ確認 | 推奨時のみ確認 | 常に起動 |
 | `retrospective`（内部スキル） | auto | skip | auto | auto |
 
 economy が省くのは `doc-reviewer` と `retrospective` です。調査系（`cycle-scanner` / `code-explorer` / `code-architect`）は成果物の生成に必要なので、どのプロファイルでも起動します。express が承認を省いても品質が落ちないのは、`doc-reviewer` が全フェーズで動いているからです。

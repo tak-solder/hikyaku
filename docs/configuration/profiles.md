@@ -45,6 +45,7 @@ express は「要件（G1）と実装直前（G8）だけ人間が見て、そ�
 | test_spec_review | ✓ | ✗ | ✓ | ✓ |
 | code_review | ✓ | ✓ | ✓ | ✓ |
 | security_review | 推奨時のみ確認 | 推奨時のみ確認 | 推奨時のみ確認 | on |
+| code / security の max_rounds | 1 | 1 | 2 | 3 |
 | retrospective | auto | skip | auto | auto |
 | validate | 手動のみ | 手動のみ | 各フェーズ末 | 各ステップ |
 
@@ -54,9 +55,11 @@ express は「要件（G1）と実装直前（G8）だけ人間が見て、そ�
 
 `security_review` もどのプロファイルでも `off` にはしません。「承認を減らしたから」「実行コストを削ったから」で落としてよい観点ではないためです。既定は `recommended`（判定基準に該当したときだけ起動を確認）で、thorough だけが該当判定を挟まず `on` です。明示的に切りたい場合は `security_review = "off"` で上書きできます。
 
+`max_rounds` はコードとセキュリティのレビューを何回まで回すかの既定値で、`[review]` で上書きできます（[設定](config-file.md#review)）。thorough ほど多いのは、チェックポイントを細かくする方針と同じで、指摘を直したあとにもう一度確かめる機会を増やすためです。
+
 `retrospective` を economy だけ `skip` にしているのは、振り返りがサブエージェントの実行コストそのものだからです。承認を省く express では逆に、改善の材料をセッション内から自動で拾い上げる必要があります。
 
-各レビューを担うエージェントは [内部スキルとエージェント](../reference/agents-and-skills.md) にまとめてあります。
+各レビューを担うものは [内部スキルとエージェント](../reference/agents-and-skills.md) にまとめてあります。
 
 ## 選び方
 

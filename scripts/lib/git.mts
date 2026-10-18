@@ -98,6 +98,17 @@ function resolveGitDir(repoRootPath: string): string | undefined {
   return isAbsolute(pointer) ? pointer : resolve(repoRootPath, pointer);
 }
 
+/**
+ * .git の中のパス（git rev-parse --git-path）。worktree ではその worktree 固有の場所になる。
+ * コミットしない作業ファイル（レビューの生の出力など）を置くのに使う
+ */
+export async function gitPath(cwd: string, path: string): Promise<string | undefined> {
+  const result = await tryGit(cwd, ["rev-parse", "--git-path", path]);
+  if (!result.ok) return undefined;
+  const value = result.stdout.trim();
+  return value === "" ? undefined : resolve(cwd, value);
+}
+
 /** パスが git の管理下にあるか（.hikyaku.local の取り違え検出に使う） */
 export async function isTracked(cwd: string, path: string): Promise<boolean> {
   const result = await tryGit(cwd, ["ls-files", "--error-unmatch", "--", path], 10_000);

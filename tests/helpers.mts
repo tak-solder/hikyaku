@@ -22,6 +22,10 @@ export function testEnvironment(): NodeJS.ProcessEnv {
   for (const key of Object.keys(env)) {
     if (key.startsWith("GIT_") && key !== "GIT_CONFIG_GLOBAL" && key !== "GIT_CONFIG_NOSYSTEM") delete env[key];
   }
+  // 開発者のシェルのレビュー設定をテストに持ち込まない
+  delete env["HIKYAKU_REVIEW_PROVIDER"];
+  delete env["CLAUDE_CODE_REMOTE"];
+  delete env["CODEX_ENVIRONMENT_ID"];
   return env;
 }
 

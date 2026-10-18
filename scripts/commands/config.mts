@@ -1,7 +1,7 @@
 /** config — 解決済みの設定を出力する */
 
 import { flagString } from "../lib/args.mts";
-import { loadConfig } from "../lib/config.mts";
+import { describeProviderRules, loadConfig } from "../lib/config.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { describeSource, openCycleIfAny } from "../lib/workspace.mts";
@@ -72,6 +72,19 @@ register({
         `  security_review      ${config.reviews.security}`,
         `  retrospective        ${config.reviews.retrospective}`,
         `  validate             ${config.reviews.validate}`,
+        "",
+        `[review]（timeout ${config.review.timeoutMinutes} 分）:`,
+        ...(["code", "security", "doc"] as const).map((kind) => {
+          const settings = config.review[kind];
+          const rounds = kind === "doc" ? "" : `  回数 ${settings.maxRounds === 0 ? "無制限" : settings.maxRounds}${settings.autoFix ? "（auto_fix）" : ""}`;
+          const models = (["claude", "codex"] as const)
+            .map((provider) => {
+              const { model, effort } = settings.models[provider];
+              return model === undefined && effort === undefined ? "" : `  ${provider}: ${[model, effort].filter(Boolean).join(" / ")}`;
+            })
+            .join("");
+          return `  ${kind.padEnd(9)}${describeProviderRules(settings.providers)}${rounds}${models}`;
+        }),
         "",
         `branch       ${config.branch.prefix}${config.branch.separator}{cycle}${config.branch.separator}{phase}`,
         `pr.title     ${config.pr.title}`,
