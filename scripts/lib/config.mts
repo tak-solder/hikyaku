@@ -454,7 +454,9 @@ function readConductor(table: TomlTable | undefined): ConductorConfig {
   if (budget < 0) {
     throw new HikyakuError(`${where}.budget_per_run は 0 以上で指定してください（0 は上限なし）`);
   }
+  const provider = checkEnum(readString(table, "provider", where), ["claude", "codex"] as const, `${where}.provider`) ?? DEFAULT_CONDUCTOR.provider;
   const conductor: ConductorConfig = {
+    provider,
     escalate: readStringArray(table, "escalate", where) ?? DEFAULT_CONDUCTOR.escalate,
     delegate: readStringArray(table, "delegate", where) ?? DEFAULT_CONDUCTOR.delegate,
     allowedTools: readStringArray(table, "allowed_tools", where) ?? DEFAULT_CONDUCTOR.allowedTools,
@@ -465,6 +467,9 @@ function readConductor(table: TomlTable | undefined): ConductorConfig {
     model: readModel(table, "model", where),
     models: readConductorModels(readConductorModelsTable(table, where)),
   };
+  if (provider === "codex" && (conductor.allowedTools.length > 0 || budget > 0)) {
+    throw new HikyakuError(`${where}: codex では allowed_tools と budget_per_run は使えません（空配列・0 にしてください）`);
+  }
   checkConductorAsks(conductor, where);
   return conductor;
 }

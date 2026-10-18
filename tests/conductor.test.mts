@@ -14,6 +14,7 @@ import {
   lintTags,
   parseFinalText,
   parseResultJson,
+  parseCodexResult,
   resolveAllAsks,
   resolveAsk,
   settingsDigest,
@@ -1145,4 +1146,115 @@ test("CLI: pr request-reviewers は Copilot が GraphQL 上で依頼済みなら
   assert.deepEqual(output.request, []);
   assert.deepEqual(output.excluded, [{ reviewer: "@copilot", reason: "依頼済み" }]);
   assert.equal(gh.calls().some((call) => call.startsWith("pr edit")), false);
+});
+
+function codexEvents(...events: Record<string, unknown>[]): string {
+  return events.map((event) => JSON.stringify(event)).join("\n") + "\n";
+}
+
+function codexResult(text: string): string {
+  return codexEvents(
+    { type: "thread.started", thread_id: "codex-thread-1" },
+    { type: "turn.started" },
+    { type: "item.completed", item: { type: "agent_message", text } },
+    { type: "turn.completed", usage: { input_tokens: 20, output_tokens: 10 } },
+  );
+}
+
+test("conductor: Codex の JSONL から最終メッセージと thread_id を取り出す", () => {
+  const parsed = parseCodexResult(codexResult('<hikyaku-gate id="G8">\n承認しますか\n</hikyaku-gate>'));
+  assert.equal(parsed.outcome, "gate");
+  assert.equal(parsed.id, "G8");
+  assert.equal(parsed.sessionId, "codex-thread-1");
+  assert.equal(parsed.costUsd, null);
+  assert.equal(parseCodexResult(codexResult("自由文だけ")).outcome, "violation");
+});
+
+test("conductor: Codex の途中終了・失敗・壊れた JSONL は done と扱わない", () => {
+  const done = '<hikyaku-done next="">\n完了\n</hikyaku-done>';
+  const complete = codexResult(done);
+  for (const raw of [
+    "", "null", "[]", complete + "broken", complete.replace(/.*turn.completed.*\n/, ""),
+    complete.replace(/.*thread.started.*\n/, ""),
+    complete + codexEvents({ type: "turn.failed", error: { message: "利用上限" } }),
+    complete + codexEvents({ type: "error", message: "接続失敗" }),
+    complete + codexEvents({ type: "turn.started" }),
+  ]) assert.equal(parseCodexResult(raw).outcome, "error", raw);
+  assert.match(parseCodexResult(complete + codexEvents({ type: "turn.failed", error: { message: "利用上限" } })).reason ?? "", /利用上限/);
+});
+
+test("CLI: Codex 子は規約・入口を読み、初回 ID は parse から取得して同じ設定で再開する", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[conductor]\nprovider = "codex"\nmodel = "codex-model"\n');
+  const agreed = digest(directory);
+  const asks = JSON.parse(succeeds(directory, "conductor", "asks", "001", "--json"));
+  assert.equal(asks.provider, "codex");
+  assert.equal(asks.sandbox, "workspace-write");
+  assert.deepEqual(asks.allowedTools, []);
+  const before = snapshot(directory);
+  const launch = JSON.parse(succeeds(directory, "conductor", "launch", "architect", "001", "--expect-digest", agreed, "--out", "result.jsonl", "--json"));
+  assert.equal(launch.provider, "codex");
+  assert.equal(launch.sessionId, null);
+  assert.equal(launch.argv[0], "codex");
+  assert.equal(launch.argv[1], "exec");
+  assert.ok(launch.argv.includes('--json'));
+  assert.ok(launch.argv.includes('approval_policy="never"'));
+  assert.ok(launch.argv.includes('sandbox_mode="workspace-write"'));
+  assert.equal(launch.argv[launch.argv.indexOf("--model") + 1], "codex-model");
+  assert.match(launch.argv.at(-1), /非対話規約/);
+  assert.ok(launch.argv.at(-1).includes(join(pluginRoot(), "codex/skills/architect/SKILL.md")));
+  assert.match(launch.argv.at(-1), /hikyaku:architect 001-test/);
+  assert.ok(!launch.argv.includes("--allowedTools"));
+  assert.ok(!launch.argv.includes("--dangerously-bypass-approvals-and-sandbox"));
+  assert.deepEqual(snapshot(directory), before);
+  write(directory, "result.jsonl", codexResult('<hikyaku-gate id="G8">\n承認しますか\n</hikyaku-gate>'));
+  const parsed = JSON.parse(succeeds(directory, "conductor", "parse", "result.jsonl", "001", "--expect-digest", agreed, "--json"));
+  assert.equal(parsed.outcome, "gate");
+  assert.equal(parsed.ask.handler, "supervisor");
+  write(directory, "answer.md", "回答（委任された判断）: 承認 'quoted' $value\n");
+  const resumed = JSON.parse(succeeds(directory, "conductor", "launch", "architect", "001", "--resume", parsed.sessionId, "--message", "answer.md", "--expect-digest", agreed, "--json"));
+  assert.deepEqual(resumed.argv.slice(0, 3), ["codex", "exec", "resume"]);
+  assert.equal(resumed.sessionId, "codex-thread-1");
+  assert.ok(resumed.argv.includes('approval_policy="never"'));
+  assert.ok(resumed.argv.includes('sandbox_mode="workspace-write"'));
+  assert.equal(resumed.argv.at(-2), parsed.sessionId);
+  assert.match(resumed.argv.at(-1), /回答（委任された判断）: 承認 'quoted' \$value/);
+  // POSIX shell を通してもプロンプトの引用符・$・改行が保持される
+  const bin = join(directory, "bin");
+  mkdirSync(bin);
+  const executable = join(bin, "codex");
+  writeFileSync(executable, '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify(process.argv.slice(2)))\n');
+  chmodSync(executable, 0o755);
+  const command = spawnSync("sh", ["-c", resumed.command], {
+    cwd: directory, encoding: "utf8", env: { ...testEnvironment(), PATH: `${bin}:${process.env["PATH"] ?? ""}` }, timeout: 10_000,
+  });
+  assert.equal(command.status, 0, command.stderr);
+  assert.deepEqual(JSON.parse(readFileSync(resumed.resultFile, "utf8")), resumed.argv.slice(1));
+  rmSync(resumed.resultFile);
+});
+
+for (const [config, pattern] of [
+  ['provider = "unknown"', /provider/],
+  ['provider = "codex"\nallowed_tools = ["Bash(npm test:*)"]', /allowed_tools/],
+  ['provider = "codex"\nbudget_per_run = 1', /budget_per_run/],
+] as const) {
+  test(`CLI: conductor の非対応設定を拒否する: ${config}`, (t) => {
+    const directory = workspace(t, true);
+    write(directory, ".hikyaku.config", `hikyaku_root = "docs/hikyaku"\n[conductor]\n${config}\n`);
+    const output = cli(directory, "conductor", "asks", "001");
+    assert.equal(output.status, 1);
+    assert.match(output.stderr, pattern);
+  });
+}
+
+test("CLI: 子の provider が変われば合意済み digest で launch / parse できない", (t) => {
+  const directory = workspace(t, true);
+  const agreed = digest(directory);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[conductor]\nprovider = "codex"\n');
+  write(directory, "result.jsonl", codexResult('<hikyaku-done next="">\n完了\n</hikyaku-done>'));
+  for (const args of [["launch", "architect", "001"], ["parse", "result.jsonl", "001"]]) {
+    const output = cli(directory, "conductor", ...args, "--expect-digest", agreed);
+    assert.equal(output.status, 1);
+    assert.match(output.stderr, /変わ|変化|一致/);
+  }
 });

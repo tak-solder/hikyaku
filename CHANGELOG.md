@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- conductor の子セッションを `[conductor] provider = "codex"` で Codex CLI に切り替え可能にした。非対話規約、JSONL の結果解析と thread_id による再開に対応する。既定は Claude のまま。Codex では `allowed_tools` は空配列、`budget_per_run` は 0 のみ受け付ける
+
 - Codex 用の `.codex-plugin/plugin.json`、`.agents/plugins/marketplace.json`、`codex/skills/*/SKILL.md` を追加した。Codex では専用入口から従来の Hikyaku 手順を読み、パス・引数・内部スキル・エージェント委任の表記を Codex の機能に読み替える
 - `codex/compatibility.md` に Codex での実行規約を追加し、`docs/getting-started-codex.md` に導入と起動方法を記載した
 
@@ -22,6 +24,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Claude Code 用の全10スキルと Codex 用の全9スキルから、フロントマターの `metadata`（`repository` / `version`）を削除した。バージョンは各プラグインのマニフェストに集約し、Claude Code 用・Codex 用の両マニフェストを 2.4.2 に更新した。開発ルールと CI もスキル内のバージョンを要求しない形に揃えた
 
 ### Migration
+
+- Codex を子に使う場合は CLI のインストールと認証を済ませ、`provider = "codex"` を設定する。`workspace-write`・承認なしでテストや git・gh を実行できる環境が必要。監督自体は引き続き Claude Code で実行する
 
 - `SKILL.md` の `metadata.version` を参照する独自ツールは、対象ホストの `.claude-plugin/plugin.json` または `.codex-plugin/plugin.json` の `version` を参照するよう変更する
 - 対応は不要。`/hikyaku:...` での起動は従来どおり使える。Hikyaku ワークフローの実行中は、AI が次のスキルを自分で呼び出すことがある

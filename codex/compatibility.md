@@ -11,7 +11,7 @@
 7. 元のスキルの `user-invocable`、`argument-hint` は Claude Code 固有の起動設定である。Codex では各入口の `description` と、このファイルの「内部手順は呼び出し元からのみ実行する」という条件を使う。利用者から依頼されていない次のフェーズを自動開始しない。
 8. 元の手順の `hikyaku review resolve` / `review run` に付いた `--self claude` は `--self codex` に読み替える。これは `[review]` の `provider = "auto"` と `provider_for` を、メインのセッションのプロバイダで解決するための値である。`review run` は `claude -p` や `codex exec` を別プロセスとして起動し、ネットワークに接続する。サンドボックスに阻まれたら、承認を得てサンドボックスの外で実行し直す。失敗（終了コード 1）は指摘0件として扱わない。`run_in_background` の指示は、Codex で同等の機能が無ければ通常の実行に読み替える。
 
-conductor は Claude Code 専用で、Codex 用入口はない。`/hikyaku:conductor` の案内は `$hikyaku:conductor` に読み替えず、Codex では architect / builder / close-cycle を個別のセッションで実行するよう案内する。`conductor launch` が生成する `claude -p` のコマンドを Codex の子セッションに置き換えて実行しない。通常の対話実行では、問いの ID（`ask:` / `G8` 等）は識別子として扱い、conductor の非対話規約や承認の委任は適用しない。
+conductor は Claude Code 専用で、Codex 用入口はない。`/hikyaku:conductor` の案内は `$hikyaku:conductor` に読み替えず、Codex では architect / builder / close-cycle を個別のセッションで実行するよう案内する。Claude Code の監督から Codex を子として使う場合は、`[conductor] provider = "codex"` に設定し、`conductor launch` が生成するコマンドを使う。この場合はプロンプトに渡された非対話規約を適用し、質問ツールを使わず gate を出して終了する。監督が回答した箇所から再開し、監督が委任したフェーズを実行する（上の 7 の自動開始制限は通常の対話実行に適用する）。通常の対話実行では、問いの ID（`ask:` / `G8` 等）は識別子として扱い、conductor の非対話規約や承認の委任は適用しない。
 
 PR 作成後の `pr request-reviewers` も元の手順どおり実行し、失敗した場合は作成済み PR と失敗内容を利用者に伝える。
 
