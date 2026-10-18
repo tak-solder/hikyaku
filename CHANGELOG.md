@@ -28,6 +28,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Claude Code 利用者の操作は変わらない。従来の `/hikyaku:...` と `skills/`・`agents/` の手順は維持する
 - Codex 利用者は `codex plugin marketplace add tak-solder/hikyaku@codex-plugin` でマーケットプレイスを追加し、プラグインをインストールする。`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要。Codex では各フェーズを個別に実行し、conductor は Claude Code で使う
 
+## [2.8.1]
+
+### Changed
+
+- **tasklist.md の依存グラフ**: `hikyaku tasklist` が生成する Mermaid グラフに推移的簡約をかけ、他の依存を経由して到達できる線（`b01 → b02 → b03` があるときの `b01 → b03`）を描かないようにした。到達可能性は変わらず、線だけが減る。`dependencies` 列、着手可否の判定、handoff の参照は従来どおり宣言された直接の依存を使う。循環があるあいだは簡約せず、宣言された線をそのまま描く（`validate` が循環を報告する）。build-manager のスキルとテンプレートの記述を合わせた
+
+### Migration
+
+- 対応は不要。既存の tasklist.md は、次に `hikyaku tasklist add / update / done` で書き込まれたときにグラフが簡約された形へ再生成される
+
 ## [2.8.0]
 
 ### Added

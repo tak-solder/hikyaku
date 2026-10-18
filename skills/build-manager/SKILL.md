@@ -191,7 +191,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate {cycle}
 - ディレクトリ名はゼロ埋め2桁（buildID 3 → `build-03`）
 
 ### 依存グラフ
-- `tasklist.md` の dependencies 列と Mermaid グラフはスクリプトが常に一致させる
+- `tasklist.md` の dependencies 列と Mermaid グラフはスクリプトが常に一致させる。dependencies 列には直接の依存をそのまま書き、グラフはスクリプトが推移的簡約をかけて描く（`b01 → b02 → b03` があれば `b01 → b03` は描かない）。そのため、グラフの線を見て dependencies 列を書き換えない
 - 循環依存の検証もスクリプトが行う。検出された場合は書き込まれない
 
 ### マージ時点のデータ安全
