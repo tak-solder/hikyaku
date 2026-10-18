@@ -65,7 +65,7 @@ PLAN を終えたら、サイクルを指定して起動します。
 |---|---|---|
 | 確認ゲート・経路の判断 | G3 / G4、`branch`、`overlap` | 監督 |
 | 同意ゲート | G6 / G8 / G10 | 監督（起動時の確認で委任される） |
-| 仕様の確認 | `questions`、`design-conflict`、`review-findings` | 監督 |
+| 仕様の確認 | `questions`、`design-conflict`、`unsafe-split`、`review-findings` | 監督 |
 | 障害 | `retry-limit` | 人間 |
 | サイクルの中止・分類できない問い | `abandon`、`other` | 常に人間 |
 

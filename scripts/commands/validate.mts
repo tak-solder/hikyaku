@@ -18,6 +18,7 @@ import { loadConfig } from "../lib/config.mts";
 import { cycleDir, cycleDirName, loadCycles } from "../lib/cycles.mts";
 import { loadGuide, validateGuide } from "../lib/docs.mts";
 import { HikyakuError, ValidationError } from "../lib/errors.mts";
+import { ISSUE_UNSAFE_HEADING, RESOLVED_BY_LABEL, resolveUnsafeSplit, validateUnsafeSplits } from "../lib/integrity.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { buildDirName, loadTasklist, validateGraph } from "../lib/tasklist.mts";
@@ -49,6 +50,9 @@ register({
     "  - user-stories.md の受け入れ基準に番号（US-N.M）があれば、番号が重複していないか、",
     `    issue.md の「${ISSUE_CRITERIA_HEADING}」が存在しない番号を参照していないか、`,
     "    どのビルドにも割り当てられていない受け入れ基準が無いか",
+    `  - issue.md に「${ISSUE_UNSAFE_HEADING}」があれば、そのサイクルで安全でない分割が許されているか、`,
+    `    「${RESOLVED_BY_LABEL}」のビルドが実在し、そのビルドに依存しているか`,
+    "    （デフォルトブランチが分からない環境では、許されているかの検査だけを省きます）",
     "",
     "スキル内の検証は Hikyaku が書いたものしか見ませんが、これを CI から",
     "呼べば人間が手で編集した内容の不整合も拾えます。",
@@ -137,6 +141,8 @@ register({
         issues.push({ id: build.id, text: readFileSync(issuePath, "utf8") });
       }
 
+      problems.push(...validateCycleUnsafeSplits(config.hikyakuRoot, directory, name, builds, issues));
+
       const storiesPath = join(directory, "planning", "user-stories.md");
       if (existsSync(storiesPath)) {
         const defined = definedCriteria(readFileSync(storiesPath, "utf8"));
@@ -168,6 +174,28 @@ register({
     }
   },
 });
+
+/** サイクル設定を重ねて安全でない分割の可否を決め、issue.md の記録を検査する */
+function validateCycleUnsafeSplits(
+  hikyakuRoot: string,
+  directory: string,
+  name: string,
+  builds: ReturnType<typeof loadTasklist>,
+  issues: TraceabilityIssue[],
+): Problem[] {
+  let cycleConfig;
+  try {
+    cycleConfig = loadConfig({ root: hikyakuRoot, cycleDir: directory });
+  } catch (error) {
+    if (!(error instanceof HikyakuError)) throw error;
+    return [{ scope: `${name}/.hikyaku.config`, message: error.message }];
+  }
+  const decision = resolveUnsafeSplit(cycleConfig);
+  return validateUnsafeSplits(builds, issues, decision).map((problem) => ({
+    scope: `${name}/${buildDirName(problem.build)}`,
+    message: problem.message,
+  }));
+}
 
 /**
  * bp-guide/ の整合性。無いのは問題ではない（既定値で動く）が、あって壊れているのは

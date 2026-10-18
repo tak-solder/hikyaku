@@ -348,6 +348,8 @@ export interface ResolvedConfig {
   review: ReviewSettings;
   external: { target: ExternalTarget; githubRepo?: string; asanaProjectGid?: string };
   conductor: ConductorConfig;
+  /** [data_integrity] — ビルドのマージで本番データを壊さないための宣言 */
+  dataIntegrity: DataIntegrityConfig;
   /**
    * ルート設定の ask に並んでいて、まだ答えが記録されていないキー。
    * create-cycle が尋ねる対象。サイクルを重ねた結果ここに残っていれば、
@@ -356,6 +358,16 @@ export interface ResolvedConfig {
   askAtCreate: AskKey[];
   /** 読み込んだ設定ファイルのパス（デバッグ用） */
   sources: string[];
+}
+
+export interface DataIntegrityConfig {
+  /**
+   * リリースされるブランチのパターン（glob）。ルート設定でのみ宣言できる。
+   * デフォルトブランチは書かなくても暗黙に含まれる（判定は integrity.mts）
+   */
+  releaseBranches: string[];
+  /** マージ時点で本番データの安全を保てないビルド分割を許すか。既定は false */
+  allowUnsafeSplit: boolean;
 }
 
 export interface LoadOptions {
@@ -885,6 +897,18 @@ function mergeTables(base: TomlTable, override: TomlTable): TomlTable {
   return out;
 }
 
+function readDataIntegrity(table: TomlTable | undefined): DataIntegrityConfig {
+  const where = "[data_integrity]";
+  const releaseBranches = readStringArray(table, "release_branches", where) ?? [];
+  if (releaseBranches.some((pattern) => pattern.trim() === "")) {
+    throw new HikyakuError(`${where}.release_branches に空のパターンがあります`);
+  }
+  return {
+    releaseBranches,
+    allowUnsafeSplit: readBoolean(table, "allow_unsafe_split", where) ?? false,
+  };
+}
+
 /**
  * サイクル設定に、サイクル側では決められないキーが無いか検査する。
  *
@@ -910,6 +934,19 @@ function assertCycleOverridable(table: TomlTable, path: string): void {
       [
         "ask は「create-cycle 時に決める」という宣言なので、リポジトリルートの",
         ".hikyaku.config でのみ意味を持ちます。サイクル設定には決まった値を書いてください。",
+      ].join("\n"),
+    );
+  }
+
+  // リリースされるブランチはリポジトリの運用で決まる。サイクルが自分の base_branch を
+  // 外せると、緩和を許すかどうかの判断をサイクル自身が下せてしまう
+  const integrity = readTable(table, "data_integrity");
+  if (integrity?.["release_branches"] !== undefined) {
+    throw new HikyakuError(
+      `${path}: data_integrity.release_branches はサイクル設定では指定できません`,
+      [
+        "リリースされるブランチはリポジトリのブランチ運用で決まるので、リポジトリルートの",
+        ".hikyaku.config でのみ宣言できます。サイクルで決められるのは allow_unsafe_split だけです。",
       ].join("\n"),
     );
   }
@@ -1096,6 +1133,7 @@ function finalize(
       asanaProjectGid: readString(externalTable, "asana_project_gid", "[external]"),
     },
     conductor: readConductor(readTable(merged, "conductor")),
+    dataIntegrity: readDataIntegrity(readTable(merged, "data_integrity")),
     askAtCreate,
     sources,
   };

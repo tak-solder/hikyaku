@@ -15,6 +15,7 @@ Hikyaku の振る舞いは5つの判断から導かれています。ドキュ�
 | 永続ドキュメント | 実装済みの現実（as-is）を表す。所在は `document-guide.md` が宣言する |
 | サイクルドキュメント | これから作るもの（to-be）と作業記録。`cycles/{NNN}-{slug}/` 配下 |
 | BP（ビルドポイント） | 1セッションで実装が完了するかを判断する定量指標。詳細は [BUILD](workflow/build.md#ビルドポイントbp) |
+| 安全でない分割 | 途中のビルドのマージ時点で、本番に出すと既存機能やデータを壊しうる中間状態になるビルド分割。base_branch がリリースされないブランチで、サイクルが宣言したときだけ許される。詳細は [`[data_integrity]`](configuration/config-file.md#data_integrity) |
 | プロファイル | 承認とレビューの量を決めるサイクルの属性。詳細は [プロファイル](configuration/profiles.md) |
 | 監督 | `/hikyaku:conductor` を実行しているセッション。子セッションを起動し、その問いに答えるか人間に上げる。詳細は [conductor](workflow/conductor.md) |
 | 子セッション | 監督が非対話（`claude -p`）で起動し、1フェーズまたは1ビルドを既存のスキルのまま実行するセッション |

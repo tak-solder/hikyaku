@@ -2,6 +2,7 @@
 
 import { flagString } from "../lib/args.mts";
 import { describeProviderRules, loadConfig } from "../lib/config.mts";
+import { DEFAULT_BRANCH_MARK, resolveUnsafeSplit } from "../lib/integrity.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { describeSource, openCycleIfAny } from "../lib/workspace.mts";
@@ -29,6 +30,11 @@ register({
     "",
     "ルート設定の ask に並べたキーは create-cycle が尋ねます。答えはそのサイクルの",
     ".hikyaku.config に記録されるので、答えていなければルート設定の値のままです。",
+    "",
+    "unsafeSplit は、マージ時点で本番データの安全を保てないビルド分割を許すかの判定です。",
+    "[data_integrity] allow_unsafe_split が true で、base_branch がリリースされるブランチ",
+    "（release_branches とデフォルトブランチ）に一致しないときだけ allowed: true になります。",
+    "デフォルトブランチ（origin/HEAD）が分からなければ allowed: false に倒します。",
   ].join("\n"),
   run: ({ args, operands }) => {
     const opened = openCycleIfAny(args, operands[0]);
@@ -39,7 +45,9 @@ register({
           profileOverride: flagString(args, "profile"),
         });
 
-    emit({ ...config, cycle: opened?.context.name, cycleSource: opened?.context.source }, () => {
+    const unsafeSplit = resolveUnsafeSplit(config);
+
+    emit({ ...config, cycle: opened?.context.name, cycleSource: opened?.context.source, unsafeSplit }, () => {
       const lines: string[] = [];
       if (opened) {
         lines.push(
@@ -91,6 +99,11 @@ register({
         `pr.reviewers ${config.pr.reviewers.length === 0 ? "(アサインしない)" : config.pr.reviewers.join(", ")}`,
         `session      ${config.session.title === "" ? "(変更しない)" : config.session.title}`,
         `external     ${config.external.target}`,
+        "",
+        "[data_integrity]:",
+        `  release_branches    ${[unsafeSplit.defaultBranch === null ? `${DEFAULT_BRANCH_MARK}不明` : `${unsafeSplit.defaultBranch}${DEFAULT_BRANCH_MARK}`, ...config.dataIntegrity.releaseBranches].join(", ")}`,
+        `  allow_unsafe_split  ${config.dataIntegrity.allowUnsafeSplit}`,
+        `  安全でない分割      ${unsafeSplit.allowed ? "許す" : "許さない"}（${unsafeSplit.message}）`,
       );
       if (config.external.githubRepo) lines.push(`  github_repo  ${config.external.githubRepo}`);
       if (config.external.asanaProjectGid) {
