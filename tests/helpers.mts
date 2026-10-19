@@ -26,6 +26,10 @@ export function testEnvironment(): NodeJS.ProcessEnv {
   delete env["HIKYAKU_REVIEW_PROVIDER"];
   delete env["CLAUDE_CODE_REMOTE"];
   delete env["CODEX_ENVIRONMENT_ID"];
+  // 実行中のセッションの記録を bp session に読ませない
+  for (const key of ["CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "CLAUDE_CONFIG_DIR", "CODEX_HOME"]) {
+    delete env[key];
+  }
   return env;
 }
 
@@ -40,8 +44,13 @@ export function repository(t: TestContext): string {
 }
 
 export function cli(directory: string, ...args: string[]) {
+  return cliWith(directory, {}, ...args);
+}
+
+/** 環境変数を足して CLI を実行する（bp session の記録の場所を一時ディレクトリへ向ける等） */
+export function cliWith(directory: string, extraEnv: NodeJS.ProcessEnv, ...args: string[]) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
-    cwd: directory, encoding: "utf8", env: testEnvironment(), timeout: 10_000,
+    cwd: directory, encoding: "utf8", env: { ...testEnvironment(), ...extraEnv }, timeout: 10_000,
   });
   assert.ifError(result.error);
   assert.equal(result.signal, null);

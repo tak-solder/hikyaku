@@ -104,6 +104,10 @@ register({
         `  release_branches    ${[unsafeSplit.defaultBranch === null ? `${DEFAULT_BRANCH_MARK}不明` : `${unsafeSplit.defaultBranch}${DEFAULT_BRANCH_MARK}`, ...config.dataIntegrity.releaseBranches].join(", ")}`,
         `  allow_unsafe_split  ${config.dataIntegrity.allowUnsafeSplit}`,
         `  安全でない分割      ${unsafeSplit.allowed ? "許す" : "許さない"}（${unsafeSplit.message}）`,
+        "",
+        "[bp_actual]:",
+        `  exclude  ${config.bpActual.exclude.join(", ")}`,
+        `  tests    ${config.bpActual.tests.join(", ")}`,
       );
       if (config.external.githubRepo) lines.push(`  github_repo  ${config.external.githubRepo}`);
       if (config.external.asanaProjectGid) {
