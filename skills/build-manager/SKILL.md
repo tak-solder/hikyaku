@@ -192,6 +192,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate {cycle}
 
 ### 依存グラフ
 - `tasklist.md` の dependencies 列と Mermaid グラフはスクリプトが常に一致させる。dependencies 列には直接の依存をそのまま書き、グラフはスクリプトが推移的簡約をかけて描く（`b01 → b02 → b03` があれば `b01 → b03` は描かない）。そのため、グラフの線を見て dependencies 列を書き換えない
+- グラフの色と線種は PR 列から決まる（紫: 完了 / 緑: 着手可能 / グレー: 待機中。先行ビルドが未完了の線は点線）。スクリプトが `done` のたびに再生成するので、手で色や `class` / `linkStyle` を書かない
 - 循環依存の検証もスクリプトが行う。検出された場合は書き込まれない
 
 ### マージ時点のデータ安全

@@ -132,8 +132,25 @@ export function graphEdges(builds: BuildRecord[]): Array<[string, string]> {
 }
 
 /**
+ * ビルドの状態ごとの Mermaid スタイル。配色は GitHub の PR に合わせる
+ * （Merged は紫、Open は緑）。fill が淡色でも暗いテーマで読めるよう、文字色も指定する
+ */
+const STATE_STYLES = {
+  merged: "fill:#fbefff,stroke:#8250df,color:#6639ba",
+  ready: "fill:#dafbe1,stroke:#1a7f37,color:#116329",
+  blocked: "fill:#f6f8fa,stroke:#8c959f,color:#57606a",
+} as const;
+
+/** 先行ビルドが未完了の依存線のスタイル */
+const PENDING_EDGE_STYLE = "stroke:#8c959f,stroke-dasharray:5 5";
+
+/** 図の凡例。グラフの色と STATE_STYLES を対応づける */
+export const GRAPH_LEGEND = "紫: 完了（merged） / 緑: 着手可能（ready） / グレー: 待機中（blocked）。点線は先行ビルドが未完了の依存";
+
+/**
  * 依存グラフの Mermaid 表現。辺は推移的簡約をかけたもので、
- * tasklist の dependencies 列（宣言された直接依存）と到達可能性が一致する
+ * tasklist の dependencies 列（宣言された直接依存）と到達可能性が一致する。
+ * ノードは状態（完了 / 着手可能 / 待機中）で色分けし、先行ビルドが未完了の依存線は点線にする
  */
 export function renderGraph(builds: BuildRecord[]): string {
   const lines = ["```mermaid", "graph TD"];
@@ -141,9 +158,29 @@ export function renderGraph(builds: BuildRecord[]): string {
     const label = `${buildDirName(build.id)}: ${build.title}`.replace(/"/g, "'");
     lines.push(`  ${nodeId(build.id)}["${label}"]`);
   }
-  for (const [from, to] of graphEdges(builds)) {
-    lines.push(`  ${nodeId(from)} --> ${nodeId(to)}`);
+
+  const byId = new Map(builds.map((b) => [b.id, b]));
+  const pendingEdges: number[] = [];
+  graphEdges(builds).forEach(([from, to], index) => {
+    const done = byId.get(from) !== undefined && isComplete(byId.get(from)!);
+    lines.push(`  ${nodeId(from)} ${done ? "-->" : "-.->"} ${nodeId(to)}`);
+    if (!done) pendingEdges.push(index);
+  });
+
+  const ready = new Set(readyBuilds(builds).map((b) => b.id));
+  const groups: Record<keyof typeof STATE_STYLES, string[]> = { merged: [], ready: [], blocked: [] };
+  for (const build of builds) {
+    const state = isComplete(build) ? "merged" : ready.has(build.id) ? "ready" : "blocked";
+    groups[state].push(nodeId(build.id));
   }
+  for (const state of Object.keys(STATE_STYLES) as Array<keyof typeof STATE_STYLES>) {
+    lines.push(`  classDef ${state} ${STATE_STYLES[state]}`);
+  }
+  for (const state of Object.keys(groups) as Array<keyof typeof groups>) {
+    if (groups[state].length > 0) lines.push(`  class ${groups[state].join(",")} ${state}`);
+  }
+  if (pendingEdges.length > 0) lines.push(`  linkStyle ${pendingEdges.join(",")} ${PENDING_EDGE_STYLE}`);
+
   lines.push("```");
   return lines.join("\n");
 }
@@ -170,6 +207,8 @@ export function renderTasklistFile(cycle: string, builds: BuildRecord[]): string
     "## 依存グラフ",
     "",
     renderGraph(sorted),
+    "",
+    GRAPH_LEGEND,
     "",
   ].join("\n");
 }

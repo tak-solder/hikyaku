@@ -28,6 +28,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Claude Code 利用者の操作は変わらない。従来の `/hikyaku:...` と `skills/`・`agents/` の手順は維持する
 - Codex 利用者は `codex plugin marketplace add tak-solder/hikyaku@codex-plugin` でマーケットプレイスを追加し、プラグインをインストールする。`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要。Codex では各フェーズを個別に実行し、conductor は Claude Code で使う
 
+## [2.8.2]
+### Changed
+
+- **tasklist.md の依存グラフ**: `hikyaku tasklist` が生成する Mermaid グラフを、ビルドの状態で色分けするようにした。`PR` 列が埋まったビルドは紫（完了）、着手可能なビルドは緑、先行ビルドに未完了があるビルドはグレー（待機中）で、配色は GitHub の PR（Merged / Open）に合わせた。先行ビルドが未完了の依存線は点線にする。`tasklist.md` のグラフの下に凡例を1行加えた。build-manager のスキルとテンプレート、docs の記述を合わせた
+
+### Migration
+
+- 対応は不要。既存の tasklist.md は、次に `hikyaku tasklist add / update / done` で書き込まれたときに色分けされたグラフへ再生成される。グラフに手で書いた `class` / `linkStyle` は上書きされる
+
 ## [2.8.1]
 
 ### Changed
