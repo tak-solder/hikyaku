@@ -155,7 +155,8 @@ export const REVIEW_PROVIDER_ENV = "HIKYAKU_REVIEW_PROVIDER";
 
 /**
  * 各プロバイダのクラウド環境を示す環境変数。クラウド環境では相手のプロバイダの CLI が無いので、
- * そこで動いているプロバイダに固定する。HIKYAKU_REVIEW_PROVIDER と設定ファイルより優先する。
+ * そこで動いているプロバイダに固定する。レビューと conductor で共用し、設定ファイルより優先する。
+ * レビューでは HIKYAKU_REVIEW_PROVIDER よりも優先する。
  * 両方が立っていれば並びの先（claude）を使う
  */
 export const REVIEW_CLOUD_ENVS: { provider: ReviewProvider; variable: string; matches: (value: string) => boolean }[] = [
@@ -448,13 +449,18 @@ function readStringArray(table: TomlTable | undefined, key: string, where: strin
  * [conductor] を読む。配列はキー単位のマージなので、サイクル設定に書くと
  * ルート設定の配列を置き換える（足し合わせない）
  */
-function readConductor(table: TomlTable | undefined): ConductorConfig {
+export function readConductor(table: TomlTable | undefined, env: NodeJS.ProcessEnv = process.env): ConductorConfig {
   const where = "[conductor]";
   const budget = readNumber(table, "budget_per_run", where) ?? DEFAULT_CONDUCTOR.budgetPerRun;
   if (budget < 0) {
     throw new HikyakuError(`${where}.budget_per_run は 0 以上で指定してください（0 は上限なし）`);
   }
+  const configured = checkEnum(readString(table, "provider", where), ["claude", "codex"] as const, `${where}.provider`);
+  const cloud = detectCloudEnv(env);
+  const provider = cloud?.provider ?? configured ?? DEFAULT_CONDUCTOR.provider;
   const conductor: ConductorConfig = {
+    provider,
+    providerSource: cloud !== undefined ? "cloud" : configured !== undefined ? "config" : "default",
     escalate: readStringArray(table, "escalate", where) ?? DEFAULT_CONDUCTOR.escalate,
     delegate: readStringArray(table, "delegate", where) ?? DEFAULT_CONDUCTOR.delegate,
     allowedTools: readStringArray(table, "allowed_tools", where) ?? DEFAULT_CONDUCTOR.allowedTools,
@@ -465,6 +471,9 @@ function readConductor(table: TomlTable | undefined): ConductorConfig {
     model: readModel(table, "model", where),
     models: readConductorModels(readConductorModelsTable(table, where)),
   };
+  if (provider === "codex" && (conductor.allowedTools.length > 0 || budget > 0)) {
+    throw new HikyakuError(`${where}: codex では allowed_tools と budget_per_run は使えません（空配列・0 にしてください）`);
+  }
   checkConductorAsks(conductor, where);
   return conductor;
 }

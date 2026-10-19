@@ -1,6 +1,6 @@
 ---
 name: conductor
-description: "Hikyaku 監督: PLAN 済みのサイクルを、ARCHITECT → BUILD を非対話の子セッション（claude -p）に実行させて進める。子の問いには監督が答え、取り返しのつかない判断だけを人間に上げる。モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。"
+description: "Hikyaku 監督: PLAN 済みのサイクルを、ARCHITECT → BUILD を非対話の子セッション（claude -p / codex exec）に実行させて進める。子の問いには監督が答え、取り返しのつかない判断だけを人間に上げる。モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。"
 user-invocable: true
 argument-hint: "[{cycle}]"
 ---
@@ -8,7 +8,7 @@ argument-hint: "[{cycle}]"
 # Hikyaku Conductor
 
 PLAN を終えたサイクルを、ARCHITECT から最後のビルドまで進める。あなたは**監督**で、
-各フェーズは非対話の**子セッション**（`claude -p`）が既存のスキルのまま実行する。
+各フェーズは非対話の**子セッション**（`claude -p` / `codex exec`）が既存のスキルのまま実行する。
 
 ```
 /hikyaku:planner       → 人間と要件をすり合わせる（conductor の対象外）
@@ -68,8 +68,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor asks {cycle} --json
 ```
 
 出力の `digest` を控える（以後のすべての `launch` / `parse` に渡す）。
+クラウド判定は設定より優先する。子の CLI は設定ファイルの値から推測せず、`asks.provider` と `providerSource` を確認する。同じ環境で `launch` / `parse` を実行し、環境が変わって digest が一致しなければ人間に上げる。
 
 - [ ] 子がテストを実行できるかを確認する
+  - `asks.provider` が `codex` の場合、Codex CLI のインストールと認証を確認する。権限は `workspace-write` サンドボックス・承認なしで、Claude の `allowedTools` による許可リストは適用されないことを人間に示す。必要なテスト・git・gh 操作をこの環境で実行できない場合は、設定や環境の見直しを案内して終了する。以下の許可リストとの照合は Claude の場合だけ行う
   - テストのコマンドを AGENTS.md / README / package.json などから引く
   - `asks` の `allowedTools` で許可されているかを照合する
     （既定は `git` のサブコマンドと Hikyaku CLI の実行などだけで、`npm test` / `node --test` や
@@ -84,6 +86,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor asks {cycle} --json
 planning/user-stories.md を承認済みの要件として扱います。
 監督が判断する同意ゲート: {asks の出力}
 人間に上げる問い: {asks の出力}、およびスコープを広げる回答が要る問い
+子の CLI と権限: {asks の provider、allowedTools / sandbox}
 子のモデル: {asks の出力の models。null は「既定」と書く}
 フェーズの PR のレビュアーと、待つ上限: {asks の出力の review}
 最後の PR のレビュアー: {asks の出力の review.finalReviewers}
@@ -169,9 +172,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {architect|bui
   --expect-digest {digest} --json
 ```
 
+- Codex の初回起動では `launch.sessionId` は null。再開には `parse.sessionId`（`thread_id`）を使う。Claude の許可ツール・費用上限を Codex の制御に読み替えない
+
 - [ ] 返ってきた `command` を **Bash の `run_in_background` で実行**する（`timeout` は最大値にする）
   - 子は10分を超えうる。フォアグラウンドで待たない。完了の通知を待ち、ポーリングしない
-  - 起動が許可ルールで拒否されたら、`Bash(claude -p:*)` を許可するよう人間に案内して止まる
+  - 起動が許可ルールで拒否されたら、選択した CLI の起動（`Bash(claude -p:*)` または `Bash(codex exec:*)`）を許可するよう人間に案内して止まる
 - [ ] 完了したら結果を解析する
 
 ```bash

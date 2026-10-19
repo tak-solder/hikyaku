@@ -16,6 +16,7 @@ import {
   lintTags,
   modelFor,
   parseResultJson,
+  parseCodexResult,
   resolveAllAsks,
   resolveAsk,
   settingsDigest,
@@ -31,7 +32,7 @@ import { emit, table } from "../lib/output.mts";
 import { pluginRoot } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
 import { normalizeBuildId } from "../lib/tasklist.mts";
-import type { ResolvedConfig } from "../lib/config.mts";
+import { cloudEnvLabel, type ResolvedConfig } from "../lib/config.mts";
 import { openCycle, type CycleContext } from "../lib/workspace.mts";
 
 /**
@@ -76,7 +77,10 @@ register({
       skipped: config.pr.reviewersSkip,
     };
 
-    emit({ cycle: context.name, profile: config.profile, digest, allowedTools, models, review, asks }, () => {
+    const provider = config.conductor.provider;
+    const providerSource = config.conductor.providerSource;
+    const sandbox = provider === "codex" ? "workspace-write" : null;
+    emit({ cycle: context.name, profile: config.profile, provider, providerSource, sandbox, digest, allowedTools, models, review, asks }, () => {
       const ids = (filter: (ask: ResolvedAsk) => boolean): string =>
         asks.filter(filter).map((ask) => ask.id).join(" / ") || "なし";
       const consent = (ask: ResolvedAsk): boolean => ask.category === "consent";
@@ -87,7 +91,10 @@ register({
         `監督が判断するその他の問い: ${ids((a) => !consent(a) && a.enabled && a.handler === "supervisor")}`,
         `人間に上げる問い: ${ids((a) => a.enabled && a.handler === "human")}`,
         `この profile では出ない問い: ${ids((a) => !a.enabled)}`,
-        `子に許可するツール: ${allowedTools.join(" ")}`,
+        `子の CLI: ${provider}（${providerSource === "cloud" ? cloudEnvLabel(provider) : providerSource === "config" ? "[conductor] provider" : "既定"}）`,
+        provider === "codex"
+          ? `子の権限: ${sandbox} サンドボックス（承認なし。Claude のツール許可リストは適用されません）`
+          : `子に許可するツール: ${allowedTools.join(" ")}`,
         `子のモデル: ${CONDUCTOR_PHASES.map((phase) => `${phase}=${models[phase] ?? "既定"}`).join(" / ")}`,
         `フェーズの PR のレビュアー: ${review.phaseReviewers.length === 0 ? "なし" : review.phaseReviewers.join(", ")}（待つ上限 ${review.timeoutMinutes} 分、承認${review.requireApproval ? "必須" : "不問"}）`,
         `最後の PR のレビュアー: ${review.finalReviewers.length === 0 || review.skipped.includes("conductor") ? "なし" : review.finalReviewers.join(", ")}`,
@@ -110,7 +117,7 @@ register({
 
 register({
   name: "conductor launch",
-  summary: "子セッション（claude -p）の起動コマンドを組み立てる。自分では実行しない",
+  summary: "子セッション（claude -p / codex exec）の起動コマンドを組み立てる。自分では実行しない",
   usage:
     "hikyaku conductor launch <architect|builder|close-cycle> [<cycle>] [<build>|add] --expect-digest <digest> " +
     "[--resume <session-id>] [--message <file>] [--out <file>] [--root <path>] [--json]",
@@ -130,7 +137,15 @@ register({
     "architect の add（指摘からの追加設計）では、--resume なしの初回の起動にも --message が要ります。",
     "ファイルの中身（対応する指摘）が、プロンプトの add の後ろに続けて渡ります。",
     "",
-    "組み立てるコマンドには次が必ず入ります。",
+    "[conductor] provider は claude（既定）または codex。クラウド環境ではレビューと同じ判定で、",
+    "CLAUDE_CODE_REMOTE=true / 空でない CODEX_ENVIRONMENT_ID の CLI に設定より優先して固定します。",
+    "Codex は codex exec --json で起動し、",
+    'approval_policy="never" / sandbox_mode="workspace-write" を初回・再開とも明示します。',
+    "Codex では非対話規約と Codex 用スキル入口のパスをプロンプトに含めます。",
+    "初回の sessionId は null。parse の thread_id を次の --resume に渡してください。",
+    "allowed_tools と budget_per_run は Codex に対応しないため、空配列・0 以外はエラーです。",
+    "",
+    "Claude のコマンドには次が必ず入ります。",
     "",
     "  --append-system-prompt-file   非対話規約（skills/conductor/references/headless-protocol.md）",
     `  --disallowedTools             ${DISALLOWED_TOOLS.join(" ")}`,
@@ -144,7 +159,7 @@ register({
     "",
     "[conductor] budget_per_run が 0 より大きければ --max-budget-usd も入ります。",
     "[conductor.models] のそのフェーズ、無ければ [conductor] model が指定されていれば",
-    "--model も入ります。どちらも無ければ Claude Code の既定のモデルで動きます。",
+    "--model も入ります。どちらも無ければ選択した CLI の既定のモデルで動きます。",
     "--out を省くと、一時ディレクトリに session-id 入りの名前で書きます。",
     "",
     "--expect-digest には、監督が起動時に人間と合意したときの conductor asks の digest を",
@@ -180,17 +195,30 @@ register({
       if (message === "") throw new HikyakuError(`--message のファイルが空です: ${messageFile}`);
     }
 
-    const sessionId = resume ?? randomUUID();
-    const out = flagString(args, "out") ?? join(tmpdir(), `hikyaku-conductor-${sessionId}-${Date.now()}.json`);
+    const provider = config.conductor.provider;
+    const runId = randomUUID();
+    const sessionId = resume ?? (provider === "claude" ? runId : null);
+    const out = flagString(args, "out") ?? join(tmpdir(), `hikyaku-conductor-${sessionId ?? runId}-${Date.now()}.json`);
     const protocol = join(pluginRoot(), "skills", "conductor", "references", "headless-protocol.md");
     const allowedTools = allowedToolsOf(config);
     const model = modelFor(config.conductor, phase);
 
-    const argv = [
+    const argv = provider === "codex" ? [
+      "codex", "exec", ...(resume === undefined ? [] : ["resume"]),
+      "--json", "-c", 'approval_policy="never"', "-c", 'sandbox_mode="workspace-write"',
+      ...(model === undefined ? [] : ["--model", model]),
+      "--", ...(resume === undefined ? [] : [resume]),
+      [
+        readFileSync(protocol, "utf8"),
+        "Codex 子セッションでは、この非対話規約を適用する。利用者への質問ツールやタイマーで待たず、gate を出して終了する。",
+        `最初に ${join(pluginRoot(), "codex", "skills", phase, "SKILL.md")} を読み、Codex 実行規約と元の手順に従う。`,
+        resume === undefined ? (message === undefined ? prompt : `${prompt}\n\n${message}`) : message as string,
+      ].join("\n\n"),
+    ] : [
       "claude",
       "-p",
       resume === undefined ? (message === undefined ? prompt : `${prompt}\n\n${message}`) : (message as string),
-      ...(resume === undefined ? ["--session-id", sessionId] : ["--resume", sessionId]),
+      ...(resume === undefined ? ["--session-id", sessionId as string] : ["--resume", sessionId as string]),
       "--append-system-prompt-file",
       protocol,
       "--disallowedTools",
@@ -211,6 +239,9 @@ register({
     emit(
       {
         phase,
+        provider,
+        providerSource: config.conductor.providerSource,
+        sandbox: provider === "codex" ? "workspace-write" : null,
         cycle: context.name,
         prompt,
         sessionId,
@@ -247,6 +278,7 @@ register({
     "  violation  規約どおりのブロックが無い。監督は自由文から推測せず、人間に上げる",
     "  error      予算超過などで子が異常終了した",
     "",
+    "Claude の JSON / Codex の JSONL は設定の provider で選びます。Codex の費用は null です。",
     "どの場合も sessionId と costUsd（その呼び出しの費用）を返します。再開しても",
     "session-id は変わらないので、次の conductor launch --resume にそのまま渡せます。",
     "問いの振り分けは conductor asks と同じ規則です。",
@@ -258,7 +290,8 @@ register({
 
     const { config, context } = openCycle(args, operands[1]);
     requireDigest(args, config);
-    const parsed = parseResultJson(readFileSync(file, "utf8"));
+    const raw = readFileSync(file, "utf8");
+    const parsed = config.conductor.provider === "codex" ? parseCodexResult(raw) : parseResultJson(raw);
     const ask =
       parsed.outcome === "gate" && parsed.id !== undefined
         ? resolveAsk(parsed.id, config.conductor, config)
@@ -460,7 +493,7 @@ register({
 });
 
 function allowedToolsOf(config: ResolvedConfig): string[] {
-  return [...defaultAllowedTools(pluginRoot()), ...config.conductor.allowedTools];
+  return config.conductor.provider === "codex" ? [] : [...defaultAllowedTools(pluginRoot()), ...config.conductor.allowedTools];
 }
 
 function digestOf(config: ResolvedConfig): string {
