@@ -34,6 +34,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Claude Code 利用者の操作は変わらない。従来の `/hikyaku:...` と `skills/`・`agents/` の手順は維持する
 - Codex 利用者は `codex plugin marketplace add tak-solder/hikyaku@codex-plugin` でマーケットプレイスを追加し、プラグインをインストールする。`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要。Codex でも `$hikyaku:conductor` と `$hikyaku:navigator` を利用できる。ローカルで子に Codex CLI を使う場合は `[conductor] provider = "codex"` を指定する
 
+## [2.10.0]
+
+### Changed
+
+- **document-guide.md の論理名**: 既定に無い論理名を、管理が `repo` の行で使えるようにした。運用手順書や PRD など、リポジトリ固有の永続ドキュメントを登録できる。`hikyaku validate` / `docs validate` はパスの実在を確かめ、`hikyaku context` は plan・architect・build-NN の候補に含める（理由欄は「リポジトリ固有の永続ドキュメント」、要否は概要欄で判断する）。管理が `hikyaku` / `未作成` / `対象外` の行で既定に無い論理名を使った場合は、従来どおり `validate` がエラーにする。init スキルとドキュメントガイドの記述を合わせた（[#74](https://github.com/tak-solder/hikyaku/issues/74)）
+
+### Fixed
+
+- **`hikyaku tasklist`**: `read` / `add` / `update` / `done` / `link` が、受け付けないオプションと余分な位置引数を黙って無視していたのを、終了コード 1 のエラーにして書き込まないようにした。`--deps 1,2` が空白を含む1つの引数で渡った場合は、`--deps=1,2` の形を案内する。`add` / `update` は出力の見出しに、追加・更新したビルドの BP と依存を表示する（[#75](https://github.com/tak-solder/hikyaku/issues/75)）
+
+### Migration
+
+- 既定に無い論理名を `repo` 管理で登録していたリポジトリでは、`validate` のエラーが消える。対応は不要
+- `tasklist` のコマンドに未知のオプションや余分な引数を渡していたスクリプトは、エラーになるため修正する。シェルの関数から呼ぶ場合は `--deps=1,2` の形で渡すと、単語分割の有無に左右されない
+
 ## [2.8.2]
 ### Changed
 

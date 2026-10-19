@@ -10,7 +10,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { relative } from "node:path";
-import { flagBoolean, flagString, type ParsedArgs } from "../lib/args.mts";
+import { flagBoolean, flagString, GLOBAL_FLAGS, type ParsedArgs } from "../lib/args.mts";
 import {
   BP_CASES_FILE,
   BP_GUIDE_DIR,
@@ -48,9 +48,6 @@ import { register } from "../lib/registry.mts";
 import { requirePhase, resolvePrBase, scopeFor } from "../lib/stack.mts";
 import { openCycleIfAny } from "../lib/workspace.mts";
 
-/** どのコマンドでも受け付けるオプション。基準表のキーはこれと衝突しない（bp.mts が弾く） */
-const COMMON_FLAGS = new Set(["json", "root", "profile", "help", "version", "dry-run"]);
-
 /** サイクルが決まれば bp_max はそのサイクルの設定から。無ければルート設定 */
 function configFor(args: ParsedArgs, operand: string | undefined): ResolvedConfig {
   const opened = openCycleIfAny(args, operand);
@@ -79,7 +76,7 @@ function readBpInput(args: ParsedArgs, rules: BpRules, extraFlags: Set<string>):
   const keyByFlag = new Map(inputKeys(rules).map((k) => [flagNameOf(k.key), k.key]));
   const input: BpInput = {};
   for (const [flag, raw] of args.flags) {
-    if (COMMON_FLAGS.has(flag) || extraFlags.has(flag)) continue;
+    if (GLOBAL_FLAGS.has(flag) || extraFlags.has(flag)) continue;
     const key = keyByFlag.get(flag);
     if (key === undefined) {
       throw new HikyakuError(

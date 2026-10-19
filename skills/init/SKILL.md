@@ -158,6 +158,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" init --root {HIKYAKU_ROOT}
 既存 ADR が `AD-N` 形式でも、`repo` 管理として登録すればそのまま使い続けられる。
 形式変換は不要。
 
+既定の論理名のどれにも当てはまらないリポジトリ固有の永続ドキュメント（運用手順書・PRD など）は、
+独自の論理名を付けて `repo` 管理で登録できる。概要欄には何のドキュメントかを書く
+（`hikyaku context` が候補に含め、概要欄で要否を判断させるため）。独自の論理名を
+`hikyaku` / `未作成` / `対象外` で登録すると `hikyaku validate` がエラーにする。
+
 - [ ] 検証する
 
 ```bash
