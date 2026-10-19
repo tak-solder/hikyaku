@@ -32,10 +32,19 @@ graph TD
   b02["build-02: 認証API"]
   b03["build-03: 投稿API"]
   b04["build-04: 共通ユーティリティ"]
-  b04 --> b02
-  b02 --> b03
+  b04 -.-> b02
+  b02 -.-> b03
   b01 --> b04
+  classDef merged fill:#fbefff,stroke:#8250df,color:#6639ba
+  classDef ready fill:#dafbe1,stroke:#1a7f37,color:#116329
+  classDef blocked fill:#f6f8fa,stroke:#8c959f,color:#57606a
+  class b01 merged
+  class b04 ready
+  class b02,b03 blocked
+  linkStyle 0,1 stroke:#8c959f,stroke-dasharray:5 5
 ```
+
+紫: 完了（merged） / 緑: 着手可能（ready） / グレー: 待機中（blocked）。点線は先行ビルドが未完了の依存
 ````
 
 **カラム説明:**
