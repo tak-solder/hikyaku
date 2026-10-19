@@ -1,6 +1,6 @@
 ---
 name: conductor
-description: "Hikyaku 監督: PLAN 済みのサイクルを、ARCHITECT → BUILD を非対話の子セッション（claude -p）に実行させて進める。子の問いには監督が答え、取り返しのつかない判断だけを人間に上げる。モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。"
+description: "Hikyaku 監督: PLAN 済みのサイクルを、ARCHITECT → BUILD を非対話の子セッション（claude -p / codex exec）に実行させて進める。子の問いには監督が答え、取り返しのつかない判断だけを人間に上げる。モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。"
 user-invocable: true
 argument-hint: "[{cycle}]"
 ---
@@ -8,7 +8,7 @@ argument-hint: "[{cycle}]"
 # Hikyaku Conductor
 
 PLAN を終えたサイクルを、ARCHITECT から最後のビルドまで進める。あなたは**監督**で、
-各フェーズは非対話の**子セッション**（`claude -p`）が既存のスキルのまま実行する。
+各フェーズは非対話の**子セッション**（`claude -p` / `codex exec`）が既存のスキルのまま実行する。
 
 ```
 /hikyaku:planner       → 人間と要件をすり合わせる（conductor の対象外）
@@ -68,8 +68,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor asks {cycle} --json
 ```
 
 出力の `digest` を控える（以後のすべての `launch` / `parse` に渡す）。
+クラウド判定は設定より優先する。子の CLI は設定ファイルの値から推測せず、`asks.provider` と `providerSource` を確認する。同じ環境で `launch` / `parse` を実行し、環境が変わって digest が一致しなければ人間に上げる。
 
 - [ ] 子がテストを実行できるかを確認する
+  - `asks.provider` が `codex` の場合、Codex CLI のインストールと認証を確認する。権限は `workspace-write` サンドボックス・承認なしで、Claude の `allowedTools` による許可リストは適用されないことを人間に示す。必要なテスト・git・gh 操作をこの環境で実行できない場合は、設定や環境の見直しを案内して終了する。以下の許可リストとの照合は Claude の場合だけ行う
   - テストのコマンドを AGENTS.md / README / package.json などから引く
   - `asks` の `allowedTools` で許可されているかを照合する
     （既定は `git` のサブコマンドと Hikyaku CLI の実行などだけで、`npm test` / `node --test` や
@@ -84,6 +86,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor asks {cycle} --json
 planning/user-stories.md を承認済みの要件として扱います。
 監督が判断する同意ゲート: {asks の出力}
 人間に上げる問い: {asks の出力}、およびスコープを広げる回答が要る問い
+子の CLI と権限: {asks の provider、allowedTools / sandbox}
 子のモデル: {asks の出力の models。null は「既定」と書く}
 フェーズの PR のレビュアーと、待つ上限: {asks の出力の review}
 最後の PR のレビュアー: {asks の出力の review.finalReviewers}
@@ -169,9 +172,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {architect|bui
   --expect-digest {digest} --json
 ```
 
+- Codex の初回起動では `launch.sessionId` は null。再開には `parse.sessionId`（`thread_id`）を使う。Claude の許可ツール・費用上限を Codex の制御に読み替えない
+
 - [ ] 返ってきた `command` を **Bash の `run_in_background` で実行**する（`timeout` は最大値にする）
   - 子は10分を超えうる。フォアグラウンドで待たない。完了の通知を待ち、ポーリングしない
-  - 起動が許可ルールで拒否されたら、`Bash(claude -p:*)` を許可するよう人間に案内して止まる
+  - 起動が許可ルールで拒否されたら、選択した CLI の起動（`Bash(claude -p:*)` または `Bash(codex exec:*)`）を許可するよう人間に案内して止まる
 - [ ] 完了したら結果を解析する
 
 ```bash
@@ -373,12 +378,13 @@ CLOSE の PR を示して終了する。
 | `G2` / `G4` / `G7` | 成果物を読み、承認観点（スキルが示すもの）に沿って承認するか差し戻す |
 | `retrospective` | 実施する |
 | `docs-link` | `--dry-run` の差分がマーカーで囲まれた索引ブロックの中だけなら承認する |
-| `G6` | 分割・依存が design-delta と矛盾せず、各ビルドの BP が上限内なら承認する |
+| `G6` | 分割・依存が design-delta と矛盾せず、各ビルドの BP が上限内なら承認する。「マージ時点で残る危険」を書いたビルドがあれば、`hikyaku config {cycle} --json` の `unsafeSplit.allowed` が true であることも確かめる |
 | `G8` | 「検証の義務」の G8 を行い、満たしていれば承認する |
 | `G10` | 「検証の義務」の G10 を行い、除外すべき候補を外して承認する |
 | `questions` | 成果物から導けるものだけ答える。導けないものは人間に上げる |
 | `adr-status` | 既存の形式に欄を足さない（挙動を狭める側） |
 | `design-conflict` | 「architect に差し戻す」を選ぶ。**「設計に合わせる（要件を改める）」が必要なら人間に上げる**。ビルドの中で設計を改めるのは、変更が plan.md の範囲に収まり ADR を覆さない場合だけ |
+| `unsafe-split` | 「上限を超えたまま1ビルドにまとめる」を選ぶ（データ安全を保つ側）。**安全でない分割を選ぶ必要があれば、または設計に戻る必要があれば人間に上げる** |
 | `review-findings` | 明確なバグ・規約違反は「今修正する」。スコープ外は「新ビルド化」。「そのまま進める」は確度の低い懸念だけ |
 
 ## 検証の義務

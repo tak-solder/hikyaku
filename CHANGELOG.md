@@ -10,23 +10,68 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- Codex 用の conductor / navigator 入口を追加した。Codex を監督にして子セッションを進める手順と、状態を読んで選択したスキルを実行する案内に対応する
+
+- conductor の子セッションを `[conductor] provider = "codex"` で Codex CLI に切り替え可能にした。非対話規約、JSONL の結果解析と thread_id による再開に対応する。クラウドではレビューと同じ環境判定で、明示指定より優先して同じプロバイダーに固定する。クラウドでない環境の既定は Claude のまま。Codex では `allowed_tools` は空配列、`budget_per_run` は 0 のみ受け付ける
+
 - Codex 用の `.codex-plugin/plugin.json`、`.agents/plugins/marketplace.json`、`codex/skills/*/SKILL.md` を追加した。Codex では専用入口から従来の Hikyaku 手順を読み、パス・引数・内部スキル・エージェント委任の表記を Codex の機能に読み替える
 - `codex/compatibility.md` に Codex での実行規約を追加し、`docs/getting-started-codex.md` に導入と起動方法を記載した
 
 ### Changed
 
 - 共通手順の 2.4.1 を取り込み、差し戻し・受け入れ基準の追跡・PR レビュアー割り当て・指摘からの追加設計に対応した
-- Codex 実行規約に architect の引数の読み替えと、conductor が Claude Code 専用であることを明記した
+- Codex 実行規約に architect の引数の読み替え、conductor の委任と子の完了待ち、navigator から選択したスキルを実行する手順を明記した
 - Codex 向けの CI を `check-codex-plugin.yml` に分離し、`codex-plugin` ブランチ向け PR でマニフェストのバージョン形式・更新と入口の参照先を検証するようにした。更新検出の対象は Codex 固有のファイルに加え、共通の `skills/`・`agents/`・`scripts/` も含む。スクリプトの型チェック・テストも `codex-plugin` 向け PR で実行する
 - Claude Code 用の全10スキルから `disable-model-invocation` を削除し、モデル（AI 自身）がスキルを呼び出せるようにした。代わりに各スキルの `description` に「モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。」を追記し、ワークフロー外での誤呼び出しを防ぐ。Claude Code 用マニフェストを 2.5.0 に更新した
 - Claude Code 用の全10スキルと Codex 用の全9スキルから、フロントマターの `metadata`（`repository` / `version`）を削除した。バージョンは各プラグインのマニフェストに集約し、Claude Code 用・Codex 用の両マニフェストを 2.4.2 に更新した。開発ルールと CI もスキル内のバージョンを要求しない形に揃えた
 
 ### Migration
 
+- Codex を子に使う場合は CLI のインストールと認証を済ませ、`provider = "codex"` を設定する。`workspace-write`・承認なしでテストや git・gh を実行できる環境が必要。監督は Claude Code / Codex のどちらでも実行できる
+
 - `SKILL.md` の `metadata.version` を参照する独自ツールは、対象ホストの `.claude-plugin/plugin.json` または `.codex-plugin/plugin.json` の `version` を参照するよう変更する
 - 対応は不要。`/hikyaku:...` での起動は従来どおり使える。Hikyaku ワークフローの実行中は、AI が次のスキルを自分で呼び出すことがある
 - Claude Code 利用者の操作は変わらない。従来の `/hikyaku:...` と `skills/`・`agents/` の手順は維持する
-- Codex 利用者は `codex plugin marketplace add tak-solder/hikyaku@codex-plugin` でマーケットプレイスを追加し、プラグインをインストールする。`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要。Codex では各フェーズを個別に実行し、conductor は Claude Code で使う
+- Codex 利用者は `codex plugin marketplace add tak-solder/hikyaku@codex-plugin` でマーケットプレイスを追加し、プラグインをインストールする。`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要。Codex でも `$hikyaku:conductor` と `$hikyaku:navigator` を利用できる。ローカルで子に Codex CLI を使う場合は `[conductor] provider = "codex"` を指定する
+
+## [2.8.2]
+### Changed
+
+- **tasklist.md の依存グラフ**: `hikyaku tasklist` が生成する Mermaid グラフを、ビルドの状態で色分けするようにした。`PR` 列が埋まったビルドは紫（完了）、着手可能なビルドは緑、先行ビルドに未完了があるビルドはグレー（待機中）で、配色は GitHub の PR（Merged / Open）に合わせた。先行ビルドが未完了の依存線は点線にする。`tasklist.md` のグラフの下に凡例を1行加えた。build-manager のスキルとテンプレート、docs の記述を合わせた
+
+### Migration
+
+- 対応は不要。既存の tasklist.md は、次に `hikyaku tasklist add / update / done` で書き込まれたときに色分けされたグラフへ再生成される。グラフに手で書いた `class` / `linkStyle` は上書きされる
+
+## [2.8.1]
+
+### Changed
+
+- **tasklist.md の依存グラフ**: `hikyaku tasklist` が生成する Mermaid グラフに推移的簡約をかけ、他の依存を経由して到達できる線（`b01 → b02 → b03` があるときの `b01 → b03`）を描かないようにした。到達可能性は変わらず、線だけが減る。`dependencies` 列、着手可否の判定、handoff の参照は従来どおり宣言された直接の依存を使う。循環があるあいだは簡約せず、宣言された線をそのまま描く（`validate` が循環を報告する）。build-manager のスキルとテンプレートの記述を合わせた
+
+### Migration
+
+- 対応は不要。既存の tasklist.md は、次に `hikyaku tasklist add / update / done` で書き込まれたときにグラフが簡約された形へ再生成される
+
+## [2.8.0]
+
+### Added
+
+- **`[data_integrity]` 設定**: `release_branches`（リリースされるブランチの glob。ルート設定のみ。デフォルトブランチは暗黙に含まれる）と `allow_unsafe_split`（既定 `false`。サイクル設定で上書き可）を追加した。`hikyaku config --json` の `unsafeSplit` が、安全でない分割を許すかを返す。許すのは `allow_unsafe_split = true` で、base_branch がリリースされるブランチに一致せず、デフォルトブランチ（`origin/HEAD`）を特定できるときだけ（[#65](https://github.com/tak-solder/hikyaku/issues/65)）
+- **`hikyaku validate` の検査**: issue.md の「マージ時点で残る危険」について、そのサイクルで安全でない分割が許されているか、「解消するビルド: build-NN」が書かれ、実在し、そのビルドに依存しているかを検査する
+- **問い `unsafe-split`**: build-manager が、BP の上限を超えるのにマージ時点のデータ安全を保つ分割を見つけられないときに尋ねる。conductor では既定で監督が答え、上限を超えたまま1ビルドにまとめる側を選ぶ
+
+### Changed
+
+- architect / build-manager / builder: 各ビルドは、PR をマージした時点で既存機能に影響せず、本番データが壊れたり不整合を起こしたりしない単位に分割・実装することを原則にした。design-delta.md にはデータの形を変える設計の移行の段階を書き、builder は plan.md の非機能要件に「マージ時点のデータ安全」の根拠を書いて、コードレビュー前に差分と突き合わせる
+- build-manager: BP 6〜8 で分割せずに許容する理由に「分割するとマージ時点でデータの安全を保てない」を加えた。issue.md のテンプレートに「マージ時点で残る危険」の節（安全でない分割を使ったビルドだけ）を加えた
+- doc-reviewer: `context: tasklist` と `context: plan` で、マージ時点のデータ安全の不備を報告するようにした
+
+### Migration
+
+- 既定では緩和されないので、設定を書かなければ全サイクルで原則（マージ時点で本番データを壊さない分割）が適用される
+- `feature/*` のようなまだリリースしないブランチを base_branch にするサイクルで中間状態を許したいときは、そのサイクルの `.hikyaku.config` に `[data_integrity] allow_unsafe_split = true` を書く。デフォルトブランチ以外にもリリースされるブランチ（`release/*` など）があれば、ルートの `.hikyaku.config` の `[data_integrity] release_branches` に書く
+- `origin/HEAD` が無いクローンでは緩和されない。`git remote set-head origin --auto` で設定する
 
 ## [2.7.0]
 

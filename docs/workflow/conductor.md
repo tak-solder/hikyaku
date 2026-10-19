@@ -1,6 +1,6 @@
 # conductor — ARCHITECT 以降を任せる
 
-`/hikyaku:conductor` は Claude Code 専用で、PLAN を終えたサイクルを ARCHITECT から最後のビルドまで進めます。あなたが開いているセッションが監督になり、各フェーズは監督が起動する非対話の子セッション（`claude -p`）が、いつもの architect / builder / close-cycle のスキルのまま実行します。Codex では各フェーズを個別に実行します（[Codex で使い始める](../getting-started-codex.md)）。
+Claude Code の `/hikyaku:conductor` と Codex の `$hikyaku:conductor` は、PLAN を終えたサイクルを ARCHITECT から最後のビルドまで進めます。あなたが開いているセッションが監督になり、各フェーズは監督が起動する非対話の子セッション（`claude -p` / `codex exec`）が、いつもの architect / builder / close-cycle のスキルのまま実行します。Codex での起動方法は [Codex で使い始める](../getting-started-codex.md) を参照してください。
 
 子が承認や確認を求める箇所で止まると、監督が成果物を読んで答えます。人間が答えるのは、要件のすり合わせ（PLAN）と、監督が自分で答えてはいけない問いだけです。
 
@@ -65,7 +65,7 @@ PLAN を終えたら、サイクルを指定して起動します。
 |---|---|---|
 | 確認ゲート・経路の判断 | G3 / G4、`branch`、`overlap` | 監督 |
 | 同意ゲート | G6 / G8 / G10 | 監督（起動時の確認で委任される） |
-| 仕様の確認 | `questions`、`design-conflict`、`review-findings` | 監督 |
+| 仕様の確認 | `questions`、`design-conflict`、`unsafe-split`、`review-findings` | 監督 |
 | 障害 | `retry-limit` | 人間 |
 | サイクルの中止・分類できない問い | `abandon`、`other` | 常に人間 |
 
@@ -129,8 +129,20 @@ CI の実行中や、レビューの依頼が残っているあいだは、`revi
 
 CI が1つも無い場合（`paths` フィルタで走らない、CI の無いリポジトリなど）は確かめるものが無いので止まりませんが、その旨は最後の PR の本文に残ります。PR を作った直後はチェックがまだ登録されていないことがあるため、最初の1分はチェックが現れるのを待ってから、CI が無いと判定します。一方、`gh` の応答に必須のフィールドが無い、型が違うなど、状態を取得できなかった場合は、CI なし・依頼なし・Ready として合格させず、エラーで止まります。最後の PR（conductor ブランチからデフォルトブランチへの PR）には `[pr] reviewers` がアサインされますが、人間がレビューする PR なので、監督は待ちません。監督が最後の PR を作った直後に落ちて再実行された場合は、同じ向きで開いている PR が既にあれば、新しく作らずにその PR を案内します。
 
+## Codex を子セッションに使う
+
+`.hikyaku.config` の `[conductor]` に `provider = "codex"` を指定すると、Claude Code・Codex どちらの監督からも Codex CLI を子として起動できます。クラウドでない環境での既定は `claude` です。Codex CLI のインストールと認証が必要です。`model` とフェーズ別モデルには、選択した CLI で使えるモデル名を指定します。
+
+クラウド環境ではレビューと同じ `detectCloudEnv()` の判定を使い、`CLAUDE_CODE_REMOTE=true` なら Claude、`CODEX_ENVIRONMENT_ID` が空でなければ Codex に固定します。この判定は `provider` の明示指定より優先し、両方が該当するときは Claude を選びます。クラウドでない場合は `provider`、未指定なら `claude` を使います。`conductor asks` は実際の CLI と選択元（`providerSource`）を示します。
+
+Codex は `workspace-write` サンドボックスで動き、権限の確認には応答しません。Claude のツール許可リストとは制御の単位が異なります。`allowed_tools` は空配列、`budget_per_run` は 0 にしてください。それ以外は設定エラーになります。必要なテストや git・gh 操作がサンドボックスやネットワーク制限で実行できなければ、子は blocked で終了します。起動前に実行環境を確認してください。
+
+Codex の監督は、シェルの長時間処理を継続する機能で子と PR 検証の終了を待ちます。子の会話の ID とシェルのプロセス ID は区別します。起動に失敗した場合や必要な継続機能が無い場合は、その制約を示して止まります。
+
+Codex の子の結果は JSONL から解析します。再開には結果の `thread_id` を使い、費用は取得できないため `costUsd` は null になります。
+
 ## 中断と再開
 
 監督は状態を保存しません。次に何をするかは毎回 `hikyaku cycle status` と `hikyaku next` から導くので、監督のセッションが落ちても、同じコマンドで起動し直せば続きから進みます。止まっていた子の会話は引き継がれませんが、子はスキルの中断検出で成果物から再開点を見つけます。
 
-子が予算超過や利用上限で途中終了した場合、監督は人間に再開してよいかを尋ね、同じ子のセッションを再開します。呼び出し1回ごとの費用に上限を設けたいときは `budget_per_run` を使います（既定は 0 で上限なし）。
+子が予算超過や利用上限で途中終了した場合、監督は人間に再開してよいかを尋ね、同じ子のセッションを再開します。呼び出し1回ごとの費用に上限を設けたいときは Claude の場合は `budget_per_run` を使います（既定は 0 で上限なし）。

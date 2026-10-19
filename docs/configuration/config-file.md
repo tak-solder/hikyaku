@@ -15,12 +15,13 @@ TOML 形式の設定ファイルです。ドキュメントの所在は含みま
 
 ## サイクル側で上書きできないキー
 
-サイクル設定に書けないのは次の2つだけで、指定するとエラーになります。それ以外のキーは、ブランチの命名規則や PR タイトル、投影先を含めてすべてサイクルごとに変えられます。
+サイクル設定に書けないのは次の3つだけで、指定するとエラーになります。それ以外のキーは、ブランチの命名規則や PR タイトル、投影先を含めてすべてサイクルごとに変えられます。
 
 | キー | 理由 |
 |---|---|
 | `hikyaku_root` | ワークスペースの所在そのもの。サイクルごとに動かせるようにすると、そのサイクル設定をどこから読むかが決まらない（自己参照になる） |
 | `profile` | サイクルの属性で `cycles.md` が唯一の正。2箇所に持つと必ず食い違う |
+| `data_integrity.release_branches` | リリースされるブランチはリポジトリの運用で決まる。サイクルが自分の base_branch を外せると、緩和を許すかどうかをサイクル自身が決められてしまう |
 
 サイクルごとに `[branch]` を変えても、対象サイクルの決定は壊れません。現在のブランチからサイクルを引くとき、Hikyaku は「1つの規則で解析して名前を引く」のではなく、サイクルを1件ずつ、そのサイクル自身の規則で解析して、結果が自分を指しているかを確かめます。他サイクルの規則で偶然解析できても、取り出したサイクル名が一致しなければ採用されません。
 
@@ -268,10 +269,31 @@ target = "none"                 # none | github | asana
 
 外部システムへの片方向投影の設定です。詳細は [外部システムへの投影](external.md)。
 
+## [data_integrity]
+
+```toml
+[data_integrity]
+release_branches = ["release/*"]  # リリースされるブランチ（glob）。ルート設定でのみ書ける
+allow_unsafe_split = false        # 安全でない分割を許すか。サイクル設定で上書きできる
+```
+
+ビルドを分割するとき、architect（build-manager）は各ビルドの PR をマージした時点で本番データが壊れない単位に分けます。カラムの追加と書き込みの切り替えを別のビルドにするなら、どちらを先にマージしても既存データが壊れない順序と形にする、ということです。本番データの破壊は取り返しがつかないので、これが原則です。
+
+ただ、BP の上限を守ろうとすると、どうしてもリリースしてはいけない中間状態で区切るしかないことがあります。これを安全でない分割と呼びます。安全でない分割が許されるのは、サイクルが `allow_unsafe_split = true` を宣言していて、かつ base_branch がリリースされるブランチではないときだけです。`feature/*` のようにサイクル専用で、まだ本番に出ないと分かっているブランチに向けるサイクルを想定しています。リリースされないブランチなら本番データに触れないので、データが壊れないという目的は保たれます。
+
+どのブランチがリリースされるかはリポジトリのブランチ運用次第なので、Hikyaku はブランチ名から推測しません。`release_branches` に書いたパターンと、デフォルトブランチ（`origin/HEAD` が指す先）がリリースされるブランチです。デフォルトブランチは書かなくても常に含まれるので、base_branch を設定していないサイクルは緩和されません。パターンは GitHub のブランチ保護と同じ glob で、`*` は `/` をまたがず、`**` はまたぎます。
+
+`release_branches` をルート設定でしか書けないようにしているのは、サイクル側の宣言が古くなっても事故にならないようにするためです。`allow_unsafe_split = true` のサイクルが途中で base_branch を `main` に変えても、緩和は効かなくなります。`origin/HEAD` が無いクローンでも、判定できないので緩和しません。どちらの場合も黙って無視はせず、`hikyaku config` の出力に効いていない理由が出ます。`origin/HEAD` は `git remote set-head origin --auto` で設定できます。
+
+判定は `hikyaku config --json` の `unsafeSplit` に出ます。スタックや conductor で PR の向き先が先行ビルドや conductor のブランチになっていても、最終的に入るのは base_branch なので、判定は常にサイクルの base_branch で行います。
+
+安全でない分割を使ったビルドの `issue.md` には、マージ時点で何が壊れうるかと、それを解消するビルドが書かれます（[ARCHITECT](../workflow/architect.md#ビルド分割)）。緩和したサイクルの base_branch を、全ビルドが揃う前にリリースされるブランチへマージしないでください。サイクルの外の操作なので、Hikyaku は防げません。
+
 ## [conductor]
 
 ```toml
 [conductor]
+provider = "claude"  # 子の CLI。claude / codex
 escalate = []        # 既定では監督が答える問いのうち、人間に上げるものの ID
 delegate = []        # 既定では人間に上げる問いのうち、監督に任せるものの ID
 allowed_tools = []   # 子セッションに許可するツール（既定に追加される）
@@ -291,13 +313,17 @@ review_timeout = 15       # レビューの依頼や CI を待つ上限（分）
 
 `escalate` と `delegate` には問いの ID（`G8`、`review-findings` など）を並べます。使える ID と現在の振り分けは `hikyaku conductor asks <cycle>` で確認できます。表に無い ID や、同じ ID を両方に書いた場合はエラーになります。サイクルの中止（`abandon`）と ID の無い問い（`other`）は常に人間に上げるので、`delegate` には書けません。
 
-`allowed_tools` は `--allowedTools` に渡す書式で書きます（`"Bash(npm test:*)"` など）。子はこの設定を起動のたびに読むので、作業ツリーで一時的に足すのではなくコミットしておいてください。
+クラウド環境ではレビューと同じ `detectCloudEnv()` の判定を使い、`CLAUDE_CODE_REMOTE=true` なら Claude、`CODEX_ENVIRONMENT_ID` が空でなければ Codex に固定します。この判定は `provider` の明示指定より優先し、両方が該当するときは Claude を選びます。クラウドでない場合は `provider`、未指定なら `claude` を使います。`conductor asks` は実際の CLI と選択元（`providerSource`）を示します。
+
+`provider = "codex"` はクラウドでない環境で Codex CLI を子として使います。Codex は承認なし・`workspace-write` サンドボックスで動きます。`allowed_tools` は空配列、`budget_per_run` は 0 のみ受け付け、Claude のツール許可や費用上限には対応しません。実行環境の制限は [conductor](../workflow/conductor.md#codex-を子セッションに使う) を参照してください。
+
+Claude の `allowed_tools` は `--allowedTools` に渡す書式で書きます（`"Bash(npm test:*)"` など）。子はこの設定を起動のたびに読むので、作業ツリーで一時的に足すのではなくコミットしておいてください。
 
 `phase_reviewers` には、conductor ブランチに向かうフェーズの PR にアサインするレビュアーを書きます。Copilot のような Bot を入れておくと、取り込みの前にレビューが付くのを待てます。人間のレビュアーを入れると、レビューが付くまで取り込みが止まるので、フェーズごとの確認が重くなります。`review_timeout` を超えても依頼が残っていれば、監督は人間に確認します。
 
 `require_approval` を `true` にすると、監督がフェーズの PR を取り込む条件に、1人以上の承認があり、変更の要求が残っていないことが加わります。承認の有無は、レビュアーごとに承認・変更の要求・取り下げのうち最新のもので判定します。コメントだけのレビューは判定を変えません。子の PR はあなたの `gh` の認証で作られるので、承認できるのはあなた以外のレビュアーです。
 
-`model` と `[conductor.models]` の値は、`claude --model` に渡すモデル名（`opus` / `sonnet` のような別名か、正式なモデル名）です。`[conductor.models]` のキーは `architect` / `builder` / `close-cycle` だけで、それ以外はエラーになります。`models = "opus"` のようにテーブル以外で書いた場合もエラーになります。効くのは子のセッション本体だけです。子の中で起動されるサブエージェントは、環境変数 `CLAUDE_CODE_SUBAGENT_MODEL` を設定していればそのモデルで、していなければ子のセッションと同じモデルで動きます。ただし cycle-scanner だけは haiku に固定しています。
+`model` と `[conductor.models]` の値は、選択した CLI の `--model` に渡すモデル名（`opus` / `sonnet` のような別名か、正式なモデル名）です。`[conductor.models]` のキーは `architect` / `builder` / `close-cycle` だけで、それ以外はエラーになります。`models = "opus"` のようにテーブル以外で書いた場合もエラーになります。効くのは子のセッション本体だけです。Claude の子の中で起動されるサブエージェントは、環境変数 `CLAUDE_CODE_SUBAGENT_MODEL` を設定していればそのモデルで、していなければ子のセッションと同じモデルで動きます。ただし cycle-scanner だけは haiku に固定しています。
 
 配列はキー単位で上書きされます。サイクル設定に `escalate` を書くと、ルートの `escalate` に足されるのではなく置き換わります。
 

@@ -32,11 +32,19 @@ graph TD
   b02["build-02: 認証API"]
   b03["build-03: 投稿API"]
   b04["build-04: 共通ユーティリティ"]
-  b01 --> b02
-  b04 --> b02
-  b02 --> b03
+  b04 -.-> b02
+  b02 -.-> b03
   b01 --> b04
+  classDef merged fill:#fbefff,stroke:#8250df,color:#6639ba
+  classDef ready fill:#dafbe1,stroke:#1a7f37,color:#116329
+  classDef blocked fill:#f6f8fa,stroke:#8c959f,color:#57606a
+  class b01 merged
+  class b04 ready
+  class b02,b03 blocked
+  linkStyle 0,1 stroke:#8c959f,stroke-dasharray:5 5
 ```
+
+紫: 完了（merged） / 緑: 着手可能（ready） / グレー: 待機中（blocked）。点線は先行ビルドが未完了の依存
 ````
 
 **カラム説明:**
@@ -46,7 +54,7 @@ graph TD
 | `buildID` | 作成順の連番。`max(既存) + 1` で採番し、リナンバリングは行わない |
 | `title` | ビルド名 |
 | `BP` | ビルドポイント（`hikyaku bp estimate` の算出値。手順は [bp-guide.md](bp-guide.md)） |
-| `dependencies` | 依存ビルドID。実行順序はこの依存グラフで決まる |
+| `dependencies` | 直接の依存ビルドID。実行順序はこの依存グラフで決まる。グラフは推移的簡約で描かれるため、経由して到達できる依存（例の build-02 の依存 build-01）は線として現れない |
 | `issue` | `build-{NN}/issue.md` への相対リンク。作成時に記録し以後不変 |
 | `PR` | **着手可否と完了判定に使う唯一の列**。当該ビルドの PR に同梱して更新する |
 
@@ -86,6 +94,14 @@ issue.md の本文は build-manager（LLM）が書きます。tasklist.md の行
 ## 参照する設計ドキュメント
 
 - （design-delta.md の該当箇所、永続ドキュメントの該当箇所）
+
+## マージ時点で残る危険
+
+（安全でない分割を使ったビルドだけに書く。使っていなければ節ごと書かない）
+
+- （このビルドをマージした時点で、本番に出ると何が壊れうるか）
+- 安全な分割にできなかった理由: （例: 分けると BP が上限を超える）
+- 解消するビルド: build-NN（このビルドに依存させる）
 
 ## BP見積もり
 

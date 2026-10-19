@@ -81,6 +81,7 @@ export const ASKS: AskDefinition[] = [
   { id: "questions", category: "spec", where: "architect / builder: 質問ループ" },
   { id: "adr-status", category: "spec", where: "architect / close-cycle: ADR に status 欄が無い" },
   { id: "design-conflict", category: "spec", where: "builder: 設計どおりでは要件を満たせない" },
+  { id: "unsafe-split", category: "spec", where: "build-manager: データ安全を保つ分割が見つからない" },
   { id: "review-findings", category: "spec", where: "builder: コードレビュー指摘への対応" },
   { id: "retry-limit", category: "failure", where: "builder: リトライの上限に達した" },
   { id: "abandon", category: "abandon", where: "close-cycle: 未完了のまま締める" },
@@ -128,6 +129,10 @@ export const CONDUCTOR_PHASES = ["architect", "builder", "close-cycle"] as const
 export type ConductorPhase = (typeof CONDUCTOR_PHASES)[number];
 
 export interface ConductorConfig {
+  /** 子セッションの CLI */
+  provider: "claude" | "codex";
+  /** クラウド判定は設定・既定値より優先する */
+  providerSource: "cloud" | "config" | "default";
   /** 既定では監督が答える問いのうち、人間に上げるもの */
   escalate: string[];
   /** 既定では人間に上げる問いのうち、監督に任せるもの */
@@ -142,13 +147,15 @@ export interface ConductorConfig {
   phaseReviewers: string[];
   /** レビューの依頼や CI を待つ上限（分）。0 なら待たずにその場で判定する */
   reviewTimeoutMinutes: number;
-  /** 子のモデル（全フェーズの既定）。未指定なら Claude Code の既定に任せる */
+  /** 子のモデル（全フェーズの既定）。未指定なら選択した CLI の既定に任せる */
   model: string | undefined;
   /** フェーズごとのモデル。model より優先する */
   models: Partial<Record<ConductorPhase, string>>;
 }
 
 export const DEFAULT_CONDUCTOR: ConductorConfig = {
+  provider: "claude",
+  providerSource: "default",
   escalate: [],
   delegate: [],
   allowedTools: [],
@@ -354,6 +361,43 @@ export function parseResultJson(raw: string): ParsedResult {
   }
 
   return { ...parseFinalText(result), sessionId, costUsd };
+}
+
+/** codex exec --json のイベント列を読む。途中終了や失敗を成功にしない */
+export function parseCodexResult(raw: string): ParsedResult {
+  let sessionId: string | null = null;
+  let finalText = "";
+  let completed = false;
+  let failure: string | undefined;
+  const error = (reason: string): ParsedResult => ({
+    outcome: "error", body: finalText.trimEnd().slice(-2000), sessionId, costUsd: null, reason,
+  });
+  for (const line of raw.split("\n")) {
+    if (line.trim() === "") continue;
+    let event: Record<string, unknown>;
+    try {
+      const value: unknown = JSON.parse(line);
+      if (typeof value !== "object" || value === null || Array.isArray(value)) return error("Codex のイベントがオブジェクトではありません");
+      event = value as Record<string, unknown>;
+    } catch {
+      return error("Codex の結果を JSONL として読めません");
+    }
+    if (event["type"] === "thread.started" && typeof event["thread_id"] === "string") sessionId = event["thread_id"];
+    if (event["type"] === "turn.started") { completed = false; finalText = ""; }
+    if (event["type"] === "item.completed") {
+      const item = event["item"] as Record<string, unknown> | null | undefined;
+      if (item?.["type"] === "agent_message" && typeof item["text"] === "string") finalText = item["text"];
+    }
+    if (event["type"] === "turn.completed") completed = true;
+    if (event["type"] === "turn.failed" || event["type"] === "error") {
+      const detail = event["error"] as Record<string, unknown> | null | undefined;
+      failure = typeof detail?.["message"] === "string" ? detail["message"]
+        : typeof event["message"] === "string" ? event["message"] : "Codex の子セッションがエラーで終了しました";
+    }
+  }
+  if (failure !== undefined) return error(failure);
+  if (!completed || sessionId === null) return error("Codex の子セッションが完了していないか、thread_id がありません");
+  return { ...parseFinalText(finalText), sessionId, costUsd: null };
 }
 
 // ---------------------------------------------------------------------------

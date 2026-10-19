@@ -155,7 +155,8 @@ export const REVIEW_PROVIDER_ENV = "HIKYAKU_REVIEW_PROVIDER";
 
 /**
  * 各プロバイダのクラウド環境を示す環境変数。クラウド環境では相手のプロバイダの CLI が無いので、
- * そこで動いているプロバイダに固定する。HIKYAKU_REVIEW_PROVIDER と設定ファイルより優先する。
+ * そこで動いているプロバイダに固定する。レビューと conductor で共用し、設定ファイルより優先する。
+ * レビューでは HIKYAKU_REVIEW_PROVIDER よりも優先する。
  * 両方が立っていれば並びの先（claude）を使う
  */
 export const REVIEW_CLOUD_ENVS: { provider: ReviewProvider; variable: string; matches: (value: string) => boolean }[] = [
@@ -348,6 +349,8 @@ export interface ResolvedConfig {
   review: ReviewSettings;
   external: { target: ExternalTarget; githubRepo?: string; asanaProjectGid?: string };
   conductor: ConductorConfig;
+  /** [data_integrity] — ビルドのマージで本番データを壊さないための宣言 */
+  dataIntegrity: DataIntegrityConfig;
   /**
    * ルート設定の ask に並んでいて、まだ答えが記録されていないキー。
    * create-cycle が尋ねる対象。サイクルを重ねた結果ここに残っていれば、
@@ -356,6 +359,16 @@ export interface ResolvedConfig {
   askAtCreate: AskKey[];
   /** 読み込んだ設定ファイルのパス（デバッグ用） */
   sources: string[];
+}
+
+export interface DataIntegrityConfig {
+  /**
+   * リリースされるブランチのパターン（glob）。ルート設定でのみ宣言できる。
+   * デフォルトブランチは書かなくても暗黙に含まれる（判定は integrity.mts）
+   */
+  releaseBranches: string[];
+  /** マージ時点で本番データの安全を保てないビルド分割を許すか。既定は false */
+  allowUnsafeSplit: boolean;
 }
 
 export interface LoadOptions {
@@ -436,13 +449,18 @@ function readStringArray(table: TomlTable | undefined, key: string, where: strin
  * [conductor] を読む。配列はキー単位のマージなので、サイクル設定に書くと
  * ルート設定の配列を置き換える（足し合わせない）
  */
-function readConductor(table: TomlTable | undefined): ConductorConfig {
+export function readConductor(table: TomlTable | undefined, env: NodeJS.ProcessEnv = process.env): ConductorConfig {
   const where = "[conductor]";
   const budget = readNumber(table, "budget_per_run", where) ?? DEFAULT_CONDUCTOR.budgetPerRun;
   if (budget < 0) {
     throw new HikyakuError(`${where}.budget_per_run は 0 以上で指定してください（0 は上限なし）`);
   }
+  const configured = checkEnum(readString(table, "provider", where), ["claude", "codex"] as const, `${where}.provider`);
+  const cloud = detectCloudEnv(env);
+  const provider = cloud?.provider ?? configured ?? DEFAULT_CONDUCTOR.provider;
   const conductor: ConductorConfig = {
+    provider,
+    providerSource: cloud !== undefined ? "cloud" : configured !== undefined ? "config" : "default",
     escalate: readStringArray(table, "escalate", where) ?? DEFAULT_CONDUCTOR.escalate,
     delegate: readStringArray(table, "delegate", where) ?? DEFAULT_CONDUCTOR.delegate,
     allowedTools: readStringArray(table, "allowed_tools", where) ?? DEFAULT_CONDUCTOR.allowedTools,
@@ -453,6 +471,9 @@ function readConductor(table: TomlTable | undefined): ConductorConfig {
     model: readModel(table, "model", where),
     models: readConductorModels(readConductorModelsTable(table, where)),
   };
+  if (provider === "codex" && (conductor.allowedTools.length > 0 || budget > 0)) {
+    throw new HikyakuError(`${where}: codex では allowed_tools と budget_per_run は使えません（空配列・0 にしてください）`);
+  }
   checkConductorAsks(conductor, where);
   return conductor;
 }
@@ -885,6 +906,18 @@ function mergeTables(base: TomlTable, override: TomlTable): TomlTable {
   return out;
 }
 
+function readDataIntegrity(table: TomlTable | undefined): DataIntegrityConfig {
+  const where = "[data_integrity]";
+  const releaseBranches = readStringArray(table, "release_branches", where) ?? [];
+  if (releaseBranches.some((pattern) => pattern.trim() === "")) {
+    throw new HikyakuError(`${where}.release_branches に空のパターンがあります`);
+  }
+  return {
+    releaseBranches,
+    allowUnsafeSplit: readBoolean(table, "allow_unsafe_split", where) ?? false,
+  };
+}
+
 /**
  * サイクル設定に、サイクル側では決められないキーが無いか検査する。
  *
@@ -910,6 +943,19 @@ function assertCycleOverridable(table: TomlTable, path: string): void {
       [
         "ask は「create-cycle 時に決める」という宣言なので、リポジトリルートの",
         ".hikyaku.config でのみ意味を持ちます。サイクル設定には決まった値を書いてください。",
+      ].join("\n"),
+    );
+  }
+
+  // リリースされるブランチはリポジトリの運用で決まる。サイクルが自分の base_branch を
+  // 外せると、緩和を許すかどうかの判断をサイクル自身が下せてしまう
+  const integrity = readTable(table, "data_integrity");
+  if (integrity?.["release_branches"] !== undefined) {
+    throw new HikyakuError(
+      `${path}: data_integrity.release_branches はサイクル設定では指定できません`,
+      [
+        "リリースされるブランチはリポジトリのブランチ運用で決まるので、リポジトリルートの",
+        ".hikyaku.config でのみ宣言できます。サイクルで決められるのは allow_unsafe_split だけです。",
       ].join("\n"),
     );
   }
@@ -1096,6 +1142,7 @@ function finalize(
       asanaProjectGid: readString(externalTable, "asana_project_gid", "[external]"),
     },
     conductor: readConductor(readTable(merged, "conductor")),
+    dataIntegrity: readDataIntegrity(readTable(merged, "data_integrity")),
     askAtCreate,
     sources,
   };
