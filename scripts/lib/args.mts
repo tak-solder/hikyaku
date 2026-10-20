@@ -20,6 +20,9 @@ const BOOLEAN_FLAGS = new Set([
   "ref",
 ]);
 
+/** すべてのコマンドが受け付けるグローバルオプション。BP の基準表のキーはこれと衝突しない（lib/bp.mts が弾く） */
+export const GLOBAL_FLAGS: ReadonlySet<string> = new Set(["json", "root", "profile", "help", "version", "dry-run"]);
+
 export interface ParsedArgs {
   positional: string[];
   flags: Map<string, string | boolean>;
