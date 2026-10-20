@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- conductor と bp-guide の SKILL.md で省略形の `hikyaku <command>` と書いていた CLI 呼び出し（`pr title` / `external ref` / `config` / `help bp guide`）を、ほかの箇所と同じ `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" <command>` の形に揃えた。省略形は利用者のシェル関数が前提で、エージェントがそのまま実行すると失敗するため
 - 共通手順の 2.4.1 を取り込み、差し戻し・受け入れ基準の追跡・PR レビュアー割り当て・指摘からの追加設計に対応した
 - Codex 実行規約に architect の引数の読み替え、conductor の委任と子の完了待ち、navigator から選択したスキルを実行する手順を明記した
 - Codex 向けの CI を `check-codex-plugin.yml` に分離し、`codex-plugin` ブランチ向け PR でマニフェストのバージョン形式・更新と入口の参照先を検証するようにした。更新検出の対象は Codex 固有のファイルに加え、共通の `skills/`・`agents/`・`scripts/` も含む。スクリプトの型チェック・テストも `codex-plugin` 向け PR で実行する
