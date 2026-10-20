@@ -185,6 +185,11 @@ export interface GuideProblem {
   message: string;
 }
 
+/** 既定に無い論理名で、repo 管理として登録されたリポジトリ固有の永続ドキュメントか */
+export function isCustomEntry(entry: DocEntry): boolean {
+  return entry.definition === undefined && entry.ownership === "repo";
+}
+
 /** guide の内容を検証する。ポインタの陳腐化を機械検出できるのがこの仕組みの利点 */
 export function validateGuide(entries: DocEntry[], repoRoot: string): GuideProblem[] {
   const problems: GuideProblem[] = [];
@@ -200,10 +205,13 @@ export function validateGuide(entries: DocEntry[], repoRoot: string): GuideProbl
     }
     seen.add(entry.name);
 
-    if (!entry.definition) {
+    // 既定に無い論理名は、リポジトリ固有の永続ドキュメント（手順書・PRD など）として
+    // repo 管理でだけ許す。hikyaku / 未作成 は Hikyaku が形式を決めて作る前提で、
+    // 既定の定義が無いと作れない。対象外は既定の論理名を持たない宣言にしか意味が無い
+    if (!entry.definition && entry.ownership !== "repo") {
       problems.push({
         entry: entry.name,
-        message: `未知の論理名です。使用できるのは: ${DOC_DEFINITIONS.map((d) => d.name).join(", ")}`,
+        message: `既定に無い論理名は管理を repo にしてください（現在: ${entry.ownership}）。既定の論理名: ${DOC_DEFINITIONS.map((d) => d.name).join(", ")}`,
       });
       continue;
     }

@@ -80,6 +80,27 @@ test("CLI: tasklist の dry-run とグラフ検証失敗はいずれも既存デ
   assert.deepEqual(snapshot(directory), before);
 });
 
+test("CLI: tasklist は不明なオプションと余分な引数を拒否し、書き込まない", (t) => {
+  const directory = workspace(t, true);
+  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--bp", "2");
+  const before = snapshot(directory);
+  // zsh で ${3:+--deps $3} を展開したときのように、オプションと値が1つの引数で渡る
+  const joined = cli(directory, "tasklist", "add", "001", "--title", "API", "--bp", "1", "--deps 1");
+  assert.equal(joined.status, 1);
+  assert.match(joined.stderr, /不明なオプションです: --deps 1/);
+  assert.match(joined.stderr, /--deps=1/);
+  const typo = cli(directory, "tasklist", "add", "001", "--title", "API", "--depz", "1");
+  assert.equal(typo.status, 1);
+  assert.match(typo.stderr, /不明なオプションです: --depz/);
+  assert.match(typo.stderr, /--deps/);
+  // 空白区切りの依存は、2つ目以降が余分な位置引数になる
+  const extra = cli(directory, "tasklist", "update", "001", "--id", "1", "--deps", "1", "2");
+  assert.equal(extra.status, 1);
+  assert.match(extra.stderr, /余分な引数があります: "2"/);
+  assert.deepEqual(snapshot(directory), before);
+  assert.match(succeeds(directory, "tasklist", "add", "001", "--title", "API", "--deps=1", "--dry-run"), /build-02 を追加します（BP: なし \/ 依存: build-01）/);
+});
+
 test("CLI: tasklist done は URL を検証し、PR を記録すると完了済みの更新を拒否する", (t) => {
   const directory = workspace(t, true);
   succeeds(directory, "tasklist", "add", "001", "--title", "基盤");
@@ -108,6 +129,24 @@ test("CLI: validate は正常時 0、不整合は JSON と終了コード 2、�
   write(directory, "docs/hikyaku/cycles/001-test/build-01/issue.md");
   assert.equal(JSON.parse(succeeds(directory, "validate", "--json")).ok, true);
   assert.ok(readFileSync(join(directory, tasklist), "utf8").includes("基盤"));
+});
+
+test("CLI: 既定に無い論理名は repo 管理でだけ受け付け、context の候補に含める", (t) => {
+  const directory = workspace(t, true);
+  const guide = "docs/hikyaku/document-guide.md";
+  const original = readFileSync(join(directory, guide), "utf8");
+  write(directory, "docs/observability.md");
+  write(directory, guide, `${original.trimEnd()}\n| observability | repo | \`docs/observability.md\` | 運用確認の手順書 |\n`);
+  assert.equal(JSON.parse(succeeds(directory, "validate", "--json")).ok, true);
+  const architect = JSON.parse(succeeds(directory, "context", "architect", "001", "--json"));
+  assert.ok(architect.suggestions.some((s: { ref: string; summary: string }) => s.ref === "observability" && s.summary === "運用確認の手順書"));
+  const close = JSON.parse(succeeds(directory, "context", "close", "001", "--json"));
+  assert.ok(!close.suggestions.some((s: { ref: string }) => s.ref === "observability"));
+
+  write(directory, guide, `${original.trimEnd()}\n| prd | 未作成 | — | プロダクト要求 |\n`);
+  const invalid = cli(directory, "validate", "--json");
+  assert.equal(invalid.status, 2);
+  assert.match(invalid.stdout, /既定に無い論理名は管理を repo にしてください/);
 });
 
 test("CLI: validate は番号付きの受け入れ基準がビルドに割り当てられているかを検査する", (t) => {

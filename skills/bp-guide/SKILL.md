@@ -119,7 +119,7 @@ Step 3 へ進む。実績無しにしきい値を動かすのは推測なので�
 | 指標の追加 | `rules.toml` の `[metrics.*]` | `[metrics.migrations]` |
 | 数え方の注意 | `README.md` の文章部分 | 「マイグレーション1本は新規ファイル2つと数える」 |
 
-加算要素の書き方は3種類（`hikyaku help bp guide` と `rules.toml` のコメントを参照）。
+加算要素の書き方は3種類（`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" help bp guide` と `rules.toml` のコメントを参照）。
 
 ```toml
 [additions.payment_api]        # flag: 該当すれば +2
