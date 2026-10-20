@@ -136,11 +136,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist add {cycle} \
   --title "..." --bp 3 --deps 1,2 --dry-run
 ```
 
-- [ ] `tasklist_review` が有効な場合（express / standard / thorough）、`doc-reviewer` を起動する（`context: tasklist`）
-  - 起動方法は `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc {phase} {cycle} --self claude --json` で決める。
-    `mode: agent` ならサブエージェントとして起動する。`mode: process` なら
+- [ ] `tasklist_review`（`config --json` の `reviews`）が有効な場合、`doc-reviewer` を起動する（`context: tasklist`）
+  - 起動方法は `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc {phase} {cycle} --self claude --json` の `mode` で決める。
+    `agent` ならサブエージェントとして起動する。`process` なら
     `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run doc {phase} {cycle} --self claude --context tasklist --files <渡す情報のパスをカンマ区切りで>`
-    を実行し、返った本文をレビュー結果として扱う。終了コード 1 は失敗で、指摘0件として扱わずユーザーに報告する
+    の本文をレビュー結果とする。終了コード 1 は失敗で、指摘0件として扱わずユーザーに報告する
     （`{phase}` は呼び出し元のフェーズ。architect から呼ばれたら `architect`、builder からなら `build-{NN}`）。
     `mode: process` では、プロンプトに直接含める `--dry-run` の出力と issue.md の本文を `git rev-parse --git-path hikyaku` の下の
     一時ファイルに書き出し、そのパスも `--files` に含める

@@ -34,6 +34,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Claude Code 利用者の操作は変わらない。従来の `/hikyaku:...` と `skills/`・`agents/` の手順は維持する
 - Codex 利用者は `codex plugin marketplace add tak-solder/hikyaku@codex-plugin` でマーケットプレイスを追加し、プラグインをインストールする。`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要。Codex でも `$hikyaku:conductor` と `$hikyaku:navigator` を利用できる。ローカルで子に Codex CLI を使う場合は `[conductor] provider = "codex"` を指定する
 
+## [2.9.2]
+
+### Changed
+
+- **SKILL.md の短縮**: planner / architect / builder / close-cycle / build-manager / create-cycle / init / conductor / retrospective の SKILL.md を短くした（合計 3,341 → 2,995 行）。手順・承認ゲート・問いのタグは変えていない。フェーズ間で重複していたサイクル解決・ブランチ確認・状態確認・セッション名・doc-reviewer 起動の記述を縮め、各ゲートに併記していた profile 名を外して `config --json` の `gates` / `reviews` を正にした。builder のセキュリティ判定基準の固定値も外し、`security.triggers` を参照する。設計の経緯や CLI の内部挙動の説明は `docs/` と `hikyaku help` に任せた。retrospective のテンプレートは `skills/retrospective/references/templates.md` に、builder の test-spec.md のフォーマットは `skills/builder/references/templates.md` に移した（[#77](https://github.com/tak-solder/hikyaku/pull/77)）
+
+### Migration
+
+- 対応は不要。成果物の形式（retrospective.md・test-spec.md を含む）は変わらない
+
 ## [2.9.1]
 
 ### Changed

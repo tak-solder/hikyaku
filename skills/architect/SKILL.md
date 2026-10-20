@@ -109,14 +109,13 @@ CLI が確かめた結果。自分で base_branch の名前から判断しない
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json
 ```
 
-HIKYAKU_ROOT は `.hikyaku.config` から解決されるので、引数では受け取らない。
-
-`$ARGUMENTS[0]` でサイクルが指定されていればそれを渡す。省略された場合は
-現在のブランチ → `.hikyaku.local` → 唯一の進行中サイクルの順で決まる。
-決められないときは進行中サイクルの一覧を添えてエラーになるので、ユーザーに尋ねてから（ask: cycle）
-指定し直す。推測して進めない（別サイクルへコミットする事故になる）。
+`$ARGUMENTS[0]` のサイクルを渡す。省略時は CLI が現在のブランチ → `.hikyaku.local` →
+唯一の進行中サイクルの順で決め、決まらなければ候補を添えてエラーになる。そのときは推測せず
+ユーザーに尋ねて（ask: cycle）指定し直す（別サイクルへコミットする事故になる）。HIKYAKU_ROOT は
+`.hikyaku.config` から解決されるので、引数では受け取らない。
 
 出力の `cycle` と `cycleSource` を、作業対象としてユーザーに1行で示す。
+以降のゲートとレビューの有無は、出力の `gates` / `reviews` で決める。
 `unsafeSplit.allowed` が true なら、その `message` も1行で示す（このサイクルでは原則を外せることを、
 分割の前にユーザーが知っておくため）。
 
@@ -138,9 +137,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {cycle}
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context architect {cycle}
 ```
 
-概要欄を見て、今回のスコープに関係するものだけを読む。全部読む必要はない。
-概要欄があるのはそのためで、パスだけでは全部読むしかなくなる。
-`context` が返すのは候補と理由までで、絞るのはあなたの仕事。
+概要欄を見て、今回のスコープに関係するものだけを読む。`context` が返すのは候補と理由までで、
+絞るのはあなたの仕事。
 
 - `overview` は Step 2 の差分調査の基準になる。未作成なら差分ではなく全体を調査する
 - `decisions` は採用理由とトレードオフを把握する。覆す場合は Step 4b で新エントリとして記録し、既存エントリは書き換えない
@@ -165,24 +163,17 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify architect {cycle}
 | `ok: false` かつ `onBaseBranch: true` | `expected` の名前でブランチを作成して続ける |
 | `ok: false` かつ `onBaseBranch` が `false` / `null` | ユーザーに尋ねる（下記）（ask: branch） |
 
-3つ目はユーザーの判断であって、あなたの判断ではない。現在のブランチが実行環境に
-割り当てられたものだと分かっていても、**自分で決めずに必ず尋ねる。**
-
-実行環境が割り当てたブランチと、別の作業のブランチに紛れ込んだ状態は、セッションの中からは
-区別できない。「今回は前者だから問題ない」という推測を一度でも通すと、後者もまったく
-同じ理屈で通る。 それを防ぐための確認なので、確認を省いた時点で意味が無くなる。
-
-尋ねる手段（`AskUserQuestion` など）があればそれを使い、次の3つを提示する。
-**どれが妥当かの示唆を添えない。選ぶのはユーザー。**
+3つ目は、現在のブランチが実行環境に割り当てられたものだと分かっていても、**自分で決めずに
+必ず尋ねる。** セッションの中からは、別の作業のブランチに紛れ込んだ状態と区別できない。
+尋ねる手段（`AskUserQuestion` など）で次の3つを、どれが妥当かの示唆を添えずに提示する。
 
 1. Hikyaku の規則に従う — `expected` の名前でブランチを作成する
 2. 現在のブランチで作業する
 3. 別のブランチを指定する
 
-ユーザーが 2 または 3 を選んだあとで、`next` の「着手中」検出が効かなくなることを
-伝える（ブランチ名から導出しているため）。完了判定と中断検出には影響しない。
-
-ブランチを決めたら、成果物をコミットする直前にもう一度この確認を行う。
+ユーザーが 2 か 3 を選んだら、`next` の「着手中」検出が効かなくなることを伝える
+（ブランチ名から導出しているため）。ブランチを決めたら、成果物をコミットする直前にもう一度
+この確認を行う。
 
 - [ ] サイクルの状態を確認する
 
@@ -190,11 +181,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify architect {cycle}
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
 ```
 
-中断からの再開の場合、`cycle status` がどこまで進んだかを教えてくれる。
-
-ブランチを決めたあとに実行する。成果物の有無は作業ツリーを見て判定するため、
-デフォルトブランチに居るまま実行すると、別セッションが push 済みの成果物が見えない。
-中断からの再開なのに最初からやり直すことになる。
+ブランチを決めてから実行する（成果物の有無は作業ツリーで判定するため、デフォルトブランチの
+ままでは push 済みの成果物が見えない）。中断からの再開なら、表示された位置から再開する。
 
 - [ ] セッション名を設定する
 
@@ -202,8 +190,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title architect {cycle}
 ```
 
-返ってきた名前をセッション名に設定する。設定する手段が無い環境ではスキップしてよい。
-`[session] title` が空文字なら「変更しません」と返るので、その場合もスキップする。
+返った名前をセッション名に設定する。設定する手段が無い環境と、「変更しません」と返った場合はスキップする。
 
 → Step 1 へ。
 
@@ -261,7 +248,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active
     ここでは「今回のサイクルで必要な範囲」に留める
 - [ ] コミット & push する
 
-- [ ] `codebase_survey_gate` が有効な場合（thorough のみ）、ユーザーに提示して確認を得る（G2）
+- [ ] `codebase_survey_gate` が有効な場合、ユーザーに提示して確認を得る（G2）
 
 → Step 3 へ。
 
@@ -302,19 +289,17 @@ codebase-survey.md・planning/・永続ドキュメントに明記されてい�
   - 各案に「影響ファイル」「主要コンポーネントの責務」「Trade-off」を返させる
 - [ ] trade-off表にまとめ、推奨案と理由を明記する
 
-`design_choice_gate` が有効な場合（economy / standard / thorough）:
+`design_choice_gate` が有効な場合:
 
 - [ ] trade-off表と推奨案をユーザーに提示し、選択を得る（G3）
 - [ ] 「お任せ」と回答された場合も、推奨案を改めて提示して明示的な確認を得る（空回答として進めない）
 
-トレードオフの選択は本来人間にしか下せない判断なので、外せるのは express だけ。
-
-無効な場合（express）:
+無効な場合:
 
 - [ ] 推奨案をそのまま採用し、ユーザーに確認を求めない
 - [ ] trade-off表と推奨理由は破棄せず、そのまま ADR の「検討した案」「採用理由」に残す
   - 承認を省いた以上、判断を後から追える場所は ADR だけになる
-- [ ] 採用案と退けた案を PR 本文にも一行で示す（express では PR レビューが人間の目になる）
+- [ ] 採用案と退けた案を PR 本文にも一行で示す（PR レビューが人間の目になる）
 
 - [ ] 確定した採用案を ADR として追記する
   - 昇格先は `document-guide.md` の `decisions` が指すパス
@@ -347,14 +332,14 @@ codebase-survey.md・planning/・永続ドキュメントに明記されてい�
 
 #### Step 5a: 設計の承認（G4）
 
-- [ ] `architecture_review` が有効な場合（express / standard / thorough）、`doc-reviewer` を起動する（`context: architecture`）
-  - 起動方法は `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc architect {cycle} --self claude --json` で決める。
-    `mode: agent` ならサブエージェントとして起動する。`mode: process` なら
+- [ ] `architecture_review` が有効な場合、`doc-reviewer` を起動する（`context: architecture`）
+  - 起動方法は `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc architect {cycle} --self claude --json` の `mode` で決める。
+    `agent` ならサブエージェントとして起動する。`process` なら
     `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run doc architect {cycle} --self claude --context architecture --files <渡す情報のパスをカンマ区切りで>`
-    を実行し、返った本文をレビュー結果として扱う。終了コード 1 は失敗で、指摘0件として扱わずユーザーに報告する
+    の本文をレビュー結果とする。終了コード 1 は失敗で、指摘0件として扱わずユーザーに報告する
   - 渡す情報: `design-delta.md`, `codebase-survey.md`, 今回追記した ADR, `user-stories.md`
   - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
-- [ ] `architecture_gate` が有効な場合（economy / standard / thorough）、ユーザーに提示して承認を得る（G4）
+- [ ] `architecture_gate` が有効な場合、ユーザーに提示して承認を得る（G4）
 
 承認観点はこれに限定する:
 
@@ -364,9 +349,7 @@ codebase-survey.md・planning/・永続ドキュメントに明記されてい�
 - doc-reviewer の指摘への対処は妥当か
 ```
 
-技術選定の是非は G3 で決着済みなので、ここで問い直さない。同じことを二度聞くのが
-承認ラウンドの冗長さの正体になる（G3 を省く express では G4 も省かれるので、
-「選択は省いたのに承認では問う」という中間状態は生じない）。
+技術選定の是非は G3 で決着済みなので、ここで問い直さない（同じことを二度聞かない）。
 
 → 承認を得たら Step 5b へ。フィードバックがあれば Step 3 に戻る。
 
@@ -410,12 +393,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers architect 
 
   失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
 
-この PR も速やかにマージすることを想定している。 tasklist.md がデフォルトブランチに
-入らないと、他のサイクルからも外からもこのサイクルの進捗が見えない。
-
-マージ前に builder を始めることはできる（このブランチから積めば、着手判定は成果が
-履歴に在るかで行うため通る）。ただしサイクルの完了判定はデフォルトブランチを見るので、
-マージするまでサイクルは締められない。
+この PR は速やかにマージすることを想定している。tasklist.md がデフォルトブランチに入らないと、
+このサイクルの進捗が他から見えない。
 
 - [ ] 完了後、次に着手できるビルドを案内する
 

@@ -52,14 +52,13 @@ close-cycle がそれを素材として昇格させる。
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json
 ```
 
-HIKYAKU_ROOT は `.hikyaku.config` から解決されるので、引数では受け取らない。
-
-`$ARGUMENTS[0]` でサイクルが指定されていればそれを渡す。省略された場合は
-現在のブランチ → `.hikyaku.local` → 唯一の進行中サイクルの順で決まる。
-決められないときは進行中サイクルの一覧を添えてエラーになるので、ユーザーに尋ねてから（ask: cycle）
-指定し直す。推測して進めない（別サイクルへコミットする事故になる）。
+`$ARGUMENTS[0]` のサイクルを渡す。省略時は CLI が現在のブランチ → `.hikyaku.local` →
+唯一の進行中サイクルの順で決め、決まらなければ候補を添えてエラーになる。そのときは推測せず
+ユーザーに尋ねて（ask: cycle）指定し直す（別サイクルへコミットする事故になる）。HIKYAKU_ROOT は
+`.hikyaku.config` から解決されるので、引数では受け取らない。
 
 出力の `cycle` と `cycleSource` を、作業対象としてユーザーに1行で示す。
+以降のゲートとレビューの有無は、出力の `gates` / `reviews` で決める。
 
 - [ ] 対象サイクルを記録する（次回から尋ねられずに済む）
 
@@ -76,18 +75,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle}
 `$ARGUMENTS[1]` で buildID が指定されていればそれを使う。省略された場合、
 `next` が返した着手可能なビルドから選ぶ。
 
-判定基準は「依存ビルドの成果が、いま居るブランチの履歴に在るか」。デフォルト
-ブランチ経由でマージされていても、先行ビルドのブランチから積んで（スタックして）いても
-着手できる。`next` は `HEAD` の tasklist.md の `PR` 列でこれを判定する。待機中と
-表示されたビルドには着手しない。
-
-未コミットの編集は数えない。`tasklist done` を実行してからコミットするまでの
-あいだ、そのビルドは未完了に見える。これは正しい挙動で、`PR` 列だけが先に書かれた
-状態を「実装が在る」と読まないための作り。
-
-判定はどのブランチに居るかで変わる。デフォルトブランチに居るときと先行ビルドの
-ブランチに居るときで答えが違うのは正しい（手元に在るコードが違うため）。
-Step 2 でブランチを決めたあと、もう一度 `next` を実行して確認する。
+`next` は、依存ビルドの成果が `HEAD` の履歴に在るか（`HEAD` の tasklist.md の `PR` 列）で
+判定する。デフォルトブランチ経由でマージされていても、先行ビルドのブランチから積んで
+（スタックして）いても着手できる。判定はいま居るブランチで変わるので、Step 2 でブランチを
+決めたあとにもう一度確認する。待機中と表示されたビルドには着手しない。
 
 依存関係がないビルドは並行実行できる。`next` が「着手中」と表示したビルドは、
 他セッションが作業している可能性がある。選ぶ前にユーザーに確認する（ask: build-select）。待機中の行に
@@ -138,38 +129,22 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify build-{NN} {cycle
 | `ok: false` かつ `onBaseBranch: true` | `expected` の名前でブランチを作成して続ける |
 | `ok: false` かつ `onBaseBranch` が `false` / `null` | ユーザーに尋ねる（下記）（ask: branch） |
 
-3つ目はユーザーの判断であって、あなたの判断ではない。現在のブランチが実行環境に
-割り当てられたものだと分かっていても、**自分で決めずに必ず尋ねる。**
-
-実行環境が割り当てたブランチと、別の作業のブランチに紛れ込んだ状態は、セッションの中からは
-区別できない。「今回は前者だから問題ない」という推測を一度でも通すと、後者もまったく
-同じ理屈で通る。 それを防ぐための確認なので、確認を省いた時点で意味が無くなる。
-
-尋ねる手段（`AskUserQuestion` など）があればそれを使い、次の3つを提示する。
-**どれが妥当かの示唆を添えない。選ぶのはユーザー。**
+3つ目は、現在のブランチが実行環境に割り当てられたものだと分かっていても、**自分で決めずに
+必ず尋ねる。** セッションの中からは、別の作業のブランチに紛れ込んだ状態と区別できない。
+尋ねる手段（`AskUserQuestion` など）で次の3つを、どれが妥当かの示唆を添えずに提示する。
 
 1. Hikyaku の規則に従う — `expected` の名前でブランチを作成する
 2. 現在のブランチで作業する
 3. 別のブランチを指定する
 
-ユーザーが 2 または 3 を選んだあとで、`next` の「着手中」検出と `pr base` の
-スタック元の導出が効かなくなることを伝える（どちらもブランチ名から導出しているため）。
+ユーザーが 2 か 3 を選んだら、`next` の「着手中」検出と `pr base` のスタック元の導出が
+効かなくなることを伝える（どちらもブランチ名から導出しているため）。
 
-どのブランチを選んでも、選んだあとに `next` を実行し直す。着手可能・待機の判定は
-`HEAD` の tasklist.md を読むので、ブランチが変われば依存ビルドの `PR` 列も変わり、
-判定も変わりうる。中断検出も同じ（成果物は作業ツリーを見る）。
+出力の `stackedOn` が非 null なら、先行フェーズのブランチの上に積んでいる。PR のマージ先は
+そのブランチになる（Step 8。正は `pr base` で、`stackedOn` は目安）。
 
-出力の `stackedOn` が非 null なら、そのブランチの上に積んでいる（スタックしている）。
-同じサイクルの先行フェーズのブランチから切った場合に起きる。デフォルトブランチへ
-マージされていなくても着手できるが、PR のマージ先はそのブランチになる（Step 8）。
-`stackedOn` は状態として保存されず、ブランチの祖先関係から毎回導出される。
-
-ただし `stackedOn` は目安。`branch verify` はネットワークへ行かないため、リモートで
-先行 PR がマージされた直後は古い可能性がある。PR の base として正なのは `pr base`。
-
-Hikyaku の規則に従う場合、このブランチの存在が「着手中」の印になるので、作成したら
-早めに push しておくと他セッションとの衝突を避けられる。ブランチを決めたら、成果物を
-コミットする直前にもう一度この確認を行う。
+ブランチを作成したら早めに push する（ブランチの存在が「着手中」の印になる）。ブランチを
+決めたら、成果物をコミットする直前にもう一度この確認を行う。
 
 - [ ] `cycle status` で既存の成果物を確認する
 
@@ -177,16 +152,13 @@ Hikyaku の規則に従う場合、このブランチの存在が「着手中」
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
 ```
 
-中断からの再開なら、どこまで進んだかが表示される。既存の成果物を読み込んで途中から再開する。
+ブランチを決めてから実行する（成果物の有無は作業ツリーで判定するため、デフォルトブランチの
+ままでは push 済みの成果物が見えない）。中断からの再開なら、表示された位置から既存の成果物を
+読み込んで再開する。
 
 `building（差し戻し中: build-NN）` と表示されたら、作業を始めずに止まる。このブランチは
-architect に差し戻されていて、設計を見直している最中。表示された再開コマンド
-（`/hikyaku:architect {cycle} build-NN`）を案内して終了する。再設計が終われば architect が
-`return.md` を消すので、そのあとで builder を起動し直せば通常どおり再開できる。
-
-ブランチを決めたあとに実行する。成果物の有無は作業ツリーを見て判定するため、
-デフォルトブランチに居るまま実行すると、前回のセッションが push 済みの成果物が見えない。
-中断からの再開なのに最初からやり直すことになる。
+architect に差し戻されて再設計中なので、表示された再開コマンド（`/hikyaku:architect {cycle} build-NN`）を
+案内して終了する。
 
 - [ ] ブランチを決めたあと、対象ビルドが着手可能かを確認し直す
 
@@ -194,9 +166,7 @@ architect に差し戻されていて、設計を見直している最中。表�
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle}
 ```
 
-着手可能の判定は `HEAD` が基準なので、ブランチを切り替えると答えが変わる。
-Step 0 で着手可能だったビルドが、切り替えた先では待機中になることがある
-（デフォルトブランチへ移った場合など）。待機中になったなら着手しない。
+切り替えた先で待機中になったなら着手しない（デフォルトブランチへ移った場合など）。
 
 - [ ] セッション名を設定する
 
@@ -204,8 +174,7 @@ Step 0 で着手可能だったビルドが、切り替えた先では待機中�
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title build-{NN} {cycle}
 ```
 
-返ってきた名前をセッション名に設定する。設定する手段が無い環境ではスキップしてよい。
-`[session] title` が空文字なら「変更しません」と返るので、その場合もスキップする。
+返った名前をセッション名に設定する。設定する手段が無い環境と、「変更しません」と返った場合はスキップする。
 
 `--build-title` にビルドのタイトルを渡すと、セッション名にビルド名まで入る。
 
@@ -237,11 +206,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" bp estimate {cycle} \
     外部API連携・大規模リファクタの取りこぼしから来る。使える入力は `bp guide {cycle}` の「入力」列
 - [ ] コミット & push する
 
-- [ ] `plan_review` が有効な場合（express / standard / thorough）、ここで `doc-reviewer` を起動し plan.md をレビューする（`context: plan`）
-  - 起動方法は `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc build-{NN} {cycle} --self claude --json` で決める。
-    `mode: agent` ならサブエージェントとして起動する。`mode: process` なら
+- [ ] `plan_review` が有効な場合、ここで `doc-reviewer` を起動し plan.md をレビューする（`context: plan`）
+  - 起動方法は `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc build-{NN} {cycle} --self claude --json` の `mode` で決める。
+    `agent` ならサブエージェントとして起動する。`process` なら
     `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run doc build-{NN} {cycle} --self claude --context plan --files <渡す情報のパスをカンマ区切りで>`
-    を実行し、返った本文をレビュー結果として扱う。終了コード 1 は失敗で、指摘0件として扱わずユーザーに報告する
+    の本文をレビュー結果とする。終了コード 1 は失敗で、指摘0件として扱わずユーザーに報告する
   - 渡す情報: `plan.md`, `issue.md`, `design-delta.md`, 依存ビルドの `handoff.md`,
     `{HIKYAKU_ROOT}/bp-guide/README.md`（存在する場合。無ければ `bp guide --markdown` の出力を
     プロンプトに含める）, Step 0 で取得した `bpMax`
@@ -252,45 +221,19 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" bp estimate {cycle} \
     （既定では 6 以上）になったら、下の「ビルド管理」に従って
     `/hikyaku:build-manager {cycle}` を呼び出し、分割を検討する
 
-- [ ] `plan_gate` が有効な場合（thorough のみ）、ここで plan.md の承認を得る（G7）
+- [ ] `plan_gate` が有効な場合、ここで plan.md の承認を得る（G7）
   - それ以外のプロファイルでは Step 3 の最後にまとめて承認する（G8）
 
 - [ ] テストシナリオを Agent に委任して `cycles/{cycle}/build-{NN}/test-spec.md` を生成させる
   - 洗い出し過程のコンテキスト消費を避けるため、メインセッションでは直接作成しない
-  - Agent に渡す情報: `plan.md`, `issue.md`, `design-delta.md`, 関連する永続ドキュメント
+  - Agent に渡す情報: `plan.md`, `issue.md`, `design-delta.md`, 関連する永続ドキュメント、
+    [templates.md](references/templates.md) の「test-spec.md」節（フォーマットと記載ガイドライン。必ず従わせる）
   - テスト対象が無いビルド（ドキュメントのみ等）ではスキップしてよい
-
-Agent に渡すフォーマット指定:
-
-````
-## フォーマット（必ず従うこと）
-
-```markdown
-# Build {NN}: {ビルド名} テストシナリオ
-
-## {テスト対象クラス/モジュール名}
-
-### {メソッド名}: {シナリオ名}
-- 対応: US-1.1（検証する user-stories.md の受け入れ基準。補助的なシナリオは「—」）
-- Given: （前提条件）
-- When: （操作）
-- Then: （期待結果）
-```
-
-**記載ガイドライン:**
-- 正常系・異常系・境界値を網羅する
-- Given/When/Then は具体的な値を含める（例: `Given: メールアドレス "user@example.com" のユーザーが登録済み`）
-- 1シナリオ = 1つの検証観点に絞る。表形式は使わないこと
-- issue.md の「対応する受け入れ基準」に挙がった番号は、どれも1つ以上のシナリオの「対応」に現れるようにする
-````
 
 - [ ] コミット & push する
 
-- [ ] `test_spec_review` が有効な場合（express / standard / thorough）、ここで `doc-reviewer` を起動し test-spec.md をレビューする（`context: test-spec`）
-  - 起動方法は `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc build-{NN} {cycle} --self claude --json` で決める。
-    `mode: agent` ならサブエージェントとして起動する。`mode: process` なら
-    `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run doc build-{NN} {cycle} --self claude --context test-spec --files <渡す情報のパスをカンマ区切りで>`
-    を実行し、返った本文をレビュー結果として扱う。終了コード 1 は失敗で、指摘0件として扱わずユーザーに報告する
+- [ ] `test_spec_review` が有効な場合、ここで `doc-reviewer` を起動し test-spec.md をレビューする（`context: test-spec`）
+  - 起動方法は plan.md のレビューと同じで、`--context test-spec` を渡す
   - 渡す情報: `test-spec.md`, `plan.md`, `issue.md`, `design-delta.md`
   - plan.md のレビューは上で完了済みなので、ここでは行わない
   - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
@@ -298,7 +241,7 @@ Agent に渡すフォーマット指定:
 - [ ] plan.md と test-spec.md をまとめてユーザーに提示し、承認を得る（G8）
   - 承認観点: 実装ステップの妥当性 / 受け入れ基準の網羅性 / 正常系・異常系・境界値のカバー範囲 / 不要なテストの有無
   - この承認は profile の管轄外で、どのプロファイルでも省略しない
-  - thorough では G7 で plan を既に承認しているので、ここでは test-spec に焦点を当てる
+  - G7 で plan を承認済みなら、ここでは test-spec に焦点を当てる
 
 → 承認を得たら Step 4 へ。フィードバックがあれば反映して承認からやり直す。
 
@@ -347,21 +290,12 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve security build-{
 
 | 設定値 | 挙動 |
 |---|---|
-| `off`（既定では該当なし。個別キーで明示したときだけ） | 起動しない |
-| `on`（thorough） | 常に起動する |
-| `recommended`（express / economy / standard） | 判定基準に該当する場合のみ、起動するか確認する |
+| `off` | 起動しない |
+| `on` | 常に起動する |
+| `recommended` | 判定基準に該当する場合のみ、起動するか確認する |
 
-`recommended` の場合、対象ビルドの `issue.md` と実際の diff を見て、
-`[review.security].triggers` に該当するか判定する。`config --json` の
-`security.triggers` に基準が入っている（未設定なら既定の3カテゴリ）。
-
-```
-- 個人情報・秘密情報を扱う（氏名/住所/連絡先/生年月日、パスワード、トークン、APIキー）
-- 認証・認可（ログイン、セッション、権限判定、アクセス制御）
-- 決済（支払い、カード情報、請求、返金）
-```
-
-該当する場合は判定根拠を一行で示して確認する。ヒューリスティックである以上
+`recommended` の場合、対象ビルドの `issue.md` と実際の diff が、`config --json` の
+`security.triggers` の基準に該当するか判定する。該当する場合は判定根拠を一行で示して確認する。ヒューリスティックである以上
 外れるので、ユーザーが上書きできる形にする。
 
 ```
@@ -471,12 +405,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist done {cycle} \
   --id {buildID} --pr {PR の URL}
 ```
 
-PR を作ってからでないと URL が無い。だから PR 作成が先で、PR 列の更新は後になる。
-push した分は同じ PR に載るので、順序が変わっても「PR に同梱する」ことは変わらない。
-
-**この変更は必ずこのビルドの PR に同梱する。** 先にデフォルトブランチへ入れると、
-未マージのビルドを完了と誤判定する。PR 列が非空であること自体が「マージ済み = 完了」を
-意味するのは、この同梱が守られているからこそ成立する。
+**この変更は必ずこのビルドの PR に同梱する。** PR 列が非空であることが「マージ済み = 完了」を
+意味するので、先にデフォルトブランチへ入れると未マージのビルドを完了と誤判定する。
 
 - [ ] 外部投影が有効な場合は同期を試みる（失敗してもワークフローは止めない）
 
@@ -486,17 +416,6 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external sync {cycle}
 
 gh CLI が無い環境では投影内容だけが返る（`reason: "gh-not-found"`）。その場合は
 GitHub MCP ツールで適用し、`cycle link` / `tasklist link` で参照を記録する。
-
-注意: このビルドに依存する後続ビルドを始める経路は2つある。
-
-1. この PR をマージしてから、デフォルトブランチで始める（既定）
-2. このブランチから積んで始める（スタック）。マージを待たずに進められるが、
-   後続ビルドの PR のマージ先はこのブランチになり、この PR が先にマージされるまで
-   後続はマージできない
-
-どちらでも `next` は着手可能と判定する（判定は `HEAD` の履歴に成果が在るかで行うため）。
-マージされていないこのブランチから離れると、後続ビルドは待機中に戻る。
-依存関係のないビルドは、どちらの経路とも関係なく並行して進められる。
 
 → Step 9 へ。
 
