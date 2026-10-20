@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- planner / architect / builder / close-cycle / build-manager / create-cycle / init / conductor / retrospective の SKILL.md を短くした（合計 3,336 → 2,990 行）。手順・承認ゲート・問いのタグは変えていない。フェーズ間で重複していたサイクル解決・ブランチ確認・状態確認・セッション名・doc-reviewer 起動の記述を縮め、各ゲートに併記していた profile 名を外して `config --json` の `gates` / `reviews` を正にした。builder のセキュリティ判定基準の固定値も外し、`security.triggers` を参照する。設計の経緯や CLI の内部挙動の説明は `docs/` と `hikyaku help` に任せた。retrospective のテンプレートは `skills/retrospective/references/templates.md` に、builder の test-spec.md のフォーマットは `skills/builder/references/templates.md` に移した
 - 共通手順の 2.4.1 を取り込み、差し戻し・受け入れ基準の追跡・PR レビュアー割り当て・指摘からの追加設計に対応した
 - Codex 実行規約に architect の引数の読み替え、conductor の委任と子の完了待ち、navigator から選択したスキルを実行する手順を明記した
 - Codex 向けの CI を `check-codex-plugin.yml` に分離し、`codex-plugin` ブランチ向け PR でマニフェストのバージョン形式・更新と入口の参照先を検証するようにした。更新検出の対象は Codex 固有のファイルに加え、共通の `skills/`・`agents/`・`scripts/` も含む。スクリプトの型チェック・テストも `codex-plugin` 向け PR で実行する
@@ -27,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Migration
 
+- SKILL.md の短縮について、利用者の対応は不要。成果物の形式（retrospective.md・test-spec.md を含む）は変わらない
 - Codex を子に使う場合は CLI のインストールと認証を済ませ、`provider = "codex"` を設定する。`workspace-write`・承認なしでテストや git・gh を実行できる環境が必要。監督は Claude Code / Codex のどちらでも実行できる
 
 - `SKILL.md` の `metadata.version` を参照する独自ツールは、対象ホストの `.claude-plugin/plugin.json` または `.codex-plugin/plugin.json` の `version` を参照するよう変更する

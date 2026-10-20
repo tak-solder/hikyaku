@@ -82,46 +82,18 @@ HIKYAKU_ROOT にはサイクルの成果物だけを置く。永続ドキュメ�
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" init --root {HIKYAKU_ROOT}
 ```
 
-既存ファイルは決して上書きされない。
+ルートの `.hikyaku.config`、`cycles.md`、`document-guide.md` の雛形、`bp-guide/`（BP の基準表）、
+`.gitignore`（`.hikyaku.local` の1行）を、無いものだけ生成する。既存ファイルは上書きされない。
+`.gitignore` に包括パターンを足さない（close-cycle が `retrospective.md` を素材として読むため）。
 
-生成するのは次の5つ。
+出力に警告があれば、次のとおり対応する。
 
-| ファイル | 役割 |
-|---|---|
-| リポジトリルート/`.hikyaku.config` | 設定のベース（必須）。`hikyaku_root` の唯一の宣言先 |
-| `{HIKYAKU_ROOT}/cycles.md` | サイクル索引 |
-| `{HIKYAKU_ROOT}/document-guide.md` | ドキュメントガイドの雛形 |
-| `{HIKYAKU_ROOT}/bp-guide/` | BP の基準表（`rules.toml` 正本 / `README.md` 説明 / `cases.toml` 期待値テスト）。Hikyaku の既定値から生成 |
-| `{HIKYAKU_ROOT}/.gitignore` | `.hikyaku.local` の1行だけ |
+- v1 の除外設定（`retrospective.md` など）が `.gitignore` に残っている → ユーザーに削除を提案する
+- `{HIKYAKU_ROOT}/.hikyaku.config` がある（v2.0 初期実装の名残。中間層は読み込まれない）→ 内容を
+  ルートの `.hikyaku.config` へ移して削除するよう案内する
 
-`bp-guide/` はワークスペースの持ち物で、以後プラグインを更新しても変わらない。
-無くても既定値で動くので、v2.0 で初期化済みのワークスペースに足すときも同じコマンドを
-再実行すればよい（無いファイルだけ生成する）。調整は `/hikyaku:bp-guide` で行う。
-
-`{HIKYAKU_ROOT}/.hikyaku.config` は作らない。設定を置ける場所はリポジトリルートと
-サイクルディレクトリの2箇所だけで、中間層は読み込まれない。
-
-`.gitignore` が除外するのは `.hikyaku.local`（最後に作業したサイクルを記録する
-ローカル専用ファイル）だけ。 包括パターンは書かない。close-cycle は別セッションで
-`retrospective.md` を昇格素材として読むため、まとめて除外すると読めなくなる。
-
-`.gitignore` は既にある場合も1行だけ追記する（既存行には手を出さない）。v1 は
-`{DOC_ROOT}/.gitignore` を生成していたため、スキップすると `.hikyaku.local` が
-永久に追跡対象のままになる。v1 の除外設定（`retrospective.md` など）が残っていれば
-警告が出るので、ユーザーに削除を提案する。
-
-既に `{HIKYAKU_ROOT}/.hikyaku.config` がある場合（v2.0 の初期実装が生成していた）は
-警告が出る。内容をリポジトリルートの `.hikyaku.config` へ移して削除するよう案内する。
-
-- [ ] 改名されたファイルが旧名のまま残っていないか確認する
-
-| 旧名 | 新名 |
-|---|---|
-| `{HIKYAKU_ROOT}/instruction.md` | `{HIKYAKU_ROOT}/instructions.md` |
-
-`git mv` で改名する。中身の変換は不要で、そのまま使える。v2 は新しい名前しか
-読まないので、旧名のまま残すと読み込まれていないことに誰も気づけない。
-`hikyaku validate` も残存を検出する。
+- [ ] 旧名の `{HIKYAKU_ROOT}/instruction.md` が残っていれば、`instructions.md` へ `git mv` で改名する
+  （中身はそのまま使える。旧名は読み込まれない。`hikyaku validate` も残存を検出する）
 
 → Step 4 へ。
 
