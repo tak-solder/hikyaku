@@ -19,7 +19,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
-- conductor と bp-guide の SKILL.md で省略形の `hikyaku <command>` と書いていた CLI 呼び出し（`pr title` / `external ref` / `config` / `help bp guide`）を、ほかの箇所と同じ `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" <command>` の形に揃えた。省略形は利用者のシェル関数が前提で、エージェントがそのまま実行すると失敗するため
 - 共通手順の 2.4.1 を取り込み、差し戻し・受け入れ基準の追跡・PR レビュアー割り当て・指摘からの追加設計に対応した
 - Codex 実行規約に architect の引数の読み替え、conductor の委任と子の完了待ち、navigator から選択したスキルを実行する手順を明記した
 - Codex 向けの CI を `check-codex-plugin.yml` に分離し、`codex-plugin` ブランチ向け PR でマニフェストのバージョン形式・更新と入口の参照先を検証するようにした。更新検出の対象は Codex 固有のファイルに加え、共通の `skills/`・`agents/`・`scripts/` も含む。スクリプトの型チェック・テストも `codex-plugin` 向け PR で実行する
@@ -35,7 +34,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Claude Code 利用者の操作は変わらない。従来の `/hikyaku:...` と `skills/`・`agents/` の手順は維持する
 - Codex 利用者は `codex plugin marketplace add tak-solder/hikyaku@codex-plugin` でマーケットプレイスを追加し、プラグインをインストールする。`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要。Codex でも `$hikyaku:conductor` と `$hikyaku:navigator` を利用できる。ローカルで子に Codex CLI を使う場合は `[conductor] provider = "codex"` を指定する
 
-## [2.10.0]
+## [2.9.1]
 
 ### Changed
 
@@ -44,6 +43,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Fixed
 
 - **`hikyaku tasklist`**: `read` / `add` / `update` / `done` / `link` が、受け付けないオプションと余分な位置引数を黙って無視していたのを、終了コード 1 のエラーにして書き込まないようにした。`--deps 1,2` が空白を含む1つの引数で渡った場合は、`--deps=1,2` の形を案内する。`add` / `update` は出力の見出しに、追加・更新したビルドの BP と依存を表示する（[#75](https://github.com/tak-solder/hikyaku/issues/75)）
+- **conductor / bp-guide スキル**: SKILL.md で省略形の `hikyaku <command>` と書いていた CLI 呼び出し（`pr title` / `external ref` / `config` / `help bp guide`）を、ほかの箇所と同じ `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" <command>` の形に揃えた。省略形は利用者のシェル関数が前提で、エージェントがそのまま実行すると失敗するため（[#78](https://github.com/tak-solder/hikyaku/pull/78)）
 
 ### Migration
 
