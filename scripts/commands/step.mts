@@ -39,7 +39,7 @@ import {
   type StepContext,
 } from "../lib/steps/engine.mts";
 import { checkpointsOf, CHECKPOINT_LABELS, CHECKPOINT_STEPS, type Overrun } from "../lib/steps/checkpoints.mts";
-import { instructionPath, SKILL_STEPS, stepsOf, unitOf } from "../lib/steps/index.mts";
+import { instructionPath, ownerOf, SKILL_STEPS, stepsOf } from "../lib/steps/index.mts";
 
 const CLI = `node "${join(pluginRoot(), "scripts", "hikyaku.mts")}"`;
 
@@ -51,21 +51,30 @@ interface Opened {
 
 function open(args: ParsedArgs, phaseOperand: string | undefined, cycleOperand: string | undefined): Opened {
   const phase = requirePhase(phaseOperand);
-  const target = unitOf(phase);
-  const skill = target === undefined ? undefined : stepsOf(target.skill);
-  if (target === undefined || skill === undefined) {
+  const owner = ownerOf(phase);
+  if (owner === undefined) {
     throw new HikyakuError(
       `${phase} の手順はまだ step に移っていません`,
       `step に移ったスキル: ${SKILL_STEPS.map((entry) => entry.skill).join(" / ")}`,
     );
   }
+  // 内部スキル（build-manager / retrospective）は、呼び出し元のフェーズの作業単位で動く
+  const skillName = flagString(args, "skill");
+  const skill = skillName === undefined ? owner.skill : stepsOf(skillName);
+  if (skill === undefined || (skillName !== undefined && skill.internal !== true)) {
+    const internal = SKILL_STEPS.filter((entry) => entry.internal === true).map((entry) => entry.skill);
+    throw new HikyakuError(
+      `--skill に ${skillName} は指定できません`,
+      `指定できるのは step に移った内部スキルだけです: ${internal.length === 0 ? "（まだありません）" : internal.join(" / ")}`,
+    );
+  }
   const scope = scopeFor(args, phase, cycleOperand);
-  if (scope.context === undefined) throw new HikyakuError(`${phase} にはサイクルが要ります`);
-  const unitDirectory = join(scope.context.directory, target.directory);
+  const base = scope.context?.directory ?? scope.config.hikyakuRoot;
+  const unitDirectory = join(base, owner.directory);
   if (!existsSync(unitDirectory)) {
     throw new HikyakuError(
       `作業単位のディレクトリがありません: ${relative(scope.config.repoRoot, unitDirectory)}`,
-      "ビルドのブランチに居るか、ビルドが tasklist.md に登録されているかを確認してください。",
+      "そのフェーズのブランチに居るか、成果物の置き場が作られているかを確認してください。",
     );
   }
   return {
@@ -81,8 +90,19 @@ function open(args: ParsedArgs, phaseOperand: string | undefined, cycleOperand: 
   };
 }
 
+/** コマンドに添えるサイクルの引数。サイクルの無いフェーズでは空 */
+function cycleArg(ctx: StepContext): string {
+  return ctx.cycle === undefined ? "" : ` ${ctx.cycle.name}`;
+}
+
+/** 内部スキルなら --skill を添える */
+function skillArg(opened: Opened): string {
+  return opened.skill.internal === true ? ` --skill ${opened.skill.skill}` : "";
+}
+
 /** 作成時の版のメジャーが 2 以下のサイクルは扱わない（v2 のまま終える） */
 function legacyCycleMessage(ctx: StepContext): string | undefined {
+  if (ctx.cycle === undefined) return undefined;
   const version = ctx.cycle.record.hikyaku;
   const major = Number.parseInt(version.split(".")[0] ?? "", 10);
   if (Number.isInteger(major) && major >= 3) return undefined;
@@ -108,7 +128,7 @@ interface ContextCheck {
 interface Directive {
   kind: "run" | "gate" | "call" | "done" | "stop";
   skill: string;
-  cycle: string;
+  cycle: string | null;
   unit: string;
   step?: string;
   title?: string;
@@ -124,6 +144,8 @@ interface Directive {
   binds?: string[];
   call?: string;
   reason?: string;
+  /** 呼ぶ内部スキルが step に移っていれば、そのスキルが最初に呼ぶコマンド */
+  callNext?: string;
   context?: ContextCheck;
   /** 目安を超えたまま継続した区切り。ゲートの報告・完了の案内で伝える */
   overruns?: Overrun[];
@@ -142,7 +164,7 @@ function reportCommand(opened: Opened, step: string, result: StepResult): string
           ? ' --input "<ユーザーの答え>"'
           : "";
   const bp = result === "done" && opened.skill.steps.find((definition) => definition.id === step)?.reportsBp === true ? " [--bp <再算出した BP>]" : "";
-  return `${CLI} step report ${opened.phase} ${step} ${opened.ctx.cycle.name} --result ${result}${extra}${bp}`;
+  return `${CLI} step report ${opened.phase} ${step}${cycleArg(opened.ctx)}${skillArg(opened)} --result ${result}${extra}${bp}`;
 }
 
 function progressOf(evaluation: Evaluation): { complete: number; total: number } {
@@ -167,18 +189,18 @@ function checkContext(opened: Opened, checkpoint: keyof ContextBudget, measured:
 
 function buildDirective(opened: Opened, evaluation: Evaluation): Directive {
   const { ctx, skill } = opened;
-  const base = { skill: skill.skill, cycle: ctx.cycle.name, unit: opened.phase, notices: [] as string[], progress: progressOf(evaluation) };
+  const base = { skill: skill.skill, cycle: ctx.cycle?.name ?? null, unit: opened.phase, notices: [] as string[], progress: progressOf(evaluation) };
 
   const legacy = legacyCycleMessage(ctx);
   if (legacy !== undefined) return { ...base, kind: "stop", message: legacy };
 
-  if (readReturn(ctx.cycle.directory) !== undefined) {
+  if (ctx.cycle !== undefined && readReturn(ctx.cycle.directory) !== undefined) {
     return {
       ...base,
       kind: "stop",
       message: [
         `このブランチは architect に差し戻されています（${RETURN_FILE}）。設計を見直している最中なので、作業を始めずに止まります。`,
-        `再開のコマンド: /hikyaku:architect ${ctx.cycle.name} ${opened.phase}`,
+        `再開のコマンド: /hikyaku:architect${cycleArg(ctx)} ${opened.phase}`,
       ].join("\n"),
     };
   }
@@ -191,7 +213,7 @@ function buildDirective(opened: Opened, evaluation: Evaluation): Directive {
       message: [
         `進捗の記録が欠けています。現在地は ${current} ですが、その後のステップの成果物があります: ${evaluation.orphans.map((step) => step.definition.id).join(", ")}`,
         "推測で補わずに止まります。ユーザーに経緯を確認し、実施済みなら次のように記録してください:",
-        `  ${CLI} step report ${opened.phase} <ステップ> ${ctx.cycle.name} --result done --reason "手で実施"`,
+        `  ${CLI} step report ${opened.phase} <ステップ>${cycleArg(ctx)}${skillArg(opened)} --result done --reason "手で実施"`,
         "記録は現在地のステップから順に行います。",
       ].join("\n"),
     };
@@ -222,6 +244,9 @@ function buildDirective(opened: Opened, evaluation: Evaluation): Directive {
   if (definition.kind === "call") {
     directive.call = definition.call ?? "";
     directive.reason = definition.reason?.(ctx) ?? "";
+    if (stepsOf(directive.call)?.internal === true) {
+      directive.callNext = `${CLI} step next ${opened.phase}${cycleArg(ctx)} --skill ${directive.call}`;
+    }
   }
   if (definition.checkpoint !== undefined) {
     const measured = measureCurrent(process.env);
@@ -250,6 +275,7 @@ function renderDirective(directive: Directive): string {
   }
   if (directive.kind === "call") {
     lines.push(`呼ぶスキル: /hikyaku:${directive.call}`, `理由: ${directive.reason}`);
+    if (directive.callNext !== undefined) lines.push(`呼ばれたスキルの手順: ${directive.callNext}`);
   }
   if (directive.args !== undefined) {
     lines.push(`値: ${Object.entries(directive.args).map(([key, value]) => `${key}=${String(value)}`).join(" ")}`);
@@ -289,7 +315,7 @@ function emitDirective(directive: Directive, extra: Record<string, unknown> = {}
 register({
   name: "step next",
   summary: "フェーズの中の次の1手を、設定と進捗から決めて返す",
-  usage: "hikyaku step next <phase> [<cycle>] [--json]",
+  usage: "hikyaku step next <phase> [<cycle>] [--skill <内部スキル>] [--json]",
   details: [
     "スキルの転送ループが呼びます。返った1手（directive）を行い、step report で結果を返します。",
     "状態は保存せず、作業単位のディレクトリの progress.jsonl と成果物から毎回導出します。",
@@ -301,6 +327,10 @@ register({
     "  call   内部スキル（call）を呼ぶ。終えたら呼び出し元が report で返す",
     "  done   手順をすべて終えた",
     "  stop   止まる。message をユーザーに伝えて終了する",
+    "",
+    "内部スキル（build-manager / retrospective）は --skill で指定し、呼び出し元のフェーズの",
+    "作業単位で進めます。記録は呼び出し元と同じ progress.jsonl に入り、呼び出し元が最後に",
+    "報告したあとの記録だけが今回の呼び出しの分として数えられます。",
     "",
     "区切り（G8・実装開始前・レビュー前）では、現在のセッションのコンテキストを測り、",
     "[context] の目安と比べます（context）。超えていても止めません。",
@@ -317,7 +347,7 @@ register({
   name: "step report",
   summary: "1手の結果を進捗に記録し、次の1手を返す",
   usage:
-    "hikyaku step report <phase> <step> [<cycle>] --result done|skipped|approved|rejected|failed [--reason <理由>] [--input <答え>] [--bp <N>] [--dry-run] [--json]",
+    "hikyaku step report <phase> <step> [<cycle>] [--skill <内部スキル>] --result done|skipped|approved|rejected|failed [--reason <理由>] [--input <答え>] [--bp <N>] [--dry-run] [--json]",
   writes: true,
   details: [
     "作業単位のディレクトリの progress.jsonl に1行追記します。報告できるのは現在地のステップと、",
@@ -435,7 +465,7 @@ const STATUS_LABELS: Record<EvaluatedStep["status"], string> = {
 register({
   name: "step status",
   summary: "フェーズの手順の一覧と、それぞれの状態を表示する",
-  usage: "hikyaku step status <phase> [<cycle>] [--json]",
+  usage: "hikyaku step status <phase> [<cycle>] [--skill <内部スキル>] [--json]",
   run: ({ args, operands }) => {
     const opened = open(args, operands[0], operands[1]);
     const evaluation = evaluate(opened.skill, opened.ctx);
@@ -443,7 +473,7 @@ register({
     emit(
       {
         skill: opened.skill.skill,
-        cycle: opened.ctx.cycle.name,
+        cycle: opened.ctx.cycle?.name ?? null,
         unit: opened.phase,
         current: evaluation.current?.definition.id ?? null,
         steps: evaluation.steps.map((step) => ({
@@ -458,7 +488,7 @@ register({
       },
       () => {
         const lines = [
-          `${opened.skill.skill} ${opened.phase}（${opened.ctx.cycle.name}）`,
+          `${opened.skill.skill} ${opened.phase}${opened.ctx.cycle === undefined ? "" : `（${opened.ctx.cycle.name}）`}`,
           "",
           table(
             evaluation.steps.map((step) => [

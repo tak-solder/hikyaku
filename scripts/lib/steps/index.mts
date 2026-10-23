@@ -1,14 +1,13 @@
 /**
- * スキルごとのステップ定義の一覧と、フェーズからの引き当て。
+ * スキルごとのステップ定義の一覧。
  *
- * 定義はスキルごとのファイルに分ける（並行して移すときに同じファイルを触らないため）。
- * 移したスキルはここに足す。
+ * 定義はスキルごとのファイル（steps/<skill>.mts）に分ける。並行して移すときに
+ * 同じファイルを触らないため。移したスキルは SKILL_STEPS に1行足す。
  */
 
 import { join } from "node:path";
 import type { Phase } from "../branch.mts";
 import { pluginRoot } from "../paths.mts";
-import { buildDirName, normalizeBuildId } from "../tasklist.mts";
 import { BUILDER_STEPS } from "./builder.mts";
 import type { SkillSteps } from "./engine.mts";
 
@@ -18,16 +17,12 @@ export function stepsOf(skill: string): SkillSteps | undefined {
   return SKILL_STEPS.find((entry) => entry.skill === skill);
 }
 
-export interface UnitTarget {
-  /** そのフェーズを担うスキル */
-  skill: string;
-  /** progress.jsonl を置く、サイクルのディレクトリからの相対パス */
-  directory: string;
-}
-
-/** フェーズから、手順を担うスキルと作業単位のディレクトリを引く。未移行のフェーズは undefined */
-export function unitOf(phase: Phase): UnitTarget | undefined {
-  if (phase.startsWith("build-")) return { skill: "builder", directory: buildDirName(normalizeBuildId(phase)) };
+/** そのフェーズを担うスキル。未移行のフェーズは undefined */
+export function ownerOf(phase: Phase): { skill: SkillSteps; directory: string } | undefined {
+  for (const skill of SKILL_STEPS) {
+    const directory = skill.unit?.(phase);
+    if (directory !== undefined) return { skill, directory };
+  }
   return undefined;
 }
 

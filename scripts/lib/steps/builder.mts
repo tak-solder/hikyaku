@@ -7,7 +7,7 @@
  * ブランチを決めるまでは現在地を導出できない。
  */
 
-import { loadTasklist, normalizeBuildId } from "../tasklist.mts";
+import { buildDirName, loadTasklist, normalizeBuildId } from "../tasklist.mts";
 import { latestBp, type SkillSteps, type StepContext } from "./engine.mts";
 
 function testSpecSkipped(ctx: StepContext): boolean {
@@ -27,12 +27,14 @@ function needsSplit(ctx: StepContext): boolean {
 
 /** tasklist.md（作業ツリー）の PR 列が埋まっているか */
 function prRecorded(ctx: StepContext): boolean {
+  if (ctx.cycle === undefined) return false;
   const id = normalizeBuildId(ctx.unit);
   return loadTasklist(ctx.cycle.directory).some((build) => build.id === id && build.pr.trim() !== "");
 }
 
 export const BUILDER_STEPS: SkillSteps = {
   skill: "builder",
+  unit: (phase) => (phase.startsWith("build-") ? buildDirName(normalizeBuildId(phase)) : undefined),
   steps: [
     { id: "plan", kind: "run", title: "plan.md の作成と BP の再算出", produces: ["plan.md"], reportsBp: true },
     {

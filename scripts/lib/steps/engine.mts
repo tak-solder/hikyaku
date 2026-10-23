@@ -23,6 +23,7 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import type { Phase } from "../branch.mts";
 import type { ContextBudget, ResolvedConfig } from "../config.mts";
 import { fileHash, type ProgressEvent, type StepResult } from "../progress.mts";
 import type { CycleContext } from "../workspace.mts";
@@ -32,8 +33,9 @@ export type StepKind = "run" | "gate" | "call";
 /** 定義の条件・成果物を評価するときに渡すもの */
 export interface StepContext {
   config: ResolvedConfig;
-  cycle: CycleContext;
-  /** build-03 など */
+  /** 対象サイクル。サイクルの無いフェーズ（init / bp-guide）では undefined */
+  cycle: CycleContext | undefined;
+  /** 作業単位のフェーズ（build-03 など） */
   unit: string;
   unitDirectory: string;
   events: ProgressEvent[];
@@ -70,6 +72,17 @@ export interface StepDefinition {
 
 export interface SkillSteps {
   skill: string;
+  /**
+   * そのフェーズを担うときの、作業単位のディレクトリ（progress.jsonl を置く場所）。
+   * サイクルのあるフェーズはサイクルのディレクトリから、サイクルの無いフェーズ（init / bp-guide）は
+   * HIKYAKU_ROOT からの相対パス。担わないフェーズなら undefined。内部スキルは持たない
+   */
+  unit?: (phase: Phase) => string | undefined;
+  /**
+   * 呼び出し元のフェーズの作業単位で動く内部スキル（build-manager / retrospective）。
+   * step の --skill で指定し、記録は呼び出し元と同じ progress.jsonl に書く
+   */
+  internal?: boolean;
   steps: StepDefinition[];
 }
 
@@ -159,8 +172,10 @@ function proceededAfter(
 
 export function evaluate(skill: SkillSteps, ctx: StepContext): Evaluation {
   const steps: EvaluatedStep[] = [];
-  // 前のステップを完了とみなしたイベントの位置。これより後のイベントだけが有効
-  let floor = -1;
+  // 前のステップを完了とみなしたイベントの位置。これより後のイベントだけが有効。
+  // 内部スキルは何度も呼ばれるので、呼び出し元が最後に報告したあとの記録だけを今回の分とする
+  // （呼び出し元は、内部スキルが戻ってから call のステップを報告する）
+  let floor = skill.internal === true ? lastIndexOf(ctx.events, (event) => event.skill !== skill.skill) : -1;
   let current: EvaluatedStep | undefined;
 
   const indexed = ctx.events.map((event, index) => ({ event, index }));
@@ -235,6 +250,13 @@ export function evaluate(skill: SkillSteps, ctx: StepContext): Evaluation {
     .filter((step) => step.status !== "off" && hasAnyArtifact(step.definition, ctx));
 
   return { steps, current, orphans };
+}
+
+function lastIndexOf(events: ProgressEvent[], matches: (event: ProgressEvent) => boolean): number {
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    if (matches(events[i] as ProgressEvent)) return i;
+  }
+  return -1;
 }
 
 /** 報告で添えた BP のうち、最後のもの */

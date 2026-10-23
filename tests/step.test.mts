@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
+import type { ProgressEvent } from "../scripts/lib/progress.mts";
+import { evaluate, type SkillSteps, type StepContext } from "../scripts/lib/steps/engine.mts";
 import { cli, cliWith, succeeds, temporaryDirectory, workspace, write } from "./helpers.mts";
 
 const BUILD = "docs/hikyaku/cycles/001-test/build-01";
@@ -291,4 +293,19 @@ test("step status: 手順の一覧と現在地を返す", (t) => {
   const ids = (status.steps as { id: string; status: string }[]).map((step) => `${step.id}:${step.status}`);
   assert.ok(ids.includes("G7:off"), ids.join(", "));
   assert.ok(ids.includes("G8:pending"));
+});
+
+test("engine: 内部スキルは、呼び出し元が最後に報告したあとの記録だけを今回の分として数える", () => {
+  const internal: SkillSteps = { skill: "helper", internal: true, steps: [{ id: "work", kind: "run", title: "作業" }] };
+  const at = "2026-10-23T00:00:00Z";
+  const ctx = (events: ProgressEvent[]): StepContext => ({
+    config: {} as StepContext["config"], cycle: undefined, unit: "build-01", unitDirectory: "/nonexistent", events,
+  });
+  const first: ProgressEvent[] = [
+    { at, skill: "builder", step: "plan", result: "done" },
+    { at, skill: "helper", step: "work", result: "done" },
+  ];
+  assert.equal(evaluate(internal, ctx(first)).current, undefined, "1回目の呼び出しは終わっている");
+  const second: ProgressEvent[] = [...first, { at, skill: "builder", step: "split", result: "done" }];
+  assert.equal(evaluate(internal, ctx(second)).current?.definition.id, "work", "2回目の呼び出しは最初から");
 });
