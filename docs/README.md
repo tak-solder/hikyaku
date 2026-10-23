@@ -43,6 +43,6 @@ Hikyaku がなぜこの形をしているのか（永続ドキュメントとサ
 - [ディレクトリとファイル](reference/directory-layout.md)
 - [内部スキルとエージェント](reference/agents-and-skills.md)
 
-## v1 から移行する
+## 以前の版から移行する
 
-[v1 → v2 移行ガイド](migration/v1-to-v2.md)。進行中のサイクルがある場合は、プラグインのバージョンを固定して完走してから移行してください。
+[v2 → v3 移行ガイド](migration/v2-to-v3.md) と [v1 → v2 移行ガイド](migration/v1-to-v2.md)。進行中のサイクルがある場合は、プラグインのバージョンを固定して完走してから移行してください。

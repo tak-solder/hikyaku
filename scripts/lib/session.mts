@@ -646,3 +646,64 @@ export function renderSessionMarkdown(input: SessionTableInput): string {
     ...rows.map(([label, value]) => `| ${label} | ${escape(value)} |`),
   ].join("\n");
 }
+
+// ---------------------------------------------------------------------------
+// 区切りでの実測（step next / step report）
+
+/** 記録されたウィンドウがこれ未満なら、狙いの 400k がコンパクションに当たりうるので注意を出す */
+export const SMALL_WINDOW = 500_000;
+
+export interface CurrentContext {
+  /** 現在のセッションの ID。環境変数が無ければ undefined */
+  sessionId: string | undefined;
+  /** 最後の呼び出しのコンテキスト。計測できなければ undefined */
+  tokens: number | undefined;
+  window: number | undefined;
+  model: string | undefined;
+  /** 計測できなかった理由 */
+  reason: string | undefined;
+}
+
+/** 現在のセッションのコンテキストを測る。読めなければ推測せず理由を返す */
+export function measureCurrent(env: Env): CurrentContext {
+  const lookups = lookupCurrent(env);
+  const current = pickCurrent(lookups);
+  const sessionId = current?.id ?? lookups[0]?.id;
+  if (current === undefined) {
+    return { sessionId, tokens: undefined, window: undefined, model: undefined, reason: describeMissingCurrent(env, lookups) };
+  }
+  const measure = readMeasure(current.path as string, current.host);
+  if (measure === undefined) {
+    return {
+      sessionId, tokens: undefined, window: undefined, model: undefined,
+      reason: `API 呼び出しの記録がまだありません: ${current.path}`,
+    };
+  }
+  return { sessionId, tokens: measure.latest, window: measure.window, model: measure.model, reason: undefined };
+}
+
+/** ウィンドウが小さいときの注意。Codex の rollout だけがウィンドウを記録する */
+export function smallWindowNotice(env: Env, measured: Pick<CurrentContext, "window" | "model">): string | undefined {
+  const { window } = measured;
+  if (window === undefined || window >= SMALL_WINDOW) return undefined;
+  const lines = [
+    `コンテキストウィンドウが ${formatTokens(window)} しかありません。狙いの 400k 前後で自動コンパクションに当たります。`,
+    `Codex なら ${join(codexHome(env), "config.toml")} の model_context_window で上げられます。`,
+  ];
+  const max = measured.model === undefined ? undefined : maxContextWindow(env, measured.model);
+  if (max !== undefined) lines.push(`このモデルで上げられる上限は ${formatTokens(max)} です（models_cache.json の max_context_window）。`);
+  return lines.join("");
+}
+
+/** models_cache.json にある、そのモデルの max_context_window。読めなければ undefined */
+function maxContextWindow(env: Env, model: string): number | undefined {
+  try {
+    const parsed = JSON.parse(readFileSync(join(codexHome(env), "models_cache.json"), "utf8")) as { models?: unknown };
+    const models = Array.isArray(parsed.models) ? parsed.models : [];
+    const entry = models.map(asObject).find((candidate) => candidate?.["slug"] === model);
+    const max = asNumber(entry?.["max_context_window"]);
+    return max > 0 ? max : undefined;
+  } catch {
+    return undefined;
+  }
+}

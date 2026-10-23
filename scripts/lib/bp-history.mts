@@ -15,7 +15,10 @@ import { join } from "node:path";
 import { BREAKDOWN_HEADERS } from "./bp.mts";
 import { cycleDir, cycleDirName, type CycleRecord } from "./cycles.mts";
 import { parseTables, type MarkdownTable } from "./markdown.mts";
+import { DEFAULT_CONTEXT_BUDGET, type ContextBudget } from "./config.mts";
+import { readProgress } from "./progress.mts";
 import { SESSION_LABELS, SESSION_TABLE_HEADERS } from "./session.mts";
+import { checkpointsOf } from "./steps/checkpoints.mts";
 
 /** retrospective.md 内の節の見出し */
 export const BP_SECTION_HEADING = "BP見積もりの振り返り";
@@ -36,6 +39,8 @@ export interface BpRecord {
   measured: Record<string, string>;
   /** セッションの実測（bp session の表）。無ければ各項目 undefined */
   context: SessionContext;
+  /** 区切りでのコンテキスト（progress.jsonl から）。記録の無い区切りは含めない */
+  checkpoints: Partial<Record<keyof ContextBudget, number>>;
 }
 
 export interface SessionContext {
@@ -149,6 +154,7 @@ export function parseBpRecord(source: string, meta: Pick<BpRecord, "cycle" | "bu
     estimated: {},
     measured: {},
     context: emptyContext(),
+    checkpoints: {},
   };
 
   const tables = parseTables(section);
@@ -189,10 +195,25 @@ export function collectBpRecords(hikyakuRoot: string, records: CycleRecord[]): B
       const path = join(directory, build, "retrospective.md");
       if (!existsSync(path)) continue;
       const parsed = parseBpRecord(readFileSync(path, "utf8"), { cycle: cycleDirName(cycle), build, path });
-      if (parsed !== undefined) found.push(parsed);
+      if (parsed === undefined) continue;
+      parsed.checkpoints = checkpointValues(join(directory, build));
+      found.push(parsed);
     }
   }
   return found;
+}
+
+/** ビルドの progress.jsonl から区切りの値を読む。読めなければ欠けとして扱う */
+function checkpointValues(buildDirectory: string): Partial<Record<keyof ContextBudget, number>> {
+  try {
+    const values: Partial<Record<keyof ContextBudget, number>> = {};
+    for (const entry of checkpointsOf(readProgress(buildDirectory), DEFAULT_CONTEXT_BUDGET)) {
+      values[entry.checkpoint] = entry.tokens;
+    }
+    return values;
+  } catch {
+    return {};
+  }
 }
 
 /** 「5」「未指定」「あり」のうち数値だけを返す */
