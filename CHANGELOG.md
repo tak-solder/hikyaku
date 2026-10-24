@@ -34,6 +34,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Claude Code 利用者の操作は変わらない。従来の `/hikyaku:...` と `skills/`・`agents/` の手順は維持する
 - Codex 利用者は `codex plugin marketplace add tak-solder/hikyaku@codex-plugin` でマーケットプレイスを追加し、プラグインをインストールする。`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要。Codex でも `$hikyaku:conductor` と `$hikyaku:navigator` を利用できる。ローカルで子に Codex CLI を使う場合は `[conductor] provider = "codex"` を指定する
 
+## [2.9.3]
+
+### Fixed
+
+- **planner スキル**: `context plan` が返す候補の説明を、`repo` 管理の独自ドキュメントも含む実装に合わせた。概要欄から今回のスコープに関係するものを選んで読むよう明記した
+
 ## [2.9.2]
 
 ### Changed
