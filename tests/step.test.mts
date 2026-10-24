@@ -319,3 +319,37 @@ test("step: 作業単位のディレクトリがまだ無くても進められ�
   report(directory, "plan", "--result", "done");
   assert.equal(existsSync(join(directory, BUILD, "progress.jsonl")), true);
 });
+
+test("step: 前のステップに戻っても、記録のある後ろのステップの成果物は記録の欠けにしない", (t) => {
+  const directory = built(t);
+  upToG8(directory);
+  // plan を報告し直す（test-spec.md は残っている）
+  const directive = report(directory, "plan", "--result", "done");
+  assert.equal(directive.kind, "run");
+  assert.equal(directive.step, "plan-review");
+});
+
+test("step restart: 区切りより前の記録を使わず、手順を最初から回し直す", (t) => {
+  const directory = built(t);
+  upToG8(directory);
+  const result = cli(directory, "step", "restart", "build-01", "001", "--json");
+  assert.equal(result.status, 1, "理由が要る");
+  const restarted = JSON.parse(succeeds(directory, "step", "restart", "build-01", "001", "--reason", "回し直し", "--json"));
+  assert.equal(restarted.directive.step, "plan", "plan.md があっても、区切りより後の記録が無ければ未完了");
+  assert.equal(events(directory).at(-1)?.["result"], "restart");
+});
+
+test("engine: 内部スキルは step restart で、呼び出し元の報告を挟まずに呼び直せる", () => {
+  const internal: SkillSteps = { skill: "helper", internal: true, steps: [{ id: "work", kind: "run", title: "作業" }] };
+  const at = "2026-10-23T00:00:00Z";
+  const ctx = (events: ProgressEvent[]): StepContext => ({
+    config: {} as StepContext["config"], cycle: undefined, unit: "build-01", unitDirectory: "/nonexistent", events,
+  });
+  const done: ProgressEvent[] = [
+    { at, skill: "builder", step: "implement", result: "failed", reason: "途中" },
+    { at, skill: "helper", step: "work", result: "done" },
+  ];
+  assert.equal(evaluate(internal, ctx(done)).current, undefined);
+  const again: ProgressEvent[] = [...done, { at, skill: "helper", step: "*", result: "restart", reason: "2回目" }];
+  assert.equal(evaluate(internal, ctx(again)).current?.definition.id, "work");
+});

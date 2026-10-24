@@ -14,6 +14,7 @@
  *     作り直されたあと、古い test-spec のレビューを完了と読まないため）
  *   - 成果物が要るステップは、成果物が無ければ完了イベントがあっても未完了
  *   - 完了したステップを報告し直すと（成果物を作り直したとき）、そこから後ろはやり直しになる
+ *   - step restart の区切りより前の記録は使わない（同じ作業単位で手順を回し直すとき）
  *   - ゲートの承認は、承認した時点の成果物のハッシュと一致するときだけ有効。ただし
  *     承認のあとに後ろのステップが完了していれば、そのまま有効とする
  *
@@ -25,7 +26,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Phase } from "../branch.mts";
 import type { ContextBudget, ResolvedConfig } from "../config.mts";
-import { fileHash, type ProgressEvent, type StepResult } from "../progress.mts";
+import { fileHash, RESTART, type ProgressEvent, type StepResult } from "../progress.mts";
 import type { CycleContext } from "../workspace.mts";
 
 export type StepKind = "run" | "gate" | "call";
@@ -83,6 +84,11 @@ export interface SkillSteps {
    * step の --skill で指定し、記録は呼び出し元と同じ progress.jsonl に書く
    */
   internal?: boolean;
+  /**
+   * 手順に入る前に止まる理由（builder の差し戻し中など）。止まらないなら undefined。
+   * スキルごとに意味が違うので、エンジンでは一律に判定しない
+   */
+  stop?: (ctx: StepContext) => string | undefined;
   steps: StepDefinition[];
 }
 
@@ -109,7 +115,7 @@ export interface Evaluation {
   orphans: EvaluatedStep[];
 }
 
-const COMPLETING: Record<StepKind, StepResult[]> = {
+const COMPLETING: Record<StepKind, ProgressEvent["result"][]> = {
   run: ["done", "skipped"],
   call: ["done", "skipped"],
   gate: ["approved"],
@@ -173,9 +179,8 @@ function proceededAfter(
 export function evaluate(skill: SkillSteps, ctx: StepContext): Evaluation {
   const steps: EvaluatedStep[] = [];
   // 前のステップを完了とみなしたイベントの位置。これより後のイベントだけが有効。
-  // 内部スキルは何度も呼ばれるので、呼び出し元が最後に報告したあとの記録だけを今回の分とする
-  // （呼び出し元は、内部スキルが戻ってから call のステップを報告する）
-  let floor = skill.internal === true ? lastIndexOf(ctx.events, (event) => event.skill !== skill.skill) : -1;
+  // step restart より前の記録も使わない
+  let floor = startOf(skill, ctx.events);
   let current: EvaluatedStep | undefined;
 
   const indexed = ctx.events.map((event, index) => ({ event, index }));
@@ -245,11 +250,26 @@ export function evaluate(skill: SkillSteps, ctx: StepContext): Evaluation {
   }
 
   const currentIndex = current === undefined ? steps.length : steps.indexOf(current);
+  // 後ろのステップに成果物があっても、一度でも記録があれば「やり直しで前に戻った」のであって
+  // 記録の欠けではない（G4 の差し戻しで questions から報告し直したときなど）
+  const recorded = new Set(ctx.events.filter((event) => event.skill === skill.skill).map((event) => event.step));
   const orphans = steps
     .slice(currentIndex + 1)
-    .filter((step) => step.status !== "off" && hasAnyArtifact(step.definition, ctx));
+    .filter((step) => step.status !== "off" && !recorded.has(step.definition.id) && hasAnyArtifact(step.definition, ctx));
 
   return { steps, current, orphans };
+}
+
+/**
+ * そのスキルの今回の手順が始まる位置（この位置より後の記録が有効）。
+ * step restart の区切りがあればそこから。内部スキルは何度も呼ばれるので、呼び出し元が
+ * 最後に報告したあとも今回の分とする（呼び出し元は、内部スキルが戻ってから call を報告する）。
+ * 呼び出し元が報告しないまま呼び直すときは、内部スキルの側で step restart する
+ */
+export function startOf(skill: SkillSteps, events: ProgressEvent[]): number {
+  const restart = lastIndexOf(events, (event) => event.skill === skill.skill && event.result === RESTART);
+  const caller = skill.internal === true ? lastIndexOf(events, (event) => event.skill !== skill.skill) : -1;
+  return Math.max(restart, caller);
 }
 
 function lastIndexOf(events: ProgressEvent[], matches: (event: ProgressEvent) => boolean): number {
@@ -262,6 +282,7 @@ function lastIndexOf(events: ProgressEvent[], matches: (event: ProgressEvent) =>
 /** 報告で添えた BP のうち、最後のもの */
 export function latestBp(events: ProgressEvent[]): number | undefined {
   for (let i = events.length - 1; i >= 0; i -= 1) {
+    if (events[i]?.result === RESTART) return undefined;
     const bp = events[i]?.bp;
     if (bp !== undefined) return bp;
   }

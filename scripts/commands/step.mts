@@ -17,10 +17,11 @@ import type { ContextBudget } from "../lib/config.mts";
 import { HikyakuError, ValidationError } from "../lib/errors.mts";
 import { emit, table } from "../lib/output.mts";
 import { pluginRoot, pluginVersion } from "../lib/paths.mts";
-import { readReturn, RETURN_FILE } from "../lib/phase.mts";
 import {
   appendProgress,
   readProgress,
+  RESTART,
+  RESTART_STEP,
   STEP_RESULTS,
   type ProgressEvent,
   type StepResult,
@@ -196,16 +197,8 @@ function buildDirective(opened: Opened, evaluation: Evaluation): Directive {
   const legacy = legacyCycleMessage(ctx);
   if (legacy !== undefined) return { ...base, kind: "stop", message: legacy };
 
-  if (ctx.cycle !== undefined && readReturn(ctx.cycle.directory) !== undefined) {
-    return {
-      ...base,
-      kind: "stop",
-      message: [
-        `このブランチは architect に差し戻されています（${RETURN_FILE}）。設計を見直している最中なので、作業を始めずに止まります。`,
-        `再開のコマンド: /hikyaku:architect${cycleArg(ctx)} ${opened.phase}`,
-      ].join("\n"),
-    };
-  }
+  const stopped = skill.stop?.(ctx);
+  if (stopped !== undefined) return { ...base, kind: "stop", message: stopped };
 
   if (evaluation.orphans.length > 0) {
     const current = evaluation.current?.definition.id ?? "（なし）";
@@ -456,6 +449,37 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
   event.hikyaku = pluginVersion();
   return event;
 }
+
+register({
+  name: "step restart",
+  summary: "同じ作業単位で、スキルの手順を最初から回し直す区切りを記録する",
+  usage: "hikyaku step restart <phase> [<cycle>] [--skill <内部スキル>] --reason <理由> [--dry-run] [--json]",
+  writes: true,
+  details: [
+    "progress.jsonl に区切りを1行追記し、次の1手を返します。これより前の記録は現在地の導出に使いません。",
+    "古い記録は消さずに残るので、区切りでのコンテキストなどは後から読めます。",
+    "",
+    "  architect の追加設計   設計を終えた design/ で、もう一度手順を回すとき",
+    "  内部スキルの呼び直し   呼び出し元が報告しないまま、build-manager などをもう一度呼ぶとき",
+  ].join("\n"),
+  run: ({ args, operands }) => {
+    const opened = open(args, operands[0], operands[1]);
+    const reason = flagString(args, "reason");
+    if (reason === undefined || reason.trim() === "") throw new HikyakuError("--reason で理由を添えてください");
+    const event: ProgressEvent = {
+      at: new Date().toISOString(), skill: opened.skill.skill, step: RESTART_STEP, result: RESTART, reason, hikyaku: pluginVersion(),
+    };
+    const measured = measureCurrent(process.env);
+    if (measured.sessionId !== undefined) event.session = measured.sessionId;
+    if (flagBoolean(args, "dry-run")) {
+      emit({ dryRun: true, event }, () => `（dry-run）次の1行を追記します:\n${JSON.stringify(event)}`);
+      return;
+    }
+    appendProgress(opened.ctx.unitDirectory, event);
+    const after: Opened = { ...opened, ctx: { ...opened.ctx, events: [...opened.ctx.events, event] } };
+    emitDirective(buildDirective(after, evaluate(after.skill, after.ctx)), { recorded: event }, `記録しました: ${opened.skill.skill} の手順を最初から回し直します（${reason}）\n\n`);
+  },
+});
 
 const STATUS_LABELS: Record<EvaluatedStep["status"], string> = {
   complete: "完了",

@@ -20,12 +20,20 @@ export const PROGRESS_FILE = "progress.jsonl";
 export type StepResult = "done" | "skipped" | "approved" | "rejected" | "failed";
 export const STEP_RESULTS: StepResult[] = ["done", "skipped", "approved", "rejected", "failed"];
 
+/**
+ * 同じ作業単位で、そのスキルの手順を最初から回し直す区切り（step restart）。
+ * これより前の記録は現在地の導出に使わない。architect の追加設計や、内部スキルの
+ * 2回目以降の呼び出しで使う。古い記録は消さずに残る
+ */
+export const RESTART = "restart";
+export const RESTART_STEP = "*";
+
 export interface ProgressEvent {
   at: string;
   /** 報告したスキル（builder / build-manager など） */
   skill: string;
   step: string;
-  result: StepResult;
+  result: StepResult | typeof RESTART;
   /** スキップ・失敗の理由 */
   reason?: string;
   /** ゲートでのユーザーの答え */
@@ -84,7 +92,7 @@ function isEvent(value: unknown): value is ProgressEvent {
     typeof record["at"] === "string" &&
     typeof record["skill"] === "string" &&
     typeof record["step"] === "string" &&
-    STEP_RESULTS.includes(record["result"] as StepResult)
+    (STEP_RESULTS.includes(record["result"] as StepResult) || record["result"] === RESTART)
   );
 }
 

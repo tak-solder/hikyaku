@@ -7,6 +7,7 @@
  * ブランチを決めるまでは現在地を導出できない。
  */
 
+import { readReturn, RETURN_FILE } from "../phase.mts";
 import { buildDirName, loadTasklist, normalizeBuildId } from "../tasklist.mts";
 import { latestBp, type SkillSteps, type StepContext } from "./engine.mts";
 
@@ -35,6 +36,14 @@ function prRecorded(ctx: StepContext): boolean {
 export const BUILDER_STEPS: SkillSteps = {
   skill: "builder",
   unit: (phase) => (phase.startsWith("build-") ? buildDirName(normalizeBuildId(phase)) : undefined),
+  // 差し戻し中のブランチでは builder は進まない（再設計は architect がこのブランチで行う）
+  stop: (ctx) => {
+    if (ctx.cycle === undefined || readReturn(ctx.cycle.directory) === undefined) return undefined;
+    return [
+      `このブランチは architect に差し戻されています（${RETURN_FILE}）。設計を見直している最中なので、作業を始めずに止まります。`,
+      `再開のコマンド: /hikyaku:architect ${ctx.cycle.name} ${ctx.unit}`,
+    ].join("\n");
+  },
   steps: [
     { id: "plan", kind: "run", title: "plan.md の作成と BP の再算出", produces: ["plan.md"], reportsBp: true },
     {
