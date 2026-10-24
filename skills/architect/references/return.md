@@ -5,34 +5,9 @@
 進める。差し戻しの記録は `cycles/{cycle}/return.md` にあり、差し戻し元のビルドのブランチにだけ
 コミットされている。
 
-## 進め方
-
-差し戻し中は `step next` が止まる（`return.md` があるため）。`step next` / `step report` は使わず、
-`${CLAUDE_PLUGIN_ROOT}/skills/architect/steps/` の指示ファイルを次の順に読んで行う。
-各ファイルの「報告する」「progress.jsonl」の項目は読み飛ばす（記録しない）。
-有効なゲート・レビューは `config --json` の `gates` / `reviews` で判断する。
-
-| 順 | 指示ファイル | 行う条件 |
-|---|---|---|
-| 1 | `cycle-scan.md` | `cycle list --active` に他のサイクルがあるとき |
-| 2 | `survey.md` | 既存の codebase-survey.md で足りないとき（崩れた前提に関わる範囲だけ調べ直す） |
-| 3 | `G2.md` | `gates.codebaseSurvey` が true で、2 を行ったとき |
-| 4 | `questions.md` | 常に |
-| 5 | `options.md` | 常に（分岐する判断が無ければ 6・7 を行わない） |
-| 6 | `G3.md` | `gates.designChoice` が true で、分岐する判断があるとき |
-| 7 | `adr.md` | 分岐する判断があるとき |
-| 8 | `design-delta.md` | 常に |
-| 9 | `architecture-review.md` | `reviews.architecture` が true のとき |
-| 10 | `G4.md` | `gates.architecture` が true のとき。フィードバックがあれば 4 に戻る |
-| 11 | `build-split.md` | 常に（下の違いを参照） |
-| 12 | `validate.md` | 常に |
-| 13 | `retrospective.md` | `reviews.retrospective` が `skip` でないとき |
-
-`pr.md` は行わない（下の違いを参照）。
-
-## 通常の設計との違い
-
-ここに書いていないことは、指示ファイルのとおりに行う。
+手順は通常の設計と同じく `step next` が返す。回ごとの違い（調査の範囲・design-delta に撤回した判断を残す・
+ビルドは更新で扱う・PR を作らず差し戻しを解決する）は、各ステップの指示に値 `round: return` として書いてある。
+ここに書くのは、step に入る前の準備だけ。
 
 - ブランチ: 差し戻し元のビルドのブランチ上で作業する。 architect 用のブランチは切らない。
   Step 0 のブランチ確認は `branch verify architect` ではなく `branch verify build-{NN} {cycle}` で行い、
@@ -41,14 +16,13 @@
   コミット前のブランチ確認も `branch verify build-{NN} {cycle}` で行う
 - 入力: `return.md` と、差し戻し元のビルドの `questions.md` を必ず読む。何が崩れたか、
   何を決め直すかはそこに書かれている。企画成果物と既存の design-delta.md も通常どおり読む
-- design-delta.md: 撤回した判断を残す。書き換えるだけでなく、どの判断を、なぜ撤回したかを
-  1段落で書く（後からビルドの PR を読む人が、設計が変わった理由を追えるようにするため）
-- ビルド分割（`build-split.md`）: 影響を受けるビルドは、追加よりも更新で扱う。 build-manager を呼び出し、
-  差し戻し元の issue.md・BP・依存を改める。他のビルドに波及する場合はそれも更新する。
-  build-manager も差し戻し中は `step next` が止まるので、指示ファイルを順に読んで進めるよう伝える
-- 最後: PR を作らない。振り返りのあと、`return.md` と、差し戻し元のビルドの `plan.md` /
-  `test-spec.md`（古い設計の上で書かれたもの）を削除してコミット & push する。この削除が差し戻しの
-  解決の記録になる。`return.md` が消えれば、`cycle status` は差し戻し元のビルドの plan.md からの
-  再開を返す
-- 案内: `/hikyaku:builder {cycle} {NN}` を案内する。同じブランチで builder を起動し直せば、
-  plan からやり直せる
+- 回の区切り: ブランチの design/progress.jsonl には通常の設計の記録が完了済みで残っているので、
+  `step next` の前に再設計の回を区切る。理由の接頭辞 `return:` が回の種類を表すので、書式を変えない
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step restart architect {cycle} --reason "return: build-{NN}"
+```
+
+  中断からの再開で、この回を既に区切っている（`step status architect {cycle}` で途中まで進んでいる）なら、
+  区切り直さない。区切り直すと、この回の記録が最初からやり直しになる
+- 案内: `done` が返ったら、`/hikyaku:builder {cycle} {NN}` を案内する

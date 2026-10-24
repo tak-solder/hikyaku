@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { cli, succeeds, workspace, write } from "./helpers.mts";
@@ -24,6 +24,7 @@ interface Directive {
   binds?: string[];
   call?: string;
   callNext?: string;
+  reason?: string;
   args?: Record<string, unknown>;
   message?: string;
 }
@@ -151,13 +152,13 @@ test("architect: G4 の差し戻しで design-delta を報告し直すと、レ�
   assert.equal(report(directory, "G4", "--result", "approved", "--input", "OK").step, "build-split");
 });
 
-test("architect: design-delta.md が残ったまま質問まで戻ると、記録の欠けとして止まる", (t) => {
+test("architect: G4 の差し戻しで質問から報告し直すと、案の生成からやり直しになる", (t) => {
   const directory = workspace(t, true);
   upToG4(directory);
   report(directory, "G4", "--result", "rejected", "--input", "移行の段階を足して");
   const back = report(directory, "questions", "--result", "done");
-  assert.equal(back.kind, "stop");
-  assert.match(back.message ?? "", /design-delta/);
+  assert.equal(back.kind, "run", "design-delta.md が残っていても記録の欠けにしない");
+  assert.equal(back.step, "options", "古い options の完了は数えない");
 });
 
 test("architect: ビルド分割で build-manager を呼び、同じ design/progress.jsonl に記録する", (t) => {
@@ -245,10 +246,93 @@ test("build-manager: builder の分割の検討から呼ぶと、ビルドの pr
   assert.equal(existsSync(join(directory, DESIGN, "progress.jsonl")), false, "architect の記録には書かない");
 });
 
-test("architect: 差し戻し中（return.md）は step が止まる（再設計は references/return.md の手順で進める）", (t) => {
+/** 通常の設計を PR まで終え、ビルド 1 を登録した状態 */
+function designed(t: Parameters<typeof workspace>[0]): string {
   const directory = workspace(t, true);
+  configure(directory, 'retrospective = "skip"');
+  upToG4(directory);
+  report(directory, "G4", "--result", "approved", "--input", "OK");
+  runManager(directory);
+  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--bp", "3");
+  report(directory, "build-split", "--result", "done");
+  report(directory, "validate", "--result", "done");
+  assert.equal(report(directory, "pr", "--result", "done").kind, "done");
+  return directory;
+}
+
+function restart(directory: string, reason: string, ...extra: string[]): Directive {
+  return parse(succeeds(directory, "step", "restart", "architect", "001", ...extra, "--reason", reason, "--json"));
+}
+
+test("architect: 差し戻し中は、再設計の回を区切るまで止まる。区切れば build-manager も進められる", (t) => {
+  const directory = designed(t);
   write(directory, `${CYCLE}/return.md`, "# 差し戻し: build-01\n");
-  const directive = next(directory);
-  assert.equal(directive.kind, "stop");
-  assert.equal(next(directory, "architect", "--skill", "build-manager").kind, "stop");
+  const stopped = next(directory);
+  assert.equal(stopped.kind, "stop");
+  assert.match(stopped.message ?? "", /step restart architect 001-test --reason "return: build-01"/);
+
+  const first = restart(directory, "return: build-01");
+  assert.equal(first.step, "survey", "通常の設計と同じく調査から");
+  assert.equal(first.args?.["round"], "return");
+  report(directory, "survey", "--result", "done");
+  report(directory, "questions", "--result", "done");
+  report(directory, "options", "--result", "skipped", "--reason", "分岐なし");
+  report(directory, "design-delta", "--result", "done");
+  report(directory, "architecture-review", "--result", "done");
+  const call = report(directory, "G4", "--result", "approved", "--input", "OK");
+  assert.equal(call.step, "build-split");
+  assert.equal(call.args?.["round"], "return");
+  assert.equal(next(directory, "architect", "--skill", "build-manager").step, "load", "差し戻し中でも build-manager は止まらない");
+  runManager(directory);
+  report(directory, "build-split", "--result", "done");
+
+  const resolve = report(directory, "validate", "--result", "done");
+  assert.equal(resolve.step, "resolve-return", "PR の代わりに差し戻しを解決する");
+  const early = cli(directory, "step", "report", "architect", "resolve-return", "001", "--result", "done");
+  assert.equal(early.status, 1, "return.md が残っていれば完了にならない");
+  rmSync(join(directory, CYCLE, "return.md"));
+  assert.equal(report(directory, "resolve-return", "--result", "done").kind, "done");
+  const ids = (JSON.parse(succeeds(directory, "step", "status", "architect", "001", "--json")).steps as { id: string; status: string }[])
+    .map((step) => `${step.id}:${step.status}`);
+  assert.ok(ids.includes("pr:off"), ids.join(", "));
+});
+
+test("architect: 追加設計の回は調査を行わず、設計を変えなければビルドの追加へ進む", (t) => {
+  const directory = designed(t);
+  succeeds(directory, "tasklist", "done", "001", "--id", "1", "--pr", "https://github.com/o/r/pull/1");
+  const first = restart(directory, "add: エラー表示の文言");
+  assert.equal(first.step, "design-change");
+  const call = report(directory, "design-change", "--result", "skipped", "--reason", "設計の変更は不要");
+  assert.equal(call.step, "build-split", "質問・設計案・G4 を行わない");
+  assert.equal(call.args?.["round"], "add");
+  assert.match(call.reason ?? "", /完了済みのビルドは更新しない/);
+
+  // 前回の build-manager の記録のあとに区切りがあるので、最初の手順から始まる
+  assert.equal(next(directory, "architect", "--skill", "build-manager").step, "load");
+  runManager(directory);
+  const early = cli(directory, "step", "report", "architect", "build-split", "001", "--result", "done");
+  assert.equal(early.status, 1, "未完了のビルドが足されるまで完了にならない");
+  succeeds(directory, "tasklist", "add", "001", "--title", "指摘への対応", "--bp", "2");
+  report(directory, "build-split", "--result", "done");
+  assert.equal(report(directory, "validate", "--result", "done").step, "pr");
+
+  const status = JSON.parse(succeeds(directory, "step", "status", "architect", "001", "--json"));
+  const ids = (status.steps as { id: string; status: string }[]).map((step) => `${step.id}:${step.status}`);
+  for (const id of ["cycle-scan", "survey", "G2", "questions", "G4"]) assert.ok(ids.includes(`${id}:off`), ids.join(", "));
+});
+
+test("architect: 追加設計で設計を変えるなら、質問から G4 まで通常どおり返る", (t) => {
+  const directory = designed(t);
+  succeeds(directory, "tasklist", "done", "001", "--id", "1", "--pr", "https://github.com/o/r/pull/1");
+  restart(directory, "add: 認可の抜け");
+  assert.equal(report(directory, "design-change", "--result", "done").step, "questions");
+});
+
+test("build-manager: 呼び出し元の報告を挟まずに呼び直すときは、step restart で最初の手順から始める", (t) => {
+  const directory = designed(t);
+  runManager(directory);
+  assert.equal(next(directory, "architect", "--skill", "build-manager").kind, "done", "呼び出し元が報告していないので、前回の分が完了のまま");
+  const result = cli(directory, "step", "restart", "architect", "001", "--skill", "build-manager", "--reason", "受け入れ基準の割り当て");
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(next(directory, "architect", "--skill", "build-manager").step, "load");
 });

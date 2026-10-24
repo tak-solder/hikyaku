@@ -11,10 +11,15 @@
   - build-manager が BP見積もり、tasklist の更新、issue.md の作成、承認（G6）までを行う
   - build-manager は directive の「呼ばれたスキルの手順」（`step next architect {cycle} --skill build-manager`）
     から始め、architect と同じ design/progress.jsonl に記録する
+- [ ] 値 `round` に応じて、build-manager に伝える操作を変える
+  - `return`（差し戻しからの再設計）: 影響を受けるビルドは、追加よりも更新で扱う。差し戻し元の issue.md・BP・
+    依存を改める。他のビルドに波及する場合はそれも更新する
+  - `add`（指摘からの追加設計）: 指摘に対応するビルドを追加する。既存のビルドは完了しているので更新しない。
+    issue.md の「やること」に、対応する指摘（PR のコメントの URL があればそれも）を書く。
+    未完了のビルドが足されるまで `done` を受け付けない
 - [ ] 戻ったら、G6 でのフィードバックの内容に応じて対応する
   - ビルド分割へのフィードバック → build-manager の中で反映済み（G6 の差し戻しとして扱われる）
-  - 設計へのフィードバック → 設計に関する質問に戻る。進め方は `G4.md` のフィードバックの項と同じで、
-    design-delta.md を直して `design-delta` を `done` で報告し直し、`step next` に従う（レビュー・G4・
-    ビルド分割をやり直す）
+  - 設計へのフィードバック → 設計に関する質問に戻る。`questions` を `done` で報告し直し、`step next` に従う。
+    追加設計で `design-change` をスキップしていたら、`design-change` を `done` で報告し直す
 - [ ] tasklist.md にビルドが書き込まれたら `done` を報告する（ビルドが無ければ受け付けない）
 - [ ] コミット & push する（progress.jsonl も含める）
