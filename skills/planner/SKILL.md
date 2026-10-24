@@ -180,10 +180,6 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title plan {cycle}
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next plan {cycle}
 ```
 
-`作業単位のディレクトリがありません` で止まったら、`{HIKYAKU_ROOT}/cycles/{cycle}/planning/` を
-作ってから呼び直す。Git は空のディレクトリを残さないので、create-cycle を別のセッションで
-行うと、このディレクトリが無いことがある。
-
 返った1手（directive）の種類ごとに動く。
 
 | 種類 | すること |

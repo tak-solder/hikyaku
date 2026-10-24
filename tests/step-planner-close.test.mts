@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { cli, succeeds, workspace, write } from "./helpers.mts";
@@ -47,7 +47,8 @@ function retrospect(directory: string, phase: string): Directive {
   const first = next(directory, phase, "--skill", "retrospective");
   assert.equal(first.skill, "retrospective");
   assert.equal(first.step, "analyze", "auto では確認せず、build 以外では BP 実績を集めない");
-  report(directory, phase, "analyze", "--skill", "retrospective", "--result", "done");
+  const writing = report(directory, phase, "analyze", "--skill", "retrospective", "--result", "done");
+  write(directory, String(writing.args?.["output"]), "# 振り返り\n");
   return report(directory, phase, "write", "--skill", "retrospective", "--result", "done");
 }
 
@@ -125,6 +126,14 @@ test("planner: レビューと振り返りが無効なら、その手順は返�
   assert.equal(report(directory, "plan", "G1", "--result", "approved", "--input", "OK").step, "pr");
 });
 
+test("planner: planning/ が無くても（別のチェックアウトで create-cycle した）進み、最初の報告で作られる", (t) => {
+  const directory = workspace(t, true);
+  rmSync(join(directory, PLANNING), { recursive: true, force: true });
+  assert.equal(next(directory, "plan").step, "inputs");
+  report(directory, "plan", "inputs", "--result", "done");
+  assert.ok(existsSync(join(directory, PLANNING, "progress.jsonl")));
+});
+
 test("planner: 後ろのステップの成果物があるのに記録が無ければ止まる", (t) => {
   const directory = workspace(t, true);
   write(directory, `${PLANNING}/user-stories.md`);
@@ -159,19 +168,38 @@ test("retrospective: build では BP 実績の収集から始まり、書き込�
   assert.equal(writing.args?.["output"], `${CYCLE}/build-01/retrospective.md`);
 });
 
-test("retrospective: 既に retrospective.md があっても（追記モード）記録の欠けとして止まらない", (t) => {
+test("retrospective: retrospective.md が無ければ write の done を受け付けない", (t) => {
   const directory = workspace(t, true);
-  write(directory, `${PLANNING}/retrospective.md`);
-  assert.equal(next(directory, "plan", "--skill", "retrospective").step, "analyze");
+  report(directory, "plan", "inputs", "--result", "done");
+  report(directory, "plan", "analyze", "--skill", "retrospective", "--result", "done");
+  const missing = cli(directory, "step", "report", "plan", "write", "001", "--skill", "retrospective", "--result", "done");
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /成果物がまだありません/);
 });
 
-test("retrospective: 呼び出し元が報告し直すと、次の呼び出しは最初からになる", (t) => {
+test("retrospective: 呼び出し元が報告するまでは前回の分。restart で区切ると追記モードで最初から回る", (t) => {
   const directory = workspace(t, true);
   report(directory, "plan", "inputs", "--result", "done");
   assert.equal(retrospect(directory, "plan").kind, "done");
   assert.equal(next(directory, "plan", "--skill", "retrospective").kind, "done", "呼び出し元が報告するまでは前回の分");
-  report(directory, "plan", "inputs", "--result", "done");
-  assert.equal(next(directory, "plan", "--skill", "retrospective").step, "analyze");
+
+  // PR レビュー対応: 呼び出し元は報告するものが無いので、restart で区切って呼び直す
+  const result = cli(directory, "step", "restart", "plan", "001", "--skill", "retrospective", "--reason", "PR レビュー対応の振り返り", "--json");
+  assert.equal(result.status, 0, result.stderr);
+  const again = (JSON.parse(result.stdout) as { directive: Directive }).directive;
+  assert.equal(again.kind, "run", "retrospective.md が既にあっても記録の欠けとして止まらない");
+  assert.equal(again.step, "analyze");
+  // 2回目も同じ手順で終えられる（write は既存の retrospective.md への追記で完了する）
+  report(directory, "plan", "analyze", "--skill", "retrospective", "--result", "done");
+  assert.equal(report(directory, "plan", "write", "--skill", "retrospective", "--result", "done").kind, "done");
+});
+
+test("retrospective: prompt で辞退したあとも、restart で区切れば確認から聞き直す", (t) => {
+  const directory = workspace(t, true);
+  configure(directory, 'retrospective = "prompt"');
+  report(directory, "plan", "confirm", "--skill", "retrospective", "--result", "skipped", "--reason", "不要");
+  succeeds(directory, "step", "restart", "plan", "001", "--skill", "retrospective", "--reason", "PR レビュー対応の振り返り");
+  assert.equal(next(directory, "plan", "--skill", "retrospective").step, "confirm");
 });
 
 test("retrospective: 内部スキル以外は --skill に指定できない", (t) => {
@@ -196,6 +224,7 @@ test("close-cycle: サイクル直下に記録し、振り返り → 昇格 → 
   report(directory, "close", "analyze", "--skill", "retrospective", "--result", "done");
   const output = next(directory, "close", "--skill", "retrospective");
   assert.equal(output.args?.["output"], `${CYCLE}/close/retrospective.md`);
+  write(directory, `${CYCLE}/close/retrospective.md`);
   report(directory, "close", "write", "--skill", "retrospective", "--result", "done");
 
   assert.equal(report(directory, "close", "retrospective", "--result", "done").step, "collect");

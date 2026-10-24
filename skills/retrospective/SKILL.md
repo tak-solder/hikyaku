@@ -65,8 +65,10 @@ BP 実績の収集（`build-{NN}` のとき）を行うかは step が決める�
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next {phase} $ARGUMENTS[0] --skill retrospective
 ```
 
-記録は呼び出し元と同じ progress.jsonl に入る。呼び出し元が最後に報告したあとの記録だけが今回の分として
-数えられるので、前回の振り返り（PR レビュー対応での追記など）の記録は手順を進めない。
+記録は呼び出し元と同じ progress.jsonl に入る。呼び出し元が最後に報告したあと（または `step restart` の
+区切りのあと）の記録だけが今回の分として数えられる。PR レビュー対応のように呼び出し元が報告しないまま
+呼び直すときは、呼び出し元が `step restart ... --skill retrospective` で区切ってから呼ぶ。
+`done` がすぐ返ったのに今回の振り返りをしていなければ、区切りが抜けている。呼び出し元に伝えて戻る。
 
 返った1手（directive）の種類ごとに動く。
 
