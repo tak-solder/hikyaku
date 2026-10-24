@@ -12,16 +12,22 @@ import { ARCHITECT_STEPS } from "./architect.mts";
 import { BP_GUIDE_STEPS } from "./bp-guide.mts";
 import { BUILD_MANAGER_STEPS } from "./build-manager.mts";
 import { BUILDER_STEPS } from "./builder.mts";
+import { CLOSE_CYCLE_STEPS } from "./close-cycle.mts";
 import { CREATE_CYCLE_STEPS } from "./create-cycle.mts";
 import type { SkillSteps } from "./engine.mts";
 import { INIT_STEPS } from "./init.mts";
+import { PLANNER_STEPS } from "./planner.mts";
+import { RETROSPECTIVE_STEPS } from "./retrospective.mts";
 
 export const SKILL_STEPS: SkillSteps[] = [
   INIT_STEPS,
   CREATE_CYCLE_STEPS,
+  PLANNER_STEPS,
   ARCHITECT_STEPS,
   BUILD_MANAGER_STEPS,
   BUILDER_STEPS,
+  CLOSE_CYCLE_STEPS,
+  RETROSPECTIVE_STEPS,
   BP_GUIDE_STEPS,
 ];
 
