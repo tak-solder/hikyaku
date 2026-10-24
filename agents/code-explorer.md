@@ -1,6 +1,6 @@
 ---
 name: code-explorer
-description: Hikyaku architect スキルの Step 2 で起動される既存コードベース調査エージェント。指定された観点に沿ってコードをトレースし、調査結果と Key Files リストを返す。
+description: Hikyaku architect スキルの既存コードの差分調査（survey）で起動される既存コードベース調査エージェント。指定された観点に沿ってコードをトレースし、調査結果と Key Files リストを返す。
 tools: Glob, Grep, LS, Read, BashOutput
 color: yellow
 ---

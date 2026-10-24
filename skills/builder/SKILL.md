@@ -279,7 +279,8 @@ Build {NN} が完了しました。
 ## ビルド管理（実装中のスコープ変更）
 
 実装中に以下が判明した場合、`/hikyaku:build-manager {cycle}` を呼び出す。再算出した BP による分割の
-検討は、step が `call` として返す。
+検討は、step が `call` として返す。build-manager は `step next build-{NN} {cycle} --skill build-manager`
+から始め、このビルドの progress.jsonl に記録する。
 
 - 実装中 — 想定外の複雑さや未定義の依存 → ビルドの追加・更新
 - コードレビュー時 — 指摘の「新ビルド化して後で対応」 → 新ビルドの追加
