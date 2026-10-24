@@ -27,7 +27,9 @@ architect のビルド分割ステップと、builder の実装中にスコー�
 
 実装フェーズ（`build-{NN}`）では、これに加えて BP 見積もりの実績を記録します。architect 段階・builder 段階の見積もりと、PR の base からの差分の実測（新規ファイル数・追加行数）に申告（影響ファイル数・加算要素）を添えて `hikyaku bp estimate` で出した実績を並べ、`hikyaku bp session` で実測したセッションのコンテキスト（ピーク・開始時の固定分・呼び出し回数・コンパクション回数・モデル・ホスト・Hikyaku の版）と、1セッションで完結したかと、乖離の要因を「入力値の読み違え」と「基準表の問題」に分けて残します。R-N でも L-N でもない事実の記録ですが、乖離の要因がこのリポジトリ固有の再現条件に落ちる場合は L-N としても書かれます。この節の形は固定で、`hikyaku bp history` が読み、`/hikyaku:bp-guide` が基準表を調整する素材にします。
 
-各フェーズの末尾で呼ばれます。`economy` では `skip`、それ以外は `auto` です。
+実装フェーズでは、G8 の提示・実装開始前・レビュー前の区切りで測ったコンテキスト（`progress.jsonl` の記録）も確かめます。目安を超えたまま継続した区切りがあれば、どこで膨らんだかを乖離の要因に書きます。値そのものは `retrospective.md` に書き写さず、`hikyaku bp history` が `progress.jsonl` から読みます。
+
+各フェーズの末尾で呼ばれます。`economy` では `skip`、それ以外は `auto` です。呼び出し元の手順が `call` で振り返りを返し、retrospective は `hikyaku step next <phase> <cycle> --skill retrospective` で自分の手順を進めます。記録は呼び出し元と同じ `progress.jsonl` に入ります。`prompt` で実施しないと答えた場合は、残りの手順は対象外になってすぐに呼び出し元へ戻ります。
 
 ## エージェント
 
