@@ -71,10 +71,12 @@ function open(args: ParsedArgs, phaseOperand: string | undefined, cycleOperand: 
   const scope = scopeFor(args, phase, cycleOperand);
   const base = scope.context?.directory ?? scope.config.hikyakuRoot;
   const unitDirectory = join(base, owner.directory);
-  if (!existsSync(unitDirectory)) {
+  // 作業単位のディレクトリは無くてよい（Git は空のディレクトリを残さないので、別のチェックアウトでは
+  // planning/ などがまだ無いことがある）。記録は最初の報告で作られ、成果物が無いうちは完了にならない
+  if (!existsSync(base)) {
     throw new HikyakuError(
-      `作業単位のディレクトリがありません: ${relative(scope.config.repoRoot, unitDirectory)}`,
-      "そのフェーズのブランチに居るか、成果物の置き場が作られているかを確認してください。",
+      `${scope.context === undefined ? "HIKYAKU_ROOT" : "サイクルのディレクトリ"}がありません: ${relative(scope.config.repoRoot, base)}`,
+      "そのフェーズのブランチに居るかを確認してください。",
     );
   }
   return {

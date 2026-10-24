@@ -309,3 +309,13 @@ test("engine: 内部スキルは、呼び出し元が最後に報告したあと
   const second: ProgressEvent[] = [...first, { at, skill: "builder", step: "split", result: "done" }];
   assert.equal(evaluate(internal, ctx(second)).current?.definition.id, "work", "2回目の呼び出しは最初から");
 });
+
+test("step: 作業単位のディレクトリがまだ無くても進められ、最初の報告で作られる", (t) => {
+  const directory = workspace(t, true);
+  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--bp", "3");
+  assert.equal(existsSync(join(directory, BUILD)), false);
+  assert.equal(next(directory).step, "plan");
+  write(directory, `${BUILD}/plan.md`);
+  report(directory, "plan", "--result", "done");
+  assert.equal(existsSync(join(directory, BUILD, "progress.jsonl")), true);
+});
