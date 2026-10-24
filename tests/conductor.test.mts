@@ -12,6 +12,7 @@ import {
   defaultAllowedTools,
   judgePr,
   lintTags,
+  modelFor,
   parseFinalText,
   parseResultJson,
   parseCodexResult,
@@ -1147,6 +1148,98 @@ test("CLI: pr request-reviewers は Copilot が GraphQL 上で依頼済みなら
   assert.deepEqual(output.request, []);
   assert.deepEqual(output.excluded, [{ reviewer: "@copilot", reason: "依頼済み" }]);
   assert.equal(gh.calls().some((call) => call.startsWith("pr edit")), false);
+});
+
+test("conductor: モデルは選択したプロバイダ内でフェーズ別、新形式の既定、旧形式の順に解決する", () => {
+  const table = {
+    provider: "claude", model: "legacy-default", models: { architect: "legacy-architect", builder: "legacy-builder" },
+    claude: { model: "claude-default", models: { architect: "claude-architect" } },
+    codex: { model: "codex-default", models: { architect: "codex-architect" } },
+  };
+  for (const [env, provider] of [[{}, "claude"], [{ CODEX_ENVIRONMENT_ID: "env" }, "codex"]] as const) {
+    const config = readConductor(table, env);
+    assert.equal(modelFor(config, "architect"), `${provider}-architect`);
+    assert.equal(modelFor(config, "builder"), `${provider}-default`);
+    assert.equal(modelFor(config, "close-cycle"), `${provider}-default`);
+  }
+  const partial = readConductor({ ...table, claude: { models: { architect: "claude-architect" } } }, {});
+  assert.equal(modelFor(partial, "architect"), "claude-architect");
+  assert.equal(modelFor(partial, "builder"), "legacy-builder");
+  assert.equal(modelFor(partial, "close-cycle"), "legacy-default");
+});
+
+test("conductor: 旧形式モデルは明示 provider、未指定なら Claude に属し、環境による切り替え先には渡さない", () => {
+  for (const provider of [undefined, "claude", "codex"]) {
+    const table = { ...(provider === undefined ? {} : { provider }), model: "old-model", models: { architect: "old-architect" } };
+    const local = readConductor(table, {});
+    assert.equal(modelFor(local, "architect"), "old-architect");
+    assert.equal(modelFor(local, "builder"), "old-model");
+    const other = provider === "codex" ? { CLAUDE_CODE_REMOTE: "true" } : { CODEX_ENVIRONMENT_ID: "env" };
+    const switched = readConductor(table, other);
+    assert.equal(modelFor(switched, "architect"), undefined);
+    assert.equal(modelFor(switched, "builder"), undefined);
+    const same = provider === "codex" ? { CODEX_ENVIRONMENT_ID: "env" } : { CLAUDE_CODE_REMOTE: "true" };
+    assert.equal(modelFor(readConductor(table, same), "architect"), "old-architect");
+  }
+  const config = readConductor({ claude: { model: "sonnet" } }, { CODEX_ENVIRONMENT_ID: "env" });
+  assert.equal(modelFor(config, "builder"), undefined);
+});
+
+for (const [table, pattern] of [
+  [{ codex: "model" }, /codex はテーブル/],
+  [{ claude: { models: "model" } }, /\[conductor.claude\]\.models はテーブル/],
+  [{ codex: { models: { planner: "model" } } }, /\[conductor.codex.models\].*planner/],
+  [{ claude: { model: "" } }, /空文字/],
+  [{ codex: { model: 1 } }, /model/],
+  [{ codex: { models: { builder: false } } }, /builder/],
+  [{ claude: { modle: "model" } }, /\[conductor.claude\].*modle/],
+] as const) {
+  test(`conductor: プロバイダ別モデルの不正な設定を未選択でも拒否する ${JSON.stringify(table)}`, () => {
+    for (const provider of ["claude", "codex"]) {
+      assert.throws(() => readConductor({ ...table, provider }, {}), pattern);
+    }
+  });
+}
+
+test("CLI: プロバイダ別モデルのサイクル上書きを asks・起動・再開で使い、変更後は旧 digest を拒否する", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", `hikyaku_root = "docs/hikyaku"
+[conductor]
+provider = "claude"
+model = "sonnet"
+[conductor.models]
+architect = "opus"
+[conductor.claude]
+model = "claude-default"
+[conductor.codex]
+model = "codex-default"
+[conductor.codex.models]
+architect = "codex-architect"
+`);
+  write(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config", '[conductor.codex.models]\narchitect = "cycle-architect"\n');
+  const inCloud = (...args: string[]) => {
+    const result = spawnSync(process.execPath, [join(pluginRoot(), "scripts/hikyaku.mts"), "conductor", ...args], {
+      cwd: directory, encoding: "utf8", env: { ...testEnvironment(), CODEX_ENVIRONMENT_ID: "env" }, timeout: 10_000,
+    });
+    assert.ifError(result.error);
+    return result;
+  };
+  const asksResult = inCloud("asks", "001", "--json");
+  assert.equal(asksResult.status, 0, asksResult.stderr);
+  const asks = JSON.parse(asksResult.stdout);
+  assert.deepEqual(asks.models, { architect: "cycle-architect", builder: "codex-default", "close-cycle": "codex-default" });
+  const launch = (...extra: string[]) => {
+    const result = inCloud("launch", "architect", "001", "--expect-digest", asks.digest, "--json", ...extra);
+    assert.equal(result.status, 0, result.stderr);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.model, "cycle-architect");
+    assert.equal(output.argv[output.argv.indexOf("--model") + 1], "cycle-architect");
+  };
+  launch();
+  write(directory, "answer.md", "承認します");
+  launch("--resume", "thread-id", "--message", "answer.md");
+  write(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config", '[conductor.codex.models]\narchitect = "changed"\n');
+  assert.equal(inCloud("launch", "architect", "001", "--expect-digest", asks.digest).status, 1);
 });
 
 function codexEvents(...events: Record<string, unknown>[]): string {

@@ -301,12 +301,20 @@ budget_per_run = 0   # 子の呼び出し1回ごとの費用の上限（USD）�
 require_approval = false  # true なら、PR を conductor ブランチに取り込む条件に承認（Approve）を加える
 phase_reviewers = []      # conductor ブランチ向けのフェーズの PR にアサインするレビュアー
 review_timeout = 15       # レビューの依頼や CI を待つ上限（分）。0 なら待たずにその場で判定する
-# model = "sonnet"   # 子のモデル（全フェーズの既定）。未指定なら Claude Code の既定
 
-[conductor.models]   # フェーズごとのモデル。model より優先する
+[conductor.claude]
+# model = "sonnet"   # Claude の子の既定モデル。未指定なら CLI の既定
+
+[conductor.claude.models]   # Claude のフェーズごとの上書き
 # architect = "opus"
 # builder = "sonnet"
 # close-cycle = "sonnet"
+
+[conductor.codex]
+# model = "<Codex で利用できるモデル名>"
+
+[conductor.codex.models]    # Codex のフェーズごとの上書き
+# architect = "<Codex で利用できるモデル名>"
 ```
 
 [conductor](../workflow/conductor.md) で子セッションを動かすときの設定です。使わないなら書く必要はありません。
@@ -323,7 +331,11 @@ Claude の `allowed_tools` は `--allowedTools` に渡す書式で書きます�
 
 `require_approval` を `true` にすると、監督がフェーズの PR を取り込む条件に、1人以上の承認があり、変更の要求が残っていないことが加わります。承認の有無は、レビュアーごとに承認・変更の要求・取り下げのうち最新のもので判定します。コメントだけのレビューは判定を変えません。子の PR はあなたの `gh` の認証で作られるので、承認できるのはあなた以外のレビュアーです。
 
-`model` と `[conductor.models]` の値は、選択した CLI の `--model` に渡すモデル名（`opus` / `sonnet` のような別名か、正式なモデル名）です。`[conductor.models]` のキーは `architect` / `builder` / `close-cycle` だけで、それ以外はエラーになります。`models = "opus"` のようにテーブル以外で書いた場合もエラーになります。効くのは子のセッション本体だけです。Claude の子の中で起動されるサブエージェントは、環境変数 `CLAUDE_CODE_SUBAGENT_MODEL` を設定していればそのモデルで、していなければ子のセッションと同じモデルで動きます。ただし cycle-scanner だけは haiku に固定しています。
+モデルは `[conductor.claude]` / `[conductor.codex]` の `model` に、フェーズごとの上書きは `[conductor.claude.models]` / `[conductor.codex.models]` に書きます。選択したプロバイダの値だけを CLI の `--model` に渡します。未指定なら、その CLI の既定モデルを使います。`models` のキーは `architect` / `builder` / `close-cycle` だけで、それ以外や、テーブル以外の値はエラーになります。プロバイダ別テーブルの未知のキーや不正な値は、未選択のプロバイダでも検査します。
+
+旧形式の `[conductor] model` と `[conductor.models]` も使えます。旧形式は、設定で明示した `provider`（未指定なら `claude`）に属するものとして扱います。クラウド判定で別のプロバイダに切り替わった場合、旧形式のモデルは渡しません。優先順位は、選択したプロバイダのフェーズ別モデル、プロバイダの既定モデル、旧形式のフェーズ別モデル、旧形式の既定モデルです。ルートとサイクルの設定は、プロバイダ別モデルもキーごとにマージされます。
+
+効くのは子のセッション本体だけです。Claude の子の中で起動されるサブエージェントは、環境変数 `CLAUDE_CODE_SUBAGENT_MODEL` を設定していればそのモデルで、していなければ子のセッションと同じモデルで動きます。ただし cycle-scanner だけは haiku に固定しています。
 
 配列はキー単位で上書きされます。サイクル設定に `escalate` を書くと、ルートの `escalate` に足されるのではなく置き換わります。
 
