@@ -40,6 +40,8 @@ export interface ProgressEvent {
   input?: string;
   /** 承認に結びつけた成果物のハッシュ（作業単位のディレクトリからの相対パス → sha256 の先頭12桁） */
   hashes?: Record<string, string>;
+  /** step restart で始めた回の種類（architect の return / add など）。スキルが定義で読む */
+  round?: string;
   /** 報告で添えた BP（plan / plan-review） */
   bp?: number;
   /** 報告した時点のメインセッションのコンテキスト（#68）。計測できなければ記録しない */

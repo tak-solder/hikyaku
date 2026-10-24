@@ -3,7 +3,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import type { ProgressEvent } from "../scripts/lib/progress.mts";
-import { evaluate, type SkillSteps, type StepContext } from "../scripts/lib/steps/engine.mts";
+import { currentRound, evaluate, type SkillSteps, type StepContext } from "../scripts/lib/steps/engine.mts";
 import { cli, cliWith, succeeds, temporaryDirectory, workspace, write } from "./helpers.mts";
 
 const BUILD = "docs/hikyaku/cycles/001-test/build-01";
@@ -352,4 +352,19 @@ test("engine: 内部スキルは step restart で、呼び出し元の報告を�
   assert.equal(evaluate(internal, ctx(done)).current, undefined);
   const again: ProgressEvent[] = [...done, { at, skill: "helper", step: "*", result: "restart", reason: "2回目" }];
   assert.equal(evaluate(internal, ctx(again)).current?.definition.id, "work");
+});
+
+test("engine: step restart --round の回の種類は、そのスキルが定義した値だけを受け付けて記録する", (t) => {
+  const directory = built(t);
+  const unknown = cli(directory, "step", "restart", "build-01", "001", "--round", "add", "--reason", "x");
+  assert.equal(unknown.status, 1);
+  assert.match(unknown.stderr, /回の種類がありません/);
+  const skill: SkillSteps = { skill: "helper", rounds: ["add"], steps: [] };
+  const at = "2026-10-24T00:00:00Z";
+  const events: ProgressEvent[] = [
+    { at, skill: "helper", step: "*", result: "restart", reason: "x", round: "add" },
+    { at, skill: "helper", step: "a", result: "done" },
+  ];
+  assert.equal(currentRound(skill, events), "add");
+  assert.equal(currentRound(skill, [...events, { at, skill: "helper", step: "*", result: "restart", reason: "y" }]), undefined);
 });

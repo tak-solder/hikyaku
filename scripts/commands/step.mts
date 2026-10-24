@@ -453,7 +453,7 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
 register({
   name: "step restart",
   summary: "同じ作業単位で、スキルの手順を最初から回し直す区切りを記録する",
-  usage: "hikyaku step restart <phase> [<cycle>] [--skill <内部スキル>] --reason <理由> [--dry-run] [--json]",
+  usage: "hikyaku step restart <phase> [<cycle>] [--skill <内部スキル>] [--round <回の種類>] --reason <理由> [--dry-run] [--json]",
   writes: true,
   details: [
     "progress.jsonl に区切りを1行追記し、次の1手を返します。これより前の記録は現在地の導出に使いません。",
@@ -461,6 +461,9 @@ register({
     "",
     "  architect の追加設計   設計を終えた design/ で、もう一度手順を回すとき",
     "  内部スキルの呼び直し   呼び出し元が報告しないまま、build-manager などをもう一度呼ぶとき",
+    "",
+    "--round は回の種類です（architect の return / add など）。スキルの定義がこの値で手順を変えます。",
+    "使える値はスキルが決め、知らない値はエラーになります。",
   ].join("\n"),
   run: ({ args, operands }) => {
     const opened = open(args, operands[0], operands[1]);
@@ -469,6 +472,17 @@ register({
     const event: ProgressEvent = {
       at: new Date().toISOString(), skill: opened.skill.skill, step: RESTART_STEP, result: RESTART, reason, hikyaku: pluginVersion(),
     };
+    const round = flagString(args, "round");
+    if (round !== undefined) {
+      const rounds = opened.skill.rounds ?? [];
+      if (!rounds.includes(round)) {
+        throw new HikyakuError(
+          `--round に ${round} は指定できません`,
+          rounds.length === 0 ? `${opened.skill.skill} には回の種類がありません` : `使える値: ${rounds.join(" | ")}`,
+        );
+      }
+      event.round = round;
+    }
     const measured = measureCurrent(process.env);
     if (measured.sessionId !== undefined) event.session = measured.sessionId;
     if (flagBoolean(args, "dry-run")) {

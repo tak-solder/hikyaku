@@ -89,6 +89,8 @@ export interface SkillSteps {
    * スキルごとに意味が違うので、エンジンでは一律に判定しない
    */
   stop?: (ctx: StepContext) => string | undefined;
+  /** step restart --round で指定できる回の種類。定義は currentRound で読む */
+  rounds?: string[];
   steps: StepDefinition[];
 }
 
@@ -277,6 +279,17 @@ function lastIndexOf(events: ProgressEvent[], matches: (event: ProgressEvent) =>
     if (matches(events[i] as ProgressEvent)) return i;
   }
   return -1;
+}
+
+/** 今回の回で有効な記録（そのスキルの手順が始まった位置より後） */
+export function currentEvents(skill: SkillSteps, events: ProgressEvent[]): ProgressEvent[] {
+  return events.slice(startOf(skill, events) + 1);
+}
+
+/** 今回の回の種類。step restart --round で始めた回ならその値、それ以外は undefined */
+export function currentRound(skill: SkillSteps, events: ProgressEvent[]): string | undefined {
+  const index = lastIndexOf(events, (event) => event.skill === skill.skill && event.result === RESTART);
+  return index === -1 ? undefined : events[index]?.round;
 }
 
 /** 報告で添えた BP のうち、最後のもの */

@@ -9,10 +9,10 @@
 
 import { readReturn, RETURN_FILE } from "../phase.mts";
 import { buildDirName, loadTasklist, normalizeBuildId } from "../tasklist.mts";
-import { latestBp, type SkillSteps, type StepContext } from "./engine.mts";
+import { currentEvents, latestBp, type SkillSteps, type StepContext } from "./engine.mts";
 
 function testSpecSkipped(ctx: StepContext): boolean {
-  const events = ctx.events.filter((event) => event.skill === "builder" && event.step === "test-spec");
+  const events = currentEvents(BUILDER_STEPS, ctx.events).filter((event) => event.skill === "builder" && event.step === "test-spec");
   return events[events.length - 1]?.result === "skipped";
 }
 
