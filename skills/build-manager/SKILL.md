@@ -52,25 +52,21 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next {phase} {cycle} --ski
 | `run` | 「指示」のファイルを読み、そのとおりに行う。終えたら「報告」のコマンドを実行する |
 | `gate` | 「指示」のファイルを読み、ユーザーに提示して承認を求める。答えを `approved` / `rejected` で報告する |
 | `done` | 手順をすべて終えた。呼び出し元に戻り、行った変更（追加・更新したビルド）を伝える |
-| `stop` | 下の「step が使えないとき」に従う |
+| `stop` | メッセージを呼び出し元に伝えて戻る |
 
 - `step report` は記録したあと、次の1手を返す。それに従って続ける
 - 報告を受け付けないとき（現在地と違うステップ）はエラーになる。メッセージに従って直す
 - 前の手順に戻るとき（G6 のフィードバック、レビューの反映、依存の誤り）は、`scope` を `done` で報告し直す。
   そこから後ろ（見積もり・差分・レビュー・G6）はやり直しになる
-- 呼ばれた直後の `step next` が `done` を返したら、呼び出し元が報告しないまま2回目に呼ばれている。
-  `load` を `done` で報告し直して、最初の手順から進める
+- 呼び出し元の報告を挟まずに呼び直されたとき（同じステップの中での2回目の呼び出し。呼び出し元が
+  「呼び直し」と伝える。呼ばれた直後の `step next` が `done` を返したときも同じ）は、回を区切ってから
+  最初の手順で始める。中断からの再開で途中の手順が返ったときは区切らない
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step restart {phase} {cycle} --skill build-manager --reason "<呼び直す理由>"
+```
+
 - 迷ったら `step next` を呼び直す。同じ状態なら同じ1手が返る
-
-### step が使えないとき
-
-呼び出し元が差し戻しからの再設計（architect が差し戻し元のビルドのブランチで動いている）のときは、
-`step next` が `stop`（差し戻し中）を返す。このときは記録せず、`${CLAUDE_PLUGIN_ROOT}/skills/build-manager/steps/`
-の指示ファイルを `load` → `scope` → `estimate` → `dry-run` → `tasklist-review`（`reviews.tasklist` が true のとき）→
-`G6` → `write` → `external-sync`（`[external] target` が `none` 以外のとき）の順に読んで行う。
-各ファイルの「報告する」の項目は読み飛ばす。G6 はこのときも省略しない。
-
-それ以外の `stop` は、メッセージを呼び出し元に伝えて戻る。
 
 ## 共通ルール
 
