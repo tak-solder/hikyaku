@@ -458,6 +458,15 @@ export function readConductor(table: TomlTable | undefined, env: NodeJS.ProcessE
   const configured = checkEnum(readString(table, "provider", where), ["claude", "codex"] as const, `${where}.provider`);
   const cloud = detectCloudEnv(env);
   const provider = cloud?.provider ?? configured ?? DEFAULT_CONDUCTOR.provider;
+  // 旧モデル設定は、環境判定前のプロバイダに属する。クラウドで切り替わっても持ち越さない。
+  const legacy = readConductorModelSettings(table, where);
+  const scoped = Object.fromEntries(REVIEW_PROVIDERS.map((name) => {
+    const providerTable = requireTable(table, name, where);
+    assertKnownKeys(providerTable, ["model", "models"], `[conductor.${name}]`);
+    return [name, readConductorModelSettings(providerTable, `[conductor.${name}]`)];
+  })) as Record<ReviewProvider, Pick<ConductorConfig, "model" | "models">>;
+  const fallback = provider === (configured ?? DEFAULT_CONDUCTOR.provider) ? legacy : DEFAULT_CONDUCTOR;
+  const selected = scoped[provider];
   const conductor: ConductorConfig = {
     provider,
     providerSource: cloud !== undefined ? "cloud" : configured !== undefined ? "config" : "default",
@@ -468,8 +477,9 @@ export function readConductor(table: TomlTable | undefined, env: NodeJS.ProcessE
     requireApproval: readBoolean(table, "require_approval", where) ?? DEFAULT_CONDUCTOR.requireApproval,
     phaseReviewers: readReviewers(table, "phase_reviewers", where),
     reviewTimeoutMinutes: readTimeout(table, where),
-    model: readModel(table, "model", where),
-    models: readConductorModels(readConductorModelsTable(table, where)),
+    model: selected.model ?? fallback.model,
+    // プロバイダ別の既定モデルは、旧形式のフェーズ別モデルよりも優先する。
+    models: { ...(selected.model === undefined ? fallback.models : {}), ...selected.models },
   };
   if (provider === "codex" && (conductor.allowedTools.length > 0 || budget > 0)) {
     throw new HikyakuError(`${where}: codex では allowed_tools と budget_per_run は使えません（空配列・0 にしてください）`);
@@ -523,37 +533,26 @@ function readModel(table: TomlTable | undefined, key: string, where: string): st
   return value;
 }
 
-/**
- * [conductor.models] を読む。フェーズ名のタイプミスを黙って捨てると、指定したつもりの
- * モデルが効かないまま既定のモデルで動くので、未知のキーはエラーにする
- */
-/** [conductor.models] を取り出す。models = "opus" のようにテーブル以外で書かれたら、黙って無視せず止める */
-function readConductorModelsTable(table: TomlTable | undefined, where: string): TomlTable | undefined {
-  if (table?.["models"] === undefined) return undefined;
-  const models = readTable(table, "models");
-  if (models === undefined) {
-    throw new HikyakuError(
-      `${where}.models はテーブルで指定してください`,
-      "全フェーズの既定は [conductor] の model に、フェーズごとの上書きは [conductor.models] の下に build = \"opus\" の形で書きます。",
-    );
+/** 旧形式とプロバイダ別のモデル設定を同じ規則で検査する。未選択のプロバイダも検査する。 */
+function readConductorModelSettings(table: TomlTable | undefined, where: string): Pick<ConductorConfig, "model" | "models"> {
+  const model = readModel(table, "model", where);
+  if (table?.["models"] !== undefined && readTable(table, "models") === undefined) {
+    throw new HikyakuError(`${where}.models はテーブルで指定してください`);
   }
-  return models;
-}
-
-function readConductorModels(table: TomlTable | undefined): Partial<Record<ConductorPhase, string>> {
-  const where = "[conductor.models]";
+  const modelsTable = table === undefined ? undefined : readTable(table, "models");
+  const modelsWhere = `${where.slice(0, -1)}.models]`;
   const models: Partial<Record<ConductorPhase, string>> = {};
-  for (const key of Object.keys(table ?? {})) {
+  for (const key of Object.keys(modelsTable ?? {})) {
     if (!(CONDUCTOR_PHASES as readonly string[]).includes(key)) {
       throw new HikyakuError(
-        `${where} に指定できないキーです: ${key}`,
+        `${modelsWhere} に指定できないキーです: ${key}`,
         `使用できるキー: ${CONDUCTOR_PHASES.join(" | ")}`,
       );
     }
-    const model = readModel(table, key, where);
-    if (model !== undefined) models[key as ConductorPhase] = model;
+    const phaseModel = readModel(modelsTable, key, modelsWhere);
+    if (phaseModel !== undefined) models[key as ConductorPhase] = phaseModel;
   }
-  return models;
+  return { model, models };
 }
 
 /** テーブルに許可していないキーが無いか。タイプミスを黙って捨てると、設定したつもりの値が効かない */

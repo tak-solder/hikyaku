@@ -147,9 +147,9 @@ export interface ConductorConfig {
   phaseReviewers: string[];
   /** レビューの依頼や CI を待つ上限（分）。0 なら待たずにその場で判定する */
   reviewTimeoutMinutes: number;
-  /** 子のモデル（全フェーズの既定）。未指定なら選択した CLI の既定に任せる */
+  /** 選択したプロバイダの解決済みモデル。未指定なら CLI の既定に任せる */
   model: string | undefined;
-  /** フェーズごとのモデル。model より優先する */
+  /** 選択したプロバイダの解決済みフェーズ別モデル。model より優先する */
   models: Partial<Record<ConductorPhase, string>>;
 }
 
