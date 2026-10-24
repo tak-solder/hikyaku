@@ -108,7 +108,7 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | `step next <phase> [<cycle>]` | フェーズの中の次の1手を知りたいとき（スキルの転送ループが呼ぶ） |
 | `step report <phase> <step> [<cycle>] --result <結果>` | 1手の結果を記録するとき。記録したあと次の1手を返す |
 | `step status <phase> [<cycle>]` | 手順の一覧と、それぞれが完了・スキップ・未完了・対象外のどれかを見たいとき |
-| `step restart <phase> [<cycle>] --reason <理由>` | 同じ作業単位で手順を最初から回し直すとき（architect の追加設計、内部スキルの呼び直し） |
+| `step restart <phase> [<cycle>] [--round <回の種類>] --reason <理由>` | 同じ作業単位で手順を最初から回し直すとき（architect の再設計・追加設計、bp-guide の新しい回、内部スキルの呼び直し） |
 | `step lint` | ステップの定義と指示ファイルの対応を確かめるとき（プラグイン自身の CI 用） |
 
 `step next` は、作業単位のディレクトリの `progress.jsonl` と成果物から現在地を導き、次の1手を返します。返る1手は5種類です。`run` はステップを行うもので、読むべき指示ファイルと報告のコマンドが付きます。`gate` はユーザーに承認を求めるもの、`call` は build-manager などの内部スキルを呼ぶものです。`done` は手順をすべて終えたこと、`stop` は止まる理由を表します。止まるのは、v2 で作成したサイクル、builder で architect への差し戻し中のとき、記録が欠けている（成果物はあるのに一度も記録が無い）ときです。何度呼んでも、同じ状態なら同じ1手が返ります。いま `step` に移っているのは init（`init`）・create-cycle（`create`）・architect（`architect`）・builder（`build-NN`）・bp-guide（`bp-guide`）と、内部スキルの build-manager です。

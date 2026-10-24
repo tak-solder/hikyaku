@@ -1,6 +1,6 @@
 # resolve-return: 差し戻しの解決
 
-差し戻しからの再設計の回（`step restart architect {cycle} --reason "return: build-NN"`）だけで返る。
+差し戻しからの再設計の回（`step restart architect {cycle} --round return`）だけで返る。
 再設計では PR を作らない。設計の変更は差し戻し元のビルドの PR に入る。
 
 - [ ] コミット前にブランチを確認する（`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify build-{NN} {cycle}`）

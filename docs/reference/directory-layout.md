@@ -65,7 +65,7 @@ cycles/{NNN}-{slug}/
 │   ├── codebase-survey.md    # 既存コードがある場合
 │   ├── design-questions.md   # 質問が発生した場合のみ
 │   ├── design-delta.md
-│   ├── progress.jsonl        # 設計の手順の進捗
+│   ├── progress.jsonl        # 手順の進捗（architect と build-manager の記録）
 │   └── retrospective.md
 ├── tasklist.md
 ├── progress.jsonl            # create-cycle の手順の進捗

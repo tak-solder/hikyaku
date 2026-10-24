@@ -5,15 +5,15 @@
  * セッション名）はセッションごとにやり直す準備なので、ここには含めず SKILL.md に置く。
  * 進捗は design/progress.jsonl にあるので、ブランチを決めるまでは現在地を導出できない。
  *
- * 同じ design/ で手順を回し直す回が2種類ある。どちらも step restart で区切り、
- * その理由の接頭辞で回の種類を読み分ける（restart に種類の欄が無いため）。
+ * 同じ design/ で手順を回し直す回が2種類ある。どちらも step restart --round で区切り、
+ * 回の種類は currentRound で読む。
  *
- *   return: build-NN   差し戻しからの再設計。差し戻し元のビルドのブランチで行い、PR を作らず、
- *                      最後に return.md と古い plan.md / test-spec.md を消す
- *   add: <指摘>        指摘からの追加設計。調査を行わず、設計の変更が要るときだけ設計を見直し、
- *                      指摘に対応するビルドを足す
+ *   return   差し戻しからの再設計。差し戻し元のビルドのブランチで行い、PR を作らず、
+ *            最後に return.md と古い plan.md / test-spec.md を消す
+ *   add      指摘からの追加設計。調査を行わず、設計の変更が要るときだけ設計を見直し、
+ *            指摘に対応するビルドを足す
  *
- * 区切りが無い（または接頭辞が無い）回は通常の設計。
+ * --round を付けずに区切った回と、区切りが無い回は通常の設計（design）。
  */
 
 import { existsSync } from "node:fs";
@@ -21,40 +21,24 @@ import { join } from "node:path";
 import { loadCycles } from "../cycles.mts";
 import { pluginRoot } from "../paths.mts";
 import { readReturn, RETURN_FILE } from "../phase.mts";
-import { RESTART } from "../progress.mts";
 import { buildDirName, loadTasklist } from "../tasklist.mts";
-import type { SkillSteps, StepContext } from "./engine.mts";
+import { currentEvents, currentRound, type SkillSteps, type StepContext } from "./engine.mts";
 
 export type ArchitectRound = "design" | "return" | "add";
 
-/** step restart architect の --reason に付ける接頭辞 */
-export const ROUND_PREFIXES: Record<Exclude<ArchitectRound, "design">, string> = {
-  return: "return:",
-  add: "add:",
-};
+/** step restart architect --round で指定できる回の種類 */
+const ROUNDS: Exclude<ArchitectRound, "design">[] = ["return", "add"];
 
-/** いまの回の種類。最後の step restart の理由の接頭辞で決まる */
+/** いまの回の種類。--round で始めた回ならその値、それ以外は通常の設計 */
 export function roundOf(ctx: StepContext): ArchitectRound {
-  for (let i = ctx.events.length - 1; i >= 0; i -= 1) {
-    const event = ctx.events[i];
-    if (event?.skill !== "architect" || event.result !== RESTART) continue;
-    const reason = (event.reason ?? "").trim();
-    if (reason.startsWith(ROUND_PREFIXES.return)) return "return";
-    if (reason.startsWith(ROUND_PREFIXES.add)) return "add";
-    return "design";
-  }
-  return "design";
+  const round = currentRound(ARCHITECT_STEPS, ctx.events);
+  return ROUNDS.find((entry) => entry === round) ?? "design";
 }
 
-/** いまの回で記録された結果。restart より前の回の記録は見ない */
+/** いまの回で、そのステップが最後にスキップと記録されたか */
 function skipped(ctx: StepContext, step: string): boolean {
-  let result: string | undefined;
-  for (const event of ctx.events) {
-    if (event.skill !== "architect") continue;
-    if (event.result === RESTART) result = undefined;
-    else if (event.step === step) result = event.result;
-  }
-  return result === "skipped";
+  const events = currentEvents(ARCHITECT_STEPS, ctx.events).filter((event) => event.skill === "architect" && event.step === step);
+  return events[events.length - 1]?.result === "skipped";
 }
 
 /** 自分のほかに進行中のサイクルがあるか（cycle list --active と同じ判定） */
@@ -84,6 +68,7 @@ const mode = (ctx: StepContext) => ({ round: roundOf(ctx) });
 export const ARCHITECT_STEPS: SkillSteps = {
   skill: "architect",
   unit: (phase) => (phase === "architect" ? "design" : undefined),
+  rounds: ROUNDS,
   // 差し戻し中なのに再設計の回を始めていなければ、前回の記録のまま進めない
   stop: (ctx) => {
     if (ctx.cycle === undefined || roundOf(ctx) === "return") return undefined;
@@ -93,7 +78,7 @@ export const ARCHITECT_STEPS: SkillSteps = {
     const cli = `node "${join(pluginRoot(), "scripts", "hikyaku.mts")}"`;
     return [
       `このブランチは architect に差し戻されています（${RETURN_FILE}）。再設計の回を区切ってから始めてください:`,
-      `  ${cli} step restart architect ${ctx.cycle.name} --reason "${ROUND_PREFIXES.return} ${build}"`,
+      `  ${cli} step restart architect ${ctx.cycle.name} --round return --reason "${build} からの差し戻し"`,
     ].join("\n");
   },
   steps: [
