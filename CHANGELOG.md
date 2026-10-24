@@ -28,7 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Claude Code 利用者の操作は変わらない。従来の `/hikyaku:...` と `skills/`・`agents/` の手順は維持する
 - Codex 利用者は `codex plugin marketplace add tak-solder/hikyaku@codex-plugin` でマーケットプレイスを追加し、プラグインをインストールする。`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要。Codex では各フェーズを個別に実行し、conductor は Claude Code で使う
 
-## [3.1.0]
+## [3.0.0]
 
 ### Added
 
@@ -40,6 +40,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **`[context]` 設定**: `approval` / `implement` / `review`
 - `hikyaku bp history`: 区切りでのコンテキスト（G8・実装前・レビュー前）を `progress.jsonl` から読んで並べる
 - `docs/migration/v2-to-v3.md`
+- **`hikyaku bp session [<phase> [<cycle>]]`**: セッションのコンテキストを、ホストの記録（Claude Code のトランスクリプト、Codex の rollout）から実測する。ピーク・開始時の固定分・最新の値・API 呼び出し回数・出力トークンの合計・コンパクション回数・モデル・ホストとその版・ウィンドウ（Codex のみ）を返す。引数なしでは `CLAUDE_CODE_SESSION_ID` / `CODEX_THREAD_ID` で現在のセッションを測り、`<phase>` を渡すとそのブランチのセッションから、そのブランチでの API 呼び出しが最も多いものを本体として選ぶ（候補と、対象外にしたサブエージェント・guardian も出力する）。`--transcript <path>` で記録を直接指定できる。読めない・見つからないときは推測せず「計測不可」とその理由を返す（Codex のクラウドでは rollout が保存されないため計測不可）。BP をコンテキストの消費量で校正するための計測の基盤で、見積もりの算出は変えない（[#68](https://github.com/tak-solder/hikyaku/issues/68)）
+- **`[bp_actual]` 設定**: `exclude`（生成物として数えないパスの glob）と `tests`（テストとして分けるパスの glob）。既定値はロックファイル・スナップショット・生成コードと、一般的なテストのパス。書いた配列は既定値を置き換える
+- **`hikyaku bp history --group-by model|hikyaku|host`**: モデル・Hikyaku の版・ホストごとに分けて並べ、件数・実績 BP とピークの平均・ピークの範囲・実績 1BP あたりのピークを添える
 
 ### Changed
 
@@ -48,23 +51,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - builder: 設定で無効なステップ（plan / test-spec のレビュー、G7、振り返り）は手順に含まれない。スキップできるのは test-spec だけで、理由が記録に残る
 - `conductor lint` が `skills/<skill>/steps/` のタグも読むようにした
 - CI（check-scripts）で `step lint` を実行する
-
-### Migration
-
-- **v2 で作成したサイクルは、v3 の builder では扱わない。** `step next` が止まり、v2 のまま終えるよう案内する。進行中のサイクルは v2 のプラグインで終えてから上げる（`docs/migration/v2-to-v3.md`）
-- `progress.jsonl` はコミット対象。`.gitignore` で除外しない
-- `[context]` は既定値のままで動くので、設定の変更は不要
-
-## [3.0.0]
-
-### Added
-
-- **`hikyaku bp session [<phase> [<cycle>]]`**: セッションのコンテキストを、ホストの記録（Claude Code のトランスクリプト、Codex の rollout）から実測する。ピーク・開始時の固定分・最新の値・API 呼び出し回数・出力トークンの合計・コンパクション回数・モデル・ホストとその版・ウィンドウ（Codex のみ）を返す。引数なしでは `CLAUDE_CODE_SESSION_ID` / `CODEX_THREAD_ID` で現在のセッションを測り、`<phase>` を渡すとそのブランチのセッションから、そのブランチでの API 呼び出しが最も多いものを本体として選ぶ（候補と、対象外にしたサブエージェント・guardian も出力する）。`--transcript <path>` で記録を直接指定できる。読めない・見つからないときは推測せず「計測不可」とその理由を返す（Codex のクラウドでは rollout が保存されないため計測不可）。BP をコンテキストの消費量で校正するための計測の基盤で、見積もりの算出は変えない（[#68](https://github.com/tak-solder/hikyaku/issues/68)）
-- **`[bp_actual]` 設定**: `exclude`（生成物として数えないパスの glob）と `tests`（テストとして分けるパスの glob）。既定値はロックファイル・スナップショット・生成コードと、一般的なテストのパス。書いた配列は既定値を置き換える
-- **`hikyaku bp history --group-by model|hikyaku|host`**: モデル・Hikyaku の版・ホストごとに分けて並べ、件数・実績 BP とピークの平均・ピークの範囲・実績 1BP あたりのピークを添える
-
-### Changed
-
 - retrospective: 「BP見積もりの振り返り」に「セッションの実測」表（`bp session --markdown` の出力）を加えた。ピーク・開始時の固定分・呼び出し回数・出力トークン・コンパクション・ウィンドウ・モデル・ホスト・Hikyaku の版・セッションを記録する
 - `hikyaku bp history`: セッションの実測を BP と並べて表示し、`--json` の各レコードに `context` として返す。表の無い retrospective.md は「—」で読む
 - `hikyaku bp actual`: `[bp_actual] exclude` に当たる生成物を数えなくなった。`newFiles` / `changedFiles` / `addedLines` / `deletedLines` / `binaryFiles` は生成物を除いた値になる。新たに `implementationLines` / `testLines`（追加行数の内訳）、`implementationFiles` / `testFiles` / `implementationNewFiles` / `testNewFiles`、`generatedFiles` / `generatedLines` / `generatedPaths` を返す。`estimateArgs` の `--lines` は従来どおり実装とテストの合計
@@ -72,6 +58,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Migration
 
+- **v2 で作成したサイクルは、v3 の builder では扱わない。** `step next` が止まり、v2 のまま終えるよう案内する。進行中のサイクルは v2 のプラグインで終えてから上げる（`docs/migration/v2-to-v3.md`）
+- `progress.jsonl` はコミット対象。`.gitignore` で除外しない
+- `[context]` は既定値のままで動くので、設定の変更は不要
 - 既存の retrospective.md は変更不要。セッションの実測が無いビルドは `bp history` で「—」になる
 - `bp actual` の値は、差分にロックファイル・スナップショット・生成コードが含まれるビルドで以前より小さくなる。以前の実績と比べるときはこの差に注意する。以前の数え方に戻したいときは `[bp_actual] exclude = []` を書く
 - `bp actual --json` の既存のキーは残っている。テストの判定を変えたいときは `[bp_actual] tests` を書く（既定値を置き換える）
