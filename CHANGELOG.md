@@ -51,6 +51,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - builder: `plan` の `done` には再算出した BP（`--bp`）が、`pr` の `done` には PR の URL か番号（`--pr`）が必須。`step next` が `stop` を返す状態（差し戻し中など）では、`step report` も受け付けない
 - builder: 各ステップの指示から、転送ループと定義が決めること（報告の仕方、有効になる条件、CLI が確かめる完了の条件）を除き、作業内容と判断基準に絞った。doc-reviewer の起動方法は SKILL.md にまとめた
 - builder: 設定で無効なステップ（plan / test-spec のレビュー、G7、振り返り）は手順に含まれない。スキップできるのは test-spec だけで、理由が記録に残る
+- init: 雛形の生成（`hikyaku init`）より後の手順（警告と旧名ファイルの後始末 → 既存ドキュメントの登録 → AGENTS.md への索引の承認 → 書き込み → PR）を `step next init` の転送ループに置き換えた。doctor・HIKYAKU_ROOT の決定・v1 の移行・雛形の生成は、設定がまだ無いので SKILL.md に残した。v1 の移行の手順は `references/v1.md` に移した。進捗は `{HIKYAKU_ROOT}/progress.jsonl` に記録し、索引の承認は `document-guide.md` のハッシュに結びつく
+- create-cycle: `cycle new` より後の手順（PLAN へ進むかの確認 → plan のブランチで planner へ、または単独で PR）を `step next create <cycle>` の転送ループに置き換えた。PLAN へ進まないときは `to-plan` を理由付きでスキップし、そのときだけ PR のステップが手順に入る。進捗はサイクルのディレクトリの `progress.jsonl` に記録する。サイクルを作るまでの手順と、planner から代行されたときの流れは変えていない
+- bp-guide: 前提の確認（`show` での表示を含む）より後の手順（ブランチ → 基準表の生成 → 素材の収集 → 変更案 → 承認 → 再生成と検証 → PR）を `step next bp-guide` の転送ループに置き換えた。進捗は `bp-guide/progress.jsonl` に記録し、変更の承認は `rules.toml` / `cases.toml` のハッシュに結びつく。収集か変更案を理由付きでスキップすると、承認と再生成を行わずに PR へ進む。前の回の記録が残っていて `step next` が `done` を返したら、`step restart bp-guide` で区切って新しい回を始める
 - `conductor lint` が `skills/<skill>/steps/` のタグも読むようにした
 - CI（check-scripts）で `step lint` を実行する
 - retrospective: 「BP見積もりの振り返り」に「セッションの実測」表（`bp session --markdown` の出力）を加えた。ピーク・開始時の固定分・呼び出し回数・出力トークン・コンパクション・ウィンドウ・モデル・ホスト・Hikyaku の版・セッションを記録する
@@ -61,7 +64,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Migration
 
 - **v2 で作成したサイクルは、v3 の builder では扱わない。** `step next` が止まり、v2 のまま終えるよう案内する。進行中のサイクルは v2 のプラグインで終えてから上げる（`docs/migration/v2-to-v3.md`）
-- `progress.jsonl` はコミット対象。`.gitignore` で除外しない
+- `progress.jsonl` はコミット対象。`.gitignore` で除外しない。ビルドのディレクトリのほか、HIKYAKU_ROOT 直下（init）、サイクルのディレクトリ直下（create-cycle）、`bp-guide/`（bp-guide）にも置かれる
 - `[context]` は既定値のままで動くので、設定の変更は不要
 - 既存の retrospective.md は変更不要。セッションの実測が無いビルドは `bp history` で「—」になる
 - `bp actual` の値は、差分にロックファイル・スナップショット・生成コードが含まれるビルドで以前より小さくなる。以前の実績と比べるときはこの差に注意する。以前の数え方に戻したいときは `[bp_actual] exclude = []` を書く

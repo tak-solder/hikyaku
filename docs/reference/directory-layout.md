@@ -16,9 +16,11 @@
     ├── bp-guide/              # BP の基準表（任意。無ければ既定値）
     │   ├── rules.toml         #   正本
     │   ├── README.md          #   人間向けの説明。表は rules.toml から生成
-    │   └── cases.toml         #   期待値テスト
+    │   ├── cases.toml         #   期待値テスト
+    │   └── progress.jsonl     #   bp-guide の手順の進捗
     ├── .hikyaku.local         # 最後に作業したサイクル（git 管理対象外）
     ├── .gitignore             # .hikyaku.local の1行だけ
+    ├── progress.jsonl         # init の手順の進捗
     └── cycles/
         ├── 001-user-auth/
         │   ├── .hikyaku.config  # このサイクルだけの上書き（任意）
@@ -42,6 +44,7 @@
 | `bp-guide/` | BP の基準表。`rules.toml` が正本で、`README.md` の表と `cases.toml` の期待値がそれに従う（任意。無ければ既定値） | init / bp-guide |
 | `.hikyaku.local` | このチェックアウトで最後に作業したサイクル | `cycle use` |
 | `.gitignore` | `.hikyaku.local` の1行だけ | init |
+| `progress.jsonl` | init の手順の進捗。`bp-guide/progress.jsonl` は bp-guide の手順の進捗 | `hikyaku step report` |
 
 `.gitignore` に包括パターンを書かないでください。close-cycle は別セッションで `retrospective.md` を昇格素材として読むため、まとめて除外すると読めなくなります。
 
@@ -64,6 +67,7 @@ cycles/{NNN}-{slug}/
 │   ├── design-delta.md
 │   └── retrospective.md
 ├── tasklist.md
+├── progress.jsonl            # create-cycle の手順の進捗
 ├── return.md                 # architect への差し戻し中のみ（差し戻し元のビルドのブランチだけにある）
 └── build-{NN}/
     ├── issue.md              # architect が作成
@@ -79,7 +83,7 @@ cycles/{NNN}-{slug}/
 
 `handoff.md` と `retrospective.md` は close-cycle の昇格素材になります。どちらもコミット対象です。
 
-`progress.jsonl` は、ビルドの手順がどこまで進んだかの記録です。`hikyaku step report` が1手ごとに1行を追記し、成果物と一緒にコミットされます。現在地そのものは保存されず、`hikyaku step next` がこの記録と成果物から毎回導き直します。別のセッションや別のマシンから再開しても、同じ続きが返るのはこのためです。手で編集すると読めなくなるので、記録を直すときも `step report` を使います。
+`progress.jsonl` は、ビルドの手順がどこまで進んだかの記録です（サイクルのディレクトリ直下のものは create-cycle の、HIKYAKU_ROOT 直下と `bp-guide/` のものは init と bp-guide の記録です）。`hikyaku step report` が1手ごとに1行を追記し、成果物と一緒にコミットされます。現在地そのものは保存されず、`hikyaku step next` がこの記録と成果物から毎回導き直します。別のセッションや別のマシンから再開しても、同じ続きが返るのはこのためです。手で編集すると読めなくなるので、記録を直すときも `step report` を使います。
 
 `return.md` は、builder が architect に差し戻したときに書く記録です。差し戻し元のビルドのブランチにだけコミットされ、architect が再設計の最後に削除するので、デフォルトブランチには入りません。作業ツリーにこのファイルがあることが「差し戻し中」を意味し、1行目の見出し（`# 差し戻し: build-NN`）から差し戻し元のビルドが読まれます。
 
