@@ -14,6 +14,10 @@ argument-hint: "[{slug}]"
 
 ## 作業ステップ
 
+Step 0〜3 はサイクルを作るまでの準備で、ここに書いてある。サイクルを作ったあとの手順は
+`step next` が1手ずつ返す（Step 4 以降）。進捗の記録はサイクルのディレクトリに置くので、
+サイクルができるまでは step に乗せられない。
+
 ### Step 0: 前提の確認
 
 - [ ] 設定を解決する
@@ -126,70 +130,35 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {NNN}-{slug}
 
 → Step 4 へ。
 
-### Step 4: このまま PLAN へ進むか確認する
+### Step 4 以降: step に従って進める
 
-- [ ] ユーザーに確認する（既定は「はい」）
+planner から代行された場合は、step に乗せずにここで終える。既に PLAN の途中なので、
+そのまま planner へ戻る（PLAN へ進むかの確認もしない）。
 
-```
-サイクル {NNN}-{slug} を作成しました（profile: {profile}）。
-このまま企画フェーズ（PLAN）に進みますか？ [Y/n]
-```
-
-planner から代行された場合はこの確認をしない。既に PLAN の途中なので、
-そのまま planner へ戻る（この後のステップもすべて飛ばす）。
-
-- はい → Step 5 へ
-- いいえ → Step 6 へ
-
-### Step 5: PLAN へ続ける
-
-このサイクルの成果物は cycles.md の1行だけなので、独立した PR にはしない。
-`create` ブランチは作らず、最初から plan のブランチで作業して PLAN の PR に畳む。
+それ以外は、ここから先の手順（PLAN へ進むかの確認 → plan のブランチで planner へ、または
+単独で PR）を、`step next` が進捗から1手ずつ返す。**手順を自分で組み立てない。**
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify plan {NNN}-{slug}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next create {NNN}-{slug}
 ```
 
-`ok: true` ならそのまま、`onBaseBranch: true` なら `expected` の名前で作成する。
-`onBaseBranch` が `false` / `null`（既に別の作業ブランチに居る）なら、必ずユーザーに尋ねる。
-Hikyaku の規則に従う / 現在のブランチで作業する / 別のブランチを指定する、の3つを提示し、
-どれが妥当かは示唆しない。実行環境が割り当てたブランチだと分かっていても自分で決めない
-（別の作業のブランチに紛れ込んだ状態と、セッションの中からは区別できないため）。
+返った1手（directive）の種類ごとに動く。
 
-- [ ] 決まったブランチで cycles.md の変更をコミットする
-- [ ] `/hikyaku:planner {NNN}-{slug}` を呼び出す
+| 種類 | すること |
+|---|---|
+| `run` | 「指示」のファイルを読み、そのとおりに行う。終えたら「報告」のコマンドを実行する |
+| `done` | 手順をすべて終えた。PLAN へ続けた場合は指示どおり planner を呼ぶ。単独で終えた場合は下の「完了の案内」へ |
+| `stop` | メッセージをユーザーに伝えて終了する |
 
-planner も Step 1 で同じ確認をするが、ここで決めたブランチをそのまま使う（同じことを二度尋ねない）。
+- `step report` は記録したあと、次の1手を返す。それに従って続ける
+- 報告を受け付けないとき（現在地と違うステップ）はエラーになる。メッセージに従って直す
+- スキップできるのは、step がスキップを許すステップだけ。理由は `--reason` で記録に残る
+- 迷ったら `step next` を呼び直す。同じ状態なら同じ1手が返る
+- 進捗は `{HIKYAKU_ROOT}/cycles/{NNN}-{slug}/progress.jsonl` に記録される。cycles.md と一緒にコミットする
 
-**ここで終了。以降のステップは実行しない。**
+### 完了の案内
 
-### Step 6: 単独で終える場合のコミットと PR
-
-- [ ] ブランチを作成し、命名規則どおりか確認する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify create {NNN}-{slug}
-```
-
-`ok: true` ならそのまま、`onBaseBranch: true` なら `expected` の名前で作成する。
-`onBaseBranch` が `false` / `null`（既に別の作業ブランチに居る）なら、必ずユーザーに尋ねる。
-Hikyaku の規則に従う / 現在のブランチで作業する / 別のブランチを指定する、の3つを提示し、
-どれが妥当かは示唆しない。実行環境が割り当てたブランチだと分かっていても自分で決めない
-（別の作業のブランチに紛れ込んだ状態と、セッションの中からは区別できないため）。
-
-- [ ] コミットして PR を作成する
-- [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers create {NNN}-{slug} --pr {PR の URL}
-```
-
-  失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
-
-cycles.md がデフォルトブランチに入らないと、他サイクルからこのサイクルが見えない。
-並行サイクルの検出が機能しなくなるため、この PR は速やかにマージする。
-
-- [ ] 完了後、次を案内する
+単独で終えた場合は、次を案内する。
 
 ```
 サイクル {NNN}-{slug} を作成しました（profile: {profile}）。

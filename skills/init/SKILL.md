@@ -17,19 +17,10 @@ Hikyaku ワークスペースを初期化する。このスキルは1つのリ�
 機械的な雛形生成はスクリプトが行う。あなたの仕事はリポジトリを調べて、既存の
 設計ドキュメントを見つけ、ユーザーと相談して guide に当てはめること。
 
-## 判断基準
-
-永続ドキュメントに何を持つかは、次の基準で決まっている。
-
-> 復元コスト ÷ 陳腐化速度
-
-- `db-schema` の全テーブル定義 — 復元コスト低（マイグレーションを読めばよい）／陳腐化速い → Hikyaku は作らない
-- `overview` の責務・境界・データフロー — 復元コスト極高（全ファイルを読んで構造を推論）／陳腐化遅い → 作る価値がある
-
-コピーではなくポインタを持つ。「スキーマの正は `db/migrations/`」は腐らないが、
-「主要テーブル: users, orders」は腐り、しかも腐っていることに誰も気づけない。
-
 ## 作業ステップ
+
+Step 0〜3 はワークスペースができる前の準備で、ここに書いてある。雛形を生成したあとの手順は
+`step next` が1手ずつ返す（Step 4 以降）。
 
 ### Step 0: 既存ワークスペースの確認
 
@@ -38,7 +29,15 @@ Hikyaku ワークスペースを初期化する。このスキルは1つのリ�
 Node が v22.18.0 未満の場合はここで終了し、更新を案内する（型剥がしがフラグ無しで
 有効になる最小バージョン）。
 
-- [ ] 既に `document-guide.md` が存在する場合は、初期化済みとして終了する
+- [ ] 既に `document-guide.md` が存在する場合は、進捗を確認する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step status init --json
+```
+
+`current` が null（手順を終えている）か、記録のあるステップ（`at` が null でないもの）が1つも無い
+（v2 までに初期化された）なら、初期化済みとして終了する。それ以外は中断からの再開なので、
+Step 4 へ進む。
 
 → Step 1 へ。
 
@@ -55,24 +54,8 @@ HIKYAKU_ROOT にはサイクルの成果物だけを置く。永続ドキュメ�
 ### Step 2: v1 構造の検出（該当時のみ）
 
 指定されたパスの直下に `planning/` や `build-01/` があれば、Hikyaku v1 のワークスペースである。
-
-移行は機械的に決め打ちせず、ユーザーと対話して決める。 v1 ユーザーの状態は多様で、
-一律のルールでは捌けない。
-
-| 状況 | 妥当な扱い |
-|---|---|
-| サイクル完走済み | `cycles/001-legacy/` へアーカイブ（第一候補） |
-| ビルド途中 | v1.0.0 のまま完走してから移行する（プラグインのバージョンを固定） |
-| planning だけやって放置 | 捨ててよいことが多い |
-| 複数の DOC_ROOT を運用していた | 別サイクルか別ワークスペースか要判断 |
-
-アーカイブする場合:
-
-- [ ] `git mv` で `planning/` `tasklist.md` `build-NN/` を `cycles/001-{slug}/` へ移す
-- [ ] `architecture/` は移動しない。Step 4 で `repo` 管理として guide に登録する
-- [ ] cycles.md に `hikyaku: 1.0.0` / `status: closed` で1行足す
-
-これにより、`planning/` があって `design-delta.md` が無い理由が、行を見ただけで分かるようになる。
+`${CLAUDE_PLUGIN_ROOT}/skills/init/references/v1.md`（[v1.md](references/v1.md)）に従って、
+ユーザーと扱いを決める。無ければ飛ばす。
 
 → Step 3 へ。
 
@@ -92,122 +75,42 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" init --root {HIKYAKU_ROOT}
 | `{HIKYAKU_ROOT}/cycles.md` | サイクル索引 |
 | `{HIKYAKU_ROOT}/document-guide.md` | ドキュメントガイドの雛形 |
 | `{HIKYAKU_ROOT}/bp-guide/` | BP の基準表（`rules.toml` 正本 / `README.md` 説明 / `cases.toml` 期待値テスト）。Hikyaku の既定値から生成 |
-| `{HIKYAKU_ROOT}/.gitignore` | `.hikyaku.local` の1行だけ |
+| `{HIKYAKU_ROOT}/.gitignore` | `.hikyaku.local` の1行だけ（既にあれば1行だけ追記する） |
 
 `bp-guide/` はワークスペースの持ち物で、以後プラグインを更新しても変わらない。
 無くても既定値で動くので、v2.0 で初期化済みのワークスペースに足すときも同じコマンドを
 再実行すればよい（無いファイルだけ生成する）。調整は `/hikyaku:bp-guide` で行う。
 
-`{HIKYAKU_ROOT}/.hikyaku.config` は作らない。設定を置ける場所はリポジトリルートと
-サイクルディレクトリの2箇所だけで、中間層は読み込まれない。
-
-`.gitignore` が除外するのは `.hikyaku.local`（最後に作業したサイクルを記録する
-ローカル専用ファイル）だけ。 包括パターンは書かない。close-cycle は別セッションで
-`retrospective.md` を昇格素材として読むため、まとめて除外すると読めなくなる。
-
-`.gitignore` は既にある場合も1行だけ追記する（既存行には手を出さない）。v1 は
-`{DOC_ROOT}/.gitignore` を生成していたため、スキップすると `.hikyaku.local` が
-永久に追跡対象のままになる。v1 の除外設定（`retrospective.md` など）が残っていれば
-警告が出るので、ユーザーに削除を提案する。
-
-既に `{HIKYAKU_ROOT}/.hikyaku.config` がある場合（v2.0 の初期実装が生成していた）は
-警告が出る。内容をリポジトリルートの `.hikyaku.config` へ移して削除するよう案内する。
-
-- [ ] 改名されたファイルが旧名のまま残っていないか確認する
-
-| 旧名 | 新名 |
-|---|---|
-| `{HIKYAKU_ROOT}/instruction.md` | `{HIKYAKU_ROOT}/instructions.md` |
-
-`git mv` で改名する。中身の変換は不要で、そのまま使える。v2 は新しい名前しか
-読まないので、旧名のまま残すと読み込まれていないことに誰も気づけない。
-`hikyaku validate` も残存を検出する。
+出た警告は、Step 4 の最初の手順（cleanup）で扱う。
 
 → Step 4 へ。
 
-### Step 4: 既存ドキュメントの検出と登録
+### Step 4 以降: step に従って進める
 
-ここがこのスキルの本体。
+ここから先の手順（警告の後始末 → 既存ドキュメントの登録 → AGENTS.md への索引の承認と書き込み →
+PR）は、`step next` が進捗から1手ずつ返す。**手順を自分で組み立てない。**
 
-- [ ] リポジトリを走査して既存の設計ドキュメントを探す
-  - `docs/` `doc/` `adr/` `architecture/` `AGENTS.md` `CLAUDE.md` `CONTRIBUTING.md`
-  - v1 から移行する場合は `{HIKYAKU_ROOT}/architecture/` も対象
-  - AGENTS.md / CLAUDE.md にドキュメント規約が書かれていれば最優先で従う
-- [ ] 見つけたものを論理名に割り当て、ユーザーに提示して確認を得る
-
-```
-既存の設計ドキュメントを検出しました。document-guide に登録しますか？
-
-  decisions   → docs/adr/                 (repo 管理・既存ADR形式)
-  conventions → AGENTS.md                 (repo 管理)
-  db-schema   → docs/db.md                (repo 管理・参考資料)
-  overview    → 該当なし。未作成として登録し、初回の close-cycle で作成します
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next init
 ```
 
-- [ ] `{HIKYAKU_ROOT}/document-guide.md` の管理列とパス列を埋める
+返った1手（directive）の種類ごとに動く。
 
-管理列の意味を守ること:
-
-| 管理 | Hikyaku の振る舞い |
+| 種類 | すること |
 |---|---|
-| `hikyaku` | テンプレートに従う。書く/書かない・振る舞い・形式のすべてを適用する |
-| `repo` | **既存形式が正。追記のみで、形式には手を出さない**。既存記述の削除・整理もしない |
-| `未作成` | 次に必要になったとき Hikyaku が作成する |
-| `対象外` | 意図的に持たない。理由を概要欄に書く |
+| `run` | 「指示」のファイルを読み、そのとおりに行う。終えたら「報告」のコマンドを実行する |
+| `gate` | 「指示」のファイルを読み、ユーザーに提示して承認を求める。答えを `approved` / `rejected` で報告する |
+| `done` | 手順をすべて終えた。下の「完了の案内」へ |
+| `stop` | メッセージをユーザーに伝えて終了する |
 
-既存 ADR が `AD-N` 形式でも、`repo` 管理として登録すればそのまま使い続けられる。
-形式変換は不要。
+- `step report` は記録したあと、次の1手を返す。それに従って続ける
+- 報告を受け付けないとき（現在地と違うステップ）はエラーになる。メッセージに従って直す
+- 迷ったら `step next` を呼び直す。同じ状態なら同じ1手が返る
+- 進捗は `{HIKYAKU_ROOT}/progress.jsonl` に記録される。PR に含める
 
-- [ ] 検証する
+### 完了の案内
 
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs validate
-```
-
-→ 問題がなければ Step 5 へ。
-
-### Step 5: AGENTS.md への索引（承認必須）
-
-- [ ] 差分を提示する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs link --dry-run
-```
-
-- [ ] **ユーザーの承認を得てから**実行する
-
-AGENTS.md はリポジトリ全体の AI 設定であり、チーム全体に影響する。マーカーで
-囲むので人間が書いた部分は保持されるが、書き換える以上は承認を取る。
-
-この索引が無いと、Hikyaku 以外のセッション（通常の Claude Code、Copilot、Cursor）は
-永続ドキュメントの存在に気づけない。
-
-→ Step 6 へ。
-
-### Step 6: コミットと PR
-
-- [ ] ブランチを作成し、命名規則どおりか確認する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify init
-```
-
-`ok: true` ならそのまま、`onBaseBranch: true` なら `expected` の名前で作成する。
-`onBaseBranch` が `false` / `null`（既に別の作業ブランチに居る）なら、必ずユーザーに尋ねる。
-Hikyaku の規則に従う / 現在のブランチで作業する / 別のブランチを指定する、の3つを提示し、
-どれが妥当かは示唆しない。実行環境が割り当てたブランチだと分かっていても自分で決めない
-（別の作業のブランチに紛れ込んだ状態と、セッションの中からは区別できないため）。
-
-- [ ] コミットして PR を作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title init` で生成）
-  - コミットメッセージの形式はリポジトリの規約に従う。Hikyaku は関与しない
-- [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers init --pr {PR の URL}
-```
-
-  失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
-- [ ] 完了後、次を案内する
+`done` が返ったら、次を案内する。
 
 ```
 初期化が完了しました。

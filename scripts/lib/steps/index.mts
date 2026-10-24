@@ -8,10 +8,13 @@
 import { join } from "node:path";
 import type { Phase } from "../branch.mts";
 import { pluginRoot } from "../paths.mts";
+import { BP_GUIDE_STEPS } from "./bp-guide.mts";
 import { BUILDER_STEPS } from "./builder.mts";
+import { CREATE_CYCLE_STEPS } from "./create-cycle.mts";
 import type { SkillSteps } from "./engine.mts";
+import { INIT_STEPS } from "./init.mts";
 
-export const SKILL_STEPS: SkillSteps[] = [BUILDER_STEPS];
+export const SKILL_STEPS: SkillSteps[] = [BUILDER_STEPS, INIT_STEPS, CREATE_CYCLE_STEPS, BP_GUIDE_STEPS];
 
 export function stepsOf(skill: string): SkillSteps | undefined {
   return SKILL_STEPS.find((entry) => entry.skill === skill);

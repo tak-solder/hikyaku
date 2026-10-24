@@ -21,20 +21,9 @@ argument-hint: "[show|tune]"
 | `bp-guide/rules.toml` | 正本。スクリプトはこれだけを読む | このスキル（承認後）か人 |
 | `bp-guide/README.md` | 人間向けの説明。表の部分はマーカーブロックで `rules.toml` から生成 | 表は `bp render`、文章は人 |
 | `bp-guide/cases.toml` | 期待値テスト。入力 → 期待 BP | このスキル（承認後）か人 |
+| `bp-guide/progress.jsonl` | 運用の手順の進捗。`hikyaku step report` が追記する | 手で編集しない |
 
-ディレクトリが無ければ Hikyaku の既定値で動いている。調整するには先に生成する（Step 1）。
-
-## 入力値の問題か、基準表の問題か
-
-見積もりの乖離には2種類あり、直す場所が違う。
-
-| 乖離の種類 | 見え方 | 直す場所 |
-|---|---|---|
-| 入力値の読み違え | 見積もった新規ファイル数・行数と実測値が離れている。加算要素を落としていた | 数え方。`bp-guide/README.md` の「入力値の数え方」か `instructions.md` |
-| 基準表がリポジトリに合わない | 入力値は合っていたのに1セッションに収まらなかった（または大幅に余った）ビルドが続く | `rules.toml` のしきい値・加算値 |
-
-`rules.toml` を動かすのは後者だけ。入力値の読み違えをしきい値で吸収すると、次に数え方が
-正しくなったときに逆方向へ外れる。
+ディレクトリが無ければ Hikyaku の既定値で動いている。調整するには先に生成する（step の `generate`）。
 
 ## 作業ステップ
 
@@ -54,143 +43,44 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config --json
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" bp guide
 ```
 
-先頭が「既定値」なら `bp-guide/` は無い。`$ARGUMENTS[0]` が `show` なら、ここで表示して終了する。
+先頭が「既定値」なら `bp-guide/` は無い。`$ARGUMENTS[0]` が `show` なら、ここで表示して終了する
+（step には記録しない）。
 
 → Step 1 へ。
 
-### Step 1: ブランチと基準表の生成
+### Step 1 以降: step に従って進める
 
-- [ ] ブランチを作成し、命名規則どおりか確認する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify bp-guide
-```
-
-`bp-guide` はサイクルに属さないフェーズで、ブランチは `init` と同じ形（`{prefix}{separator}bp-guide`）。
-`ok: true` ならそのまま、`onBaseBranch: true` なら `expected` の名前で作成する。
-`onBaseBranch` が `false` / `null`（既に別の作業ブランチに居る）なら、必ずユーザーに尋ねる。
-Hikyaku の規則に従う / 現在のブランチで作業する / 別のブランチを指定する、の3つを提示し、
-どれが妥当かは示唆しない。
-
-- [ ] `bp-guide/` が無ければ生成する
+ここから先の手順（ブランチ → 基準表の生成 → 素材の収集 → 変更案 → 承認 → 再生成と検証 → PR）は、
+`step next` が設定と進捗から1手ずつ返す。**手順を自分で組み立てない。**
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" init --root {HIKYAKU_ROOT} --dry-run
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next bp-guide
 ```
 
-`bp-guide/` の3ファイルだけが「生成」になることを確認してから `--dry-run` を外す。
-既存ファイルには触れない。生成直後の内容は既定値そのものなので、ここで止めるなら
-コミットして Step 5 へ進む（既定値をワークスペースの持ち物として固定するだけでも意味がある。
-以後プラグインの既定値が変わっても、このリポジトリの基準は動かない）。
-
-→ Step 2 へ。
-
-### Step 2: 素材の収集
-
-- [ ] 見積もりと実績を集める
+最初の `step next` が `done` を返したら、それは前の回の記録で、今回は新しい回になる。
+区切りを記録して、最初の1手（`start`）から始める。前の回の記録は残る。
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" bp history
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step restart bp-guide --reason "新しい回"
 ```
 
-各ビルドについて architect / builder 段階の見積もり、実績、乖離、新規ファイル数・実装行数の
-「見積 → 実測」、セッションの実測（ピーク・固定分・呼び出し回数・コンパクション・モデル・
-Hikyaku の版・ホスト）、セッションが完結したかが並ぶ。読めない項目は「—」で出る。推測で埋めない。
+返った1手（directive）の種類ごとに動く。
 
-モデルやホストが混ざっているときは `--group-by model`（`hikyaku` / `host`）で分けて読む。
-ピークの出方はモデルの世代やホストで変わるので、混ぜたまま基準表の当否を判断しない。
+| 種類 | すること |
+|---|---|
+| `run` | 「指示」のファイルを読み、そのとおりに行う。終えたら「報告」のコマンドを実行する |
+| `gate` | 「指示」のファイルを読み、ユーザーに提示して承認を求める。答えを `approved` / `rejected` で報告する |
+| `done` | 手順をすべて終えた。下の「完了の案内」へ |
+| `stop` | メッセージをユーザーに伝えて終了する |
 
-- [ ] 乖離のあるビルドの `retrospective.md` を読み、「乖離の要因」を確認する
-  - 入力値の読み違えか、基準表の問題かは、そこに分けて書かれている（書かれていなければ
-    「見積 → 実測」の列とセッション列から判断する）
-- [ ] `bp-guide/README.md` の文章（このリポジトリ固有の数え方の注意）を読む
+- `step report` は記録したあと、次の1手を返す。それに従って続ける
+- 報告を受け付けないとき（現在地と違うステップ）はエラーになる。メッセージに従って直す
+- スキップできるのは、step がスキップを許すステップだけ。理由は `--reason` で記録に残る
+- 迷ったら `step next` を呼び直す。同じ状態なら同じ1手が返る
 
-素材が無い（ビルドの振り返りがまだ無い）場合は、ユーザーが変更内容を指定している場合だけ
-Step 3 へ進む。実績無しにしきい値を動かすのは推測なので、こちらから提案はしない。
+### 完了の案内
 
-→ Step 3 へ。
-
-### Step 3: 変更案の作成
-
-- [ ] 素材から変更案を作り、根拠を添えてユーザーと決める
-
-変更の種類ごとに書く場所が違う。
-
-| 変更 | 書く場所 | 例 |
-|---|---|---|
-| しきい値の変更 | `rules.toml` の `metrics.*.upper` / `levels` | 実装行数の BP3 上限を 1000 → 700 に下げる |
-| 加算要素の追加 | `rules.toml` の `[additions.*]` | `[additions.payment_api] label = "決済APIを叩く" bp = 2` |
-| 指標の追加 | `rules.toml` の `[metrics.*]` | `[metrics.migrations]` |
-| 数え方の注意 | `README.md` の文章部分 | 「マイグレーション1本は新規ファイル2つと数える」 |
-
-加算要素の書き方は3種類（`hikyaku help bp guide` と `rules.toml` のコメントを参照）。
-
-```toml
-[additions.payment_api]        # flag: 該当すれば +2
-label = "決済APIを叩く"
-bp = 2
-
-[additions.entity_design]      # per: 指標の値を共有し、1つにつき +1（上限 +4）
-label = "Entity 設計"
-input = "db_entities"
-per = 1
-cap = 4
-
-[additions.impact_files]       # tiered: 段階で加算
-label = "影響ファイル数"
-upper = [3, 6, 10]
-bp = [0, 1, 3, 4]
-```
-
-- [ ] 変更ごとに、それを確かめる期待値ケースを `cases.toml` に足す
-  - 動かしたしきい値の境界の両側、追加した加算要素が効く入力と効かない入力
-  - 既存のケースが変更で壊れるなら、期待値を直すのではなく、なぜ変わってよいかを
-    ユーザーに確認する（既存ケースは過去の判断の記録）
-
-→ Step 4 へ。
-
-### Step 4: 反映と検証（承認必須）
-
-**承認前にコミットしない。**
-
-- [ ] 変更後の `rules.toml` / `cases.toml` の差分と、次の2つの結果を提示して承認を得る
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" bp render --dry-run
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" bp test
-```
-
-`bp test` は書き込み済みの `rules.toml` / `cases.toml` を読むので、提示の段階では
-変更案をファイルに書いた上で実行し、承認されなければ `git checkout` で戻す。
-
-- [ ] 承認を得たら README の表を再生成し、検証する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" bp render
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate
-```
-
-`validate` は README の表が古いこと、期待値の不一致、`rules.toml` の構文エラーを検出する。
-通らなければ Step 3 に戻る。
-
-この承認は profile の管轄外で、常に行う。基準表はワークスペース全体の見積もりに効き、
-何を基準にするかは人間の判断だから。
-
-→ Step 5 へ。
-
-### Step 5: コミットと PR
-
-- [ ] コミットする前に、もう一度ブランチを確認する（`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify bp-guide`）
-- [ ] コミットして PR を作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title bp-guide` で生成）
-  - PR 本文に、変更の根拠（どのビルドの乖離から判断したか）を書く
-- [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers bp-guide --pr {PR の URL}
-```
-
-  失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
-- [ ] 完了後、次を案内する
+`done` が返ったら、次を案内する。
 
 ```
 BP 基準表を更新しました。この PR がマージされてから作成するビルドの見積もりに反映されます。
