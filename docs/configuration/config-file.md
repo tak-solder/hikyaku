@@ -303,6 +303,19 @@ tests = ["**/tests/**", "*.test.*", "*_test.*"]
 
 書いた配列は既定値を置き換えます。既定値に足したいときは、`hikyaku config --json` の `bpActual` に出る既定値を写してから足してください。既定の `exclude` は主要なロックファイル（`package-lock.json`・`pnpm-lock.yaml`・`*.lock`・`go.sum` など）、スナップショット（`__snapshots__/`・`*.snap`）、生成コードと圧縮済みの成果物（`*.generated.*`・`*.pb.go`・`*.min.js`・`*.map` など）です。既定の `tests` は `test/`・`tests/`・`__tests__/`・`spec/`・`e2e/` の配下と、`*.test.*`・`*.spec.*`・`*_test.*`・`test_*.py` です。
 
+## [context]
+
+```toml
+[context]
+approval = 250000
+implement = 300000
+review = 400000
+```
+
+builder の区切りで、メインセッションのコンテキストと比べる目安（トークン数）です。`approval` は G8 の提示、`implement` は実装開始前、`review` はレビュー前に当たります（[BUILD](../workflow/build.md#コンテキストの区切り)）。超えていても止まらず、builder が継続するか分割するかを判断します。
+
+既定値は、1ビルドのピークを 400k トークン前後に収める狙いから決めた値で、1M のウィンドウを前提にしています。ウィンドウの小さいモデルを使うときや、`hikyaku bp history` の区切りの実績から見て合わないときに変えます。
+
 ## [conductor]
 
 ```toml

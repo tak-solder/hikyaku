@@ -32,12 +32,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`hikyaku step next / report / status / lint`**: フェーズの中の手順を、設定と進捗から1手ずつ返す。`step next` は `run`（ステップを行う）・`gate`（承認を求める）・`call`（内部スキルを呼ぶ）・`done`・`stop` のどれか1つを、読むべき指示ファイルと報告のコマンドを添えて返す。`step report` は結果を記録して次の1手を返す。現在地は保存せず、作業単位のディレクトリの `progress.jsonl` と成果物から毎回導出する（[#50](https://github.com/tak-solder/hikyaku/issues/50)）
+- **`hikyaku step restart`**: 同じ作業単位で、スキルの手順を最初から回し直す区切りを記録する。これより前の記録は現在地の導出に使わない（architect の追加設計、内部スキルの呼び直し）。`--round` で回の種類（スキルが定義した値だけ）を記録でき、スキルの定義はその値で手順を変える
+- ステップの定義に `requires`（記録の欠けの判定には使わない完了の条件）を足した。前から存在しうるファイルの検査を、完了の条件としてスクリプトで確かめられる
+- **`progress.jsonl`**: ビルドのディレクトリに追記される手順の記録。結果・理由・ユーザーの答え・承認したファイルのハッシュ・再算出した BP・報告した時点のコンテキスト・セッション ID・Hikyaku の版が入る。成果物と一緒にコミットする
+- **区切りでのコンテキストの実測**: G8 の提示・実装開始前・レビュー前で、`step next` がメインセッションのコンテキストを測り、`[context]` の目安（既定 250k / 300k / 400k）と比べる。超えても止めず、builder が継続か分割かを判断し、継続するなら次のゲートの報告で伝える。Codex の記録でウィンドウが 500k 未満なら、上げ方を添えて注意を出す（[#68](https://github.com/tak-solder/hikyaku/issues/68)）
+- **`[context]` 設定**: `approval` / `implement` / `review`
+- `hikyaku bp history`: 区切りでのコンテキスト（G8・実装前・レビュー前）を `progress.jsonl` から読んで並べる
+- `docs/migration/v2-to-v3.md`
 - **`hikyaku bp session [<phase> [<cycle>]]`**: セッションのコンテキストを、ホストの記録（Claude Code のトランスクリプト、Codex の rollout）から実測する。ピーク・開始時の固定分・最新の値・API 呼び出し回数・出力トークンの合計・コンパクション回数・モデル・ホストとその版・ウィンドウ（Codex のみ）を返す。引数なしでは `CLAUDE_CODE_SESSION_ID` / `CODEX_THREAD_ID` で現在のセッションを測り、`<phase>` を渡すとそのブランチのセッションから、そのブランチでの API 呼び出しが最も多いものを本体として選ぶ（候補と、対象外にしたサブエージェント・guardian も出力する）。`--transcript <path>` で記録を直接指定できる。読めない・見つからないときは推測せず「計測不可」とその理由を返す（Codex のクラウドでは rollout が保存されないため計測不可）。BP をコンテキストの消費量で校正するための計測の基盤で、見積もりの算出は変えない（[#68](https://github.com/tak-solder/hikyaku/issues/68)）
 - **`[bp_actual]` 設定**: `exclude`（生成物として数えないパスの glob）と `tests`（テストとして分けるパスの glob）。既定値はロックファイル・スナップショット・生成コードと、一般的なテストのパス。書いた配列は既定値を置き換える
 - **`hikyaku bp history --group-by model|hikyaku|host`**: モデル・Hikyaku の版・ホストごとに分けて並べ、件数・実績 BP とピークの平均・ピークの範囲・実績 1BP あたりのピークを添える
 
 ### Changed
 
+- builder: Step 3 以降（plan → レビュー → G8 → 実装 → 検証 → コードレビュー → handoff → PR → 振り返り）を `step next` の転送ループに置き換えた。手順の順序・ゲート・承認は変えていない。各ステップの指示は `skills/builder/steps/<step>.md` に分け、実行するステップの指示だけを読む。SKILL.md は約 35KB から約 16KB になった。差し戻しと PR レビュー対応の手順は `references/return.md` / `references/pr-feedback.md` に移した
+- builder: G8 の承認は `plan.md` / `test-spec.md` のハッシュに結びつき、実装に入る前に書き換えると取り直しになる。前のステップを報告し直すと、そこから後ろはやり直しになる
+- builder: 設定で無効なステップ（plan / test-spec のレビュー、G7、振り返り）は手順に含まれない。スキップできるのは test-spec だけで、理由が記録に残る
+- `conductor lint` が `skills/<skill>/steps/` のタグも読むようにした
+- CI（check-scripts）で `step lint` を実行する
 - retrospective: 「BP見積もりの振り返り」に「セッションの実測」表（`bp session --markdown` の出力）を加えた。ピーク・開始時の固定分・呼び出し回数・出力トークン・コンパクション・ウィンドウ・モデル・ホスト・Hikyaku の版・セッションを記録する
 - `hikyaku bp history`: セッションの実測を BP と並べて表示し、`--json` の各レコードに `context` として返す。表の無い retrospective.md は「—」で読む
 - `hikyaku bp actual`: `[bp_actual] exclude` に当たる生成物を数えなくなった。`newFiles` / `changedFiles` / `addedLines` / `deletedLines` / `binaryFiles` は生成物を除いた値になる。新たに `implementationLines` / `testLines`（追加行数の内訳）、`implementationFiles` / `testFiles` / `implementationNewFiles` / `testNewFiles`、`generatedFiles` / `generatedLines` / `generatedPaths` を返す。`estimateArgs` の `--lines` は従来どおり実装とテストの合計
@@ -45,6 +58,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Migration
 
+- **v2 で作成したサイクルは、v3 の builder では扱わない。** `step next` が止まり、v2 のまま終えるよう案内する。進行中のサイクルは v2 のプラグインで終えてから上げる（`docs/migration/v2-to-v3.md`）
+- `progress.jsonl` はコミット対象。`.gitignore` で除外しない
+- `[context]` は既定値のままで動くので、設定の変更は不要
 - 既存の retrospective.md は変更不要。セッションの実測が無いビルドは `bp history` で「—」になる
 - `bp actual` の値は、差分にロックファイル・スナップショット・生成コードが含まれるビルドで以前より小さくなる。以前の実績と比べるときはこの差に注意する。以前の数え方に戻したいときは `[bp_actual] exclude = []` を書く
 - `bp actual --json` の既存のキーは残っている。テストの判定を変えたいときは `[bp_actual] tests` を書く（既定値を置き換える）

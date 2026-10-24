@@ -108,6 +108,11 @@ register({
         "[bp_actual]:",
         `  exclude  ${config.bpActual.exclude.join(", ")}`,
         `  tests    ${config.bpActual.tests.join(", ")}`,
+        "",
+        "[context]（区切りでのコンテキストの目安）:",
+        `  approval   ${config.context.approval.toLocaleString("en-US")}`,
+        `  implement  ${config.context.implement.toLocaleString("en-US")}`,
+        `  review     ${config.context.review.toLocaleString("en-US")}`,
       );
       if (config.external.githubRepo) lines.push(`  github_repo  ${config.external.githubRepo}`);
       if (config.external.asanaProjectGid) {

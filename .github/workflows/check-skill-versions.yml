@@ -29,7 +29,22 @@ jobs:
           echo "Claude Code plugin version: $version"
 
       - name: Check version bump if skills, agents, scripts, or plugin manifest changed
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
+          # beta/* はリリース前の次のメジャーを積む場所で、版はそのメジャーの x.0.0 に固定する。
+          # PR ごとに上げると、リリースまでの版が意味を持たずに進むため。
+          if [[ "$BASE_REF" == beta/* ]]; then
+            current=$(jq -r '.version' current/.claude-plugin/plugin.json)
+            expected="${BASE_REF#beta/v}.0.0"
+            if [ "$current" != "$expected" ]; then
+              echo "::error::beta/* 向けの PR では version を $expected に固定してください（現在: $current）"
+              exit 1
+            fi
+            echo "beta branch: version is fixed at $expected"
+            exit 0
+          fi
+
           # Check if current/skills/, current/agents/, current/scripts/, or .claude-plugin/ has changes compared to base.
           # For agents/: treat one-sided absence (initial add or full directory removal) as "changed",
           # since `diff -rq` errors out (and `2>/dev/null` discards it) when one side is missing.

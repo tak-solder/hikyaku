@@ -427,7 +427,7 @@ register({
   details: [
     "プラグイン本体の開発用です。CI（check-scripts）が実行します。",
     "",
-    `対象は子として動くスキル（${CONDUCTED_SKILLS.join(" / ")}）の SKILL.md と references/ です。`,
+    `対象は子として動くスキル（${CONDUCTED_SKILLS.join(" / ")}）の SKILL.md と references/・steps/ です。`,
     "（G8）や（ask: branch）の形のタグを集め、scripts/lib/conductor.mts の ASKS と突き合わせます。",
     "",
     "  タグにあって ASKS に無い ID   子が出しても「分類できない問い」として人間に上がる",
@@ -439,13 +439,13 @@ register({
     const tagsByFile = new Map<string, string[]>();
     for (const skill of CONDUCTED_SKILLS) {
       const directory = join(pluginRoot(), "skills", skill);
-      const references = join(directory, "references");
-      const files = [
-        join(directory, "SKILL.md"),
-        ...(existsSync(references)
-          ? readdirSync(references).filter((name) => name.endsWith(".md")).map((name) => join(references, name))
-          : []),
-      ];
+      const markdownIn = (sub: string): string[] => {
+        const path = join(directory, sub);
+        return existsSync(path)
+          ? readdirSync(path).filter((name) => name.endsWith(".md")).map((name) => join(path, name))
+          : [];
+      };
+      const files = [join(directory, "SKILL.md"), ...markdownIn("references"), ...markdownIn("steps")];
       for (const file of files) {
         const tags = collectTags(readFileSync(file, "utf8"));
         if (tags.length > 0) tagsByFile.set(`skills/${file.slice(join(pluginRoot(), "skills").length + 1)}`, tags);
