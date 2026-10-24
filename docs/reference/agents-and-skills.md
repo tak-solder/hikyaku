@@ -29,7 +29,7 @@ architect のビルド分割ステップと、builder の実装中にスコー�
 
 実装フェーズでは、G8 の提示・実装開始前・レビュー前の区切りで測ったコンテキスト（`progress.jsonl` の記録）も確かめます。目安を超えたまま継続した区切りがあれば、どこで膨らんだかを乖離の要因に書きます。値そのものは `retrospective.md` に書き写さず、`hikyaku bp history` が `progress.jsonl` から読みます。
 
-各フェーズの末尾で呼ばれます。`economy` では `skip`、それ以外は `auto` です。呼び出し元の手順が `call` で振り返りを返し、retrospective は `hikyaku step next <phase> <cycle> --skill retrospective` で自分の手順を進めます。記録は呼び出し元と同じ `progress.jsonl` に入ります。`prompt` で実施しないと答えた場合は、残りの手順は対象外になってすぐに呼び出し元へ戻ります。
+各フェーズの末尾で呼ばれます。`economy` では `skip`、それ以外は `auto` です。呼び出し元の手順が `call` で振り返りを返し、retrospective は `hikyaku step next <phase> <cycle> --skill retrospective` で自分の手順を進めます。記録は呼び出し元と同じ `progress.jsonl` に入ります。`prompt` で実施しないと答えた場合は、残りの手順は対象外になってすぐに呼び出し元へ戻ります。PR レビュー対応で振り返るときは、builder が `hikyaku step restart` で区切ってから呼ぶので、既存の `retrospective.md` へ追記する形で手順が最初から回ります。
 
 ## エージェント
 
