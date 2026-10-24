@@ -34,6 +34,7 @@ import {
   currentHashes,
   evaluate,
   hasEvidence,
+  missingRequirement,
   type EvaluatedStep,
   type Evaluation,
   type SkillSteps,
@@ -423,8 +424,9 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
     throw new HikyakuError("rejected には --input でユーザーの答えを添えてください");
   }
   if (result === "done" && !hasEvidence(definition, opened.ctx)) {
+    const missing = missingRequirement(definition, opened.ctx);
     throw new HikyakuError(
-      `${definition.id} の成果物がまだありません`,
+      missing === undefined ? `${definition.id} の成果物がまだありません` : `${definition.id} の完了の条件を満たしていません: ${missing}`,
       definition.produces === undefined ? "完了の条件を満たしてから報告してください。" : `必要な成果物: ${definition.produces.join(", ")}`,
     );
   }

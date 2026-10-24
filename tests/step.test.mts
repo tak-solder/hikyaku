@@ -368,3 +368,25 @@ test("engine: step restart --round の回の種類は、そのスキルが定義
   assert.equal(currentRound(skill, events), "add");
   assert.equal(currentRound(skill, [...events, { at, skill: "helper", step: "*", result: "restart", reason: "y" }]), undefined);
 });
+
+test("engine: requires は完了の条件にだけ使い、記録の欠けの判定には使わない", () => {
+  let ready = false;
+  const skill: SkillSteps = {
+    skill: "helper",
+    steps: [
+      { id: "a", kind: "run", title: "前" },
+      { id: "b", kind: "run", title: "後", requires: () => (ready ? undefined : "検証が通っていません") },
+    ],
+  };
+  const at = "2026-10-24T00:00:00Z";
+  const ctx = (events: ProgressEvent[]): StepContext => ({
+    config: {} as StepContext["config"], cycle: undefined, unit: "init", unitDirectory: "/nonexistent", events,
+  });
+  // 前から条件を満たしていても、後ろのステップは記録の欠けにならない
+  ready = true;
+  assert.deepEqual(evaluate(skill, ctx([])).orphans, []);
+  const events: ProgressEvent[] = [{ at, skill: "helper", step: "a", result: "done" }, { at, skill: "helper", step: "b", result: "done" }];
+  assert.equal(evaluate(skill, ctx(events)).current, undefined);
+  ready = false;
+  assert.equal(evaluate(skill, ctx(events)).current?.definition.id, "b", "条件を満たさなくなれば未完了");
+});

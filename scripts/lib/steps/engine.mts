@@ -53,6 +53,13 @@ export interface StepDefinition {
   produces?: string[];
   /** 成果物で判定できない完了の条件（tasklist の PR 列など）。成果物と同じ扱い */
   evidence?: (ctx: StepContext) => boolean;
+  /**
+   * 完了に要る条件のうち、記録の欠けの判定には使わないもの。前から存在しうるファイルの
+   * 検査（document-guide.md が検証を通るか、など）に使う。produces / evidence は、後ろの
+   * ステップにあれば記録の欠けとみなすので、前からあるファイルには使えない。
+   * 満たさないなら、何が足りないかを返す
+   */
+  requires?: (ctx: StepContext) => string | undefined;
   /** ゲートが結びつくファイル（作業単位からの相対パス）。存在するものだけ結びつける */
   binds?: string[];
   /** ゲートの問いの ID（conductor の ASKS） */
@@ -134,7 +141,12 @@ export function hasEvidence(definition: StepDefinition, ctx: StepContext): boole
     if (!definition.produces.every((path) => existsSync(join(ctx.unitDirectory, path)))) return false;
   }
   if (definition.evidence !== undefined && !definition.evidence(ctx)) return false;
-  return true;
+  return missingRequirement(definition, ctx) === undefined;
+}
+
+/** requires を満たさないときの理由 */
+export function missingRequirement(definition: StepDefinition, ctx: StepContext): string | undefined {
+  return definition.requires?.(ctx);
 }
 
 function hasAnyArtifact(definition: StepDefinition, ctx: StepContext): boolean {

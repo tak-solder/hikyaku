@@ -34,6 +34,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - **`hikyaku step next / report / status / lint`**: フェーズの中の手順を、設定と進捗から1手ずつ返す。`step next` は `run`（ステップを行う）・`gate`（承認を求める）・`call`（内部スキルを呼ぶ）・`done`・`stop` のどれか1つを、読むべき指示ファイルと報告のコマンドを添えて返す。`step report` は結果を記録して次の1手を返す。現在地は保存せず、作業単位のディレクトリの `progress.jsonl` と成果物から毎回導出する（[#50](https://github.com/tak-solder/hikyaku/issues/50)）
 - **`hikyaku step restart`**: 同じ作業単位で、スキルの手順を最初から回し直す区切りを記録する。これより前の記録は現在地の導出に使わない（architect の追加設計、内部スキルの呼び直し）。`--round` で回の種類（スキルが定義した値だけ）を記録でき、スキルの定義はその値で手順を変える
+- ステップの定義に `requires`（記録の欠けの判定には使わない完了の条件）を足した。前から存在しうるファイルの検査を、完了の条件としてスクリプトで確かめられる
 - **`progress.jsonl`**: ビルドのディレクトリに追記される手順の記録。結果・理由・ユーザーの答え・承認したファイルのハッシュ・再算出した BP・報告した時点のコンテキスト・セッション ID・Hikyaku の版が入る。成果物と一緒にコミットする
 - **区切りでのコンテキストの実測**: G8 の提示・実装開始前・レビュー前で、`step next` がメインセッションのコンテキストを測り、`[context]` の目安（既定 250k / 300k / 400k）と比べる。超えても止めず、builder が継続か分割かを判断し、継続するなら次のゲートの報告で伝える。Codex の記録でウィンドウが 500k 未満なら、上げ方を添えて注意を出す（[#68](https://github.com/tak-solder/hikyaku/issues/68)）
 - **`[context]` 設定**: `approval` / `implement` / `review`
