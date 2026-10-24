@@ -223,31 +223,16 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {phase} {cycle
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor check-pr {PR の番号か URL} {cycle} --wait --json
 ```
 
-  - 確かめるのは、**マージ先が conductor ブランチであること**、PR が開いていること、**Draft でない
-    （Ready for Review の）こと**、**レビューの依頼が残っていないこと**、**未解決のレビュースレッドが
-    無いこと**、**CI が失敗も待機もしていないこと**。`[conductor] require_approval = true` なら、1人以上の
-    承認があり変更の要求が残っていないことも求める（既定では承認は不問）。満たしていなければ
-    終了コード 2 になり、理由が `problems` に入る
-  - 取り込みはローカルの `git merge` と push で行うので、GitHub のブランチ保護や必須チェックは働かない。
-    この検証がその代わりになる
-  - 子が作った PR には、`[conductor] phase_reviewers` のレビュアーが、子の `pr request-reviewers` で
-    アサインされている（設定が空なら何も依頼されない）
-  - `--wait` は、待てば解消しうる問題（CI の実行中、レビューの依頼が残っている）だけで止まっているあいだ、
-    確かめ直す。上限は `[conductor] review_timeout`（既定 15 分。0 なら待たない）。上限を超えると
-    `timedOut: true` で終了コード 2 になる。Draft・未解決の指摘・CI の失敗・マージ先の食い違いは、待っても
-    解消しないので、見つけた時点で返る
-  - **未解決のレビュースレッド**（`threads.unresolved`）があれば、取り込まない。指摘の場所・投稿者・URL を
-    人間に示して上げる。**監督は指摘に自分で対応せず、子を再開して直させることもしない**。人間が対応するか、
-    同意して resolve したら、`check-pr` をやり直す
-  - Draft・承認の不足・CI の失敗・マージ先の食い違い・待機の上限超過も、取り込まずに `problems` を示して
-    人間に上げる（`gh pr ready` で Draft を外したり、依頼を取り下げたりしない）。人間が対応したら
-    `check-pr` をやり直す
-  - **終了コード 1**（`gh` の応答に必須のフィールドが無い、型が違う、取得できないなど、状態を判定できなかった）
-    も、取り込まない。判定できなかった PR を、CI なし・依頼なし・Ready として合格させない。エラーの内容を
-    人間に示して上げる
-  - `none`（CI が1つも無い）は失敗にならない。PR を作った直後にチェックがまだ登録されていない場合は、
-    `--wait` が最初の少しのあいだ待ってから判定するので、再実行は要らない。`none` で通ったら、最後の PR の
-    本文に「フェーズの PR に CI が走っていなかった」と書く
+  - 取り込みはローカルの `git merge` で行い、GitHub のブランチ保護や必須チェックは働かない。この検証が
+    その代わりになる。何を確かめ、どこまで待つかは CLI が決める（`hikyaku help conductor check-pr`）
+  - **終了コード 0** なら取り込む。`none`（CI が1つも無い）で通ったら、最後の PR の本文に
+    「フェーズの PR に CI が走っていなかった」と書く
+  - **終了コード 2**（条件を満たさない、または待機の上限超過）なら取り込まない。`problems` を人間に示して
+    上げる。未解決のレビュースレッド（`threads.unresolved`）は指摘の場所・投稿者・URL も示す。
+    **監督は指摘に自分で対応せず、子を再開して直させることもしない。** `gh pr ready` で Draft を外したり、
+    依頼を取り下げたりもしない。人間が対応したら `check-pr` をやり直す
+  - **終了コード 1**（状態を判定できなかった）も取り込まない。CI なし・依頼なし・Ready とみなして合格
+    させない。エラーの内容を人間に示して上げる
   - 結果の `headSha` は、検証した PR の head のコミット。取り込みにはブランチ名ではなくこれを使う
 
 - [ ] 検証を通った PR を conductor ブランチに取り込む
@@ -319,10 +304,10 @@ gh pr list --head {conductor ブランチ} --base {baseBranch} --state open --js
   - **見つかったら、PR を作らない。** 「最後の PR が既にあるとき」へ進む
   - 見つからなければ、次の手順で作る（閉じられた PR や、マージ済みの PR は対象にしない）
 - [ ] conductor ブランチ → デフォルトブランチの PR を作る
-  - タイトルは `hikyaku pr title conductor {cycle}` で生成する
+  - タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title conductor {cycle}` で生成する
   - 本文に、取り込んだフェーズの PR を順に並べ、それぞれで**監督が判断した同意ゲート**を1行ずつ示す
     （人間がレビューで確認するため）
-  - 外部連携が有効なら、各ビルドの `hikyaku external ref build-NN {cycle}` の行を本文の末尾に入れる。
+  - 外部連携が有効なら、各ビルドの `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref build-NN {cycle}` の行を本文の末尾に入れる。
     conductor ブランチへのマージではクローズキーワードが効かないため、ここでまとめて閉じる
 - [ ] この PR にレビュアーをアサインする（`[pr] reviewers` が空、または `[pr] reviewers_skip` に
   `conductor` があれば何もしない）。人間がレビューする PR なので、待たない
@@ -378,7 +363,7 @@ CLOSE の PR を示して終了する。
 | `G2` / `G4` / `G7` | 成果物を読み、承認観点（スキルが示すもの）に沿って承認するか差し戻す |
 | `retrospective` | 実施する |
 | `docs-link` | `--dry-run` の差分がマーカーで囲まれた索引ブロックの中だけなら承認する |
-| `G6` | 分割・依存が design-delta と矛盾せず、各ビルドの BP が上限内なら承認する。「マージ時点で残る危険」を書いたビルドがあれば、`hikyaku config {cycle} --json` の `unsafeSplit.allowed` が true であることも確かめる |
+| `G6` | 分割・依存が design-delta と矛盾せず、各ビルドの BP が上限内なら承認する。「マージ時点で残る危険」を書いたビルドがあれば、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json` の `unsafeSplit.allowed` が true であることも確かめる |
 | `G8` | 「検証の義務」の G8 を行い、満たしていれば承認する |
 | `G10` | 「検証の義務」の G10 を行い、除外すべき候補を外して承認する |
 | `questions` | 成果物から導けるものだけ答える。導けないものは人間に上げる |

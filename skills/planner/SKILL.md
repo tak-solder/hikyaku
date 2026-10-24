@@ -7,16 +7,8 @@ argument-hint: "[{cycle}]"
 
 # Hikyaku Planner
 
-対象サイクルの企画フェーズ（PLAN）を実行する。
-
-## Hikyaku ワークフロー概要
-
-Hikyaku は PLAN → ARCHITECT → BUILD → CLOSE の4フェーズで構成される、
-AIエージェント協働開発ワークフロー。
-
-- 各フェーズは別セッション（＝別のAI）が担当する
-- フェーズ間の情報引き継ぎはファイルで行う
-- 1サイクル = 1チケット。複数のサイクルを並行して回せる
+対象サイクルの企画フェーズ（PLAN）を実行する。各フェーズは別セッションが担当し、
+引き継ぎはファイルで行う。
 
 ```
 /hikyaku:init          → ワークスペースを初期化（初回のみ）
@@ -27,34 +19,11 @@ AIエージェント協働開発ワークフロー。
 /hikyaku:close-cycle   → 永続ドキュメントへ昇格し、サイクルを closed に
 ```
 
-### ディレクトリ構造
-
-```
-リポジトリルート/
-├── .hikyaku.config            # 設定のベース（必須）。hikyaku_root もここ
-└── {HIKYAKU_ROOT}/
-    ├── document-guide.md      # 永続ドキュメントの所在（必須）
-    ├── cycles.md              # サイクル索引（必須）
-    ├── instructions.md        # ワークフロー独自の指示（任意）
-    ├── .hikyaku.local         # 最後に作業したサイクル（git 管理対象外）
-    └── cycles/
-        └── {NNN}-{slug}/
-            ├── .hikyaku.config  # サイクル固有の上書き（任意）
-            ├── planning/        # ← あなたが作る
-            │   ├── questions.md
-            │   └── user-stories.md
-            ├── design/          # ARCHITECT が作る
-            ├── tasklist.md      # ARCHITECT が作る
-            └── build-01/        # BUILD が作る
-```
-
-永続ドキュメント（overview / decisions / constraints / learnings / conventions 等）は
-HIKYAKU_ROOT の外にある。 所在は `document-guide.md` が宣言する。
-
-### あなたの役割
+## あなたの役割
 
 ユーザーは既にチケットや企画メモを持っている。あなたの仕事は、それを読み込んで
-次の設計フェーズ（ARCHITECT）が作業を開始できる形に構造化すること。
+次の設計フェーズ（ARCHITECT）が作業を開始できる形に構造化すること。成果物は
+`cycles/{cycle}/planning/` の `user-stories.md` と `questions.md`。
 
 やらないこと:
 - 技術的な実現方法の決定（設計フェーズの仕事）
@@ -72,14 +41,13 @@ HIKYAKU_ROOT の外にある。 所在は `document-guide.md` が宣言する。
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json
 ```
 
-HIKYAKU_ROOT は `.hikyaku.config` から解決されるので、引数では受け取らない。
-
-`$ARGUMENTS[0]` でサイクルが指定されていればそれを渡す。省略された場合は
-現在のブランチ → `.hikyaku.local` → 唯一の進行中サイクルの順で決まる。
-決められないときは進行中サイクルの一覧を添えてエラーになるので、ユーザーに尋ねてから
-指定し直す。推測して進めない（別サイクルへコミットする事故になる）。
+`$ARGUMENTS[0]` のサイクルを渡す。省略時は CLI が現在のブランチ → `.hikyaku.local` →
+唯一の進行中サイクルの順で決め、決まらなければ候補を添えてエラーになる。そのときは推測せず
+ユーザーに尋ねて指定し直す（別サイクルへコミットする事故になる）。HIKYAKU_ROOT は
+`.hikyaku.config` から解決されるので、引数では受け取らない。
 
 出力の `cycle` と `cycleSource` を、作業対象としてユーザーに1行で示す。
+以降のゲートとレビューの有無は、出力の `gates` / `reviews` で決める。
 
 ここで次のエラーが出た場合は代行する。
 
@@ -102,11 +70,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {cycle}
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context plan {cycle}
 ```
 
-企画では永続ドキュメントをほとんど読まない。実装済みの現実を前提に置く場面では
-ないため、返るのは `constraints`（確定済みの非機能要件を再度質問しないため）と
-`glossary`（語を既存の定義に揃えるため）だけ。
-
-- [ ] サイクルの `profile` を確認し、以降のゲートとレビューの有無を決める
+企画で読む既定の永続ドキュメントは `constraints`（確定済みの非機能要件を再度質問しないため）と
+`glossary`（語を既存の定義に揃えるため）。`repo` 管理の独自ドキュメントも候補に含まれるので、
+概要欄を見て、今回のスコープに関係するものだけを読む。
 
 インストラクションは次の優先順で適用する。上位が下位と矛盾する場合は上位を優先する。
 
@@ -130,24 +96,17 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify plan {cycle}
 | `ok: false` かつ `onBaseBranch: true` | `expected` の名前でブランチを作成して続ける |
 | `ok: false` かつ `onBaseBranch` が `false` / `null` | ユーザーに尋ねる（下記） |
 
-3つ目はユーザーの判断であって、あなたの判断ではない。現在のブランチが実行環境に
-割り当てられたものだと分かっていても、**自分で決めずに必ず尋ねる。**
-
-実行環境が割り当てたブランチと、別の作業のブランチに紛れ込んだ状態は、セッションの中からは
-区別できない。「今回は前者だから問題ない」という推測を一度でも通すと、後者もまったく
-同じ理屈で通る。 それを防ぐための確認なので、確認を省いた時点で意味が無くなる。
-
-尋ねる手段（`AskUserQuestion` など）があればそれを使い、次の3つを提示する。
-**どれが妥当かの示唆を添えない。選ぶのはユーザー。**
+3つ目は、現在のブランチが実行環境に割り当てられたものだと分かっていても、**自分で決めずに
+必ず尋ねる。** セッションの中からは、別の作業のブランチに紛れ込んだ状態と区別できない。
+尋ねる手段（`AskUserQuestion` など）で次の3つを、どれが妥当かの示唆を添えずに提示する。
 
 1. Hikyaku の規則に従う — `expected` の名前でブランチを作成する
 2. 現在のブランチで作業する
 3. 別のブランチを指定する
 
-ユーザーが 2 または 3 を選んだあとで、`next` の「着手中」検出が効かなくなることを
-伝える（ブランチ名から導出しているため）。完了判定と中断検出には影響しない。
-
-ブランチを決めたら、成果物をコミットする直前にもう一度この確認を行う。
+ユーザーが 2 か 3 を選んだら、`next` の「着手中」検出が効かなくなることを伝える
+（ブランチ名から導出しているため）。ブランチを決めたら、成果物をコミットする直前にもう一度
+この確認を行う。
 
 - [ ] サイクルの状態を確認する
 
@@ -155,12 +114,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify plan {cycle}
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
 ```
 
-中断からの再開の場合、このコマンドがどこまで進んだかを教えてくれる。
-既存の成果物があれば読み込んで途中から再開する。
-
-ブランチを決めたあとに実行する。成果物の有無は作業ツリーを見て判定するため、
-デフォルトブランチに居るまま実行すると、別セッションが push 済みの成果物が見えない。
-中断からの再開なのに最初からやり直すことになる。
+ブランチを決めてから実行する（成果物の有無は作業ツリーで判定するため、デフォルトブランチの
+ままでは push 済みの成果物が見えない）。中断からの再開なら、表示された位置から再開する。
 
 - [ ] セッション名を設定する
 
@@ -168,8 +123,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title plan {cycle}
 ```
 
-返ってきた名前をセッション名に設定する。設定する手段が無い環境ではスキップしてよい。
-`[session] title` が空文字なら「変更しません」と返るので、その場合もスキップする。
+返った名前をセッション名に設定する。設定する手段が無い環境と、「変更しません」と返った場合はスキップする。
 
 → Step 2 へ。
 
@@ -221,11 +175,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title plan {cycle}
 
 ### Step 5: レビューと承認
 
-- [ ] `user_stories_review` が有効な場合（express / standard / thorough）、`doc-reviewer` を起動する（`context: user-stories`）
-  - 起動方法は `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc plan {cycle} --self claude --json` で決める。
-    `mode: agent` ならサブエージェントとして起動する。`mode: process` なら
+- [ ] `user_stories_review` が有効な場合、`doc-reviewer` を起動する（`context: user-stories`）
+  - 起動方法は `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc plan {cycle} --self claude --json` の `mode` で決める。
+    `agent` ならサブエージェントとして起動する。`process` なら
     `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run doc plan {cycle} --self claude --context user-stories --files <渡す情報のパスをカンマ区切りで>`
-    を実行し、返った本文をレビュー結果として扱う。終了コード 1 は失敗で、指摘0件として扱わずユーザーに報告する
+    の本文をレビュー結果とする。終了コード 1 は失敗で、指摘0件として扱わずユーザーに報告する
   - 渡す情報: `cycles/{cycle}/planning/user-stories.md`, `planning/questions.md`
   - 出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/agents/doc-reviewer.md` を参照
   - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
@@ -233,8 +187,6 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title plan {cycle}
   - このゲートは**どのプロファイルでも省略しない**。要件の合意は後段の承認では
     代替できない（設計も plan も「その要件で正しいか」を前提に置くため）
   - `user_stories_gate` を個別キーで `false` にした場合のみ省略する
-
-profile ごとの有効・無効は Step 0 の `config --json` の `gates` / `reviews` を見る。
 
 → 承認を得たら Step 6 へ。
 
@@ -249,9 +201,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external sync {cycle}
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref plan {cycle}
 ```
 
-親 issue はここで作る。この時点なら user-stories があって親の要約として成立し、
-以降のすべての PR が親を参照できる。参照は `cycles.md` の外部列に記録され、この PR で
-デフォルトブランチに入るので、並行セッションからも見える。
+親 issue はここで作る。user-stories が親の要約になり、以降のすべての PR が親を参照できる。
 
 gh CLI が無い環境では投影内容だけが返る（`reason: "gh-not-found"`）。その場合は
 GitHub MCP ツールで適用し、`cycle link {cycle} --external {URL}` で記録する。
@@ -266,8 +216,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers plan {cycl
 
   失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
 
-このフェーズの PR はドキュメントのみで、速やかにマージすることを想定している。
-デフォルトブランチに入っていない情報は他サイクルから見えないため。
+この PR は速やかにマージすることを想定している。デフォルトブランチに入っていない情報は他サイクルから見えない。
 
 - [ ] 完了後、以下を案内する
 

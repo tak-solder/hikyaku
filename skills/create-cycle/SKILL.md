@@ -65,20 +65,14 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active
 ```
 このサイクルの profile を選択してください（.hikyaku.config の設定: standard）
 
-  express   承認は要件（user-stories）と plan + test-spec だけ。設計案は AI の推奨を採用する
-            → 人間の時間を節約する。要件だけ握って先は任せたい場合
-
-  economy   承認は残し、中間成果物のレビューエージェントを起動しない（コードレビューは残る）
-            → 自分で見るのでレビューは要らない、という場合
-
-  standard  全レビュー有効、各フェーズで承認
-            → 通常はこれ
-
-  thorough  codebase-survey の確認と plan 単独の承認を追加、validate を各ステップで実行
-            → 影響範囲が大きい、慎重に進めたい
+  express   承認を要件と plan + test-spec に絞り、設計案は AI の推奨を採る → 要件だけ握って任せたい
+  economy   承認は残し、中間成果物のレビューを省く → 自分で見るのでレビューは要らない
+  standard  全レビュー・各フェーズで承認 → 通常はこれ
+  thorough  standard に確認と検証を足す → 影響範囲が大きく、慎重に進めたい
 ```
 
-profile はサイクルの属性であり、作成時に決まって以後変わらない。
+ゲートとレビューの内訳を聞かれたら、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config --profile {profile}` の
+出力を示す（内訳を覚えて答えない）。profile はサイクルの属性であり、作成時に決まって以後変わらない。
 
 → Step 3 へ。
 
