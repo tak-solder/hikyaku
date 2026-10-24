@@ -24,4 +24,4 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" init --root {HIKYAKU_ROOT} --dr
 旧名が残っていれば `git mv` で改名する。中身の変換は不要で、そのまま使える。v2 以降は新しい名前しか
 読まないので、旧名のまま残すと読み込まれていないことに誰も気づけない。`hikyaku validate` も残存を検出する。
 
-- [ ] `done` を報告する
+- [ ] `done` を報告する。旧名のファイルが残っていれば、step が受け付けない

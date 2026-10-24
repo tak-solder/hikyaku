@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { cli, repository, succeeds, workspace, write } from "./helpers.mts";
@@ -42,21 +42,53 @@ test("step init: 雛形を生成する前は設定が無いので進めない", 
   assert.equal(result.status, 1);
 });
 
+const GUIDE_FILE = "docs/hikyaku/document-guide.md";
+
+/** document-guide.md の overview の行を書き換える */
+function registerOverview(directory: string, ownership: string, path: string): void {
+  const file = join(directory, GUIDE_FILE);
+  writeFileSync(file, readFileSync(file, "utf8").replace(/\| overview +\| 未作成 +\| — +\|/, `| overview | ${ownership} | ${path} |`));
+}
+
 test("step init: 雛形のあとは cleanup から始まり、記録はワークスペース直下に置く", (t) => {
   const directory = workspace(t);
+  // 雛形を生成した直後（記録がまだ無い）に中断しても、cleanup から続けられる
   const directive = next(directory, "init");
   assert.equal(directive.kind, "run");
   assert.equal(directive.step, "cleanup");
   assert.ok(directive.read !== undefined && existsSync(directive.read), String(directive.read));
   assert.match(directive.report?.["done"] ?? "", /step report init cleanup --result done$/);
 
-  // 記録が1つも無いうちは、v2 までに初期化されたワークスペースと区別しない（SKILL.md の Step 0）
-  const status = JSON.parse(succeeds(directory, "step", "status", "init", "--json"));
-  assert.equal(status.current, "cleanup");
-  assert.ok((status.steps as { at: string | null }[]).every((step) => step.at === null));
-
   assert.equal(report(directory, "init", "cleanup", "--result", "done").step, "register");
   assert.equal(events(join(directory, "docs/hikyaku/progress.jsonl"))[0]?.["step"], "cleanup");
+});
+
+test("step init: 記録が無く document-guide.md に登録があれば、初期化済みとして止まる", (t) => {
+  const directory = workspace(t);
+  write(directory, "docs/overview.md");
+  registerOverview(directory, "repo", "`docs/overview.md`");
+  const directive = next(directory, "init");
+  assert.equal(directive.kind, "stop");
+  assert.match(String((directive as { message?: string }).message), /初期化済み/);
+});
+
+test("step init: 旧名のファイルが残っていれば cleanup を受け付けない", (t) => {
+  const directory = workspace(t);
+  write(directory, "docs/hikyaku/instruction.md");
+  const result = cli(directory, "step", "report", "init", "cleanup", "--result", "done");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /instruction\.md → instructions\.md/);
+});
+
+test("step init: document-guide.md が検証を通らなければ register を受け付けない", (t) => {
+  const directory = workspace(t);
+  report(directory, "init", "cleanup", "--result", "done");
+  registerOverview(directory, "repo", "`docs/missing.md`");
+  const result = cli(directory, "step", "report", "init", "register", "--result", "done");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /document-guide\.md が検証を通りません/);
+  write(directory, "docs/missing.md");
+  assert.equal(report(directory, "init", "register", "--result", "done").step, "link-approval");
 });
 
 test("step init: 索引の承認は document-guide.md に結びつき、書き込む前に直すと取り直しになる", (t) => {
@@ -68,17 +100,24 @@ test("step init: 索引の承認は document-guide.md に結びつき、書き�
   assert.deepEqual(gate.binds, ["document-guide.md"]);
 
   assert.equal(report(directory, "init", "link-approval", "--result", "approved", "--input", "OK").step, "link");
-  const guide = join(directory, "docs/hikyaku/document-guide.md");
-  write(directory, "docs/hikyaku/document-guide.md", `${readFileSync(guide, "utf8")}\n<!-- 追記 -->\n`);
+  const guide = join(directory, GUIDE_FILE);
+  write(directory, GUIDE_FILE, `${readFileSync(guide, "utf8")}\n<!-- 追記 -->\n`);
   const again = next(directory, "init");
   assert.equal(again.step, "link-approval");
   assert.match(again.note ?? "", /承認したあとに成果物が変わっています/);
-
   report(directory, "init", "link-approval", "--result", "approved", "--input", "OK");
+
+  // 索引を書き込むまでは link を受け付けない
+  const early = cli(directory, "step", "report", "init", "link", "--result", "done");
+  assert.equal(early.status, 1);
+  assert.match(early.stderr, /hikyaku docs link/);
+  succeeds(directory, "docs", "link");
   assert.equal(report(directory, "init", "link", "--result", "done").step, "pr");
-  const done = report(directory, "init", "pr", "--result", "done");
-  assert.equal(done.kind, "done");
-  assert.equal(JSON.parse(succeeds(directory, "step", "status", "init", "--json")).current, null);
+
+  // PR まで終えたら初期化済みとして止まり、あとで guide が変わっても手順に戻らない
+  assert.equal(report(directory, "init", "pr", "--result", "done").kind, "stop");
+  registerOverview(directory, "対象外", "—");
+  assert.equal(next(directory, "init").kind, "stop");
 });
 
 // ---------------------------------------------------------------------------
@@ -125,6 +164,9 @@ test("step bp-guide: 基準表が無くても進め、最初の報告で記録�
   assert.equal(next(directory, "bp-guide").step, "start");
   assert.equal(report(directory, "bp-guide", "start", "--result", "done").step, "generate");
   assert.ok(existsSync(join(directory, GUIDE, "progress.jsonl")));
+  const early = cli(directory, "step", "report", "bp-guide", "generate", "--result", "done");
+  assert.equal(early.status, 1, "基準表が揃うまで generate は完了にならない");
+  assert.match(early.stderr, /rules\.toml/);
 
   succeeds(directory, "init", "--root", "docs/hikyaku");
   assert.equal(next(directory, "bp-guide").step, "generate", "生成したあとも、生成の報告を受け付ける");
@@ -152,6 +194,12 @@ test("step bp-guide: 変更の承認は rules.toml と cases.toml に結びつ�
   // 検証が通らずに変更案へ戻ると、承認は取り直しになる
   assert.equal(report(directory, "bp-guide", "propose", "--result", "done").step, "approve");
   report(directory, "bp-guide", "approve", "--result", "approved", "--input", "OK");
+  // README の表が rules.toml と食い違っていれば、render は完了にならない
+  write(directory, `${GUIDE}/README.md`, "# 基準表\n");
+  const stale = cli(directory, "step", "report", "bp-guide", "render", "--result", "done");
+  assert.equal(stale.status, 1);
+  assert.match(stale.stderr, /README\.md/);
+  succeeds(directory, "bp", "render");
   report(directory, "bp-guide", "render", "--result", "done");
   assert.equal(report(directory, "bp-guide", "pr", "--result", "done").kind, "done");
 });
