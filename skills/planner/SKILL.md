@@ -65,7 +65,6 @@ HIKYAKU_ROOT の外にある。 所在は `document-guide.md` が宣言する。
 
 ### Step 0: 設定の解決とサイクルの特定
 
-- [ ] `${CLAUDE_PLUGIN_ROOT}/skills/planner/references/templates.md`: 各種テンプレート（必須）
 - [ ] 設定と対象サイクルを解決する
 
 ```bash
@@ -106,13 +105,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context plan {cycle}
 ないため、返るのは `constraints`（確定済みの非機能要件を再度質問しないため）と
 `glossary`（語を既存の定義に揃えるため）だけ。
 
-- [ ] サイクルの `profile` を確認し、以降のゲートとレビューの有無を決める
-
 インストラクションは次の優先順で適用する。上位が下位と矛盾する場合は上位を優先する。
 
 1. リポジトリ全体のインストラクション（AGENTS.md, CLAUDE.md 等）
 2. ワークフロー独自のインストラクション（`{HIKYAKU_ROOT}/instructions.md`）
-3. このスキルの説明（SKILL.md）
+3. このスキルの説明（SKILL.md と、step が返す指示ファイル）
 
 → Step 1 へ。
 
@@ -156,7 +153,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
 ```
 
 中断からの再開の場合、このコマンドがどこまで進んだかを教えてくれる。
-既存の成果物があれば読み込んで途中から再開する。
+既存の成果物があれば読み込んでおく。どのステップから続けるかは、次の `step next` が決める。
 
 ブランチを決めたあとに実行する。成果物の有無は作業ツリーを見て判定するため、
 デフォルトブランチに居るまま実行すると、別セッションが push 済みの成果物が見えない。
@@ -173,103 +170,37 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title plan {cycle}
 
 → Step 2 へ。
 
-### Step 2: インプットの読み込み
+### Step 2 以降: step に従って進める
 
-- [ ] cycles.md に記録されたチケットを確認する
-- [ ] ユーザーが指定したドキュメント（企画書、仕様メモ、Issue、Slack抜粋など）を読み込む
-  - 指定がない場合はユーザーにインプットの場所を確認する。自分で探索しない
-- [ ] Step 0 の `context` が `constraints` を返していれば読む
-  - 既に確定している非機能要件を再度質問しないため
-
-→ Step 3 へ。
-
-### Step 3: 目的とスコープのすり合わせ
-
-質問ループに入る前に、インプットから読み取った内容を要約して提示し、認識のズレを先に解消する。
-
-- [ ] 以下の4項目を簡潔にまとめてユーザーに提示する
-  - 何を実現したいか: ユーザーが何ができるようになる機能か
-  - 背景・目的: なぜこの機能が必要か
-  - 対象画面・対象データ: どの画面・どのデータに関わるか
-  - 制約・要件: あれば（`constraints` に既にあるものは再掲せず参照する）
-  - インプットから読み取れない補完には「（推測）」を付ける
-- [ ] ユーザーから誤り・補足を聞き、認識を合わせる
-
-→ Step 4 へ。
-
-### Step 4: 質問ループと user-stories の作成
-
-**インプットや Step 3 で明記されている内容は質問しない。**
-
-- [ ] 構造化に必要な情報を質問する
-  - 1ラウンドの質問数に上限はない。聞くべきことは1回でまとめて聞く
-  - 確認観点: 目的, 対象ユーザー, コア機能, スコープ境界, 優先度, 制約条件
-  - 質問が発生した場合のみ `cycles/{cycle}/planning/questions.md` に記録する
-  - 未回答の質問を放置しない。未回答なら明示的にそう記す
-- [ ] `cycles/{cycle}/planning/user-stories.md` を作成する
-  - フォーマットは [templates.md](references/templates.md) を参照
-  - Step 3 の4項目を冒頭の「概要」セクションに反映する
-  - このサイクルのスコープに閉じる。将来やりたいことは書かない
-  - やらないと決めたことは、理由とともに「スコープ外」に残す（ストーリーにはしない）
-  - 受け入れ基準に `US-N.M` の番号を振る。後続フェーズはこの番号で受け入れ基準を参照する
-- [ ] コミット & push する
-
-成果物を1つ作るごとにコミット & push すること。コミットされていなければ、
-中断時に他セッションから進捗が見えず、再開点を検出できない。
-
-→ Step 5 へ。
-
-### Step 5: レビューと承認
-
-- [ ] `user_stories_review` が有効な場合（express / standard / thorough）、`doc-reviewer` を起動する（`context: user-stories`）
-  - 起動方法は `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc plan {cycle} --self claude --json` で決める。
-    `mode: agent` ならサブエージェントとして起動する。`mode: process` なら
-    `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run doc plan {cycle} --self claude --context user-stories --files <渡す情報のパスをカンマ区切りで>`
-    を実行し、返った本文をレビュー結果として扱う。終了コード 1 は失敗で、指摘0件として扱わずユーザーに報告する
-  - 渡す情報: `cycles/{cycle}/planning/user-stories.md`, `planning/questions.md`
-  - 出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/agents/doc-reviewer.md` を参照
-  - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
-- [ ] ユーザーに提示して承認を得る（G1）
-  - このゲートは**どのプロファイルでも省略しない**。要件の合意は後段の承認では
-    代替できない（設計も plan も「その要件で正しいか」を前提に置くため）
-  - `user_stories_gate` を個別キーで `false` にした場合のみ省略する
-
-profile ごとの有効・無効は Step 0 の `config --json` の `gates` / `reviews` を見る。
-
-→ 承認を得たら Step 6 へ。
-
-### Step 6: 振り返りと PR
-
-- [ ] `retrospective` 設定に従って `/hikyaku:retrospective {cycle} planning` を呼び出す
-- [ ] コミット前にブランチを確認する（`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify plan {cycle}`）
-- [ ] 外部連携が有効なら、親 issue を作る
+ここから先の手順（インプットの読み込み → スコープのすり合わせ → user-stories → レビュー → G1 →
+振り返り → PR）は、`step next` が設定と進捗から1手ずつ返す。**手順を自分で組み立てない。**
+レビューが有効か、G1 があるかは step が profile と個別キーから決める。
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external sync {cycle}
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref plan {cycle}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next plan {cycle}
 ```
 
-親 issue はここで作る。この時点なら user-stories があって親の要約として成立し、
-以降のすべての PR が親を参照できる。参照は `cycles.md` の外部列に記録され、この PR で
-デフォルトブランチに入るので、並行セッションからも見える。
+返った1手（directive）の種類ごとに動く。
 
-gh CLI が無い環境では投影内容だけが返る（`reason: "gh-not-found"`）。その場合は
-GitHub MCP ツールで適用し、`cycle link {cycle} --external {URL}` で記録する。
+| 種類 | すること |
+|---|---|
+| `run` | 「指示」のファイルを読み、そのとおりに行う。終えたら「報告」のコマンドを実行する |
+| `gate` | 「指示」のファイルを読み、ユーザーに提示して承認を求める。答えを `approved` / `rejected` で報告する |
+| `call` | 「呼ぶスキル」を呼び出す。戻ったら「報告」のコマンドを実行する |
+| `done` | 手順をすべて終えた。下の「完了の案内」へ |
+| `stop` | メッセージをユーザーに伝えて終了する |
 
-- [ ] PR を作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title plan {cycle}` で生成）
-  - `external ref` が返した行（`Refs #12` など）を本文の末尾に入れる。空なら入れない
-- [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
+- `step report` は記録したあと、次の1手を返す。それに従って続ける
+- 報告を受け付けないとき（成果物が無い、現在地と違うステップ）はエラーになる。メッセージに従って直す。
+  報告を通すために成果物を空で作ったり、別のステップとして報告したりしない
+- 迷ったら `step next` を呼び直す。同じ状態なら同じ1手が返る
+- 進捗は `cycles/{cycle}/planning/progress.jsonl` に記録される。成果物と一緒にコミットする。
+  成果物を1つ作るごとにコミット & push すること。コミットされていなければ、中断時に他セッションから
+  進捗が見えず、再開点を検出できない
 
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers plan {cycle} --pr {PR の URL}
-```
+### 完了の案内
 
-  失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
-
-このフェーズの PR はドキュメントのみで、速やかにマージすることを想定している。
-デフォルトブランチに入っていない情報は他サイクルから見えないため。
-
-- [ ] 完了後、以下を案内する
+`done` が返ったら、以下を案内する。
 
 ```
 企画フェーズが完了しました。

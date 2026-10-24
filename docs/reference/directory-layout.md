@@ -60,6 +60,7 @@ cycles/{NNN}-{slug}/
 ├── planning/
 │   ├── questions.md          # 質問が発生した場合のみ
 │   ├── user-stories.md
+│   ├── progress.jsonl        # planner の手順の進捗
 │   └── retrospective.md
 ├── design/
 │   ├── codebase-survey.md    # 既存コードがある場合
@@ -68,7 +69,7 @@ cycles/{NNN}-{slug}/
 │   ├── progress.jsonl        # 手順の進捗（architect と build-manager の記録）
 │   └── retrospective.md
 ├── tasklist.md
-├── progress.jsonl            # create-cycle の手順の進捗
+`progress.jsonl` は、フェーズの手順がどこまで進んだかの記録です。置き場所はフェーズで決まり、PLAN は `planning/`、ARCHITECT は `design/`、BUILD は `build-{NN}/`、CLOSE と create-cycle はサイクルのディレクトリ直下、init は HIKYAKU_ROOT 直下、bp-guide は `bp-guide/` です。CLOSE がサイクルの直下なのは、成果物がサイクルの外にあり、フェーズ専用のディレクトリを持たないためです。build-manager と振り返り（retrospective）の記録は、呼び出し元のフェーズと同じファイルに入ります。`hikyaku step report` が1手ごとに1行を追記し、成果物と一緒にコミットされます。現在地そのものは保存されず、`hikyaku step next` がこの記録と成果物から毎回導き直します。別のセッションや別のマシンから再開しても、同じ続きが返るのはこのためです。手で編集すると読めなくなるので、記録を直すときも `step report` を使います。
 ├── return.md                 # architect への差し戻し中のみ（差し戻し元のビルドのブランチだけにある）
 └── build-{NN}/
     ├── issue.md              # architect が作成
@@ -84,7 +85,7 @@ cycles/{NNN}-{slug}/
 
 `handoff.md` と `retrospective.md` は close-cycle の昇格素材になります。どちらもコミット対象です。
 
-`progress.jsonl` は、フェーズの手順がどこまで進んだかの記録です。置き場所はフェーズで決まり、ARCHITECT は `design/`、BUILD は `build-{NN}/`、create-cycle はサイクルのディレクトリ直下、init は HIKYAKU_ROOT 直下、bp-guide は `bp-guide/` です。build-manager の記録は、呼び出し元のフェーズと同じファイルに入ります。`hikyaku step report` が1手ごとに1行を追記し、成果物と一緒にコミットされます。現在地そのものは保存されず、`hikyaku step next` がこの記録と成果物から毎回導き直します。別のセッションや別のマシンから再開しても、同じ続きが返るのはこのためです。手で編集すると読めなくなるので、記録を直すときも `step report` を使います。
+`progress.jsonl` は、フェーズの手順がどこまで進んだかの記録です。置き場所はフェーズで決まり、PLAN は `planning/`、ARCHITECT は `design/`、BUILD は `build-{NN}/`、CLOSE と create-cycle はサイクルのディレクトリ直下、init は HIKYAKU_ROOT 直下、bp-guide は `bp-guide/` です。CLOSE がサイクルの直下なのは、成果物がサイクルの外にあり、フェーズ専用のディレクトリを持たないためです。build-manager と振り返り（retrospective）の記録は、呼び出し元のフェーズと同じファイルに入ります。`hikyaku step report` が1手ごとに1行を追記し、成果物と一緒にコミットされます。現在地そのものは保存されず、`hikyaku step next` がこの記録と成果物から毎回導き直します。別のセッションや別のマシンから再開しても、同じ続きが返るのはこのためです。手で編集すると読めなくなるので、記録を直すときも `step report` を使います。
 
 `return.md` は、builder が architect に差し戻したときに書く記録です。差し戻し元のビルドのブランチにだけコミットされ、architect が再設計の最後に削除するので、デフォルトブランチには入りません。作業ツリーにこのファイルがあることが「差し戻し中」を意味し、1行目の見出し（`# 差し戻し: build-NN`）から差し戻し元のビルドが読まれます。
 
