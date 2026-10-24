@@ -46,10 +46,5 @@
 既存 ADR が `AD-N` 形式でも、`repo` 管理として登録すればそのまま使い続けられる。
 形式変換は不要。
 
-- [ ] 検証する。問題があれば直してから次へ進む
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs validate
-```
-
-- [ ] `done` を報告する
+- [ ] `done` を報告する。document-guide.md が検証（`docs validate` と同じ）を通らなければ、step が
+  理由を添えて受け付けないので、直してから報告し直す

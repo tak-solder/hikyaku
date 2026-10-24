@@ -24,3 +24,14 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers init --pr 
   失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
 - [ ] `done` を報告する
 - [ ] 同じブランチへコミット & push する（progress.jsonl）
+- [ ] 次を案内する（`pr` の報告のあとは、初期化済みを示す `stop` が返る）
+
+```
+初期化が完了しました。
+
+サイクルを開始するには:
+/hikyaku:create-cycle <slug>
+
+または planner が代行します:
+/hikyaku:planner
+```

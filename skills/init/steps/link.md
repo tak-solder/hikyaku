@@ -7,4 +7,4 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs link
 ```
 
 - [ ] 書き込んだファイル（AGENTS.md か CLAUDE.md）が、承認のときに提示したものと同じか確かめる
-- [ ] `done` を報告する
+- [ ] `done` を報告する。索引が document-guide.md から生成したものと一致しなければ、step が受け付けない

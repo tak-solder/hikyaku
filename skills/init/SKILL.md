@@ -29,15 +29,15 @@ Step 0〜3 はワークスペースができる前の準備で、ここに書い
 Node が v22.18.0 未満の場合はここで終了し、更新を案内する（型剥がしがフラグ無しで
 有効になる最小バージョン）。
 
-- [ ] 既に `document-guide.md` が存在する場合は、進捗を確認する
+- [ ] 既に `document-guide.md` が存在する場合は、`step next` で初期化済みかを確かめる
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step status init --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next init
 ```
 
-`current` が null（手順を終えている）か、記録のあるステップ（`at` が null でないもの）が1つも無い
-（v2 までに初期化された）なら、初期化済みとして終了する。それ以外は中断からの再開なので、
-Step 4 へ進む。
+`stop` が返ったら初期化済み（手順を終えている、または v2 までに初期化された）なので、
+メッセージを伝えて終了する。それ以外は中断からの再開（雛形を生成した直後の中断を含む）なので、
+返った1手から Step 4 の転送ループで続ける。
 
 → Step 1 へ。
 
@@ -100,8 +100,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next init
 |---|---|
 | `run` | 「指示」のファイルを読み、そのとおりに行う。終えたら「報告」のコマンドを実行する |
 | `gate` | 「指示」のファイルを読み、ユーザーに提示して承認を求める。答えを `approved` / `rejected` で報告する |
-| `done` | 手順をすべて終えた。下の「完了の案内」へ |
-| `stop` | メッセージをユーザーに伝えて終了する |
+| `stop` | メッセージをユーザーに伝えて終了する。`pr` の報告のあとに返るものは、完了の案内のあとでよい |
 
 - `step report` は記録したあと、次の1手を返す。それに従って続ける
 - 報告を受け付けないとき（現在地と違うステップ）はエラーになる。メッセージに従って直す
@@ -110,14 +109,4 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next init
 
 ### 完了の案内
 
-`done` が返ったら、次を案内する。
-
-```
-初期化が完了しました。
-
-サイクルを開始するには:
-/hikyaku:create-cycle <slug>
-
-または planner が代行します:
-/hikyaku:planner
-```
+完了の案内は最後のステップ（`pr`）の指示にある。`pr` を報告したあとは、初期化済みを示す `stop` が返る。

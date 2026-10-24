@@ -3,20 +3,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { flagString } from "../lib/args.mts";
-import {
-  BP_CASES_FILE,
-  BP_GUIDE_DIR,
-  BP_README_FILE,
-  BP_RULES_FILE,
-  bpReadmePath,
-  loadBpCases,
-  loadBpRules,
-  runBpCases,
-  upsertReadmeBlock,
-} from "../lib/bp.mts";
+import { BP_CASES_FILE, BP_GUIDE_DIR, BP_README_FILE, BP_RULES_FILE, bpGuideProblems } from "../lib/bp.mts";
 import { loadConfig } from "../lib/config.mts";
 import { cycleDir, cycleDirName, loadCycles } from "../lib/cycles.mts";
-import { loadGuide, validateGuide } from "../lib/docs.mts";
+import { loadGuide, RENAMED_FILES, validateGuide } from "../lib/docs.mts";
 import { HikyakuError, ValidationError } from "../lib/errors.mts";
 import { ISSUE_UNSAFE_HEADING, RESOLVED_BY_LABEL, resolveUnsafeSplit, validateUnsafeSplits } from "../lib/integrity.mts";
 import { emit } from "../lib/output.mts";
@@ -30,8 +20,6 @@ interface Problem {
   message: string;
 }
 
-/** HIKYAKU_ROOT 直下で改名したファイル。[旧名, 新名] */
-const RENAMED_FILES: [string, string][] = [["instruction.md", "instructions.md"]];
 
 register({
   name: "validate",
@@ -80,7 +68,7 @@ register({
       problems.push({ scope: `document-guide/${problem.entry}`, message: problem.message });
     }
 
-    problems.push(...validateBpGuide(config.hikyakuRoot));
+    problems.push(...bpGuideProblems(config.hikyakuRoot));
 
     const records = loadCycles(config.hikyakuRoot);
     const ids = new Set(records.map((record) => record.id));
@@ -195,54 +183,6 @@ function validateCycleUnsafeSplits(
     scope: `${name}/${buildDirName(problem.build)}`,
     message: problem.message,
   }));
-}
-
-/**
- * bp-guide/ の整合性。無いのは問題ではない（既定値で動く）が、あって壊れているのは
- * 「調整したのに効かない」壊れ方なので拾う。README の表が古いのと期待値の不一致も
- * ここで止める（手で rules.toml を直して render / test を忘れた状態）。
- */
-function validateBpGuide(hikyakuRoot: string): Problem[] {
-  const problems: Problem[] = [];
-  let rules;
-  try {
-    rules = loadBpRules(hikyakuRoot);
-  } catch (error) {
-    if (!(error instanceof HikyakuError)) throw error;
-    return [{ scope: `${BP_GUIDE_DIR}/${BP_RULES_FILE}`, message: error.message }];
-  }
-  if (rules.source === undefined) return [];
-
-  const readme = bpReadmePath(hikyakuRoot);
-  if (!existsSync(readme)) {
-    problems.push({
-      scope: `${BP_GUIDE_DIR}/${BP_README_FILE}`,
-      message: "ありません。hikyaku bp render で基準表ブロックを含む README を生成してください",
-    });
-  } else {
-    const current = readFileSync(readme, "utf8");
-    if (upsertReadmeBlock(current, rules).content !== current) {
-      problems.push({
-        scope: `${BP_GUIDE_DIR}/${BP_README_FILE}`,
-        message: `基準表の表が ${BP_RULES_FILE} と食い違っています。hikyaku bp render で再生成してください`,
-      });
-    }
-  }
-
-  try {
-    const { cases, source } = loadBpCases(hikyakuRoot);
-    for (const result of runBpCases(rules, cases, source ?? "既定ケース")) {
-      if (result.ok) continue;
-      problems.push({
-        scope: `${BP_GUIDE_DIR}/${BP_CASES_FILE}`,
-        message: `${result.name}: 期待 ${result.expect} / 算出 ${result.actual}`,
-      });
-    }
-  } catch (error) {
-    if (!(error instanceof HikyakuError)) throw error;
-    problems.push({ scope: `${BP_GUIDE_DIR}/${BP_CASES_FILE}`, message: error.message });
-  }
-  return problems;
 }
 
 function findCycleDependencyLoops(
