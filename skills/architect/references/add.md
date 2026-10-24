@@ -17,10 +17,10 @@
   から作る
 - 入力: 渡された指摘を必ず読む。企画成果物・`codebase-survey.md`・`design-delta.md`・`tasklist.md` も読む
 - 回の区切り: design/progress.jsonl には通常の設計の記録が完了済みで残っているので、`step next` の前に
-  追加設計の回を区切る。理由の接頭辞 `add:` が回の種類を表すので、書式を変えない。続けて指摘の要約を書く
+  追加設計の回を区切る。`--round add` が回の種類を表す。`--reason` には指摘の要約を書く
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step restart architect {cycle} --reason "add: {指摘の要約}"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step restart architect {cycle} --round add --reason "{指摘の要約}"
 ```
 
   既に architect のブランチがあり、`step status architect {cycle}` でこの回が途中まで進んでいれば、

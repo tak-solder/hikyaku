@@ -1,6 +1,6 @@
 # design-change: 設計の変更が要るかの判断（追加設計）
 
-指摘からの追加設計の回（`step restart architect {cycle} --reason "add: ..."`）だけで返る。
+指摘からの追加設計の回（`step restart architect {cycle} --round add`）だけで返る。
 並行サイクルの確認と既存コードの調査は済んでいるので行わない。
 
 - [ ] 渡された指摘と、企画成果物・`codebase-survey.md`・`design-delta.md`・`tasklist.md` を読む。

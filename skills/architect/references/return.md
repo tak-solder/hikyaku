@@ -17,10 +17,10 @@
 - 入力: `return.md` と、差し戻し元のビルドの `questions.md` を必ず読む。何が崩れたか、
   何を決め直すかはそこに書かれている。企画成果物と既存の design-delta.md も通常どおり読む
 - 回の区切り: ブランチの design/progress.jsonl には通常の設計の記録が完了済みで残っているので、
-  `step next` の前に再設計の回を区切る。理由の接頭辞 `return:` が回の種類を表すので、書式を変えない
+  `step next` の前に再設計の回を区切る。`--round return` が回の種類を表す
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step restart architect {cycle} --reason "return: build-{NN}"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step restart architect {cycle} --round return --reason "build-{NN} からの差し戻し"
 ```
 
   中断からの再開で、この回を既に区切っている（`step status architect {cycle}` で途中まで進んでいる）なら、

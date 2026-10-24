@@ -260,8 +260,8 @@ function designed(t: Parameters<typeof workspace>[0]): string {
   return directory;
 }
 
-function restart(directory: string, reason: string, ...extra: string[]): Directive {
-  return parse(succeeds(directory, "step", "restart", "architect", "001", ...extra, "--reason", reason, "--json"));
+function restart(directory: string, round: string, reason: string): Directive {
+  return parse(succeeds(directory, "step", "restart", "architect", "001", "--round", round, "--reason", reason, "--json"));
 }
 
 test("architect: 差し戻し中は、再設計の回を区切るまで止まる。区切れば build-manager も進められる", (t) => {
@@ -269,9 +269,9 @@ test("architect: 差し戻し中は、再設計の回を区切るまで止まる
   write(directory, `${CYCLE}/return.md`, "# 差し戻し: build-01\n");
   const stopped = next(directory);
   assert.equal(stopped.kind, "stop");
-  assert.match(stopped.message ?? "", /step restart architect 001-test --reason "return: build-01"/);
+  assert.match(stopped.message ?? "", /step restart architect 001-test --round return/);
 
-  const first = restart(directory, "return: build-01");
+  const first = restart(directory, "return", "build-01 からの差し戻し");
   assert.equal(first.step, "survey", "通常の設計と同じく調査から");
   assert.equal(first.args?.["round"], "return");
   report(directory, "survey", "--result", "done");
@@ -300,7 +300,7 @@ test("architect: 差し戻し中は、再設計の回を区切るまで止まる
 test("architect: 追加設計の回は調査を行わず、設計を変えなければビルドの追加へ進む", (t) => {
   const directory = designed(t);
   succeeds(directory, "tasklist", "done", "001", "--id", "1", "--pr", "https://github.com/o/r/pull/1");
-  const first = restart(directory, "add: エラー表示の文言");
+  const first = restart(directory, "add", "エラー表示の文言");
   assert.equal(first.step, "design-change");
   const call = report(directory, "design-change", "--result", "skipped", "--reason", "設計の変更は不要");
   assert.equal(call.step, "build-split", "質問・設計案・G4 を行わない");
@@ -324,7 +324,7 @@ test("architect: 追加設計の回は調査を行わず、設計を変えなけ
 test("architect: 追加設計で設計を変えるなら、質問から G4 まで通常どおり返る", (t) => {
   const directory = designed(t);
   succeeds(directory, "tasklist", "done", "001", "--id", "1", "--pr", "https://github.com/o/r/pull/1");
-  restart(directory, "add: 認可の抜け");
+  restart(directory, "add", "認可の抜け");
   assert.equal(report(directory, "design-change", "--result", "done").step, "questions");
 });
 
@@ -335,4 +335,13 @@ test("build-manager: 呼び出し元の報告を挟まずに呼び直すとき�
   const result = cli(directory, "step", "restart", "architect", "001", "--skill", "build-manager", "--reason", "受け入れ基準の割り当て");
   assert.equal(result.status, 0, result.stderr);
   assert.equal(next(directory, "architect", "--skill", "build-manager").step, "load");
+});
+
+test("architect: --round は return / add だけを受け付け、付けずに区切った回は通常の設計になる", (t) => {
+  const directory = designed(t);
+  const wrong = cli(directory, "step", "restart", "architect", "001", "--round", "redo", "--reason", "x");
+  assert.equal(wrong.status, 1);
+  const plain = parse(succeeds(directory, "step", "restart", "architect", "001", "--reason", "最初から", "--json"));
+  assert.equal(plain.step, "survey");
+  assert.equal(plain.args?.["round"], "design");
 });
