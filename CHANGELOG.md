@@ -35,7 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **`hikyaku step next / report / status / lint`**: フェーズの中の手順を、設定と進捗から1手ずつ返す。`step next` は `run`（ステップを行う）・`gate`（承認を求める）・`call`（内部スキルを呼ぶ）・`done`・`stop` のどれか1つを、読むべき指示ファイルと報告のコマンドを添えて返す。`step report` は結果を記録して次の1手を返す。現在地は保存せず、作業単位のディレクトリの `progress.jsonl` と成果物から毎回導出する（[#50](https://github.com/tak-solder/hikyaku/issues/50)）
 - **`hikyaku step restart`**: 同じ作業単位で、スキルの手順を最初から回し直す区切りを記録する。これより前の記録は現在地の導出に使わない（architect の追加設計、内部スキルの呼び直し）。`--round` で回の種類（スキルが定義した値だけ）を記録でき、スキルの定義はその値で手順を変える
 - ステップの定義に `requires`（記録の欠けの判定には使わない完了の条件）を足した。前から存在しうるファイルの検査を、完了の条件としてスクリプトで確かめられる
-- **`progress.jsonl`**: ビルドのディレクトリに追記される手順の記録。結果・理由・ユーザーの答え・承認したファイルのハッシュ・再算出した BP・報告した時点のコンテキスト・セッション ID・Hikyaku の版が入る。成果物と一緒にコミットする
+- **`progress.jsonl`**: 作業単位のディレクトリに追記される手順の記録。結果・理由・ユーザーの答え・承認したファイルのハッシュ・再算出した BP・報告した時点のコンテキスト・セッション ID・Hikyaku の版が入る。成果物と一緒にコミットする
 - **区切りでのコンテキストの実測**: G8 の提示・実装開始前・レビュー前で、`step next` がメインセッションのコンテキストを測り、`[context]` の目安（既定 250k / 300k / 400k）と比べる。超えても止めず、builder が継続か分割かを判断し、継続するなら次のゲートの報告で伝える。Codex の記録でウィンドウが 500k 未満なら、上げ方を添えて注意を出す（[#68](https://github.com/tak-solder/hikyaku/issues/68)）
 - **`[context]` 設定**: `approval` / `implement` / `review`
 - `hikyaku bp history`: 区切りでのコンテキスト（G8・実装前・レビュー前）を `progress.jsonl` から読んで並べる
@@ -49,6 +49,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - builder: Step 3 以降（plan → レビュー → G8 → 実装 → 検証 → コードレビュー → handoff → PR → 振り返り）を `step next` の転送ループに置き換えた。手順の順序・ゲート・承認は変えていない。各ステップの指示は `skills/builder/steps/<step>.md` に分け、実行するステップの指示だけを読む。SKILL.md は約 35KB から約 16KB になった。差し戻しと PR レビュー対応の手順は `references/return.md` / `references/pr-feedback.md` に移した
 - builder: G8 の承認は `plan.md` / `test-spec.md` のハッシュに結びつき、実装に入る前に書き換えると取り直しになる。前のステップを報告し直すと、そこから後ろはやり直しになる
 - builder: 設定で無効なステップ（plan / test-spec のレビュー、G7、振り返り）は手順に含まれない。スキップできるのは test-spec だけで、理由が記録に残る
+- architect: Step 1 以降（並行サイクルの確認 → 既存コードの調査 → G2 → 質問 → 設計案 → G3 → ADR → design-delta → レビュー → G4 → ビルド分割 → 検証 → 振り返り → PR）を `step next architect` の転送ループに置き換えた。手順の順序・ゲート・承認は変えていない。各ステップの指示は `skills/architect/steps/<step>.md` に分けた。並行サイクルの確認は他に進行中のサイクルがあるときだけ返り、スキップできるのは既存コードの調査（新規開発）と設計案（分岐する判断が無いとき）だけで、理由が記録に残る。G2 / G4 の承認は `codebase-survey.md` / `design-delta.md` のハッシュに結びつく。進捗は `design/progress.jsonl` に記録する
+- architect: 差し戻しからの再設計（`build-NN`）と指摘からの追加設計（`add`）も `step next` で進める。どちらも `step restart architect {cycle} --round return` / `--round add` で回を区切ってから始める（architect の定義は `rounds: ["return", "add"]` を宣言し、回の種類を `currentRound` で読む）。再設計の回は PR の代わりに差し戻しの解決（`resolve-return`）を返し、追加設計の回は並行サイクルの確認と調査を返さず、最初の `design-change` で設計の変更が要らないと判断すればビルドの追加へ進む。差し戻し中なのに回を区切っていなければ、`step next` は区切りのコマンドを示して止まる。準備（ブランチ・入力・区切り方）は `references/return.md` / `references/add.md` に置いた
+- build-manager: 手順（読み込み → 変更の整理 → BP 見積もり → `--dry-run` → レビュー → G6 → 書き込み → 外部投影）を `step next {phase} --skill build-manager` の転送ループに置き換えた。呼び出し元（architect の `design/`、builder の `build-NN/`）の `progress.jsonl` に記録し、呼ばれるたびに最初の手順から始まる。呼び出し元が報告しないまま呼び直すときは `step restart {phase} --skill build-manager` で区切る。外部投影は `[external] target` が `none` 以外のときだけ返る。builder の分割の検討（`split`）の指示も、呼ばれた側がこのコマンドから始める形に直した
 - init: 雛形の生成（`hikyaku init`）より後の手順（警告と旧名ファイルの後始末 → 既存ドキュメントの登録 → AGENTS.md への索引の承認 → 書き込み → PR）を `step next init` の転送ループに置き換えた。doctor・HIKYAKU_ROOT の決定・v1 の移行・雛形の生成は、設定がまだ無いので SKILL.md に残した。v1 の移行の手順は `references/v1.md` に移した。進捗は `{HIKYAKU_ROOT}/progress.jsonl` に記録し、索引の承認は `document-guide.md` のハッシュに結びつく。旧名のファイルが残っている、`document-guide.md` が検証を通らない、AGENTS.md の索引が guide と一致しない、のいずれかなら、該当するステップの完了を受け付けない。初期化済みかどうかは `step next init` が判定し（PR まで終えた、または init の記録が無く guide に登録がある）、雛形を生成した直後に中断した場合は続きから再開できる
 - create-cycle: `cycle new` より後の手順（PLAN へ進むかの確認 → plan のブランチで planner へ、または単独で PR）を `step next create <cycle>` の転送ループに置き換えた。PLAN へ進まないときは `to-plan` を理由付きでスキップし、そのときだけ PR のステップが手順に入る。進捗はサイクルのディレクトリの `progress.jsonl` に記録する。サイクルを作るまでの手順と、planner から代行されたときの流れは変えていない
 - bp-guide: 前提の確認（`show` での表示を含む）より後の手順（ブランチ → 基準表の生成 → 素材の収集 → 変更案 → 承認 → 再生成と検証 → PR）を `step next bp-guide` の転送ループに置き換えた。進捗は `bp-guide/progress.jsonl` に記録し、変更の承認は `rules.toml` / `cases.toml` のハッシュに結びつく。収集か変更案を理由付きでスキップすると、承認と再生成を行わずに PR へ進む。基準表の3ファイルが揃うまで生成を、README の表・期待値・`rules.toml` の構文が `validate` を通るまで再生成を完了にしない。前の回の記録が残っていて `step next` が `done` を返したら、`step restart bp-guide` で区切って新しい回を始める
@@ -61,8 +64,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Migration
 
-- **v2 で作成したサイクルは、v3 の builder では扱わない。** `step next` が止まり、v2 のまま終えるよう案内する。進行中のサイクルは v2 のプラグインで終えてから上げる（`docs/migration/v2-to-v3.md`）
-- `progress.jsonl` はコミット対象。`.gitignore` で除外しない。ビルドのディレクトリのほか、HIKYAKU_ROOT 直下（init）、サイクルのディレクトリ直下（create-cycle）、`bp-guide/`（bp-guide）にも置かれる
+- **v2 で作成したサイクルは、v3 の builder・architect では扱わない。** `step next` が止まり、v2 のまま終えるよう案内する。進行中のサイクルは v2 のプラグインで終えてから上げる（`docs/migration/v2-to-v3.md`）
+- `progress.jsonl` はコミット対象。`.gitignore` で除外しない。ビルドのディレクトリのほか、`design/`（architect）、HIKYAKU_ROOT 直下（init）、サイクルのディレクトリ直下（create-cycle）、`bp-guide/`（bp-guide）にも置かれる
 - `[context]` は既定値のままで動くので、設定の変更は不要
 - 既存の retrospective.md は変更不要。セッションの実測が無いビルドは `bp history` で「—」になる
 - `bp actual` の値は、差分にロックファイル・スナップショット・生成コードが含まれるビルドで以前より小さくなる。以前の実績と比べるときはこの差に注意する。以前の数え方に戻したいときは `[bp_actual] exclude = []` を書く

@@ -108,14 +108,16 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | `step next <phase> [<cycle>]` | フェーズの中の次の1手を知りたいとき（スキルの転送ループが呼ぶ） |
 | `step report <phase> <step> [<cycle>] --result <結果>` | 1手の結果を記録するとき。記録したあと次の1手を返す |
 | `step status <phase> [<cycle>]` | 手順の一覧と、それぞれが完了・スキップ・未完了・対象外のどれかを見たいとき |
-| `step restart <phase> [<cycle>] --reason <理由>` | 同じ作業単位で手順を最初から回し直すとき（architect の追加設計、内部スキルの呼び直し） |
+| `step restart <phase> [<cycle>] [--round <回の種類>] --reason <理由>` | 同じ作業単位で手順を最初から回し直すとき（architect の再設計・追加設計、bp-guide の新しい回、内部スキルの呼び直し） |
 | `step lint` | ステップの定義と指示ファイルの対応を確かめるとき（プラグイン自身の CI 用） |
 
-`step next` は、作業単位のディレクトリの `progress.jsonl` と成果物から現在地を導き、次の1手を返します。返る1手は5種類です。`run` はステップを行うもので、読むべき指示ファイルと報告のコマンドが付きます。`gate` はユーザーに承認を求めるもの、`call` は build-manager などの内部スキルを呼ぶものです。`done` は手順をすべて終えたこと、`stop` は止まる理由を表します。止まるのは、v2 で作成したサイクル、builder で architect への差し戻し中のとき、記録が欠けている（成果物はあるのに一度も記録が無い）ときです。何度呼んでも、同じ状態なら同じ1手が返ります。いま `step` に移っているのは builder（`build-NN`）・init（`init`）・create-cycle（`create`）・bp-guide（`bp-guide`）です。
+`step next` は、作業単位のディレクトリの `progress.jsonl` と成果物から現在地を導き、次の1手を返します。返る1手は5種類です。`run` はステップを行うもので、読むべき指示ファイルと報告のコマンドが付きます。`gate` はユーザーに承認を求めるもの、`call` は build-manager などの内部スキルを呼ぶものです。`done` は手順をすべて終えたこと、`stop` は止まる理由を表します。止まるのは、v2 で作成したサイクル、builder で architect への差し戻し中のとき、記録が欠けている（成果物はあるのに一度も記録が無い）ときです。何度呼んでも、同じ状態なら同じ1手が返ります。いま `step` に移っているのは init（`init`）・create-cycle（`create`）・architect（`architect`）・builder（`build-NN`）・bp-guide（`bp-guide`）と、内部スキルの build-manager です。
 
-作業単位のディレクトリはフェーズで決まります。ビルドは `build-NN/`、create-cycle はサイクルのディレクトリ自身、init は HIKYAKU_ROOT 自身、bp-guide は `bp-guide/` です。`step` は `.hikyaku.config` から HIKYAKU_ROOT を解決するので、init の雛形を生成する前は使えません。create-cycle も同じで、`cycle new` でサイクルを作るまでは使えません。
+作業単位のディレクトリはフェーズで決まります。ARCHITECT は `design/`、ビルドは `build-NN/`、create-cycle はサイクルのディレクトリ自身、init は HIKYAKU_ROOT 自身、bp-guide は `bp-guide/` です。`step` は `.hikyaku.config` から HIKYAKU_ROOT を解決するので、init の雛形を生成する前は使えません。create-cycle も同じで、`cycle new` でサイクルを作るまでは使えません。
 
-bp-guide は何度も回すので、前の回の記録が残っていると `step next` は `done` を返します。新しい回は `step restart bp-guide --reason <理由>` で始めます。前の回の記録はそのまま残り、区切りより後の記録だけが今回の回として数えられます。
+build-manager のような内部スキルは、`--skill build-manager` を付けて呼び出し元のフェーズで進めます。architect から呼ばれたら `step next architect --skill build-manager`、builder から呼ばれたら `step next build-NN --skill build-manager` で、記録は呼び出し元と同じ `progress.jsonl` に入ります。呼び出し元が最後に報告したあとの記録だけがその呼び出しの分として数えられるので、呼ばれるたびに最初の手順から始まります。呼び出し元が報告しないまま呼び直すときは、`step restart <phase> [<cycle>] --skill build-manager --reason <理由>` で区切ってから始めます。`call` の1手には、呼ばれた側が最初に実行する `step next` のコマンドが添えられます。
+
+同じ作業単位で手順を回し直すときも `step restart` を使います。bp-guide は何度も回すので、前の回の記録が残っていると `step next` は `done` を返します。新しい回は `step restart bp-guide --reason <理由>` で始めます。前の回の記録はそのまま残り、区切りより後の記録だけが今回の回として数えられます。`--round` は回の種類で、スキルが受け付ける値だけを指定できます。architect では `return` が差し戻しからの再設計、`add` が指摘からの追加設計で、それぞれ返る手順が変わります。`--reason` は自由な理由として記録に残るだけです。
 
 `step report` が記録できるのは、現在地のステップと、完了したステップの報告し直しだけです。成果物が要るステップは、成果物が無ければ `done` を受け付けません。`skipped` と `failed` には理由が、ゲートの `rejected` にはユーザーの答えが必須です。ゲートの `approved` では、結びつくファイルのハッシュが一緒に記録されます。報告には、その時点のコンテキスト・セッション ID・Hikyaku の版も入ります。
 
