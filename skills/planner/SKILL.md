@@ -70,8 +70,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {cycle}
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context plan {cycle}
 ```
 
-企画では永続ドキュメントをほとんど読まない。返るのは `constraints`（確定済みの非機能要件を
-再度質問しないため）と `glossary`（語を既存の定義に揃えるため）だけ。
+企画で読む既定の永続ドキュメントは `constraints`（確定済みの非機能要件を再度質問しないため）と
+`glossary`（語を既存の定義に揃えるため）。`repo` 管理の独自ドキュメントも候補に含まれるので、
+概要欄を見て、今回のスコープに関係するものだけを読む。
 
 インストラクションは次の優先順で適用する。上位が下位と矛盾する場合は上位を優先する。
 

@@ -1,6 +1,6 @@
 {
   "name": "hikyaku",
-  "version": "2.9.0",
+  "version": "2.9.3",
   "description": "PLAN → ARCHITECT → BUILD → CLOSE の4フェーズで構成される、AIエージェント協働開発ワークフロー",
   "skills": "./codex/skills/",
   "author": {
