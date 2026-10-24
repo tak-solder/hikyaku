@@ -10,7 +10,8 @@ BP（ビルドポイント）は、1セッションで実装が完了するか�
 {HIKYAKU_ROOT}/bp-guide/
 ├── rules.toml    # 正本。スクリプトが読むのはこれだけ
 ├── README.md     # 人間向けの説明。表の部分は rules.toml から生成される
-└── cases.toml    # 期待値テスト。入力 → 期待 BP
+├── cases.toml    # 期待値テスト。入力 → 期待 BP
+└── progress.jsonl  # /hikyaku:bp-guide の手順の進捗（hikyaku step report が追記する）
 ```
 
 正本と説明を分けているのは、説明を直したつもりで基準を壊す事故を防ぐためです。`README.md` の表はマーカー（`<!-- hikyaku:bp-guide:begin -->` 〜 `end`）で囲まれた部分だけが `hikyaku bp render` で生成され、外側の文章は自由に書けます。ここに「マイグレーション1本は新規ファイル2つと数える」のようなリポジトリ固有の数え方を書いておくと、見積もりのたびに builder と build-manager が読みます。
@@ -69,6 +70,10 @@ bp = [0, 1, 3, 4]
 | 新規ワークスペース | `/hikyaku:init` | 既定値から3ファイルを生成する |
 | v2.0 で初期化済み | `hikyaku init --root <path>` の再実行 | 無いファイルだけ生成する。再実行するまでは既定値で動く |
 | 調整 | `/hikyaku:bp-guide` | 振り返りの実績とセッションの実測（`hikyaku bp history`）を素材に `rules.toml` を直し、期待値を足し、README を再生成する |
+
+`/hikyaku:bp-guide` の調整は、ブランチの確認、基準表の生成（無いときだけ）、素材の収集、変更案、承認、README の再生成と検証、PR の順に進みます。この順序は `hikyaku step next bp-guide` が1手ずつ返し、進み具合は `bp-guide/progress.jsonl` に記録されます。承認は `rules.toml` と `cases.toml` のハッシュに結びつくので、承認したあとに直すと承認を取り直すことになります。素材が無く変更案を作らない回は、承認と再生成を飛ばして PR に進みます。
+
+調整は何度も行うので、前の回の記録は PR と一緒にデフォルトブランチに残ります。次に `/hikyaku:bp-guide` を実行すると、スキルは前の回が終わっていることを読み取り、`hikyaku step restart bp-guide` で区切って新しい回として始めます。前の回の記録は消えずに残ります。
 
 ワークフローの各フェーズ（build-manager / builder / retrospective）は `bp-guide/` を作りも変えもしません。基準表はワークスペース全体に効くので、走行中のサイクルの途中で動かすと、そのサイクルの中で見積もりの比較が成立しなくなるためです。
 

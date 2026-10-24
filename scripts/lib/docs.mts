@@ -119,6 +119,12 @@ export interface DocEntry {
   definition: DocDefinition | undefined;
 }
 
+/** AGENTS.md の索引ブロックのマーカー（docs link が書き込む） */
+export const INDEX_MARKER = "hikyaku:docs";
+
+/** HIKYAKU_ROOT 直下で改名したファイル。[旧名, 新名]。validate と init の step が残存を検出する */
+export const RENAMED_FILES: [string, string][] = [["instruction.md", "instructions.md"]];
+
 export const GUIDE_HEADERS = ["論理名", "管理", "パス", "概要"];
 
 export function guidePath(hikyakuRoot: string): string {

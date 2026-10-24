@@ -858,3 +858,58 @@ export function renderCasesScaffold(cases: BpCase[] = DEFAULT_BP_CASES): string 
   lines.push("");
   return lines.join("\n");
 }
+
+export interface BpGuideProblem {
+  /** HIKYAKU_ROOT からの相対パス */
+  scope: string;
+  message: string;
+}
+
+/**
+ * bp-guide/ の整合性。無いのは問題ではない（既定値で動く）が、あって壊れているのは
+ * 「調整したのに効かない」壊れ方なので拾う。README の表が古いのと期待値の不一致も
+ * ここで止める（手で rules.toml を直して render / test を忘れた状態）。
+ * validate と、bp-guide の step（render の完了条件）が使う。
+ */
+export function bpGuideProblems(hikyakuRoot: string): BpGuideProblem[] {
+  const problems: BpGuideProblem[] = [];
+  let rules;
+  try {
+    rules = loadBpRules(hikyakuRoot);
+  } catch (error) {
+    if (!(error instanceof HikyakuError)) throw error;
+    return [{ scope: `${BP_GUIDE_DIR}/${BP_RULES_FILE}`, message: error.message }];
+  }
+  if (rules.source === undefined) return [];
+
+  const readme = bpReadmePath(hikyakuRoot);
+  if (!existsSync(readme)) {
+    problems.push({
+      scope: `${BP_GUIDE_DIR}/${BP_README_FILE}`,
+      message: "ありません。hikyaku bp render で基準表ブロックを含む README を生成してください",
+    });
+  } else {
+    const current = readFileSync(readme, "utf8");
+    if (upsertReadmeBlock(current, rules).content !== current) {
+      problems.push({
+        scope: `${BP_GUIDE_DIR}/${BP_README_FILE}`,
+        message: `基準表の表が ${BP_RULES_FILE} と食い違っています。hikyaku bp render で再生成してください`,
+      });
+    }
+  }
+
+  try {
+    const { cases, source } = loadBpCases(hikyakuRoot);
+    for (const result of runBpCases(rules, cases, source ?? "既定ケース")) {
+      if (result.ok) continue;
+      problems.push({
+        scope: `${BP_GUIDE_DIR}/${BP_CASES_FILE}`,
+        message: `${result.name}: 期待 ${result.expect} / 算出 ${result.actual}`,
+      });
+    }
+  } catch (error) {
+    if (!(error instanceof HikyakuError)) throw error;
+    problems.push({ scope: `${BP_GUIDE_DIR}/${BP_CASES_FILE}`, message: error.message });
+  }
+  return problems;
+}

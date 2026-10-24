@@ -111,7 +111,11 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | `step restart <phase> [<cycle>] --reason <理由>` | 同じ作業単位で手順を最初から回し直すとき（architect の追加設計、内部スキルの呼び直し） |
 | `step lint` | ステップの定義と指示ファイルの対応を確かめるとき（プラグイン自身の CI 用） |
 
-`step next` は、作業単位のディレクトリの `progress.jsonl` と成果物から現在地を導き、次の1手を返します。返る1手は5種類です。`run` はステップを行うもので、読むべき指示ファイルと報告のコマンドが付きます。`gate` はユーザーに承認を求めるもの、`call` は build-manager などの内部スキルを呼ぶものです。`done` は手順をすべて終えたこと、`stop` は止まる理由を表します。止まるのは、v2 で作成したサイクル、builder で architect への差し戻し中のとき、記録が欠けている（成果物はあるのに一度も記録が無い）ときです。何度呼んでも、同じ状態なら同じ1手が返ります。いま `step` に移っているのは builder（`build-NN`）だけです。
+`step next` は、作業単位のディレクトリの `progress.jsonl` と成果物から現在地を導き、次の1手を返します。返る1手は5種類です。`run` はステップを行うもので、読むべき指示ファイルと報告のコマンドが付きます。`gate` はユーザーに承認を求めるもの、`call` は build-manager などの内部スキルを呼ぶものです。`done` は手順をすべて終えたこと、`stop` は止まる理由を表します。止まるのは、v2 で作成したサイクル、builder で architect への差し戻し中のとき、記録が欠けている（成果物はあるのに一度も記録が無い）ときです。何度呼んでも、同じ状態なら同じ1手が返ります。いま `step` に移っているのは builder（`build-NN`）・init（`init`）・create-cycle（`create`）・bp-guide（`bp-guide`）です。
+
+作業単位のディレクトリはフェーズで決まります。ビルドは `build-NN/`、create-cycle はサイクルのディレクトリ自身、init は HIKYAKU_ROOT 自身、bp-guide は `bp-guide/` です。`step` は `.hikyaku.config` から HIKYAKU_ROOT を解決するので、init の雛形を生成する前は使えません。create-cycle も同じで、`cycle new` でサイクルを作るまでは使えません。
+
+bp-guide は何度も回すので、前の回の記録が残っていると `step next` は `done` を返します。新しい回は `step restart bp-guide --reason <理由>` で始めます。前の回の記録はそのまま残り、区切りより後の記録だけが今回の回として数えられます。
 
 `step report` が記録できるのは、現在地のステップと、完了したステップの報告し直しだけです。成果物が要るステップは、成果物が無ければ `done` を受け付けません。`skipped` と `failed` には理由が、ゲートの `rejected` にはユーザーの答えが必須です。ゲートの `approved` では、結びつくファイルのハッシュが一緒に記録されます。報告には、その時点のコンテキスト・セッション ID・Hikyaku の版も入ります。
 

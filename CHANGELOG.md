@@ -49,6 +49,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - builder: Step 3 以降（plan → レビュー → G8 → 実装 → 検証 → コードレビュー → handoff → PR → 振り返り）を `step next` の転送ループに置き換えた。手順の順序・ゲート・承認は変えていない。各ステップの指示は `skills/builder/steps/<step>.md` に分け、実行するステップの指示だけを読む。SKILL.md は約 35KB から約 16KB になった。差し戻しと PR レビュー対応の手順は `references/return.md` / `references/pr-feedback.md` に移した
 - builder: G8 の承認は `plan.md` / `test-spec.md` のハッシュに結びつき、実装に入る前に書き換えると取り直しになる。前のステップを報告し直すと、そこから後ろはやり直しになる
 - builder: 設定で無効なステップ（plan / test-spec のレビュー、G7、振り返り）は手順に含まれない。スキップできるのは test-spec だけで、理由が記録に残る
+- init: 雛形の生成（`hikyaku init`）より後の手順（警告と旧名ファイルの後始末 → 既存ドキュメントの登録 → AGENTS.md への索引の承認 → 書き込み → PR）を `step next init` の転送ループに置き換えた。doctor・HIKYAKU_ROOT の決定・v1 の移行・雛形の生成は、設定がまだ無いので SKILL.md に残した。v1 の移行の手順は `references/v1.md` に移した。進捗は `{HIKYAKU_ROOT}/progress.jsonl` に記録し、索引の承認は `document-guide.md` のハッシュに結びつく。旧名のファイルが残っている、`document-guide.md` が検証を通らない、AGENTS.md の索引が guide と一致しない、のいずれかなら、該当するステップの完了を受け付けない。初期化済みかどうかは `step next init` が判定し（PR まで終えた、または init の記録が無く guide に登録がある）、雛形を生成した直後に中断した場合は続きから再開できる
+- create-cycle: `cycle new` より後の手順（PLAN へ進むかの確認 → plan のブランチで planner へ、または単独で PR）を `step next create <cycle>` の転送ループに置き換えた。PLAN へ進まないときは `to-plan` を理由付きでスキップし、そのときだけ PR のステップが手順に入る。進捗はサイクルのディレクトリの `progress.jsonl` に記録する。サイクルを作るまでの手順と、planner から代行されたときの流れは変えていない
+- bp-guide: 前提の確認（`show` での表示を含む）より後の手順（ブランチ → 基準表の生成 → 素材の収集 → 変更案 → 承認 → 再生成と検証 → PR）を `step next bp-guide` の転送ループに置き換えた。進捗は `bp-guide/progress.jsonl` に記録し、変更の承認は `rules.toml` / `cases.toml` のハッシュに結びつく。収集か変更案を理由付きでスキップすると、承認と再生成を行わずに PR へ進む。基準表の3ファイルが揃うまで生成を、README の表・期待値・`rules.toml` の構文が `validate` を通るまで再生成を完了にしない。前の回の記録が残っていて `step next` が `done` を返したら、`step restart bp-guide` で区切って新しい回を始める
 - `conductor lint` が `skills/<skill>/steps/` のタグも読むようにした
 - CI（check-scripts）で `step lint` を実行する
 - retrospective: 「BP見積もりの振り返り」に「セッションの実測」表（`bp session --markdown` の出力）を加えた。ピーク・開始時の固定分・呼び出し回数・出力トークン・コンパクション・ウィンドウ・モデル・ホスト・Hikyaku の版・セッションを記録する
@@ -59,7 +62,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Migration
 
 - **v2 で作成したサイクルは、v3 の builder では扱わない。** `step next` が止まり、v2 のまま終えるよう案内する。進行中のサイクルは v2 のプラグインで終えてから上げる（`docs/migration/v2-to-v3.md`）
-- `progress.jsonl` はコミット対象。`.gitignore` で除外しない
+- `progress.jsonl` はコミット対象。`.gitignore` で除外しない。ビルドのディレクトリのほか、HIKYAKU_ROOT 直下（init）、サイクルのディレクトリ直下（create-cycle）、`bp-guide/`（bp-guide）にも置かれる
 - `[context]` は既定値のままで動くので、設定の変更は不要
 - 既存の retrospective.md は変更不要。セッションの実測が無いビルドは `bp history` で「—」になる
 - `bp actual` の値は、差分にロックファイル・スナップショット・生成コードが含まれるビルドで以前より小さくなる。以前の実績と比べるときはこの差に注意する。以前の数え方に戻したいときは `[bp_actual] exclude = []` を書く
