@@ -165,7 +165,7 @@ PR タイトルは表示専用で解析されないため、テンプレート�
 
 `reviewers_skip` には、アサインをオフにするスキルを `init` / `bp-guide` / `create` / `plan` / `architect` / `build` / `close` / `conductor` のフェーズ名で並べます。`build` は全てのビルドの PR にあたり、`conductor` は監督が作る最後の PR にあたります。たとえば PLAN と ARCHITECT のドキュメントだけの PR にはレビューを求めず、BUILD の PR にだけ求めるなら、`reviewers_skip = ["init", "bp-guide", "create", "plan", "architect", "close"]` と書きます。名前のタイプミスはエラーになります。この設定は [conductor] の `phase_reviewers` にも効きます。
 
-planner・architect・builder と conductor の最後の PR は、常に Draft で作られます。builder は Draft のうちに `tasklist.md` の完了記録を push するので、完了記録がそろう前の PR がレビューに出ることはありません。`auto_ready` が true（既定）なら、各フェーズの完了時に Ready for Review に切り替えます。`false` にすると Draft のまま残すので、内容を確認してから自分で Ready にしてください。conductor の子セッションはこの設定に関わらず PR を Ready にせず、監督が取り込む前に Ready にします。conductor の最後の PR（デフォルトブランチ向け）には、この設定が効きます。Draft の PR で CI を走らせるかどうかは、各リポジトリの CI の設定で決まります。
+planner・architect・builder・close-cycle の PR と conductor の最後の PR は、常に Draft で作られます。builder は Draft のうちに `tasklist.md` の完了記録を push するので、完了記録がそろう前の PR がレビューに出ることはありません。`auto_ready` が true（既定）なら、各フェーズの完了時に Ready for Review に切り替えます。`false` にすると Draft のまま残すので、内容を確認してから自分で Ready にしてください。conductor の子セッションはこの設定に関わらず PR を Ready にせず、監督が取り込む前に Ready にします。conductor の最後の PR（デフォルトブランチ向け）と CLOSE の PR には、この設定が効きます。CLOSE の PR は子が Draft のまま渡し、監督がこの設定に従って Ready にします。Draft の PR で CI を走らせるかどうかは、各リポジトリの CI の設定で決まります。
 
 [conductor](../workflow/conductor.md) のフェーズの PR（conductor ブランチ向け）には、`reviewers` ではなく `[conductor] phase_reviewers` が使われます。向き先は PR の実際のマージ先から決まります。
 

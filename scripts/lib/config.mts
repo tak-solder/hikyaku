@@ -341,7 +341,7 @@ export interface ResolvedConfig {
   gates: Gates;
   reviews: Reviews;
   branch: BranchNaming;
-  /** autoReady: planner / architect / builder / conductor が Draft で作った PR を、フェーズの完了時に Ready for Review に切り替えるか */
+  /** autoReady: planner / architect / builder / close-cycle / conductor が Draft で作った PR を、フェーズの完了時に Ready for Review に切り替えるか */
   pr: { title: string; reviewers: string[]; reviewersSkip: ReviewerSkipTarget[]; autoReady: boolean };
   /** セッション名のテンプレート。空文字なら変更しない */
   session: { title: string };

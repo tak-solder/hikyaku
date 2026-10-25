@@ -216,7 +216,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {phase} {cycle
 
 - [ ] 「検証の義務」のうち、そのフェーズの done に当たるものを行う
 - [ ] 問題があれば人間に上げる（自分で直さない）
-- [ ] 子が作った PR が Draft なら、監督の権限で Ready for Review にする（子は非対話規約で Ready に
+- [ ] 子が作った PR（architect / builder）が Draft なら、監督の権限で Ready for Review にする（子は非対話規約で Ready に
   することを禁じられていて、builder の PR は Draft のまま届く。`[pr] auto_ready` は子にも監督にも効かない）
 
 ```bash
@@ -363,8 +363,14 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch architect {cyc
 
 ### Step 5: 完了
 
-close-cycle の子が done になったら、`cycle status` が `closed` であることを確認し、
-CLOSE の PR を示して終了する。
+close-cycle の子が done になったら、`cycle status` が `closed` であることを確認する。
+
+- [ ] CLOSE の PR は Draft で届く（子は Ready にしない）。Step 0 の `config` 出力の `pr.autoReady` が
+  true なら、`gh pr ready {PR の URL}` で Ready for Review にする
+  - false なら Draft のまま残し、「確認後に `gh pr ready {PR の URL}` で Ready にする」と案内する。
+    **false のときに自分の判断で Ready にしない**（この PR は取り込まず、人間がマージする）
+  - 失敗したら、Draft のままであることと再実行のコマンドを示す
+- [ ] CLOSE の PR を示して終了する
 
 ## 問いへの答え方
 

@@ -11,7 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Changed
 
 - **builder の PR 作成後の push を1回にまとめた**: 振り返り（旧 Step 9）を PR 作成の前に移して Step 8 とし、`retrospective.md` までコミットしてから push する。PR 作成後の push は `tasklist done` の1回だけになり、ビルドあたりの CI 実行が3回から2回に減る。PR レビュー指摘への対応でも、振り返りの追記を済ませてからまとめて1回 push する
-- **PR を Draft で作り、フェーズの完了時に Ready にする**: planner・architect・builder と conductor の最後の PR は、常に `gh pr create --draft` で作成する。builder は `tasklist done` を push してから切り替える。完了時に `gh pr ready` で Ready for Review にするかは新しい設定キー `[pr] auto_ready`（既定 true）で決まり、false なら Draft のまま残す。レビュアーのアサインは Ready の後に移した。Draft PR に対応していないリポジトリでは通常の PR で作成し、完了時にその旨を伝える
+- **PR を Draft で作り、フェーズの完了時に Ready にする**: planner・architect・builder・close-cycle の PR と conductor の最後の PR は、常に `gh pr create --draft` で作成する。builder は `tasklist done` を push してから切り替える。完了時に `gh pr ready` で Ready for Review にするかは新しい設定キー `[pr] auto_ready`（既定 true）で決まり、false なら Draft のまま残す。レビュアーのアサインは Ready の後に移した。Draft PR に対応していないリポジトリでは通常の PR で作成し、完了時にその旨を伝える
 - **conductor が子の Draft PR を Ready にする**: 子セッションは非対話規約で `gh pr ready` を禁じられ、builder の PR は Draft のまま監督に渡る。監督は `check-pr` の前に `gh pr ready` で Ready for Review にする。`check-pr` で Draft と判定された場合（確認の途中で Draft に戻された場合）は、従来どおり Ready にし直さず人間に上げる
 
 ### Migration
