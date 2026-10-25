@@ -1,0 +1,16 @@
+{
+  "description": "Hikyaku の手順（step next の転送ループ）の途中でセッションが止まろうとしたら、1回だけ続きを促す",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts\" step hook stop",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

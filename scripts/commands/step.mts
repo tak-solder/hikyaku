@@ -5,21 +5,20 @@
  *   step report  1手の結果を progress.jsonl に追記し、次の1手を返す
  *   step status  手順の一覧と、それぞれの状態を表示する
  *   step lint    ステップの定義と指示ファイルの対応を検査する（CI 用）
+ *   step where   サイクルのうち、手順が途中の作業単位を一覧する（navigator 用）
+ *   step hook    Claude Code のフックから呼ばれる（stop: 手順の途中で止まるのを1回だけ引き止める）
  *
  * 判定は scripts/lib/steps/ にある。ここは引数の解釈と出力だけを行う。
  */
 
 import { existsSync, readdirSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import { flagBoolean, flagString, type ParsedArgs } from "../lib/args.mts";
-import type { Phase } from "../lib/branch.mts";
-import type { ContextBudget } from "../lib/config.mts";
 import { HikyakuError, ValidationError } from "../lib/errors.mts";
 import { emit, table } from "../lib/output.mts";
 import { pluginRoot, pluginVersion } from "../lib/paths.mts";
 import {
   appendProgress,
-  readProgress,
   RESTART,
   RESTART_STEP,
   STEP_RESULTS,
@@ -27,8 +26,8 @@ import {
   type StepResult,
 } from "../lib/progress.mts";
 import { register } from "../lib/registry.mts";
-import { formatTokens, measureCurrent, smallWindowNotice, type CurrentContext } from "../lib/session.mts";
-import { requirePhase, scopeFor } from "../lib/stack.mts";
+import { openCycle } from "../lib/workspace.mts";
+import { formatTokens, measureCurrent } from "../lib/session.mts";
 import {
   allowedResults,
   currentHashes,
@@ -37,269 +36,20 @@ import {
   missingRequirement,
   type EvaluatedStep,
   type Evaluation,
-  type SkillSteps,
-  type StepContext,
 } from "../lib/steps/engine.mts";
-import { checkpointsOf, CHECKPOINT_LABELS, CHECKPOINT_STEPS, type Overrun } from "../lib/steps/checkpoints.mts";
-import { instructionPath, ownerOf, SKILL_STEPS, stepsOf } from "../lib/steps/index.mts";
-
-const CLI = `node "${join(pluginRoot(), "scripts", "hikyaku.mts")}"`;
-
-interface Opened {
-  phase: Phase;
-  skill: SkillSteps;
-  ctx: StepContext;
-}
-
-function open(args: ParsedArgs, phaseOperand: string | undefined, cycleOperand: string | undefined): Opened {
-  const phase = requirePhase(phaseOperand);
-  const owner = ownerOf(phase);
-  if (owner === undefined) {
-    throw new HikyakuError(
-      `${phase} の手順はまだ step に移っていません`,
-      `step に移ったスキル: ${SKILL_STEPS.map((entry) => entry.skill).join(" / ")}`,
-    );
-  }
-  // 内部スキル（build-manager / retrospective）は、呼び出し元のフェーズの作業単位で動く
-  const skillName = flagString(args, "skill");
-  const skill = skillName === undefined ? owner.skill : stepsOf(skillName);
-  if (skill === undefined || (skillName !== undefined && skill.internal !== true)) {
-    const internal = SKILL_STEPS.filter((entry) => entry.internal === true).map((entry) => entry.skill);
-    throw new HikyakuError(
-      `--skill に ${skillName} は指定できません`,
-      `指定できるのは step に移った内部スキルだけです: ${internal.length === 0 ? "（まだありません）" : internal.join(" / ")}`,
-    );
-  }
-  const scope = scopeFor(args, phase, cycleOperand);
-  const base = scope.context?.directory ?? scope.config.hikyakuRoot;
-  const unitDirectory = join(base, owner.directory);
-  // 作業単位のディレクトリは無くてよい（Git は空のディレクトリを残さないので、別のチェックアウトでは
-  // planning/ などがまだ無いことがある）。記録は最初の報告で作られ、成果物が無いうちは完了にならない
-  if (!existsSync(base)) {
-    throw new HikyakuError(
-      `${scope.context === undefined ? "HIKYAKU_ROOT" : "サイクルのディレクトリ"}がありません: ${relative(scope.config.repoRoot, base)}`,
-      "そのフェーズのブランチに居るかを確認してください。",
-    );
-  }
-  return {
-    phase,
-    skill,
-    ctx: {
-      config: scope.config,
-      cycle: scope.context,
-      unit: phase,
-      unitDirectory,
-      events: readProgress(unitDirectory),
-    },
-  };
-}
-
-/** コマンドに添えるサイクルの引数。サイクルの無いフェーズでは空 */
-function cycleArg(ctx: StepContext): string {
-  return ctx.cycle === undefined ? "" : ` ${ctx.cycle.name}`;
-}
-
-/** 内部スキルなら --skill を添える */
-function skillArg(opened: Opened): string {
-  return opened.skill.internal === true ? ` --skill ${opened.skill.skill}` : "";
-}
-
-/** 作成時の版のメジャーが 2 以下のサイクルは扱わない（v2 のまま終える） */
-function legacyCycleMessage(ctx: StepContext): string | undefined {
-  if (ctx.cycle === undefined) return undefined;
-  const version = ctx.cycle.record.hikyaku;
-  const major = Number.parseInt(version.split(".")[0] ?? "", 10);
-  if (Number.isInteger(major) && major >= 3) return undefined;
-  const label = version === "" ? "作成時の版が記録されていない版" : `v${version}`;
-  return [
-    `サイクル ${ctx.cycle.name} は ${label} で作成されています。v3 の手順では扱いません。`,
-    "v2 で始めたサイクルは v2 のまま終えてください（docs/migration/v2-to-v3.md）。",
-  ].join("\n");
-}
-
-// ---------------------------------------------------------------------------
-// directive
-
-interface ContextCheck {
-  checkpoint: keyof ContextBudget;
-  label: string;
-  budget: number;
-  tokens: number | null;
-  over: boolean;
-  unavailable: string | null;
-}
-
-interface Directive {
-  kind: "run" | "gate" | "call" | "done" | "stop";
-  skill: string;
-  cycle: string | null;
-  unit: string;
-  step?: string;
-  title?: string;
-  /** 読む指示ファイル */
-  read?: string;
-  args?: Record<string, unknown>;
-  /** 結果ごとの報告コマンド */
-  report?: Partial<Record<StepResult, string>>;
-  note?: string;
-  /** 差し戻されたゲートの、ユーザーの答え */
-  revise?: string;
-  ask?: string;
-  binds?: string[];
-  call?: string;
-  reason?: string;
-  /** 呼ぶ内部スキルが step に移っていれば、そのスキルが最初に呼ぶコマンド */
-  callNext?: string;
-  context?: ContextCheck;
-  /** 目安を超えたまま継続した区切り。ゲートの報告・完了の案内で伝える */
-  overruns?: Overrun[];
-  notices: string[];
-  message?: string;
-  progress: { complete: number; total: number };
-}
-
-function reportCommand(opened: Opened, step: string, result: StepResult): string {
-  const extra =
-    result === "skipped" || result === "failed"
-      ? ' --reason "<理由>"'
-      : result === "rejected"
-        ? ' --input "<ユーザーの答え>"'
-        : result === "approved"
-          ? ' --input "<ユーザーの答え>"'
-          : "";
-  const bp = result === "done" && opened.skill.steps.find((definition) => definition.id === step)?.reportsBp === true ? " [--bp <再算出した BP>]" : "";
-  return `${CLI} step report ${opened.phase} ${step}${cycleArg(opened.ctx)}${skillArg(opened)} --result ${result}${extra}${bp}`;
-}
-
-function progressOf(evaluation: Evaluation): { complete: number; total: number } {
-  const counted = evaluation.steps.filter((step) => step.status !== "off");
-  return {
-    complete: counted.filter((step) => step.status === "complete" || step.status === "skipped").length,
-    total: counted.length,
-  };
-}
-
-function checkContext(opened: Opened, checkpoint: keyof ContextBudget, measured: CurrentContext): ContextCheck {
-  const budget = opened.ctx.config.context[checkpoint];
-  return {
-    checkpoint,
-    label: CHECKPOINT_LABELS[checkpoint],
-    budget,
-    tokens: measured.tokens ?? null,
-    over: measured.tokens !== undefined && measured.tokens > budget,
-    unavailable: measured.tokens === undefined ? (measured.reason ?? "理由不明") : null,
-  };
-}
-
-function buildDirective(opened: Opened, evaluation: Evaluation): Directive {
-  const { ctx, skill } = opened;
-  const base = { skill: skill.skill, cycle: ctx.cycle?.name ?? null, unit: opened.phase, notices: [] as string[], progress: progressOf(evaluation) };
-
-  const legacy = legacyCycleMessage(ctx);
-  if (legacy !== undefined) return { ...base, kind: "stop", message: legacy };
-
-  const stopped = skill.stop?.(ctx);
-  if (stopped !== undefined) return { ...base, kind: "stop", message: stopped };
-
-  if (evaluation.orphans.length > 0) {
-    const current = evaluation.current?.definition.id ?? "（なし）";
-    return {
-      ...base,
-      kind: "stop",
-      message: [
-        `進捗の記録が欠けています。現在地は ${current} ですが、その後のステップの成果物があります: ${evaluation.orphans.map((step) => step.definition.id).join(", ")}`,
-        "推測で補わずに止まります。ユーザーに経緯を確認し、実施済みなら次のように記録してください:",
-        `  ${CLI} step report ${opened.phase} <ステップ>${cycleArg(ctx)}${skillArg(opened)} --result done --reason "手で実施"`,
-        "記録は現在地のステップから順に行います。",
-      ].join("\n"),
-    };
-  }
-
-  const overruns = checkpointsOf(ctx.events, ctx.config.context).filter((entry) => entry.over);
-  const current = evaluation.current;
-  if (current === undefined) {
-    return { ...base, kind: "done", overruns };
-  }
-
-  const definition = current.definition;
-  const directive: Directive = {
-    ...base,
-    kind: definition.kind,
-    step: definition.id,
-    title: definition.title,
-    read: instructionPath(skill.skill, definition.id),
-    report: Object.fromEntries(allowedResults(definition).map((result) => [result, reportCommand(opened, definition.id, result)])),
-  };
-  if (definition.args !== undefined) directive.args = definition.args(ctx);
-  if (current.note !== undefined) directive.note = current.note;
-  if (current.revise !== undefined) directive.revise = current.revise;
-  if (definition.kind === "gate") {
-    directive.ask = definition.ask ?? definition.id;
-    directive.binds = Object.keys(currentHashes(definition, ctx));
-  }
-  if (definition.kind === "call") {
-    directive.call = definition.call ?? "";
-    directive.reason = definition.reason?.(ctx) ?? "";
-    if (stepsOf(directive.call)?.internal === true) {
-      directive.callNext = `${CLI} step next ${opened.phase}${cycleArg(ctx)} --skill ${directive.call}`;
-    }
-  }
-  if (definition.checkpoint !== undefined) {
-    const measured = measureCurrent(process.env);
-    directive.context = checkContext(opened, definition.checkpoint, measured);
-    const notice = smallWindowNotice(process.env, measured);
-    if (notice !== undefined) directive.notices.push(notice);
-  }
-  if (definition.id === "review" && overruns.length > 0) directive.overruns = overruns;
-  return directive;
-}
-
-function renderDirective(directive: Directive): string {
-  const head = `[${directive.progress.complete}/${directive.progress.total}] ${directive.skill} ${directive.unit}`;
-  if (directive.kind === "stop") return `${head}\n\nstop: ${directive.message ?? ""}`;
-  const lines: string[] = [];
-  if (directive.kind === "done") {
-    lines.push(head, "", "done: 手順をすべて終えました。");
-    appendOverruns(lines, directive.overruns, "まだ伝えていない超過があれば、完了の案内で伝えてください");
-    return lines.join("\n");
-  }
-
-  lines.push(head, "", `${directive.kind}: ${directive.step}（${directive.title}）`, `指示: ${directive.read} を読んで行う`);
-  if (directive.kind === "gate") {
-    lines.push(`問いの ID: ${directive.ask}`);
-    if ((directive.binds ?? []).length > 0) lines.push(`承認に結びつくファイル: ${(directive.binds ?? []).join(", ")}`);
-  }
-  if (directive.kind === "call") {
-    lines.push(`呼ぶスキル: /hikyaku:${directive.call}`, `理由: ${directive.reason}`);
-    if (directive.callNext !== undefined) lines.push(`呼ばれたスキルの手順: ${directive.callNext}`);
-  }
-  if (directive.args !== undefined) {
-    lines.push(`値: ${Object.entries(directive.args).map(([key, value]) => `${key}=${String(value)}`).join(" ")}`);
-  }
-  if (directive.note !== undefined) lines.push(`注意: ${directive.note}`);
-  if (directive.revise !== undefined) lines.push(`差し戻しの答え: ${directive.revise === "" ? "（記録なし）" : directive.revise}`);
-  if (directive.context !== undefined) {
-    const c = directive.context;
-    lines.push(
-      c.tokens === null
-        ? `コンテキスト（${c.label}）: 計測不可（${c.unavailable}）。見積もりだけで進めてください`
-        : `コンテキスト（${c.label}）: ${formatTokens(c.tokens)} / 目安 ${formatTokens(c.budget)}${c.over ? " — 目安を超えています" : ""}`,
-    );
-  }
-  appendOverruns(lines, directive.overruns, "レビュー結果の提示で伝えてください。指摘が0件なら完了の案内で伝えます");
-  for (const notice of directive.notices) lines.push(`注意: ${notice}`);
-  lines.push("", "報告:");
-  for (const [result, command] of Object.entries(directive.report ?? {})) lines.push(`  ${result.padEnd(8)}${command}`);
-  return lines.join("\n");
-}
-
-function appendOverruns(lines: string[], overruns: Overrun[] | undefined, how: string): void {
-  if (overruns === undefined || overruns.length === 0) return;
-  lines.push(`目安を超えたまま継続した区切り（${how}）:`);
-  for (const entry of overruns) {
-    lines.push(`  ${entry.label}: ${formatTokens(entry.tokens)} / 目安 ${formatTokens(entry.budget)}`);
-  }
-}
+import { checkpointsOf, CHECKPOINT_STEPS } from "../lib/steps/checkpoints.mts";
+import {
+  buildDirective,
+  legacyCycleMessage,
+  nextCommand,
+  open,
+  renderDirective,
+  type Directive,
+  type Opened,
+} from "../lib/steps/directive.mts";
+import { stopReason, type StopInput } from "../lib/steps/hook.mts";
+import { directiveOf, findUnits } from "../lib/steps/locate.mts";
+import { instructionPath, SKILL_STEPS, stepsOf } from "../lib/steps/index.mts";
 
 function emitDirective(directive: Directive, extra: Record<string, unknown> = {}, prefix = ""): void {
   emit({ ...extra, directive }, () => `${prefix}${renderDirective(directive)}`);
@@ -392,7 +142,7 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
   }
   const result = resultRaw as StepResult;
 
-  const legacy = legacyCycleMessage(opened.ctx);
+  const legacy = legacyCycleMessage(opened.ctx.cycle);
   if (legacy !== undefined) throw new HikyakuError(legacy);
   if (evaluated.status === "off") {
     throw new HikyakuError(`${definition.id} は、このサイクルの設定では行わないステップです`);
@@ -597,3 +347,93 @@ register({
   },
 });
 
+
+register({
+  name: "step where",
+  summary: "サイクルのうち、手順の記録がある作業単位と、それぞれの次の1手を一覧する",
+  usage: "hikyaku step where [<cycle>] [--root <path>] [--json]",
+  details: [
+    "navigator が、どこから再開すればよいかを示すために呼びます。",
+    "",
+    "このチェックアウトの作業ツリーにある progress.jsonl（サイクルのディレクトリ直下・planning/・",
+    "design/・build-NN/）を読み、作業単位ごとに step next と同じ判定で次の1手を返します。",
+    "区切りでのコンテキストは測りません。内部スキルを呼んでいる最中なら、呼ばれたスキルの1手を返します。",
+    "",
+    "記録はそのフェーズのブランチにコミットされるので、別のブランチで進めた作業単位は見えません。",
+    "記録の無い作業単位（まだ着手していないビルドなど）は並びません。",
+    "v2 で作成したサイクルなら、作業単位を読まずに legacy に案内を返します。",
+  ].join("\n"),
+  run: ({ args, operands }) => {
+    const { config, context } = openCycle(args, operands[0]);
+    const root = flagString(args, "root");
+    const legacy = legacyCycleMessage(context);
+    const units = legacy !== undefined ? [] : findUnits(config.hikyakuRoot, [context.record]).map((unit) => {
+      const { opened, directive } = directiveOf(unit, root === undefined ? {} : { root });
+      return { directive, next: nextCommand(opened) };
+    });
+    emit({ cycle: context.name, legacy: legacy ?? null, units }, () => {
+      if (legacy !== undefined) return `cycle ${context.name}\n\nstop: ${legacy}`;
+      if (units.length === 0) return `cycle ${context.name}: このチェックアウトには手順の記録がありません`;
+      return [
+        `cycle ${context.name}`,
+        "",
+        table(
+          units.map(({ directive }) => [
+            directive.unit,
+            directive.skill,
+            `${directive.progress.complete}/${directive.progress.total}`,
+            directive.kind,
+            directive.kind === "stop" ? (directive.message ?? "").split("\n")[0] ?? "" : `${directive.step ?? ""}${directive.title === undefined ? "" : `（${directive.title}）`}`,
+          ]),
+          ["作業単位", "スキル", "進み", "次", "内容"],
+        ),
+      ].join("\n");
+    });
+  },
+});
+
+register({
+  name: "step hook",
+  summary: "Claude Code のフックから呼ばれる。stop: 手順の途中で止まろうとしたら、1回だけ続きを促す",
+  usage: "hikyaku step hook stop",
+  details: [
+    "プラグインの hooks/hooks.json が Stop フックとして呼びます。手で実行するものではありません。",
+    "標準入力で Claude Code のフックの入力（JSON）を受け取ります。",
+    "",
+    "次のすべてに当たるときだけ、{\"decision\": \"block\"} を返してセッションを続けさせます。",
+    "",
+    "  - このセッションが Hikyaku の手順を進めている（進行中のサイクルなどの progress.jsonl に",
+    "    このセッションの ID がある）",
+    "  - その作業単位の次の1手が run か call（gate・done・stop なら止まってよい）。内部スキルを",
+    "    呼んでいる最中なら、呼ばれたスキルの1手で判定する",
+    "  - 同じターンでまだ止めていない（stop_hook_active が true なら止めない）",
+    "  - 最後の出力が、conductor の非対話規約のブロック（gate / done / blocked）で終わっていない",
+    "",
+    "判定できないとき（Hikyaku を使っていないリポジトリ、壊れた記録など）は止めません。",
+    "エラーは標準エラーに書き、終了コードは 0 のままにします。",
+  ].join("\n"),
+  run: async ({ operands }) => {
+    if (operands[0] !== "stop") {
+      throw new HikyakuError(
+        operands[0] === undefined ? "フックの種類を指定してください" : `フックの種類が不正です: ${operands[0]}`,
+        "使用できる値: stop",
+      );
+    }
+    let reason: string | undefined;
+    try {
+      const raw = await readStdin();
+      reason = raw.trim() === "" ? undefined : stopReason(JSON.parse(raw) as StopInput);
+    } catch (error) {
+      process.stderr.write(`hikyaku step hook stop: ${error instanceof Error ? error.message : String(error)}\n`);
+      return;
+    }
+    if (reason !== undefined) process.stdout.write(`${JSON.stringify({ decision: "block", reason })}\n`);
+  },
+});
+
+async function readStdin(): Promise<string> {
+  if (process.stdin.isTTY === true) return "";
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString("utf8");
+}

@@ -20,6 +20,7 @@ import {
   resolveAsk,
   settingsDigest,
   shellQuote,
+  type ParsedResult,
   type PrVerdict,
   type PrView,
   type ResolvedAsk,
@@ -30,6 +31,8 @@ import { HikyakuError, ValidationError } from "../lib/errors.mts";
 import { emit, table } from "../lib/output.mts";
 import { pluginRoot } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
+import type { Directive } from "../lib/steps/directive.mts";
+import { directiveOf, locateSession } from "../lib/steps/locate.mts";
 import { normalizeBuildId } from "../lib/tasklist.mts";
 import type { ResolvedConfig } from "../lib/config.mts";
 import { openCycle, type CycleContext } from "../lib/workspace.mts";
@@ -247,6 +250,14 @@ register({
     "  violation  規約どおりのブロックが無い。監督は自由文から推測せず、人間に上げる",
     "  error      予算超過などで子が異常終了した",
     "",
+    "gate / done / blocked では、子の手順の位置（step）も返します。子のセッション ID が入った",
+    "progress.jsonl の記録から、子が最後に進めた作業単位を引き、step next と同じ判定で次の1手を",
+    "出します。gate なら承認に結びつくファイル（binds）とステップの指示ファイル（read）が入ります。",
+    "子のブロックと手順の位置が食い違えば、stepProblems に理由が入ります。",
+    "",
+    "  done なのに手順が終わっていない、または子の記録が見つからない",
+    "  ゲートの ID（G8 など）で止まったのに、手順がそのゲートに居ない",
+    "",
     "どの場合も sessionId と costUsd（その呼び出しの費用）を返します。再開しても",
     "session-id は変わらないので、次の conductor launch --resume にそのまま渡せます。",
     "問いの振り分けは conductor asks と同じ規則です。",
@@ -264,7 +275,9 @@ register({
         ? resolveAsk(parsed.id, config.conductor, config)
         : undefined;
 
-    emit({ cycle: context.name, ...parsed, ask: ask ?? null }, () => {
+    const step = childStep(parsed, config, context, flagString(args, "root"));
+
+    emit({ cycle: context.name, ...parsed, ask: ask ?? null, step: step.position, stepProblems: step.problems }, () => {
       const lines = [`結果: ${parsed.outcome}`];
       if (ask !== undefined) {
         lines.push(
@@ -275,11 +288,86 @@ register({
       if (parsed.reason) lines.push(`理由: ${parsed.reason}`);
       lines.push(`session-id: ${parsed.sessionId ?? "不明"}`);
       if (parsed.costUsd !== null) lines.push(`費用: $${parsed.costUsd.toFixed(2)}`);
+      if (step.position !== null) {
+        const p = step.position;
+        lines.push(`手順: ${p.skill} ${p.unit}（${p.progress.complete}/${p.progress.total}）→ ${p.kind}${p.step === null ? "" : ` ${p.step}`}`);
+      }
+      for (const problem of step.problems) lines.push(`  ! ${problem}`);
       lines.push("", parsed.body);
       return lines.join("\n");
     });
   },
 });
+
+interface ChildStep {
+  unit: string;
+  skill: string;
+  kind: Directive["kind"];
+  step: string | null;
+  title: string | null;
+  /** gate なら問いの ID と、承認に結びつくファイル（作業単位のディレクトリからの相対パス） */
+  ask: string | null;
+  binds: string[];
+  /** そのステップの指示ファイル。監督は承認の観点をここから読む */
+  read: string | null;
+  directory: string;
+  message: string | null;
+  progress: { complete: number; total: number };
+}
+
+/**
+ * 子が最後に進めた作業単位の、次の1手。子の progress.jsonl の記録（子のセッション ID）から引く。
+ *
+ * 子のブロックと手順の位置が食い違っていれば problems に入れる。監督は子の報告をそのまま
+ * 信じず、done は手順を終えたこと、ゲートの gate はそのゲートで止まっていることを確かめる
+ */
+function childStep(
+  parsed: ParsedResult,
+  config: ResolvedConfig,
+  context: CycleContext,
+  root: string | undefined,
+): { position: ChildStep | null; problems: string[] } {
+  if (parsed.sessionId === null || (parsed.outcome !== "gate" && parsed.outcome !== "done" && parsed.outcome !== "blocked")) {
+    return { position: null, problems: [] };
+  }
+  const located = locateSession(config.hikyakuRoot, [context.record], parsed.sessionId);
+  if (located === undefined) {
+    return {
+      position: null,
+      problems:
+        parsed.outcome === "done"
+          ? ["子は done を出しましたが、このサイクルに子のセッションの手順の記録がありません（hikyaku step where で確かめてください）"]
+          : [],
+    };
+  }
+  const { directive } = directiveOf(located.unit, root === undefined ? {} : { root });
+  const position: ChildStep = {
+    unit: directive.unit,
+    skill: directive.skill,
+    kind: directive.kind,
+    step: directive.step ?? null,
+    title: directive.title ?? null,
+    ask: directive.ask ?? null,
+    binds: directive.binds ?? [],
+    read: directive.read ?? null,
+    directory: located.unit.directory,
+    message: directive.message ?? null,
+    progress: directive.progress,
+  };
+  const problems: string[] = [];
+  if (parsed.outcome === "done" && directive.kind !== "done") {
+    problems.push(`子は done を出しましたが、手順は終わっていません（${directive.skill} ${directive.unit}: 次は ${directive.kind} ${directive.step ?? ""}）`);
+  }
+  // ゲートの ID（G8 など）は step のゲートと1対1。それ以外の ID はステップの途中の問いなので照合しない
+  if (parsed.outcome === "gate" && parsed.id !== undefined && /^G\d+$/.test(parsed.id)) {
+    if (directive.kind !== "gate" || directive.ask !== parsed.id) {
+      problems.push(
+        `子は ${parsed.id} で止まりましたが、手順の位置は ${directive.kind === "gate" ? `ゲート ${directive.ask}` : `${directive.kind} ${directive.step ?? ""}`} です`,
+      );
+    }
+  }
+  return { position, problems };
+}
 
 /** --wait のとき、CI のチェックが1つも無くても none と判定せずに待つ時間（PR を作った直後の猶予） */
 const CHECKS_GRACE_SECONDS = 60;

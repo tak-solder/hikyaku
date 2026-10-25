@@ -40,6 +40,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **`[context]` 設定**: `approval` / `implement` / `review`
 - `hikyaku bp history`: 区切りでのコンテキスト（G8・実装前・レビュー前）を `progress.jsonl` から読んで並べる
 - `docs/migration/v2-to-v3.md`
+- **Stop フック**（`hooks/hooks.json` → `hikyaku step hook stop`）: スキルの手順の途中でセッションが止まろうとしたら、1回だけ続きを促す。止めるのは、そのセッションが手順を進めていて（`progress.jsonl` にそのセッションの ID がある）、次の1手が `run` か `call` のときだけ。内部スキルを呼んでいる最中は、呼ばれたスキルの1手で判定する。`gate` / `done` / `stop`、同じターンの2回目（`stop_hook_active`）、非対話規約のブロックで終えた出力では止めない。判定できないときも止めず、終了コードは常に 0（[#50](https://github.com/tak-solder/hikyaku/issues/50)）
+- **`hikyaku step where [<cycle>]`**: このチェックアウトの作業ツリーにある `progress.jsonl` を読み、記録のある作業単位ごとに `step next` と同じ1手を返す。v2 で作成したサイクルでは `legacy` に案内を返す
 - **`hikyaku bp session [<phase> [<cycle>]]`**: セッションのコンテキストを、ホストの記録（Claude Code のトランスクリプト、Codex の rollout）から実測する。ピーク・開始時の固定分・最新の値・API 呼び出し回数・出力トークンの合計・コンパクション回数・モデル・ホストとその版・ウィンドウ（Codex のみ）を返す。引数なしでは `CLAUDE_CODE_SESSION_ID` / `CODEX_THREAD_ID` で現在のセッションを測り、`<phase>` を渡すとそのブランチのセッションから、そのブランチでの API 呼び出しが最も多いものを本体として選ぶ（候補と、対象外にしたサブエージェント・guardian も出力する）。`--transcript <path>` で記録を直接指定できる。読めない・見つからないときは推測せず「計測不可」とその理由を返す（Codex のクラウドでは rollout が保存されないため計測不可）。BP をコンテキストの消費量で校正するための計測の基盤で、見積もりの算出は変えない（[#68](https://github.com/tak-solder/hikyaku/issues/68)）
 - **`[bp_actual]` 設定**: `exclude`（生成物として数えないパスの glob）と `tests`（テストとして分けるパスの glob）。既定値はロックファイル・スナップショット・生成コードと、一般的なテストのパス。書いた配列は既定値を置き換える
 - **`hikyaku bp history --group-by model|hikyaku|host`**: モデル・Hikyaku の版・ホストごとに分けて並べ、件数・実績 BP とピークの平均・ピークの範囲・実績 1BP あたりのピークを添える
@@ -61,6 +63,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - create-cycle: `cycle new` より後の手順（PLAN へ進むかの確認 → plan のブランチで planner へ、または単独で PR）を `step next create <cycle>` の転送ループに置き換えた。PLAN へ進まないときは `to-plan` を理由付きでスキップし、そのときだけ PR のステップが手順に入る。進捗はサイクルのディレクトリの `progress.jsonl` に記録する。サイクルを作るまでの手順と、planner から代行されたときの流れは変えていない
 - bp-guide: 前提の確認（`show` での表示を含む）より後の手順（ブランチ → 基準表の生成 → 素材の収集 → 変更案 → 承認 → 再生成と検証 → PR）を `step next bp-guide` の転送ループに置き換えた。進捗は `bp-guide/progress.jsonl` に記録し、変更の承認は `rules.toml` / `cases.toml` のハッシュに結びつく。収集か変更案を理由付きでスキップすると、承認と再生成を行わずに PR へ進む。基準表の3ファイルが揃うまで生成を、README の表・期待値・`rules.toml` の構文が `validate` を通るまで再生成を完了にしない。前の回の記録が残っていて `step next` が `done` を返したら、`step restart bp-guide` で区切って新しい回を始める
 - `conductor lint` が `skills/<skill>/steps/` のタグも読むようにした
+- navigator: 作業中のサイクルについて `step where` を呼び、フェーズの中の位置（「build-02 の G8 の承認待ち」など）を示すようにした。途中の手順がある作業単位は、その作業単位のスキルの再開を提案する。v2 で作成したサイクルは、v2 のまま終えるよう案内してスキルを勧めない
+- `conductor parse`: 子の手順の位置（`step`）を返すようにした。子のセッション ID で `progress.jsonl` を引き、子が最後に進めた作業単位の次の1手（ゲートなら問いの ID・承認に結びつくファイル・指示ファイル）を返す。done なのに手順が終わっていない、子の記録が無い、ゲートの ID で止まったのに手順がそのゲートに居ない、のいずれかなら `stepProblems` に理由が入る
+- conductor: `stepProblems` があれば子を1回だけ再開して `step next` から続けさせ、2回目は人間に上げるようにした。ゲートの判断では `step.read` の指示ファイルと `step.binds` の成果物を読む。非対話規約に、ゲートでの `id` の書き方と、ブロックを出さずに終えると Stop フックが引き止めることを足した
 - CI（check-scripts）で `step lint` を実行する
 - retrospective: 「BP見積もりの振り返り」に「セッションの実測」表（`bp session --markdown` の出力）を加えた。ピーク・開始時の固定分・呼び出し回数・出力トークン・コンパクション・ウィンドウ・モデル・ホスト・Hikyaku の版・セッションを記録する
 - `hikyaku bp history`: セッションの実測を BP と並べて表示し、`--json` の各レコードに `context` として返す。表の無い retrospective.md は「—」で読む
@@ -72,6 +77,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **v2 で作成したサイクルは、v3 の各フェーズ（planner / architect / builder / close-cycle）では扱わない。** `step next` が止まり、v2 のまま終えるよう案内する。進行中のサイクルは v2 のプラグインで終えてから上げる（`docs/migration/v2-to-v3.md`）
 - `progress.jsonl` はコミット対象。`.gitignore` で除外しない。置き場所は `planning/`・`design/`・`build-NN/`、サイクルのディレクトリ直下（create-cycle・close-cycle）、HIKYAKU_ROOT 直下（init）、`bp-guide/`（bp-guide）
 - `[context]` は既定値のままで動くので、設定の変更は不要
+- Stop フックは、プラグインを有効にすると全てのセッションで動くが、Hikyaku の手順を進めていないセッションでは何もしない。対応は不要
 - 既存の retrospective.md は変更不要。セッションの実測が無いビルドは `bp history` で「—」になる
 - `bp actual` の値は、差分にロックファイル・スナップショット・生成コードが含まれるビルドで以前より小さくなる。以前の実績と比べるときはこの差に注意する。以前の数え方に戻したいときは `[bp_actual] exclude = []` を書く
 - `bp actual --json` の既存のキーは残っている。テストの判定を変えたいときは `[bp_actual] tests` を書く（既定値を置き換える）

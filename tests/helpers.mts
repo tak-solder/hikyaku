@@ -57,6 +57,16 @@ export function cliWith(directory: string, extraEnv: NodeJS.ProcessEnv, ...args:
   return result;
 }
 
+/** 標準入力を渡して CLI を実行する（フックの入力など） */
+export function cliInput(directory: string, input: string, extraEnv: NodeJS.ProcessEnv, ...args: string[]) {
+  const result = spawnSync(process.execPath, [cliPath, ...args], {
+    cwd: directory, encoding: "utf8", env: { ...testEnvironment(), ...extraEnv }, input, timeout: 10_000,
+  });
+  assert.ifError(result.error);
+  assert.equal(result.signal, null);
+  return result;
+}
+
 export function succeeds(directory: string, ...args: string[]): string {
   const result = cli(directory, ...args);
   assert.equal(result.status, 0, result.stderr);
