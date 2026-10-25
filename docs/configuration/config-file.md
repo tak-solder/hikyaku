@@ -145,7 +145,7 @@ separator = "/"
 title = "[hikyaku] {cycle}: {phase} {title}"
 reviewers = []        # PR を作った直後にレビューを依頼する相手
 reviewers_skip = []   # アサインをオフにするスキル
-draft = true          # builder が PR を Draft で作り、完了記録の後で Ready にする
+auto_ready = true     # builder が Draft で作った PR を、完了時に Ready for Review にする
 ```
 
 PR タイトルは表示専用で解析されないため、テンプレートは自由に組み立てられます。
@@ -165,7 +165,7 @@ PR タイトルは表示専用で解析されないため、テンプレート�
 
 `reviewers_skip` には、アサインをオフにするスキルを `init` / `bp-guide` / `create` / `plan` / `architect` / `build` / `close` / `conductor` のフェーズ名で並べます。`build` は全てのビルドの PR にあたり、`conductor` は監督が作る最後の PR にあたります。たとえば PLAN と ARCHITECT のドキュメントだけの PR にはレビューを求めず、BUILD の PR にだけ求めるなら、`reviewers_skip = ["init", "bp-guide", "create", "plan", "architect", "close"]` と書きます。名前のタイプミスはエラーになります。この設定は [conductor] の `phase_reviewers` にも効きます。
 
-`draft` が true（既定）のとき、builder はビルドの PR を Draft で作り、`tasklist.md` の完了記録を push してから Ready にします。完了記録がそろうまでレビュアーに未完成の PR を見せないためです。Draft の PR で CI を走らせるかどうかは、各リポジトリの CI の設定で決まります。`false` にすると最初から通常の PR で作ります。
+builder はビルドの PR を常に Draft で作り、`tasklist.md` の完了記録を push します。完了記録がそろうまで、未完成の PR をレビューに出さないためです。`auto_ready` が true（既定）なら、そのあと Ready for Review に切り替えます。`false` にすると Draft のまま残すので、内容を確認してから自分で Ready にしてください。conductor は Draft の PR を取り込まないため、conductor で進めるサイクルでは Ready にするまで止まります。Draft の PR で CI を走らせるかどうかは、各リポジトリの CI の設定で決まります。
 
 [conductor](../workflow/conductor.md) のフェーズの PR（conductor ブランチ向け）には、`reviewers` ではなく `[conductor] phase_reviewers` が使われます。向き先は PR の実際のマージ先から決まります。
 

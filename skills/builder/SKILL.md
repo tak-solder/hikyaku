@@ -391,9 +391,9 @@ PR 作成前のコミットに含める。
 PR を作った後の push は、`tasklist done` の1回だけにする。開いている PR への push はそのたびに
 CI を走らせる。
 
-Step 0 の `config` 出力の `pr.draft`（`[pr] draft`、既定 true）で PR の作り方が変わる。
-true なら PR を Draft で作り、完了記録を push してから Ready にする。false なら通常の PR で作り、
-Draft・Ready の手順は飛ばす。**`pr.draft` が false のときに自分の判断で Draft にしない。**
+PR は常に Draft で作る。完了記録がそろうまで、未完成の PR をレビューに出さないため。
+完了時に Ready for Review へ切り替えるかは、Step 0 の `config` 出力の `pr.autoReady`
+（`[pr] auto_ready`、既定 true）で決まる。**`pr.autoReady` が false のときに自分の判断で Ready にしない。**
 
 - [ ] 外部連携が有効なら、PR 本文へ入れる参照行を生成する
 
@@ -418,12 +418,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr base build-{NN} {cycle}
 - [ ] PR を作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title build-{NN} {cycle} --build-title "{title}"` で生成）
   - マージ先は上で取得した base
   - 本文の末尾に上の参照行を入れる
-  - `pr.draft` が true なら `gh pr create --draft` で作る。false なら `--draft` を付けない
+  - `gh pr create --draft` で作る
   - PR 作成前の承認は取らない。PR はレビューのための提案であって不可逆ではなく、
     ユーザーが `/hikyaku:builder` を実行した時点で PR 作成まで依頼されている
-  - `pr.draft` が true でも、リポジトリが Draft PR に対応しておらず作成に失敗したら、
-    `--draft` を外して作り直す。下の「Ready にする」は飛ばし、Draft にできなかったことを
-    完了の案内でユーザーに伝える
+  - リポジトリが Draft PR に対応しておらず作成に失敗したら、`--draft` を外して作り直す。
+    下の「Ready にする」は飛ばし、Draft にできなかったことを完了の案内でユーザーに伝える
 - [ ] tasklist.md の PR 列を更新し、同じブランチへコミット & push する
 
 ```bash
@@ -436,15 +435,17 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist done {cycle} \
 
 **これ以降、このビルドのブランチに push しない。** 追加の push はそのたびに CI を走らせる。
 
-- [ ] Draft で作った場合は PR を Ready にする（通常の PR で作った場合は飛ばす）
+- [ ] `pr.autoReady` が true なら PR を Ready for Review にする
 
 ```bash
 gh pr ready {PR の URL}
 ```
 
-  Draft で作ったなら**省略しない。** Draft のままだと conductor の `check-pr` が取り込まず、
+  true なら**省略しない。** Draft のままだと conductor の `check-pr` が取り込まず、
   レビューも始まらない。失敗したら、Draft のままであることと再実行のコマンドを完了の案内で
   ユーザーに伝える
+  - false なら Draft のまま残し、完了の案内で「PR は Draft のまま。確認後に `gh pr ready {PR の URL}`
+    で Ready にする」と伝える
 
 - [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
 
@@ -452,7 +453,7 @@ gh pr ready {PR の URL}
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers build-{NN} {cycle} --pr {PR の URL}
 ```
 
-  Draft で作った場合は Ready にした後で行う（Draft のうちに依頼すると、レビュアーが未完成の
+  Ready にする場合は Ready にした後で行う（完了記録の前に依頼すると、レビュアーが未完成の
   PR を見に来る）。失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
 
 - [ ] 外部投影が有効な場合は同期を試みる（失敗してもワークフローは止めない）
