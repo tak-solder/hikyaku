@@ -383,8 +383,21 @@ user-stories.md の受け入れ基準に番号があれば、`validate` はど�
 - [ ] `retrospective` 設定に従って `/hikyaku:retrospective {cycle} design` を呼び出す
 - [ ] コミット前にブランチを確認する（`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify architect {cycle}`。差し戻しからの再設計では `branch verify build-{NN} {cycle}`）
 - [ ] 外部連携が有効なら、参照行を生成する（`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref architect {cycle}`）
-- [ ] PR を作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title architect {cycle}` で生成）
+- [ ] PR を Draft で作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title architect {cycle}` で生成）
   - `external ref` が返した行（`Refs #12` など）を本文の末尾に入れる。空なら入れない
+  - `gh pr create --draft` で Draft として作る。リポジトリが Draft PR に対応しておらず作成に失敗したら、
+    `--draft` を外して作り直し、下の「Ready にする」は飛ばす。Draft にできなかったことを完了の案内で伝える
+- [ ] `config` 出力の `pr.autoReady`（`[pr] auto_ready`、既定 true）が true なら、PR を Ready for Review にする（conductor の子なら飛ばす）
+
+```bash
+gh pr ready {PR の URL}
+```
+
+  - false なら Draft のまま残し、完了の案内で「PR は Draft のまま。確認後に `gh pr ready {PR の URL}` で
+    Ready にする」と伝える。**false のときに自分の判断で Ready にしない**
+  - 失敗したら、Draft のままであることと再実行のコマンドを完了の案内でユーザーに伝える
+  - conductor の子（非対話規約で起動されたセッション）は `pr.autoReady` に関わらず Ready にしない。
+    Ready にするのは、取り込む前の監督の役目
 - [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
 
 ```bash

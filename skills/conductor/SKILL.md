@@ -313,12 +313,20 @@ gh pr list --head {conductor ブランチ} --base {baseBranch} --state open --js
 
   - **見つかったら、PR を作らない。** 「最後の PR が既にあるとき」へ進む
   - 見つからなければ、次の手順で作る（閉じられた PR や、マージ済みの PR は対象にしない）
-- [ ] conductor ブランチ → デフォルトブランチの PR を作る
+- [ ] conductor ブランチ → デフォルトブランチの PR を Draft で作る（`gh pr create --draft`）
   - タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title conductor {cycle}` で生成する
   - 本文に、取り込んだフェーズの PR を順に並べ、それぞれで**監督が判断した同意ゲート**を1行ずつ示す
     （人間がレビューで確認するため）
   - 外部連携が有効なら、各ビルドの `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref build-NN {cycle}` の行を本文の末尾に入れる。
     conductor ブランチへのマージではクローズキーワードが効かないため、ここでまとめて閉じる
+  - リポジトリが Draft PR に対応しておらず作成に失敗したら、`--draft` を外して作り直し、下の
+    「Ready にする」は飛ばす。Draft にできなかったことを最後の案内で伝える
+- [ ] Step 0 の `config` 出力の `pr.autoReady`（`[pr] auto_ready`、既定 true）が true なら、この PR を
+  Ready for Review にする（`gh pr ready {PR の URL}`）
+  - false なら Draft のまま残し、最後の案内で「確認後に `gh pr ready {PR の URL}` で Ready にする」と伝える。
+    **false のときに自分の判断で Ready にしない**（フェーズの PR を取り込む前に Ready にするのとは別。
+    この PR は人間がマージする）
+  - 失敗したら、Draft のままであることと再実行のコマンドを最後の案内で伝える
 - [ ] この PR にレビュアーをアサインする（`[pr] reviewers` が空、または `[pr] reviewers_skip` に
   `conductor` があれば何もしない）。人間がレビューする PR なので、待たない
 
@@ -334,8 +342,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers conductor 
 
 - [ ] 最後の PR の本文に無い、conductor ブランチに取り込んだフェーズの PR があれば（指摘を受けて足した
   architect とビルドの PR）、本文の一覧に追記する（`gh pr edit {PR} --body-file {ファイル}`）。
-  レビュアーのアサイン（上の手順。依頼済みの相手には重ねて依頼しない）を行い、PR の URL を示して
-  **終了**する
+  最後の PR が Draft で `pr.autoReady` が true なら Ready にする（上の手順）。レビュアーのアサイン
+  （上の手順。依頼済みの相手には重ねて依頼しない）を行い、PR の URL を示して**終了**する
 - [ ] 追記するものが無ければ、PR の URL を示し、最後の PR の指摘にビルドを足して対応するかを人間に
   尋ねる（`AskUserQuestion`）。対応しないなら、マージ後の再開を案内して**終了**する
 - [ ] 対応するなら、対応する指摘を人間から受け取る（PR のコメントの URL と内容。監督は指摘を選ばない）。
