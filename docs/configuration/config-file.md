@@ -183,7 +183,7 @@ title = "{cycle} {phase} {title}"
 [review]
 provider = "auto"   # auto | claude | codex
 max_rounds = 1      # 0 は無制限。未設定ならプロファイルの既定
-auto_fix = false
+auto_fix = false   # max_rounds = 0 の2回目以降の確認を省くか
 timeout = 30        # レビューのプロセス1回あたりの上限（分）
 
 [review.provider_for]  # メインのセッションのプロバイダ → レビューの実行先
@@ -224,7 +224,9 @@ effort = "high"
 
 `model` と `effort` はプロバイダごとのテーブルに書きます。モデル名もエフォートの値もプロバイダ間で互換性がないので、`provider` だけを切り替えても、もう一方の値が渡らないようにしてあります。値は `[review.<種類>.<プロバイダ>]`、`[review.<プロバイダ>]`、プロバイダの既定の順に決まり、空文字はキーが無いのと同じです。Claude の `effort` は `low` / `medium` / `high` / `xhigh` / `max` のどれかで、それ以外はエラーになります。Codex の `effort` は使える値がモデルによって変わるため、検証せずにそのまま渡します。
 
-`max_rounds` はコードとセキュリティのレビューを何回まで回すかです。`1` なら1回だけ、`n` なら指摘がなくなるまで最大 n 回、`0` なら無制限です。未設定のときは [プロファイル](profiles.md#レビュー) の既定に従います。無制限でも、前の回と同じ指摘が繰り返されたら builder はそこで止めて対応を尋ねます。`auto_fix = true` にすると、2回目以降は指摘への対応を確認せずに直します。ただし確度の低い懸念と、打ち切りにあたる場面では確認します。ドキュメントのレビューは1回だけで、`[review.doc]` には `max_rounds` と `auto_fix` を書けません。
+`max_rounds` はコードとセキュリティのレビューを何回まで回すかです。未設定のときは [プロファイル](profiles.md#レビュー) の既定に従います。`1` なら、妥当で承認済みスコープ内の指摘を追加確認なしで修正し、検証後は再レビューせずに進めます。`2` 以上なら、最終回までは妥当な指摘の自動修正と再レビューを続け、最終回に未解決の指摘がある場合だけ対応を確認します。途中で同じ指摘が繰り返されても、対応確認は最終回まで挟みません。指摘が解消すれば上限より前でも終了します。自動修正できない指摘は、1回設定では理由を申し送りに残し、2回以上では最終回の確認まで保留します。設計の前提が崩れた場合は、回数に関わらず設計方針を確認します。
+
+`max_rounds = 0` は無制限です。この場合は従来どおり初回に対応を確認し、`auto_fix = true` なら2回目以降の確認を省いて直します。確度の低い懸念と、同じ指摘が繰り返されて打ち切る場面では確認します。`auto_fix` は無制限の場合にだけ適用され、`max_rounds` が1以上なら値に関わらず上記の手順で進みます。ドキュメントのレビューは1回だけで、`[review.doc]` には `max_rounds` と `auto_fix` を書けません。
 
 組み込みのレビュー機能には指示文を渡せないため、plan.md のスコープから外れていないかは builder 自身が確かめます。また Claude の `/security-review` は origin のデフォルトブランチとの差分しか見ないので、スタックしたビルドや origin/HEAD が無いリポジトリでは使いません。その場合と Codex のセキュリティレビューでは、観点を書いた指示文を渡す形に切り替わります。どの形で起動されるかは `hikyaku review resolve` で確認できます。
 
@@ -301,12 +303,20 @@ budget_per_run = 0   # 子の呼び出し1回ごとの費用の上限（USD）�
 require_approval = false  # true なら、PR を conductor ブランチに取り込む条件に承認（Approve）を加える
 phase_reviewers = []      # conductor ブランチ向けのフェーズの PR にアサインするレビュアー
 review_timeout = 15       # レビューの依頼や CI を待つ上限（分）。0 なら待たずにその場で判定する
-# model = "sonnet"   # 子のモデル（全フェーズの既定）。未指定なら Claude Code の既定
 
-[conductor.models]   # フェーズごとのモデル。model より優先する
+[conductor.claude]
+# model = "sonnet"   # Claude の子の既定モデル。未指定なら CLI の既定
+
+[conductor.claude.models]   # Claude のフェーズごとの上書き
 # architect = "opus"
 # builder = "sonnet"
 # close-cycle = "sonnet"
+
+[conductor.codex]
+# model = "<Codex で利用できるモデル名>"
+
+[conductor.codex.models]    # Codex のフェーズごとの上書き
+# architect = "<Codex で利用できるモデル名>"
 ```
 
 [conductor](../workflow/conductor.md) で子セッションを動かすときの設定です。使わないなら書く必要はありません。
@@ -323,7 +333,11 @@ Claude の `allowed_tools` は `--allowedTools` に渡す書式で書きます�
 
 `require_approval` を `true` にすると、監督がフェーズの PR を取り込む条件に、1人以上の承認があり、変更の要求が残っていないことが加わります。承認の有無は、レビュアーごとに承認・変更の要求・取り下げのうち最新のもので判定します。コメントだけのレビューは判定を変えません。子の PR はあなたの `gh` の認証で作られるので、承認できるのはあなた以外のレビュアーです。
 
-`model` と `[conductor.models]` の値は、選択した CLI の `--model` に渡すモデル名（`opus` / `sonnet` のような別名か、正式なモデル名）です。`[conductor.models]` のキーは `architect` / `builder` / `close-cycle` だけで、それ以外はエラーになります。`models = "opus"` のようにテーブル以外で書いた場合もエラーになります。効くのは子のセッション本体だけです。Claude の子の中で起動されるサブエージェントは、環境変数 `CLAUDE_CODE_SUBAGENT_MODEL` を設定していればそのモデルで、していなければ子のセッションと同じモデルで動きます。ただし cycle-scanner だけは haiku に固定しています。
+モデルは `[conductor.claude]` / `[conductor.codex]` の `model` に、フェーズごとの上書きは `[conductor.claude.models]` / `[conductor.codex.models]` に書きます。選択したプロバイダの値だけを CLI の `--model` に渡します。未指定なら、その CLI の既定モデルを使います。`models` のキーは `architect` / `builder` / `close-cycle` だけで、それ以外や、テーブル以外の値はエラーになります。プロバイダ別テーブルの未知のキーや不正な値は、未選択のプロバイダでも検査します。
+
+旧形式の `[conductor] model` と `[conductor.models]` も使えます。旧形式は、設定で明示した `provider`（未指定なら `claude`）に属するものとして扱います。クラウド判定で別のプロバイダに切り替わった場合、旧形式のモデルは渡しません。優先順位は、選択したプロバイダのフェーズ別モデル、プロバイダの既定モデル、旧形式のフェーズ別モデル、旧形式の既定モデルです。ルートとサイクルの設定は、プロバイダ別モデルもキーごとにマージされます。
+
+効くのは子のセッション本体だけです。Claude の子の中で起動されるサブエージェントは、環境変数 `CLAUDE_CODE_SUBAGENT_MODEL` を設定していればそのモデルで、していなければ子のセッションと同じモデルで動きます。ただし cycle-scanner だけは haiku に固定しています。
 
 配列はキー単位で上書きされます。サイクル設定に `escalate` を書くと、ルートの `escalate` に足されるのではなく置き換わります。
 

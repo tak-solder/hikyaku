@@ -34,6 +34,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Claude Code 利用者の操作は変わらない。従来の `/hikyaku:...` と `skills/`・`agents/` の手順は維持する
 - Codex 利用者は `codex plugin marketplace add tak-solder/hikyaku@codex-plugin` でマーケットプレイスを追加し、プラグインをインストールする。`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要。Codex でも `$hikyaku:conductor` と `$hikyaku:navigator` を利用できる。ローカルで子に Codex CLI を使う場合は `[conductor] provider = "codex"` を指定する
 
+## [2.11.0]
+
+### Changed
+
+- **builder のレビュー指摘への対応**: `max_rounds = 1` では妥当な指摘を自動修正し、検証後は対応確認・再レビューなしで PR 作成へ進む。`max_rounds` が2以上なら途中の指摘は自動修正し、最終回に未解決の指摘がある場合だけ対応を確認する。同じ指摘の繰り返しによる途中の確認も省く。Claude Code と Codex の両方に適用する
+
+### Migration
+
+- 設定変更は不要。`max_rounds` が1以上の場合は `auto_fix` の値に関わらず妥当な指摘が自動修正される。`auto_fix` は `max_rounds = 0`（無制限）での2回目以降の確認にだけ適用する。無制限の確認・打ち切り方針は従来どおり
+
+## [2.10.0]
+
+### Added
+
+- **conductor のプロバイダ別モデル設定**: `[conductor.claude]` / `[conductor.codex]` の `model` と、その配下の `[models]` によるフェーズ別モデルを追加した。選択したプロバイダの設定だけを初回起動・再開に使い、`conductor asks` に解決済みモデルを表示する。プロバイダ別のフェーズ設定、プロバイダ別の既定、旧形式のフェーズ設定、旧形式の既定の順に優先する（[#59](https://github.com/tak-solder/hikyaku/issues/59)）
+
+### Fixed
+
+- クラウド判定で子のプロバイダが切り替わったとき、旧形式のモデル名が別の CLI に渡る問題を修正した
+
+### Migration
+
+- 同じプロバイダで使う既存の `[conductor] model` / `[conductor.models]` はそのまま使える。旧形式は明示した `provider`（未指定なら `claude`）に属する。クラウド判定で別のプロバイダに切り替わった場合は、その CLI の既定モデルを使うため、固定したいモデルは `[conductor.claude]` / `[conductor.codex]` とその配下の `[models]` に移す
+
 ## [2.9.3]
 
 ### Fixed

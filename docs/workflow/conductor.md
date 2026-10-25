@@ -33,15 +33,17 @@ Claude Code の `/hikyaku:conductor` と Codex の `$hikyaku:conductor` は、PL
 allowed_tools = ["Bash(npm test:*)"]
 ```
 
-子のモデルは、既定では Claude Code の既定のモデルです。フェーズごとに変えたい場合（設計は opus、実装は sonnet など）は `[conductor] model` と `[conductor.models]` で指定します。モデルの指定も起動時に合意する設定に含まれるので、途中で変わることはありません。
+子のモデルは、指定しなければ選択した CLI の既定モデルを使います。プロバイダごとにモデルを指定でき、フェーズごとの上書きもできます。モデルの指定も起動時に合意する設定に含まれるので、途中で変わることはありません。
 
 ```toml
-[conductor]
+[conductor.claude]
 model = "sonnet"
 
-[conductor.models]
+[conductor.claude.models]
 architect = "opus"
 ```
+
+Codex のモデルは `[conductor.codex]` と `[conductor.codex.models]` に書きます。旧形式との互換性と優先順位は[設定リファレンス](../configuration/config-file.md#conductor)を参照してください。
 
 子に `bypassPermissions` は渡しません。監督の目が届かないところで何でもできる状態を作らないためです。ただし、ツールの許可だけで子を完全に閉じ込めることはできません。子はファイルを書けるので、`.git/hooks` に置いたスクリプトは `git commit` のときに実行されますし、許可したテストのコマンドは子が編集したコードを実行します。信頼できないリポジトリや、秘密情報のある環境で動かすなら、サンドボックスやコンテナの中で動かしてください。設定キーの一覧は [.hikyaku.config](../configuration/config-file.md#conductor) にあります。
 
@@ -131,7 +133,7 @@ CI が1つも無い場合（`paths` フィルタで走らない、CI の無い�
 
 ## Codex を子セッションに使う
 
-`.hikyaku.config` の `[conductor]` に `provider = "codex"` を指定すると、Claude Code・Codex どちらの監督からも Codex CLI を子として起動できます。クラウドでない環境での既定は `claude` です。Codex CLI のインストールと認証が必要です。`model` とフェーズ別モデルには、選択した CLI で使えるモデル名を指定します。
+`.hikyaku.config` の `[conductor]` に `provider = "codex"` を指定すると、Claude Code・Codex どちらの監督からも Codex CLI を子として起動できます。クラウドでない環境での既定は `claude` です。Codex CLI のインストールと認証が必要です。モデルを指定する場合は `[conductor.codex]` と `[conductor.codex.models]` に、Codex で使えるモデル名を書きます。
 
 クラウド環境ではレビューと同じ `detectCloudEnv()` の判定を使い、`CLAUDE_CODE_REMOTE=true` なら Claude、`CODEX_ENVIRONMENT_ID` が空でなければ Codex に固定します。この判定は `provider` の明示指定より優先し、両方が該当するときは Claude を選びます。クラウドでない場合は `provider`、未指定なら `claude` を使います。`conductor asks` は実際の CLI と選択元（`providerSource`）を示します。
 
