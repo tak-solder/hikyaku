@@ -341,7 +341,8 @@ export interface ResolvedConfig {
   gates: Gates;
   reviews: Reviews;
   branch: BranchNaming;
-  pr: { title: string; reviewers: string[]; reviewersSkip: ReviewerSkipTarget[] };
+  /** draft: builder が PR を Draft で作り、完了記録の push 後に Ready にするか */
+  pr: { title: string; reviewers: string[]; reviewersSkip: ReviewerSkipTarget[]; draft: boolean };
   /** セッション名のテンプレート。空文字なら変更しない */
   session: { title: string };
   security: { triggers: string };
@@ -1126,6 +1127,7 @@ function finalize(
       title: readString(readTable(merged, "pr"), "title", "[pr]") ?? DEFAULT_PR_TITLE,
       reviewers: readReviewers(readTable(merged, "pr"), "reviewers", "[pr]"),
       reviewersSkip: readReviewerSkip(readTable(merged, "pr")),
+      draft: readBoolean(readTable(merged, "pr"), "draft", "[pr]") ?? true,
     },
     session: {
       title:

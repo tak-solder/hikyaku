@@ -145,6 +145,7 @@ separator = "/"
 title = "[hikyaku] {cycle}: {phase} {title}"
 reviewers = []        # PR を作った直後にレビューを依頼する相手
 reviewers_skip = []   # アサインをオフにするスキル
+draft = true          # builder が PR を Draft で作り、完了記録の後で Ready にする
 ```
 
 PR タイトルは表示専用で解析されないため、テンプレートは自由に組み立てられます。
@@ -163,6 +164,8 @@ PR タイトルは表示専用で解析されないため、テンプレート�
 `reviewers` には、PR を作る各スキルが PR を作った直後に、レビューを依頼する相手を書きます。人は login、チームは `org/team`、Copilot は `@copilot` で、1要素に1つずつ書きます。空（既定）なら何も依頼しません。依頼は `hikyaku pr request-reviewers` が行い、PR の作成者本人、すでに依頼した相手、すでにレビューした相手には依頼しません（GitHub は作成者本人を依頼先にできず、`gh` はレビュー済みの相手にも再依頼してしまうためです）。
 
 `reviewers_skip` には、アサインをオフにするスキルを `init` / `bp-guide` / `create` / `plan` / `architect` / `build` / `close` / `conductor` のフェーズ名で並べます。`build` は全てのビルドの PR にあたり、`conductor` は監督が作る最後の PR にあたります。たとえば PLAN と ARCHITECT のドキュメントだけの PR にはレビューを求めず、BUILD の PR にだけ求めるなら、`reviewers_skip = ["init", "bp-guide", "create", "plan", "architect", "close"]` と書きます。名前のタイプミスはエラーになります。この設定は [conductor] の `phase_reviewers` にも効きます。
+
+`draft` が true（既定）のとき、builder はビルドの PR を Draft で作り、`tasklist.md` の完了記録を push してから Ready にします。完了記録がそろうまでレビュアーに未完成の PR を見せないためです。Draft の PR で CI を走らせるかどうかは、各リポジトリの CI の設定で決まります。`false` にすると最初から通常の PR で作ります。
 
 [conductor](../workflow/conductor.md) のフェーズの PR（conductor ブランチ向け）には、`reviewers` ではなく `[conductor] phase_reviewers` が使われます。向き先は PR の実際のマージ先から決まります。
 

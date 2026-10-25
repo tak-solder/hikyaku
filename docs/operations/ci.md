@@ -44,31 +44,3 @@ node /tmp/hikyaku/scripts/hikyaku.mts validate --json
 ```
 
 `--json` は他のコマンドでも使えます。PR コメントへの整形など、結果を加工したい場合に利用してください。
-
-## Hikyaku の PR で CI を減らす
-
-builder は PR を Draft で作り、`tasklist.md` の完了記録を push してから Ready にします。リポジトリの CI が Draft の PR をスキップするようにしておくと、ビルドの PR で CI が走るのは Ready にしたときの1回だけになります。設定しなければ、PR の作成時と完了記録の push 時の2回走ります。
-
-```yaml
-on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-  push:
-    branches: [main]
-
-jobs:
-  test:
-    if: github.event.pull_request.draft != true
-    runs-on: ubuntu-latest
-    # ...
-```
-
-`types` に `ready_for_review` を足さないと、Ready にしても CI が走りません。`if` は push イベントでは常に真になるので、main への push の CI はそのまま動きます。Draft のあいだスキップされたジョブは「Skipped」として記録されますが、Ready にしたときの実行で同じコミットの結果が上書きされます。
-
-同じ PR に続けて push したときに古いコミットの実行を止めるには、`concurrency` も併せて設定してください。
-
-```yaml
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-```

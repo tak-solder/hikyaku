@@ -826,10 +826,13 @@ review_timeout = 5
   const config = JSON.parse(succeeds(directory, "config", "001", "--json"));
   assert.deepEqual(config.pr.reviewers, ["alice", "@copilot", "org/platform"]);
   assert.deepEqual(config.pr.reviewersSkip, ["init", "build"]);
+  assert.equal(config.pr.draft, true);
   assert.deepEqual(config.conductor.phaseReviewers, ["@copilot"]);
   assert.equal(config.conductor.reviewTimeoutMinutes, 5);
   write(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config", '[pr]\nreviewers = ["bob"]\n');
   assert.deepEqual(JSON.parse(succeeds(directory, "config", "001", "--json")).pr.reviewers, ["bob"]);
+  write(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config", "[pr]\ndraft = false\n");
+  assert.equal(JSON.parse(succeeds(directory, "config", "001", "--json")).pr.draft, false);
 });
 
 test("CLI: pr request-reviewers は PR のマージ先で一覧を選び、作成者を除いて gh pr edit で依頼する", (t) => {
