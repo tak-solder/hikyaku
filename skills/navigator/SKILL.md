@@ -19,7 +19,9 @@ argument-hint: "[{cycle}]"
 ## 原則
 
 - **状態は CLI から導く。** フェーズ・中断点・着手可能なビルドを自分で推測しない。
-  `cycle list` / `cycle status` / `next` の JSON だけを根拠にする。ファイルを読み回って判定しない
+  `cycle list` / `cycle status` / `next` / `step where` の JSON だけを根拠にする。ファイルを読み回って判定しない
+- **フェーズの中の位置は `step where` が返す1手をそのまま示す。** progress.jsonl を自分で読んで
+  どこまで進んだかを判断しない
 - **読むだけ。** ファイルを書かない。コミットしない。ブランチを切り替えない。
   `cycle use` も実行しない（起動したスキルが自分で行う）
 - **起動は選ばれてから。** 候補が1つしかなくても、ユーザーの確認なしに起動しない
@@ -66,6 +68,16 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle} --json
 
 `cycle status` と `next` は origin の追跡参照を1本更新することがある。2回目以降は `--no-fetch` を付けてよい。
 
+- [ ] このチェックアウトで作業中のサイクル（`config` の `cycle`）だけ、フェーズの中の位置を取る
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step where {cycle} --json
+```
+
+`units` は、このチェックアウトの作業ツリーに手順の記録（progress.jsonl）がある作業単位と、
+それぞれの次の1手（`directive`。`step next` と同じもの）。記録は各フェーズのブランチにコミットされるので、
+他のサイクルや他のブランチの位置はここからは読めない。`legacy` が null でなければ v2 で作成したサイクル。
+
 ### Step 2: 次の一手を決める
 
 サイクルごとに、次の表で決める。上から順に当てはめ、最初に当たった行を使う。
@@ -74,15 +86,31 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle} --json
 |---|---|
 | 未初期化 | `/hikyaku:init` |
 | 進行中のサイクルなし | 選択肢は「新しいサイクルを始める」だけになる |
+| `step where` の `legacy` あり | v3 では進めない。`legacy` の案内（v2 のプラグインで終える）を伝え、スキルは勧めない |
+| `building` かつ `returned` あり | `cycle status` の `suggestion`（差し戻し元を指定した architect） |
+| `step where` に `kind` が `run` / `gate` / `call` の作業単位がある | 途中の手順の再開: 下の表でその作業単位のスキルを起動する |
 | `planning` | `/hikyaku:planner {cycle}` |
 | `architecting` | `/hikyaku:architect {cycle}`。ARCHITECT から最後のビルドまで任せたいなら `/hikyaku:conductor {cycle}` も候補 |
-| `building` かつ `returned` あり | `cycle status` の `suggestion`（差し戻し元を指定した architect） |
 | `building` かつ `resumeAt` が `build-NN/…` | 途中で止まったビルドの再開: `/hikyaku:builder {cycle} {NN}` |
 | `building` かつ `next` の `available` が1件以上 | `/hikyaku:builder {cycle} {NN}`。複数あれば並行して進められる |
 | `building` かつ `inProgress` のビルドのブランチに今居る | そのビルドの再開: `/hikyaku:builder {cycle} {NN}` |
 | `building` かつ `available` が空で `inProgress` あり | 他のセッションが作業中の可能性。スキルは勧めず、そのブランチ名を伝える |
 | `building` かつ `mergePending` のみ | PR のマージ待ち。人間の作業として伝える |
 | `completed` | `/hikyaku:close-cycle {cycle}` |
+
+`step where` の作業単位とスキルの対応（`directive.skill` で引く）:
+
+| `directive.skill` | 起動するスキル |
+|---|---|
+| `planner` | `/hikyaku:planner {cycle}` |
+| `architect` | `/hikyaku:architect {cycle}` |
+| `builder` | `/hikyaku:builder {cycle} {NN}`（`directive.unit` の `build-NN`） |
+| `close-cycle` | `/hikyaku:close-cycle {cycle}` |
+| `create-cycle` | `/hikyaku:planner {cycle}`（サイクルを作ったあとの PLAN） |
+
+`kind` が `stop` の作業単位は、次の一手を決める根拠にしない（この表の以降の行で決める）。止まる理由（記録の欠けなど）は、`directive.message` をそのまま添えて伝える。
+`kind` が `done` の作業単位は終えた手順なので、再開の根拠にしない。作業単位が複数あれば、
+`done` でないものだけを見る。
 
 補足:
 
@@ -108,7 +136,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle} --json
 | 004-export | completed | 2/2 | close-cycle で永続ドキュメントへ昇格する |
 ```
 
-`ビルド` 列は `cycle list` の `progress` をそのまま使う。
+`ビルド` 列は `cycle list` の `progress` をそのまま使う。作業中のサイクルの `次の一手` には、
+`step where` の位置を添える（例: 「build-02 の G8 の承認待ち（6/13）」。`directive.step` / `title` と
+`progress` から書く）。
 
 続けて `AskUserQuestion` で選んでもらう。選択肢はサイクル単位にし、スキルやビルドを直接並べない。
 細かい選択は、選ばれたあとで起動するスキルに任せる。
@@ -122,7 +152,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle} --json
 `{cycle} を進める` の並べ方:
 
 1. このチェックアウトで作業中のサイクル（`config` の `cycle`）を先頭にし、推奨として示す
-2. 再開（`resumeAt` あり・差し戻し）があるサイクルを次に置く
+2. 再開（`step where` の途中の手順・`resumeAt` あり・差し戻し）があるサイクルを次に置く
 3. 残りはサイクル番号の小さい順
 
 選択肢は4つまでなので、`{cycle} を進める` は2つまで。収まらないサイクルは表にだけ載せ、
@@ -135,7 +165,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle} --json
 **`{cycle} を進める`**: Step 2 で決めたスキルを、Skill ツールで引数ごと呼び出す
 （例: skill `hikyaku:builder`、args `003 2`）。
 
-- 再開・差し戻しのビルドは、ビルドを引数で指定する
+- 再開・差し戻しのビルドは、ビルドを引数で指定する。起動したスキルは `step next` で途中の1手から続ける
 - 着手可能なビルドが複数あるときは、ビルドを付けずに `/hikyaku:builder {cycle}` を起動する。
   builder がどのビルドに着手するかを尋ねる。並行して進めたい残りのビルドは、別のセッションで
   `/hikyaku:builder {cycle} {NN}` を実行するよう添える（1ビルド = 1セッションで進めるため）

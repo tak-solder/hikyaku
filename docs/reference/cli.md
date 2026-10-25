@@ -109,9 +109,11 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | `step report <phase> <step> [<cycle>] --result <結果>` | 1手の結果を記録するとき。記録したあと次の1手を返す |
 | `step status <phase> [<cycle>]` | 手順の一覧と、それぞれが完了・スキップ・未完了・対象外のどれかを見たいとき |
 | `step restart <phase> [<cycle>] [--round <回の種類>] --reason <理由>` | 同じ作業単位で手順を最初から回し直すとき（architect の再設計・追加設計、bp-guide の新しい回、内部スキルの呼び直し） |
+| `step where [<cycle>]` | このチェックアウトで、どの作業単位の手順が途中かを知りたいとき（navigator が呼ぶ） |
+| `step hook stop` | Claude Code の Stop フックとして呼ばれる。手で実行するものではない |
 | `step lint` | ステップの定義と指示ファイルの対応を確かめるとき（プラグイン自身の CI 用） |
 
-`step next` は、作業単位のディレクトリの `progress.jsonl` と成果物から現在地を導き、次の1手を返します。返る1手は5種類です。`run` はステップを行うもので、読むべき指示ファイルと報告のコマンドが付きます。`gate` はユーザーに承認を求めるもの、`call` は build-manager などの内部スキルを呼ぶものです。`done` は手順をすべて終えたこと、`stop` は止まる理由を表します。止まるのは、v2 で作成したサイクル、builder で architect への差し戻し中のとき、記録が欠けている（成果物はあるのに一度も記録が無い）とき、それにスキルが定めた条件（init で初期化済みのときなど）です。何度呼んでも、同じ状態なら同じ1手が返ります。いま `step` に移っているのは init（`init`）・create-cycle（`create`）・planner（`plan`）・architect（`architect`）・builder（`build-NN`）・close-cycle（`close`）・bp-guide（`bp-guide`）と、内部スキルの build-manager と retrospective です。navigator と conductor は移していません。
+`step next` は、作業単位のディレクトリの `progress.jsonl` と成果物から現在地を導き、次の1手を返します。返る1手は5種類です。`run` はステップを行うもので、読むべき指示ファイルと報告のコマンドが付きます。`gate` はユーザーに承認を求めるもの、`call` は build-manager などの内部スキルを呼ぶものです。`done` は手順をすべて終えたこと、`stop` は止まる理由を表します。止まるのは、v2 で作成したサイクル、builder で architect への差し戻し中のとき、記録が欠けている（成果物はあるのに一度も記録が無い）とき、それにスキルが定めた条件（init で初期化済みのときなど）です。何度呼んでも、同じ状態なら同じ1手が返ります。いま `step` に移っているのは init（`init`）・create-cycle（`create`）・planner（`plan`）・architect（`architect`）・builder（`build-NN`）・close-cycle（`close`）・bp-guide（`bp-guide`）と、内部スキルの build-manager と retrospective です。navigator と conductor は手順を持たず、`step where` と `conductor parse` で手順の位置を読む側です。
 
 作業単位のディレクトリはフェーズで決まります。PLAN は `planning/`、ARCHITECT は `design/`、ビルドは `build-NN/`、CLOSE と create-cycle はサイクルのディレクトリ自身、init は HIKYAKU_ROOT 自身、bp-guide は `bp-guide/` です。`step` は `.hikyaku.config` から HIKYAKU_ROOT を解決するので、init の雛形を生成する前は使えません。create-cycle も同じで、`cycle new` でサイクルを作るまでは使えません。
 
@@ -122,6 +124,10 @@ build-manager や retrospective のような内部スキルは、`--skill` を�
 `step report` が記録できるのは、現在地のステップと、完了したステップの報告し直しだけです。`step next` が `stop` を返す状態（差し戻し中など）では、前に受け取った報告のコマンドも受け付けません。成果物が要るステップは、成果物が無ければ `done` を受け付けません。`skipped` と `failed` には理由が、ゲートの `rejected` にはユーザーの答えが必須です。builder の `plan` の `done` には再算出した BP（`--bp`）が、PR を作るステップの `done` には PR の URL か番号（`--pr`）が必須です。報告には、その時点のコンテキスト・セッション ID・Hikyaku の版も入ります。
 
 ゲートの承認は、差し戻すか、前のステップを報告し直すまで有効です。承認したあとに成果物を直しても、自動では無効になりません。変更は Git の履歴で追い、承認を取り直すかは変更の中身を見て決めます。取り直すときは、作り直したステップを `done` で報告し直すと、そこから後ろがやり直しになります。
+
+`step where` は、作業ツリーにある `progress.jsonl` を読み、記録のある作業単位ごとに `step next` と同じ1手を返します。フェーズを指定しなくてよいので、どこから再開すればよいかが分からないときの手がかりになります。記録は各フェーズのブランチにコミットされるため、別のブランチで進めた作業単位は見えません。v2 で作成したサイクルでは作業単位を読まず、v2 のまま終える案内を返します。
+
+`step hook stop` は、プラグインが Claude Code の Stop フックとして登録しているコマンドです。スキルの転送ループの途中でセッションが止まろうとしたときに、1回だけ続きを促します。止めるのは、そのセッションが手順を進めていて（`progress.jsonl` にそのセッションの ID がある）、次の1手が `run` か `call` のときだけです。ゲートで承認を待つとき、手順を終えたとき、`stop` が返ったときは止めません。同じターンの2回目も止めないので、ステップの途中でユーザーに尋ねたり、ユーザーが中断を指示したりしたときは、そのまま終えられます。Hikyaku を使っていないリポジトリや、記録を読めないときも何もしません。
 
 ## BP
 
@@ -195,7 +201,7 @@ build-manager や retrospective のような内部スキルは、`--skill` を�
 
 `asks` は、子に許可するツールの一覧と、設定のダイジェスト（profile と `.hikyaku.config` の内容から作る）も返します。監督は起動時に人間と合意したときのダイジェストを、以後の `launch` / `parse` に渡します。設定が変わっていれば両者はエラーで止まります。子が `.hikyaku.config` を書き換えて、合意していない権限や振り分けが効くのを防ぐためです。
 
-`launch` はコマンドを組み立てるだけで、自分では起動しません。起動を監督のセッションの Bash に置くことで、子に権限を渡す操作が人間の許可ルール（`Bash(claude -p:*)`）の下で起きるようにしています。`parse` を CLI に置くのは、監督が子の自由文から問いを読み違えると判断の前提が崩れるためです。規約どおりのブロックが無ければ `violation` を返し、監督は推測で進めません。
+`launch` はコマンドを組み立てるだけで、自分では起動しません。起動を監督のセッションの Bash に置くことで、子に権限を渡す操作が人間の許可ルール（`Bash(claude -p:*)`）の下で起きるようにしています。`parse` を CLI に置くのは、監督が子の自由文から問いを読み違えると判断の前提が崩れるためです。規約どおりのブロックが無ければ `violation` を返し、監督は推測で進めません。`parse` は子の手順の位置も返します。子の `progress.jsonl` の記録をセッション ID で引き、子が最後に進めた作業単位の次の1手を出すので、監督はゲートで読むべき成果物を知り、子のブロックが手順と合っているかを確かめられます。done なのに手順が終わっていない、G8 で止まったのに手順がそのゲートに居ない、といった食い違いは `stepProblems` に入ります。
 
 ## セットアップ
 

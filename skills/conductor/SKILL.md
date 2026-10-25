@@ -25,7 +25,7 @@ PLAN を終えたサイクルを、ARCHITECT から最後のビルドまで進�
 ## 原則
 
 - **状態は保存しない。** 次に何をするかは毎回 `cycle status` / `next` から導く。子の session-id も
-  記録しない。監督のセッションが落ちたら、子を新しく起動し直せばスキルの中断検出で続きから進む
+  記録しない。監督のセッションが落ちたら、子を新しく起動し直せば、子が `step next` で progress.jsonl から続きを導く
 - **子の報告をそのまま信じない。** 「検証の義務」を必ず行う
 - **デフォルトブランチにはマージしない。** サイクルの統合ブランチ（conductor ブランチ）を1本切り、
   各フェーズのブランチはそこから切って PR もそこへ向ける。子の PR を conductor ブランチに取り込むのは
@@ -34,6 +34,8 @@ PLAN を終えたサイクルを、ARCHITECT から最後のビルドまで進�
   `conductor launch` / `parse` に `--expect-digest` で渡す。子が `.hikyaku.config` を書き換えて
   権限や振り分けが変わっていれば、CLI がエラーで止まる。そのときは人間に上げる
 - **子の自由文から問いを推測しない。** 判断の起点は常に `conductor parse` の結果
+- **子の手順の位置は `conductor parse` の `step` で読む。** 子が最後に進めた作業単位の次の1手
+  （`step next` と同じ判定）が入る。progress.jsonl を自分で読んで位置を判断しない
 - **逐次実行。** `next` が複数のビルドを返しても1件ずつ進める
 
 ## 作業ステップ
@@ -178,14 +180,21 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {architect|bui
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor parse {resultFile} {cycle} --expect-digest {digest} --json
 ```
 
-`outcome` で分岐する。
+`outcome` で分岐する。その前に `stepProblems` を見る。
+
+- **`stepProblems` が空でなければ、`outcome` で分岐しない。** 子のブロックと手順の位置が食い違っている
+  （done なのに手順が終わっていない、G8 で止まったのに手順がそのゲートに居ない、など）。violation と
+  同じく、1回目は同じ session-id で再開し、「`step next` で現在地を確かめ、返った1手から続けてください。
+  {stepProblems の内容}」とだけ伝える。2回目も食い違えば、`stepProblems` と `body` を示して人間に上げる
 
 #### gate
 
 `ask.handler` で分岐する。
 
 - **`supervisor`**: 「問いへの答え方」に従って判断する。ただし、そこに書いた「人間に上げる」条件に
-  当たれば `human` と同じに扱う
+  当たれば `human` と同じに扱う。ゲート（`step.kind` が `gate`）なら、承認の観点は `step.read` の指示ファイルに
+  あり、読む成果物は `step.binds`（`step.directory` からの相対パス）。承認は子が `step report` で
+  これらのファイルのハッシュに結びつけて記録するので、回答を渡してから子が成果物を書き換えると取り直しになる
 - **`human`**: 子の問い（`body`）を要約せずに `AskUserQuestion` で人間に示し、回答を得る
 
 回答をスクラッチパッドのファイルに書き、同じ session-id で再開する。
@@ -208,6 +217,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {phase} {cycle
 → 再開した子の結果を、また Step 3 の解析から処理する。
 
 #### done
+
+`stepProblems` が空なら、子の手順は `step` の作業単位で終わっている（`step.kind` が `done`）。
 
 - [ ] 「検証の義務」のうち、そのフェーズの done に当たるものを行う
 - [ ] 問題があれば人間に上げる（自分で直さない）
@@ -276,7 +287,8 @@ git push origin --delete {フェーズのブランチ}
 
 #### blocked
 
-- [ ] `cycle status {cycle} --json` を実行する
+- [ ] `cycle status {cycle} --json` を実行する。`step` があれば、子がどこで止まったか（`step.kind` が `stop` なら
+  `step.message`）も人間に上げるときに添える
 - `returned` があれば（builder からの差し戻し）→ Step 1 へ（architect が差し戻しを扱う）
 - それ以外は、`body` を示して人間に上げる。指示があればそれに従い、無ければ**終了**する
 
@@ -293,7 +305,7 @@ git push origin --delete {フェーズのブランチ}
 予算超過や利用上限への到達などで子が異常終了した。`reason` と `costUsd` を示して人間に上げ、再開するかを尋ねる。
 再開するなら、**同じ session-id で** `--resume` し、「中断したところから続けてください」とだけ伝える。
 子は止まる直前の文脈を持っているので、新しい session で起動し直すより確実に続きから進む。
-`--resume` 自体が失敗したときだけ、新しい session で起動し直す（スキルの中断検出で続きから進む）。
+`--resume` 自体が失敗したときだけ、新しい session で起動し直す（子は `step next` で progress.jsonl から続きを導く）。
 
 ### Step 4: デフォルトブランチへの PR を作って止まる
 

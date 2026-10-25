@@ -56,7 +56,7 @@
 ## 作業時の注意
 
 - Claude Code 用の開発の取り込み先は `main`、Codex 用は `codex-plugin` です。
-- `main` 向け PR で `skills/`, `agents/`, `scripts/`, `.claude-plugin/` を変更したときは、`.claude-plugin/plugin.json` の `version` を更新してください。
+- `main` 向け PR で `skills/`, `agents/`, `scripts/`, `hooks/`, `.claude-plugin/` を変更したときは、`.claude-plugin/plugin.json` の `version` を更新してください。
 - `beta/v<N>`（次のメジャーを積むブランチ）向けの PR では、`version` を `<N>.0.0` に固定し、CHANGELOG は `[<N>.0.0]` の節に追記してください。PR ごとには上げません。
 - `codex-plugin` 向け PR で `skills/`, `agents/`, `scripts/`, `codex/`, `.codex-plugin/`, `.agents/plugins/` を変更したときは、`.codex-plugin/plugin.json` の `version` を更新してください。共通手順・エージェント・CLI の変更も Codex に影響します。
 - バージョンは `MAJOR.MINOR.PATCH` の形式で、変更の内容に応じて適切にインクリメントしてください。スキルのフロントマターに `metadata` は置かず、各プラグインのマニフェストで管理します。CHANGELOG は共通のため、Codex向けの同期時には両ホストのバージョンを揃えます。
@@ -79,6 +79,7 @@
 ├── .codex-plugin/plugin.json  # Codex 用マニフェスト。Codex 用スキルだけを指定
 ├── .agents/plugins/marketplace.json # Codex 用マーケットプレイス定義
 ├── agents/<name>.md           # スキルから委任される各サブエージェント定義
+├── hooks/hooks.json           # Claude Code のフック（Stop: 手順の途中で止まるのを1回だけ引き止める）
 ├── codex/
 │   ├── compatibility.md       # Codex での呼び出しとパスの読み替え
 │   └── skills/<name>/SKILL.md # Codex 専用入口。詳細は skills/ を参照
