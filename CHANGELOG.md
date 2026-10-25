@@ -34,6 +34,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Claude Code 利用者の操作は変わらない。従来の `/hikyaku:...` と `skills/`・`agents/` の手順は維持する
 - Codex 利用者は `codex plugin marketplace add tak-solder/hikyaku@codex-plugin` でマーケットプレイスを追加し、プラグインをインストールする。`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要。Codex でも `$hikyaku:conductor` と `$hikyaku:navigator` を利用できる。ローカルで子に Codex CLI を使う場合は `[conductor] provider = "codex"` を指定する
 
+## [2.12.0]
+
+### Changed
+
+- **builder の PR 作成後の push を1回にまとめた**: 振り返り（旧 Step 9）を PR 作成の前に移して Step 8 とし、`retrospective.md` までコミットしてから push する。PR 作成後の push は `tasklist done` の1回だけになり、ビルドあたりの CI 実行が3回から2回に減る。PR レビュー指摘への対応でも、振り返りの追記を済ませてからまとめて1回 push する
+- **builder の PR を Draft で作り、完了記録の後で Ready にする**: `gh pr create --draft` で作成し、`tasklist done` を push してから `gh pr ready` で Ready にする。レビュアーのアサインは Ready の後に移した。Draft PR に対応していないリポジトリでは通常の PR で作成し、完了時にその旨を伝える。CI 側で Draft をスキップすれば、ビルドあたりの CI 実行は1回になる。`docs/operations/ci.md` に設定例を追加した
+
+### Migration
+
+- 設定変更は不要。ビルドの CI を1回にしたい場合は、[CI での検証](docs/operations/ci.md#hikyaku-の-pr-で-ci-を減らす) に従い、`pull_request` の `types` に `ready_for_review` を足して、ジョブに `if: github.event.pull_request.draft != true` を付ける
+- Ready への切り替えに失敗した PR は Draft のまま残り、conductor の `check-pr` が取り込まない。完了の案内に従って `gh pr ready <PR>` を実行する
+
 ## [2.11.0]
 
 ### Changed
