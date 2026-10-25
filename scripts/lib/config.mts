@@ -131,7 +131,7 @@ export interface ReviewKindSettings {
   providers: ReviewProviderRule[];
   /** 1 = 1回だけ / n = パスするまで最大 n 回 / 0 = 無制限 */
   maxRounds: number;
-  /** 2ラウンド目以降、指摘への対応を確認せずに直すか */
+  /** maxRounds = 0（無制限）の2ラウンド目以降、指摘への対応を確認せずに直すか */
   autoFix: boolean;
   /** [review.<kind>.<provider>] → [review.<provider>] の順に重ねた値 */
   models: Record<ReviewProvider, ReviewModelSettings>;
