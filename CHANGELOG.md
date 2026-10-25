@@ -34,6 +34,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Claude Code 利用者の操作は変わらない。従来の `/hikyaku:...` と `skills/`・`agents/` の手順は維持する
 - Codex 利用者は `codex plugin marketplace add tak-solder/hikyaku@codex-plugin` でマーケットプレイスを追加し、プラグインをインストールする。`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要。Codex でも `$hikyaku:conductor` と `$hikyaku:navigator` を利用できる。ローカルで子に Codex CLI を使う場合は `[conductor] provider = "codex"` を指定する
 
+## [2.11.0]
+
+### Changed
+
+- **builder のレビュー指摘への対応**: `max_rounds = 1` では妥当な指摘を自動修正し、検証後は対応確認・再レビューなしで PR 作成へ進む。`max_rounds` が2以上なら途中の指摘は自動修正し、最終回に未解決の指摘がある場合だけ対応を確認する。同じ指摘の繰り返しによる途中の確認も省く。Claude Code と Codex の両方に適用する
+
+### Migration
+
+- 設定変更は不要。`max_rounds` が1以上の場合は `auto_fix` の値に関わらず妥当な指摘が自動修正される。`auto_fix` は `max_rounds = 0`（無制限）での2回目以降の確認にだけ適用する。無制限の確認・打ち切り方針は従来どおり
+
 ## [2.10.0]
 
 ### Added
