@@ -99,4 +99,4 @@ ADR:
 
 ## 終わり方
 
-PR を作って完了です。次のサイクルは `/hikyaku:create-cycle` から始めます。
+PR を作って完了です。PR は Draft で作られ、`[pr] auto_ready` が true（既定）なら Ready for Review になります（[設定](../configuration/config-file.md#pr)）。次のサイクルは `/hikyaku:create-cycle` から始めます。

@@ -141,7 +141,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify build-{NN} {cycle
 効かなくなることを伝える（どちらもブランチ名から導出しているため）。
 
 出力の `stackedOn` が非 null なら、先行フェーズのブランチの上に積んでいる。PR のマージ先は
-そのブランチになる（Step 8。正は `pr base` で、`stackedOn` は目安）。
+そのブランチになる（Step 9。正は `pr base` で、`stackedOn` は目安）。
 
 ブランチを作成したら早めに push する（ブランチの存在が「着手中」の印になる）。ブランチを
 決めたら、成果物をコミットする直前にもう一度この確認を行う。
@@ -376,7 +376,26 @@ handoff.md の後半は節ごとに昇格先が決まっている（overview・c
 
 → Step 8 へ。
 
-### Step 8: PR 作成と完了記録
+### Step 8: 振り返り
+
+PR を作る前に行う。PR を作った後の push はそのたびに CI を走らせるので、振り返りの成果物も
+PR 作成前のコミットに含める。
+
+- [ ] `retrospective` 設定に従って `/hikyaku:retrospective {cycle} build-{NN}` を呼び出す
+- [ ] retrospective.md ができたらコミットする（push は Step 9 で PR を作る直前にまとめて行う）
+
+→ Step 9 へ。
+
+### Step 9: PR 作成と完了記録
+
+PR を作った後の push は、`tasklist done` の1回だけにする。開いている PR への push はそのたびに
+CI を走らせる。
+
+PR は常に Draft で作る。完了記録がそろうまで、未完成の PR をレビューに出さないため。
+完了時に Ready for Review へ切り替えるかは、Step 0 の `config` 出力の `pr.autoReady`
+（`[pr] auto_ready`、既定 true）で決まる。**`pr.autoReady` が false のときに自分の判断で Ready にしない。**
+conductor の子（非対話規約で起動されたセッション）は `pr.autoReady` に関わらず Ready にしない。
+Ready にするのは、取り込む前の監督の役目。
 
 - [ ] 外部連携が有効なら、PR 本文へ入れる参照行を生成する
 
@@ -397,19 +416,15 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr base build-{NN} {cycle}
 スタックしている場合はスタック元のブランチが返る。デフォルトブランチ宛てに作ると、
 先行ビルドの差分まで含んだ PR になる。
 
+- [ ] ここまでのコミットをすべて push する
 - [ ] PR を作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title build-{NN} {cycle} --build-title "{title}"` で生成）
   - マージ先は上で取得した base
   - 本文の末尾に上の参照行を入れる
+  - `gh pr create --draft` で作る
   - PR 作成前の承認は取らない。PR はレビューのための提案であって不可逆ではなく、
     ユーザーが `/hikyaku:builder` を実行した時点で PR 作成まで依頼されている
-- [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers build-{NN} {cycle} --pr {PR の URL}
-```
-
-  失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
-
+  - リポジトリが Draft PR に対応しておらず作成に失敗したら、`--draft` を外して作り直す。
+    下の「Ready にする」は飛ばし、Draft にできなかったことを完了の案内でユーザーに伝える
 - [ ] tasklist.md の PR 列を更新し、同じブランチへコミット & push する
 
 ```bash
@@ -420,6 +435,28 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist done {cycle} \
 **この変更は必ずこのビルドの PR に同梱する。** PR 列が非空であることが「マージ済み = 完了」を
 意味するので、先にデフォルトブランチへ入れると未マージのビルドを完了と誤判定する。
 
+**これ以降、このビルドのブランチに push しない。** 追加の push はそのたびに CI を走らせる。
+
+- [ ] `pr.autoReady` が true なら PR を Ready for Review にする（conductor の子なら飛ばす）
+
+```bash
+gh pr ready {PR の URL}
+```
+
+  true なら**省略しない。** Draft のままだとレビューが始まらない。失敗したら、Draft のままで
+  あることと再実行のコマンドを完了の案内でユーザーに伝える
+  - false なら Draft のまま残し、完了の案内で「PR は Draft のまま。確認後に `gh pr ready {PR の URL}`
+    で Ready にする」と伝える
+
+- [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers build-{NN} {cycle} --pr {PR の URL}
+```
+
+  Ready にする場合は Ready にした後で行う（完了記録の前に依頼すると、レビュアーが未完成の
+  PR を見に来る）。失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
+
 - [ ] 外部投影が有効な場合は同期を試みる（失敗してもワークフローは止めない）
 
 ```bash
@@ -429,12 +466,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external sync {cycle}
 gh CLI が無い環境では投影内容だけが返る（`reason: "gh-not-found"`）。その場合は
 GitHub MCP ツールで適用し、`cycle link` / `tasklist link` で参照を記録する。
 
-→ Step 9 へ。
-
-### Step 9: 振り返り
-
-- [ ] `retrospective` 設定に従って `/hikyaku:retrospective {cycle} build-{NN}` を呼び出す
-- [ ] 完了後、次の状況を案内する
+- [ ] 次の状況を案内する
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle}
@@ -511,5 +543,6 @@ handoff.md はビルドの完了の印として読まれ、`tasklist done` は�
   - `cycles/{cycle}/build-{NN}/` — plan.md, issue.md, test-spec.md, handoff.md
   - `cycles/{cycle}/design/design-delta.md` — 設計レベルの変更があった場合
   - 永続ドキュメントは更新しない。昇格が必要な内容は handoff.md に記録する
-- [ ] Push する
 - [ ] `/hikyaku:retrospective {cycle} build-{NN}` を呼び出す（既に retrospective.md があれば追記モードで動作する）
+- [ ] 修正・ドキュメント・retrospective.md をコミットし、まとめて1回だけ push する
+  - push のたびに CI が走るので、振り返りの後に分けて push しない
