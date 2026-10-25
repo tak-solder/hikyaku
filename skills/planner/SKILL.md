@@ -206,8 +206,19 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref plan {cycle}
 gh CLI が無い環境では投影内容だけが返る（`reason: "gh-not-found"`）。その場合は
 GitHub MCP ツールで適用し、`cycle link {cycle} --external {URL}` で記録する。
 
-- [ ] PR を作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title plan {cycle}` で生成）
+- [ ] PR を Draft で作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title plan {cycle}` で生成）
   - `external ref` が返した行（`Refs #12` など）を本文の末尾に入れる。空なら入れない
+  - `gh pr create --draft` で Draft として作る。リポジトリが Draft PR に対応しておらず作成に失敗したら、
+    `--draft` を外して作り直し、下の「Ready にする」は飛ばす。Draft にできなかったことを完了の案内で伝える
+- [ ] `config` 出力の `pr.autoReady`（`[pr] auto_ready`、既定 true）が true なら、PR を Ready for Review にする
+
+```bash
+gh pr ready {PR の URL}
+```
+
+  - false なら Draft のまま残し、完了の案内で「PR は Draft のまま。確認後に `gh pr ready {PR の URL}` で
+    Ready にする」と伝える。**false のときに自分の判断で Ready にしない**
+  - 失敗したら、Draft のままであることと再実行のコマンドを完了の案内でユーザーに伝える
 - [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
 
 ```bash
