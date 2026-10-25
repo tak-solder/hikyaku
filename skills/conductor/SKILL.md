@@ -216,6 +216,15 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {phase} {cycle
 
 - [ ] 「検証の義務」のうち、そのフェーズの done に当たるものを行う
 - [ ] 問題があれば人間に上げる（自分で直さない）
+- [ ] 子が作った PR が Draft なら、監督の権限で Ready for Review にする（子は非対話規約で Ready に
+  することを禁じられていて、builder の PR は Draft のまま届く。`[pr] auto_ready` は子にも監督にも効かない）
+
+```bash
+gh pr view {PR の番号か URL} --json isDraft --jq .isDraft
+gh pr ready {PR の番号か URL}   # 上が true のときだけ
+```
+
+  - `gh pr ready` が失敗したら取り込まず、エラーの内容を人間に示して上げる
 - [ ] 子が PR を作っていれば（architect / builder）、取り込む前にその PR を検証する。レビューや CI を待つので、
   **Bash の `run_in_background` で実行する**（`timeout` は最大値にする）
 
@@ -229,8 +238,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor check-pr {PR の番�
     「フェーズの PR に CI が走っていなかった」と書く
   - **終了コード 2**（条件を満たさない、または待機の上限超過）なら取り込まない。`problems` を人間に示して
     上げる。未解決のレビュースレッド（`threads.unresolved`）は指摘の場所・投稿者・URL も示す。
-    **監督は指摘に自分で対応せず、子を再開して直させることもしない。** `gh pr ready` で Draft を外したり、
-    依頼を取り下げたりもしない。人間が対応したら `check-pr` をやり直す
+    **監督は指摘に自分で対応せず、子を再開して直させることもしない。** レビューの依頼を取り下げたりもしない。
+    人間が対応したら `check-pr` をやり直す。Draft は上の手順で Ready にしてから検証するので、ここで
+    Draft と判定されたら、検証のあいだに誰かが Draft に戻したということ。Ready にし直さずに人間に上げる
   - **終了コード 1**（状態を判定できなかった）も取り込まない。CI なし・依頼なし・Ready とみなして合格
     させない。エラーの内容を人間に示して上げる
   - 結果の `headSha` は、検証した PR の head のコミット。取り込みにはブランチ名ではなくこれを使う

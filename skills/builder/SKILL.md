@@ -394,6 +394,8 @@ CI を走らせる。
 PR は常に Draft で作る。完了記録がそろうまで、未完成の PR をレビューに出さないため。
 完了時に Ready for Review へ切り替えるかは、Step 0 の `config` 出力の `pr.autoReady`
 （`[pr] auto_ready`、既定 true）で決まる。**`pr.autoReady` が false のときに自分の判断で Ready にしない。**
+conductor の子（非対話規約で起動されたセッション）は `pr.autoReady` に関わらず Ready にしない。
+Ready にするのは、取り込む前の監督の役目。
 
 - [ ] 外部連携が有効なら、PR 本文へ入れる参照行を生成する
 
@@ -435,15 +437,14 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist done {cycle} \
 
 **これ以降、このビルドのブランチに push しない。** 追加の push はそのたびに CI を走らせる。
 
-- [ ] `pr.autoReady` が true なら PR を Ready for Review にする
+- [ ] `pr.autoReady` が true なら PR を Ready for Review にする（conductor の子なら飛ばす）
 
 ```bash
 gh pr ready {PR の URL}
 ```
 
-  true なら**省略しない。** Draft のままだと conductor の `check-pr` が取り込まず、
-  レビューも始まらない。失敗したら、Draft のままであることと再実行のコマンドを完了の案内で
-  ユーザーに伝える
+  true なら**省略しない。** Draft のままだとレビューが始まらない。失敗したら、Draft のままで
+  あることと再実行のコマンドを完了の案内でユーザーに伝える
   - false なら Draft のまま残し、完了の案内で「PR は Draft のまま。確認後に `gh pr ready {PR の URL}`
     で Ready にする」と伝える
 

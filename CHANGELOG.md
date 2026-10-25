@@ -12,11 +12,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - **builder の PR 作成後の push を1回にまとめた**: 振り返り（旧 Step 9）を PR 作成の前に移して Step 8 とし、`retrospective.md` までコミットしてから push する。PR 作成後の push は `tasklist done` の1回だけになり、ビルドあたりの CI 実行が3回から2回に減る。PR レビュー指摘への対応でも、振り返りの追記を済ませてからまとめて1回 push する
 - **builder の PR を Draft で作り、完了記録の後で Ready にする**: ビルドの PR は常に `gh pr create --draft` で作成し、`tasklist done` を push してから `gh pr ready` で Ready for Review に切り替える。切り替えるかは新しい設定キー `[pr] auto_ready`（既定 true）で決まり、false なら Draft のまま残す。レビュアーのアサインは Ready の後に移した。Draft PR に対応していないリポジトリでは通常の PR で作成し、完了時にその旨を伝える
+- **conductor が子の Draft PR を Ready にする**: 子セッションは非対話規約で `gh pr ready` を禁じられ、builder の PR は Draft のまま監督に渡る。監督は `check-pr` の前に `gh pr ready` で Ready for Review にする。`check-pr` で Draft と判定された場合（確認の途中で Draft に戻された場合）は、従来どおり Ready にし直さず人間に上げる
 
 ### Migration
 
-- 設定変更は不要。既定ではビルドの完了時に Ready for Review になる。自分で確認してから Ready にしたい場合は `[pr] auto_ready = false` を設定する（conductor は Draft の PR を取り込まないため、Ready にするまで止まる）。Draft の PR で CI を走らせるかどうかは、各リポジトリの CI の設定のまま変わらない
-- Ready への切り替えに失敗した PR は Draft のまま残り、conductor の `check-pr` が取り込まない。完了の案内に従って `gh pr ready <PR>` を実行する
+- 設定変更は不要。既定ではビルドの完了時に Ready for Review になる。自分で確認してから Ready にしたい場合は `[pr] auto_ready = false` を設定する。conductor で進めるサイクルではこの設定は効かず、監督が取り込む前に Ready にする。Draft の PR で CI を走らせるかどうかは、各リポジトリの CI の設定のまま変わらない
+- builder を単独で実行して Ready への切り替えに失敗した PR は Draft のまま残る。完了の案内に従って `gh pr ready <PR>` を実行する
 
 ## [2.11.0]
 

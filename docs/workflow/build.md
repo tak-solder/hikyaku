@@ -108,7 +108,7 @@ Claude でセキュリティレビューを行うときは `/security-review` �
 
 PR を作った後の push は、完了記録の1回だけです。開いている PR への push はそのたびに CI を走らせるためです。
 
-PR は Draft で作られ、既定では完了記録を push してから Ready for Review に切り替わります。`[pr] auto_ready = false` にすると Draft のまま残るので、内容を確認してから自分で `gh pr ready <PR>` を実行してください。conductor は Draft の PR を取り込まないため、conductor で進めるサイクルでは Ready にするまで止まります。リポジトリが Draft PR に対応していない場合は通常の PR で作られ、そのことが完了時に伝えられます。Ready にする操作に失敗したときも PR は Draft のまま残るので、表示されたコマンドで Ready にしてください。
+PR は Draft で作られ、既定では完了記録を push してから Ready for Review に切り替わります。`[pr] auto_ready = false` にすると Draft のまま残るので、内容を確認してから自分で `gh pr ready <PR>` を実行してください。conductor の子として動く builder は、この設定に関わらず PR を Ready にしません。監督が取り込む前に Ready にします。リポジトリが Draft PR に対応していない場合は通常の PR で作られ、そのことが完了時に伝えられます。Ready にする操作に失敗したときも PR は Draft のまま残るので、表示されたコマンドで Ready にしてください。
 
 **この更新は必ずこのビルドの PR に同梱してください。** 先にデフォルトブランチへ入れると、実装が入っていないツリーで `PR` 列だけが埋まった状態になります。`PR` 列が非空であること自体が「その実装がこのツリーに在る」ことを意味するのは、この同梱が守られているからです。
 
