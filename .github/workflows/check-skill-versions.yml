@@ -45,7 +45,7 @@ jobs:
             exit 0
           fi
 
-          # Check if current/skills/, current/agents/, current/scripts/, or .claude-plugin/ has changes compared to base.
+          # Check if current/skills/, current/agents/, current/scripts/, current/hooks/, or .claude-plugin/ has changes compared to base.
           # For agents/: treat one-sided absence (initial add or full directory removal) as "changed",
           # since `diff -rq` errors out (and `2>/dev/null` discards it) when one side is missing.
           if [ -d current/agents ] && [ -d base/agents ]; then
@@ -64,8 +64,15 @@ jobs:
           else
             scripts_changed=""
           fi
-          if [ -z "$changed" ] && [ -z "$agents_changed" ] && [ -z "$plugin_changed" ] && [ -z "$scripts_changed" ]; then
-            echo "No changes in skills/, agents/, scripts/, or .claude-plugin/ — skipping version bump check."
+          if [ -d current/hooks ] && [ -d base/hooks ]; then
+            hooks_changed=$(diff -rq current/hooks/ base/hooks/ 2>/dev/null || true)
+          elif [ -d current/hooks ] || [ -d base/hooks ]; then
+            hooks_changed="hooks/ directory presence changed between base and current"
+          else
+            hooks_changed=""
+          fi
+          if [ -z "$changed" ] && [ -z "$agents_changed" ] && [ -z "$plugin_changed" ] && [ -z "$scripts_changed" ] && [ -z "$hooks_changed" ]; then
+            echo "No changes in skills/, agents/, scripts/, hooks/, or .claude-plugin/ — skipping version bump check."
             exit 0
           fi
 
@@ -85,6 +92,10 @@ jobs:
             echo "Changed files in scripts/:"
             echo "$scripts_changed"
           fi
+          if [ -n "$hooks_changed" ]; then
+            echo "Changed files in hooks/:"
+            echo "$hooks_changed"
+          fi
 
           # Extract current version from plugin.json (single source of truth)
           current=$(jq -r '.version' current/.claude-plugin/plugin.json)
@@ -94,7 +105,7 @@ jobs:
           echo "Current version: $current"
 
           if [ "$current" = "$base" ]; then
-            echo "::error::skills/, agents/, scripts/, or .claude-plugin/ has changes but version was not bumped. Please update the version in .claude-plugin/plugin.json."
+            echo "::error::skills/, agents/, scripts/, hooks/, or .claude-plugin/ has changes but version was not bumped. Please update the version in .claude-plugin/plugin.json."
             exit 1
           fi
 
