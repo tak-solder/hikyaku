@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   open-pr:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     # PR の作成は GitHub App のトークンで行うため、GITHUB_TOKEN の権限は使わない
     permissions: {}
     steps:
