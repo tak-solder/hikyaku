@@ -27,6 +27,13 @@ test("parseRule: paths をブロックのリスト・インラインのリスト
   assert.deepEqual(parseRule('---\npaths: ["a/**", "b/*.{ts,tsx}"]\n---\n本文').paths, ["a/**", "b/*.{ts,tsx}"]);
   assert.deepEqual(parseRule("---\npaths: a/**, b/**\n---\n本文").paths, ["a/**", "b/**"]);
   assert.equal(parseRule("# frontmatter なし\n").paths, undefined);
+  // YAML のコメントは glob に含めない。引用符の中と、空白を挟まない # は値の一部
+  assert.deepEqual(
+    parseRule('---\npaths: # 対象\n  - "src/**" # source files\n  # テストも\n\n  - tests/** #x\n  - "docs/#a/**"\n  - lib/a#b.ts\n---\n本文').paths,
+    ["src/**", "tests/**", "docs/#a/**", "lib/a#b.ts"],
+  );
+  assert.deepEqual(parseRule('---\npaths: ["a/**", "b/**"] # 2つ\n---\n本文').paths, ["a/**", "b/**"]);
+  assert.deepEqual(parseRule("---\npaths: a/**, b/** # 2つ\n---\n本文").paths, ["a/**", "b/**"]);
   assert.equal(parseRule("---\npaths: a/**\n---\n本文").body, "本文");
 });
 
@@ -52,7 +59,7 @@ test("measureRules: 広さ × 大きさで測り、生成物を分母から除�
 test("rules check: rule を測り、一致しない rule があれば終了コード 2", (t) => {
   const directory = workspace(t, true);
   write(directory, "src/a.ts", "export {};\n");
-  write(directory, ".claude/rules/src.md", '---\npaths:\n  - "src/**"\n---\n\n# src\n\n- 注意\n');
+  write(directory, ".claude/rules/src.md", '---\npaths:\n  - "src/**" # source files\n---\n\n# src\n\n- 注意\n');
   spawnSync("git", ["add", "-A"], { cwd: directory, env: testEnvironment() });
   const output = JSON.parse(succeeds(directory, "rules", "check", "--json")) as { rules: { path: string; matched: number; stale: boolean }[] };
   assert.equal(output.rules[0]?.path, ".claude/rules/src.md");

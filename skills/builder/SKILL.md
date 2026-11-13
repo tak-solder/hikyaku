@@ -114,17 +114,18 @@ Step 2 でブランチを決めたあと、もう一度 `next` を実行して�
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context build-{NN} {cycle}
 ```
 
-返るのは2層で、永続ドキュメントは含まれない。
+返るのは次の層。`overview` / `decisions` / `constraints` は含まれない。
 
 | 層 | 何を表すか |
 |---|---|
+| 永続（`conventions` だけ） | リポジトリ全体に効く取り決め。AGENTS.md / CLAUDE.md 以外のファイルに登録されているときだけ返る（自動では読み込まれないため）。返ったら全体を読む |
 | サイクル | このサイクルが作ろうとしている差分 |
 | ビルド | 同一サイクル内の先行ビルドの実績（依存ビルドの `handoff.md`） |
 
 依存ビルドの `handoff.md` は `context` が tasklist.md の依存グラフから辿る。
 自分で辿らない。直接依存する分だけが返るので、全ビルド分を読むことにはならない。
 
-永続ドキュメント（実装済みの現実）は、`issue.md` の「参照する設計ドキュメント」が指す節だけを読む。
+`overview` / `decisions` / `constraints`（実装済みの現実）は、`issue.md` の「参照する設計ドキュメント」が指す節だけを読む。
 どの節がこのビルドに効くかは、全文を読んで設計した architect が選んでいる。全文を読み直さない。
 選び漏れは plan のレビューが全文と突き合わせて拾う。実装中に指されていない制約や判断に
 関わりそうだと感じたら、`document-guide.md`（または AGENTS.md の索引）から所在を引いて、
@@ -132,6 +133,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context build-{NN} {cycle}
 
 - [ ] 今回のビルドに関係するものを読む
   - `issue.md`（対象ビルドの定義）と `design-delta.md` は必ず読む
+  - `conventions` が返っていれば必ず読む。コードを書くたびに効く取り決めで、節を選んで読むものではない
   - `issue.md` が指す永続ドキュメントの節を読む。`decisions` は採用理由とトレードオフを把握し、
     実装中に判断を覆さない
   - 覆す必要が生じた場合は、覆した ADR・理由・影響範囲を `handoff.md` の「永続化すること」に記録する

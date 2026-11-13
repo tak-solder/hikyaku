@@ -114,6 +114,27 @@ export function matchesRule(globs: string[], path: string): boolean {
   return globs.flatMap(expandBraces).some((glob) => ruleGlobToRegExp(glob).test(path));
 }
 
+/**
+ * YAML のコメントを除く。引用符の外で、行頭か空白の直後にある `#` から後ろがコメント
+ * （`src/#x` のように空白を挟まない `#` は値の一部）
+ */
+export function stripYamlComment(value: string): string {
+  let quote: string | undefined;
+  for (let i = 0; i < value.length; i += 1) {
+    const ch = value[i] as string;
+    if (quote !== undefined) {
+      if (ch === quote) quote = undefined;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (ch === "#" && (i === 0 || /\s/.test(value[i - 1] as string))) return value.slice(0, i).trimEnd();
+  }
+  return value;
+}
+
 function unquote(value: string): string {
   const trimmed = value.trim();
   return /^(["']).*\1$/.test(trimmed) ? trimmed.slice(1, -1) : trimmed;
@@ -150,16 +171,19 @@ export function parseRule(source: string): { paths: string[] | undefined; body: 
   const at = lines.findIndex((line) => /^paths\s*:/.test(line));
   if (at === -1) return { paths: undefined, body };
 
-  const inline = (lines[at] as string).replace(/^paths\s*:/, "").trim();
+  const inline = stripYamlComment((lines[at] as string).replace(/^paths\s*:/, "")).trim();
   let paths: string[];
   if (inline !== "") {
     paths = splitList(inline.replace(/^\[/, "").replace(/\]$/, ""));
   } else {
     paths = [];
     for (const line of lines.slice(at + 1)) {
+      // 空行とコメントだけの行は、リストの途中にあっても読み飛ばす
+      if (stripYamlComment(line).trim() === "") continue;
       const item = /^\s*-\s+(.*)$/.exec(line);
       if (!item) break;
-      paths.push(unquote(item[1] as string));
+      const value = unquote(stripYamlComment(item[1] as string));
+      if (value !== "") paths.push(value);
     }
   }
   return { paths: paths.length === 0 ? undefined : paths, body };

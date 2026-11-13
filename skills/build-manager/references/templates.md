@@ -113,7 +113,8 @@ issue.md の本文は build-manager（LLM）が書きます。tasklist.md の行
 ```
 
 「参照する設計ドキュメント」は、builder が読む永続ドキュメントの範囲を決める。builder は
-`overview` / `decisions` / `constraints` の全文を読まず、ここが指す節だけを読む。本文は写さず、
+`overview` / `decisions` / `constraints` の全文を読まず、ここが指す節だけを読む
+（`conventions` は、AGENTS.md に無ければ `hikyaku context` が builder に渡すので、ここで指さなくても読まれる）。本文は写さず、
 論理名と節（ADR はファイル名）で指し、このビルドに関係する理由を一言添える。写すと、設計から
 実装までの間に永続ドキュメントが変わったとき、古い写しが残る。該当する節が無ければ
 「永続ドキュメント: なし」と書く（選んだ結果として無いことを残す）。

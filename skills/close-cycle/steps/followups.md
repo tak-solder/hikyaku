@@ -13,6 +13,15 @@ close の PR に混ぜると採否を分けて判断できなくなるものを�
 close の PR は作成済みで、サイクルは closed になっている。ここで失敗しても close には影響しない。
 失敗したら、内容を完了の案内と一緒にユーザーに伝えて `done` を報告する。
 
+**どちらの作業も別のブランチで行う。始める前に close のブランチの名前を控え、作業を終えたら
+（PR を作った場合も、作らずに終えた場合も、失敗した場合も）必ず close のブランチへ戻る。**
+このステップの報告は close のブランチで行う。CLOSE の進捗（`cycles/{cycle}/progress.jsonl`）は
+close のブランチにしか無いので、別のブランチに居るまま報告すると受け付けられない。
+
+```bash
+git branch --show-current
+```
+
 ## 見積もりのガイドの見直し（`guideReview` が true のとき）
 
 - [ ] 未マージの token-guide の PR が無いか確かめる（token-guide のブランチ名は固定なので、
@@ -33,6 +42,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step restart token-guide --roun
   - `auto` の回では、token-guide は承認のゲートを置かない。変更案の根拠（どのビルドがどちらへ
     外れたか、どの成分を直すか）を PR の本文に載せ、採否はマージで決める
   - token-guide が「補正するほどの偏りは無い」と判断して PR を作らずに終えたら、その旨を完了の案内で伝える
+- [ ] token-guide が終わったら（PR を作った場合も、作らずに終えた場合も）、close のブランチへ戻る
+
+```bash
+git switch {close のブランチ}
+```
 
 ## フックの提案（`hookCandidates` が true で、G10 で採ると決まったとき）
 
@@ -60,5 +74,11 @@ G10 でフックにしないと決まっていれば、何もしない。
 - [ ] close のブランチに戻る
 
 ## 報告
+
+- [ ] close のブランチに居ることを確かめる。違っていれば戻る
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify close {cycle}
+```
 
 - [ ] `done` を報告し、close のブランチで `cycles/{cycle}/progress.jsonl` をコミット & push する

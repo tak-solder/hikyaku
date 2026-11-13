@@ -96,7 +96,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - init: `bp-guide/` を生成しなくなった。生成する `.hikyaku.config` の雛形から `bp_max` を外し、`[context]` の雛形を加えた
 - validate: `bp-guide/` の検査を、`token-guide/guide.md` の版の宣言の検査に置き換えた
 - **永続ドキュメントの論理名を5つに絞った**: `overview` / `decisions` / `constraints` / `conventions`（必須）と `glossary`（任意）
-- **BUILD は永続ドキュメントを `issue.md` が指す節だけ読む**: `hikyaku context build-NN` は永続ドキュメントを候補に出さない。architect（build-manager）が `issue.md` の「参照する設計ドキュメント」に、そのビルドに効く節へのポインタと理由を書く。ビルドを分割したときはポインタを引き継ぐ。選び漏れは、plan のレビューで doc-reviewer が `overview` / `decisions` / `constraints` の全文と突き合わせて拾う
+- **BUILD は `overview` / `decisions` / `constraints` を `issue.md` が指す節だけ読む**: `hikyaku context build-NN` はこの3つを候補に出さない。`conventions` は、AGENTS.md / CLAUDE.md 以外のファイルに登録されているときだけ候補に出す（自動では読み込まれないため）。architect（build-manager）が `issue.md` の「参照する設計ドキュメント」に、そのビルドに効く節へのポインタと理由を書く。ビルドを分割したときはポインタを引き継ぐ。選び漏れは、plan のレビューで doc-reviewer が `overview` / `decisions` / `constraints` の全文と突き合わせて拾う
 - builder: 機械で防げる知見（テスト・共通ヘルパー・設定・その場のコメント）はそのビルドの実装に含め、パス指定の rule もそのビルドの PR で書く。後続のビルドに間に合わせるため
 - **handoff.md を3節にした**: 「後続ビルドが前提にすること」「残したこと」「永続化すること」。実装内容の要約・公開インターフェース・環境変更の節は無くした（PR 本文・コード・diff が正）。昇格素材の4節は「永続化すること」にまとめ、宛先・重要度・文面を1件1行で書く
 - **retrospective.md の形式を変えた**: 改善提案（R-N）の6項目とリポジトリ固有の学び（L-N）を、handoff と同じ行の形の「永続化すること」に置き換えた。読み込まれた記述のうち役に立たなかったものを、理由（古い・自明・無関係）を付けて「役に立たなかった記述」に書く

@@ -90,3 +90,29 @@ test("promotions: handoff・振り返り・design-delta から集め、読めな
   assert.match(text, /constraints（未作成）/);
   assert.match(text, /読めなかった行/);
 });
+
+test("context build-NN: overview などは出さず、自動で読み込まれない conventions だけを出す", (t) => {
+  const directory = workspace(t, true);
+  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--peak", "350k");
+  write(directory, `${CYCLE}/build-01/issue.md`);
+  write(directory, "docs/overview.md");
+  write(directory, "docs/conventions.md");
+  write(directory, "AGENTS.md");
+  const guide = (conventions: string): string =>
+    [
+      "| 論理名 | 管理 | パス | 概要 |", "| --- | --- | --- | --- |",
+      "| overview | repo | `docs/overview.md` | 概要 |",
+      "| decisions | 未作成 | — | ADR |",
+      "| constraints | 未作成 | — | 制約 |",
+      `| conventions | repo | \`${conventions}\` | 規約 |`, "",
+    ].join("\n");
+  const docs = (): string[] =>
+    (JSON.parse(succeeds(directory, "context", "build-01", "001", "--json")) as { suggestions: { ref: string; origin: string }[]; missingDocs: string[] })
+      .suggestions.filter((s) => s.origin === "doc").map((s) => s.ref);
+
+  write(directory, "docs/hikyaku/document-guide.md", guide("docs/conventions.md"));
+  assert.deepEqual(docs(), ["conventions"], "AGENTS.md に無い規約は、自動では読み込まれないので渡す");
+
+  write(directory, "docs/hikyaku/document-guide.md", guide("AGENTS.md"));
+  assert.deepEqual(docs(), [], "AGENTS.md の規約はホストが読み込むので出さない");
+});

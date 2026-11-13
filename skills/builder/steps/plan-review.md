@@ -3,7 +3,8 @@
 `doc-reviewer` で plan.md をレビューする（`--context plan`）。起動方法は SKILL.md の「doc-reviewer の起動」。
 
 - [ ] 渡す情報: `plan.md`, `issue.md`, `design-delta.md`, 依存ビルドの `handoff.md`,
-  永続ドキュメントの `overview` / `decisions` / `constraints` のパス（`docs list` で引く。全文を読ませる）,
+  永続ドキュメントの `overview` / `decisions` / `constraints` / `conventions` のパス（`docs list` で引く。全文を読ませる。
+  `conventions` は AGENTS.md 以外のファイルに登録されていても渡す）,
   見積もりに使ったガイド（`tokens guide {cycle}` が示すパス）, `config --json` の `peakBands`
 - [ ] 予測ピークの成分もレビュー対象である旨をプロンプトに明記する（`context: plan` の観点に含まれる）。
   見るのは、列挙したファイルとクラス設計が合っているか、未知の領域の取りこぼしが無いか

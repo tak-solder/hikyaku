@@ -28,7 +28,7 @@
 | 一部のファイル群を触るときだけ効く | パス指定の rule（`.claude/rules/`） | 一致するファイルを読み書きしたとき | builder（見つけたビルドの PR） |
 | 決まった手順を踏む作業 | スキル（`.claude/skills/`）。既存の手順書があればそこ | 説明文は常時、本文は起動したとき | close-cycle |
 | Hikyaku の進め方への、このリポジトリ固有の指示 | `{HIKYAKU_ROOT}/instructions.md` | Hikyaku の各フェーズ | close-cycle |
-| リポジトリのどの領域でも、知らないと一貫性を壊す取り決め | `conventions` | 常時 | close-cycle |
+| リポジトリのどの領域でも、知らないと一貫性を壊す取り決め | `conventions` | 常時（AGENTS.md に無ければ、各フェーズが読む） | close-cycle |
 | 構造・設計判断・設計を縛る条件 | `overview` / `decisions` / `constraints` | architect が読み、ビルドには必要な節だけが渡る | close-cycle（ADR の追記は architect） |
 | エージェントの操作そのものを止める必要がある | フック（`.claude/settings.json`） | 読まれない。操作のたびに実行される | close-cycle が別の PR にする |
 

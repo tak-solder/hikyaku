@@ -80,7 +80,7 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 
 `context` はフェーズ→論理名の対応の唯一の正です。各 SKILL.md に「何を読むか」を書くと4箇所に同じ表が載って必ず食い違うため、ここに集約しています。返すのは候補と理由までで、絞り込みはしません。どれが今回のスコープに関係するかは概要欄を読んで判断することで、それはスキル（LLM）の仕事です。
 
-`build-NN` では永続ドキュメントを候補に出しません。そのビルドに効く節は、全文を読んで設計した architect が `issue.md` の「参照する設計ドキュメント」で指すためです。`tasklist.md` の依存グラフから先行ビルドの `handoff.md` は辿ります（手で辿ると漏れるため）。
+`build-NN` では `overview` / `decisions` / `constraints` を候補に出しません。そのビルドに効く節は、全文を読んで設計した architect が `issue.md` の「参照する設計ドキュメント」で指すためです。`conventions` は、AGENTS.md や CLAUDE.md 以外のファイルに登録されているときだけ候補に出します。自動では読み込まれないためです。`tasklist.md` の依存グラフから先行ビルドの `handoff.md` は辿ります（手で辿ると漏れるため）。
 
 | コマンド | いつ使うか |
 |---|---|

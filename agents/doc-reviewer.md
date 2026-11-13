@@ -51,11 +51,12 @@ tasklist.md の依存グラフ・buildID の整合性はスクリプトが検証
 ### context: plan の入力
 - `cycles/{cycle}/build-{NN}/plan.md`（レビュー対象。「予測ピーク」セクションを含む）
 - 参照: `cycles/{cycle}/build-{NN}/issue.md`, `cycles/{cycle}/design/design-delta.md`,
-  永続ドキュメントの `overview` / `decisions` / `constraints`（**全文**。所在は `document-guide.md` が指す）,
+  永続ドキュメントの `overview` / `decisions` / `constraints` / `conventions`（**全文**。所在は `document-guide.md` が指す。
+  `conventions` は AGENTS.md 以外のファイルに登録されていることがあり、その場合は自動では読み込まれない）,
   依存ビルドの `cycles/{cycle}/build-{MM}/handoff.md`,
   見積もりのガイド（委任元が `hikyaku tokens guide` の示すパスを渡す）と、予測ピークの判定の帯（`peakBands`。委任元プロンプトで渡される）
 
-builder は永続ドキュメントを、issue.md の「参照する設計ドキュメント」が指す節しか読んでいない。
+builder は `overview` / `decisions` / `constraints` を、issue.md の「参照する設計ドキュメント」が指す節しか読んでいない。
 どの節を渡すかは architect が選んだもので、選び漏れや、選んだあとに他サイクルが足した記述が
 ありうる。あなたは全文を読み、plan.md が指されていない制約・判断に反していないかを確かめる。
 この突き合わせができるのは、全文を読むあなただけ。
