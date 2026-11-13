@@ -124,3 +124,21 @@ test("CLI: validate は許されていない安全でない分割と、解消す
   assert.equal(missing.status, 2);
   assert.match(missing.stderr, /build-07 は tasklist.md にありません/);
 });
+
+test("設定: [context] の目安は整数か、k / m の単位を付けた文字列で書ける", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[context]\napproval = "250k"\nimplement = 320000\nreview = "0.4m"\n');
+  const config = JSON.parse(succeeds(directory, "config", "--json"));
+  assert.deepEqual(config.context, { approval: 250_000, implement: 320_000, review: 400_000 });
+
+  for (const value of ['"250"', '"250x"', "0", '"0k"', '"1.5"', "-1"]) {
+    write(directory, ".hikyaku.config", `hikyaku_root = "docs/hikyaku"\n[context]\napproval = ${value}\n`);
+    const result = cli(directory, "config", "--json");
+    if (value === '"250"') {
+      assert.equal(result.status, 0, "単位の無い文字列は整数と同じ");
+      continue;
+    }
+    assert.equal(result.status, 1, value);
+    assert.match(result.stderr, /\[context\]\.approval はトークン数で指定してください/);
+  }
+});

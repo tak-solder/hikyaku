@@ -362,6 +362,11 @@ test("CLI: bp history はピークを並べ、--group-by でモデルごとに�
   write(directory, `${cycleDirectory}/build-01/retrospective.md`, retrospectiveWithSession("312,400", "claude-opus-5-5", "2.9.0"));
   write(directory, `${cycleDirectory}/build-02/retrospective.md`, retrospectiveWithSession("150,000", "claude-sonnet-5-5", "2.9.0"));
   write(directory, `${cycleDirectory}/build-03/retrospective.md`, "# 振り返り\n\n## BP見積もりの振り返り\n\n| 段階 | BP |\n|---|---|\n| **実績** | 3BP |\n");
+  write(directory, `${cycleDirectory}/build-01/progress.jsonl`, jsonl([
+    { at: "2026-10-23T00:00:00Z", skill: "builder", step: "G8", result: "rejected", input: "直して", context: 240_000 },
+    { at: "2026-10-23T00:10:00Z", skill: "builder", step: "G8", result: "approved", context: 280_000 },
+    { at: "2026-10-23T01:00:00Z", skill: "builder", step: "verify", result: "done", context: 390_000 },
+  ]));
 
   const text = succeeds(directory, "bp", "history");
   assert.match(text, /312k/);
@@ -373,6 +378,8 @@ test("CLI: bp history はピークを並べ、--group-by でモデルごとに�
     ["—", 1],
   ]);
   assert.equal(grouped.records[2].context.peak, undefined);
+  assert.deepEqual(grouped.records[0].checkpoints, { approval: 240_000, implement: 280_000, review: 390_000 });
+  assert.deepEqual(grouped.records[2].checkpoints, {});
   assert.equal(cliWith(directory, {}, "bp", "history", "--group-by", "branch").status, 1);
 });
 

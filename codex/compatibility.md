@@ -2,7 +2,7 @@
 
 このファイルは Codex 用入口から参照する。各入口の「元の手順」は Hikyaku のフェーズと成果物の正であり、この規約は実行環境の差だけを置き換える。元の手順に書かれた設定、承認ゲート、レビュー、ブランチ、コミット、PR、引き継ぎの順序は維持する。
 
-1. 入口の `SKILL.md` の実パスからプラグインルートを求める。入口は `<plugin-root>/codex/skills/<name>/SKILL.md` にある。シンボリックリンクから読んだ場合は実パスを使う。`<plugin-root>/skills/<phase>/SKILL.md` を最後まで読み、相対リンクはその元ファイルのディレクトリを基準に開く。必要な `references/` と `agents/` も読む。
+1. 入口の `SKILL.md` の実パスからプラグインルートを求める。入口は `<plugin-root>/codex/skills/<name>/SKILL.md` にある。シンボリックリンクから読んだ場合は実パスを使う。`<plugin-root>/skills/<phase>/SKILL.md` を最後まで読み、相対リンクはその元ファイルのディレクトリを基準に開く。必要な `references/` と `agents/` も読む。`hikyaku step next` / `step report` が返す指示ファイル（`skills/<phase>/steps/<step>.md`）は、返った絶対パスのとおりに読み、その手順にもこの規約を適用する。
 2. 元の手順の `${CLAUDE_PLUGIN_ROOT}` は `<plugin-root>` に読み替える。CLI は `node "<plugin-root>/scripts/hikyaku.mts" <command>` で呼ぶ。プラグインのインストール先を推測しない。
 3. `$ARGUMENTS[0]` などは、Codex でのスキル選択に続く利用者の依頼文から対応する値を取る。値が無い場合は、元の手順に書かれた省略時の解決方法を使う。文字列 `$ARGUMENTS` をシェルに渡さない。architect の差し戻しは `{cycle} build-NN`、指摘からの追加設計は `{cycle} add {指摘}` として解釈する。`add` の後ろの指摘は改行以降も含めて保持し、省略されていたら元の手順どおり案内して終了する。
 4. 元の手順や CLI の出力にある `/hikyaku:<name>` は Claude Code のコマンド表記である。Codex 用入口がある場合は `<plugin-root>/codex/skills/<name>/SKILL.md` を開き、その内部手順を現在のフェーズの文脈で実行する。次のセッションを案内するときは、そのスキル名を `$hikyaku:<name>` として伝える。

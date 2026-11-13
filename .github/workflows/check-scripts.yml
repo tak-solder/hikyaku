@@ -51,3 +51,7 @@ jobs:
       # スキルに付けた問いの ID（（G8）/（ask: branch））と、conductor の ID の表の突き合わせ
       - name: Conductor ask tags
         run: node scripts/hikyaku.mts conductor lint
+
+      # ステップの定義（scripts/lib/steps/）と、スキルの指示ファイル（skills/<skill>/steps/）の対応
+      - name: Step definitions
+        run: node scripts/hikyaku.mts step lint

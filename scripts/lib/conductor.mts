@@ -90,7 +90,7 @@ export const ASKS: AskDefinition[] = [
 
 export const ASK_IDS: string[] = ASKS.map((ask) => ask.id);
 
-/** 子として動くスキル。conductor lint はこれらの SKILL.md と references/ からタグを集める */
+/** 子として動くスキル。conductor lint はこれらの SKILL.md と references/・steps/ からタグを集める */
 export const CONDUCTED_SKILLS = ["architect", "builder", "build-manager", "close-cycle", "retrospective"];
 
 /** タグとして扱う書式。（G8）と（ask: branch） */

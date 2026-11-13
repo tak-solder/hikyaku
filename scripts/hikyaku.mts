@@ -35,6 +35,7 @@ import "./commands/bp.mts";
 import "./commands/conductor.mts";
 import "./commands/reviewers.mts";
 import "./commands/review.mts";
+import "./commands/step.mts";
 
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2));

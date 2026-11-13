@@ -7,6 +7,7 @@ import { loadConfig } from "../lib/config.mts";
 import { HikyakuError, ValidationError } from "../lib/errors.mts";
 import {
   DOC_DEFINITIONS,
+  INDEX_MARKER,
   guidePath,
   loadGuide,
   renderIndexBlock,
@@ -16,7 +17,6 @@ import { renderTable, upsertMarkerBlock } from "../lib/markdown.mts";
 import { emit, table } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 
-const INDEX_MARKER = "hikyaku:docs";
 
 register({
   name: "docs list",

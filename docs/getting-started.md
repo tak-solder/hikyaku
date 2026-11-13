@@ -50,6 +50,8 @@ CLI を自分のシェルからも叩きたい場合は、[実行方法](referen
 {HIKYAKU_ROOT}/.gitignore          .hikyaku.local の1行だけ
 ```
 
+雛形を生成したあとの手順は、`hikyaku step next init` が1手ずつ決めます。進み具合は `{HIKYAKU_ROOT}/progress.jsonl` に記録されるので、途中で止まっても、もう一度 `/hikyaku:init` を実行すれば続きから再開できます。この記録も PR に含まれます。
+
 最後に PR が作られます。この PR はマージしてから次へ進んでください。
 
 ## 3. サイクルを作る
@@ -67,7 +69,7 @@ CLI を自分のシェルからも叩きたい場合は、[実行方法](referen
 
 違いは [プロファイル](configuration/profiles.md) にあります。選んだ値は `cycles.md` に記録され、以後そのサイクルの属性になります。
 
-作成後「このまま企画フェーズに進みますか？」と聞かれます。進むとブランチと PR が PLAN のものに畳まれるので、PR は増えません。
+作成後「このまま企画フェーズに進みますか？」と聞かれます。進むとブランチと PR が PLAN のものに畳まれるので、PR は増えません。サイクルを作ったあとのこの確認と PR の作成は `hikyaku step next create <cycle>` が順に返し、記録はサイクルのディレクトリの `progress.jsonl` に残ります。
 
 ## 4. PLAN — 企画
 
