@@ -1,6 +1,6 @@
 ---
 name: conductor
-description: "Hikyaku 監督: PLAN 済みのサイクルを、ARCHITECT → BUILD を非対話の子セッション（claude -p）に実行させて進める。子の問いには監督が答え、取り返しのつかない判断だけを人間に上げる。モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。"
+description: "Hikyaku 監督: PLAN 済みのサイクルを、ARCHITECT → BUILD を非対話の子セッション（claude -p / codex exec）に実行させて進める。子の問いには監督が答え、取り返しのつかない判断だけを人間に上げる。モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。"
 user-invocable: true
 argument-hint: "[{cycle}]"
 ---
@@ -8,7 +8,7 @@ argument-hint: "[{cycle}]"
 # Hikyaku Conductor
 
 PLAN を終えたサイクルを、ARCHITECT から最後のビルドまで進める。あなたは**監督**で、
-各フェーズは非対話の**子セッション**（`claude -p`）が既存のスキルのまま実行する。
+各フェーズは非対話の**子セッション**（`claude -p` / `codex exec`）が既存のスキルのまま実行する。
 
 ```
 /hikyaku:planner       → 人間と要件をすり合わせる（conductor の対象外）
@@ -70,8 +70,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor asks {cycle} --json
 ```
 
 出力の `digest` を控える（以後のすべての `launch` / `parse` に渡す）。
+クラウド判定は設定より優先する。子の CLI は設定ファイルの値から推測せず、`asks.provider` と `providerSource` を確認する。同じ環境で `launch` / `parse` を実行し、環境が変わって digest が一致しなければ人間に上げる。
 
 - [ ] 子がテストを実行できるかを確認する
+  - `asks.provider` が `codex` の場合、Codex CLI のインストールと認証を確認する。権限は `workspace-write` サンドボックス・承認なしで、Claude の `allowedTools` による許可リストは適用されないことを人間に示す。必要なテスト・git・gh 操作をこの環境で実行できない場合は、設定や環境の見直しを案内して終了する。以下の許可リストとの照合は Claude の場合だけ行う
   - テストのコマンドを AGENTS.md / README / package.json などから引く
   - `asks` の `allowedTools` で許可されているかを照合する
     （既定は `git` のサブコマンドと Hikyaku CLI の実行などだけで、`npm test` / `node --test` や
@@ -86,6 +88,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor asks {cycle} --json
 planning/user-stories.md を承認済みの要件として扱います。
 監督が判断する同意ゲート: {asks の出力}
 人間に上げる問い: {asks の出力}、およびスコープを広げる回答が要る問い
+子の CLI と権限: {asks の provider、allowedTools / sandbox}
 子のモデル: {asks の出力の models。null は「既定」と書く}
 フェーズの PR のレビュアーと、待つ上限: {asks の出力の review}
 最後の PR のレビュアー: {asks の出力の review.finalReviewers}
@@ -171,9 +174,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {architect|bui
   --expect-digest {digest} --json
 ```
 
+- Codex の初回起動では `launch.sessionId` は null。再開には `parse.sessionId`（`thread_id`）を使う。Claude の許可ツール・費用上限を Codex の制御に読み替えない
+
 - [ ] 返ってきた `command` を **Bash の `run_in_background` で実行**する（`timeout` は最大値にする）
   - 子は10分を超えうる。フォアグラウンドで待たない。完了の通知を待ち、ポーリングしない
-  - 起動が許可ルールで拒否されたら、`Bash(claude -p:*)` を許可するよう人間に案内して止まる
+  - 起動が許可ルールで拒否されたら、選択した CLI の起動（`Bash(claude -p:*)` または `Bash(codex exec:*)`）を許可するよう人間に案内して止まる
 - [ ] 完了したら結果を解析する
 
 ```bash
@@ -221,6 +226,15 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {phase} {cycle
 
 - [ ] 「検証の義務」のうち、そのフェーズの done に当たるものを行う
 - [ ] 問題があれば人間に上げる（自分で直さない）
+- [ ] 子が作った PR（architect / builder）が Draft なら、監督の権限で Ready for Review にする（子は非対話規約で Ready に
+  することを禁じられていて、builder の PR は Draft のまま届く。`[pr] auto_ready` は子にも監督にも効かない）
+
+```bash
+gh pr view {PR の番号か URL} --json isDraft --jq .isDraft
+gh pr ready {PR の番号か URL}   # 上が true のときだけ
+```
+
+  - `gh pr ready` が失敗したら取り込まず、エラーの内容を人間に示して上げる
 - [ ] 子が PR を作っていれば（architect / builder）、取り込む前にその PR を検証する。レビューや CI を待つので、
   **Bash の `run_in_background` で実行する**（`timeout` は最大値にする）
 
@@ -228,31 +242,17 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {phase} {cycle
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor check-pr {PR の番号か URL} {cycle} --wait --json
 ```
 
-  - 確かめるのは、**マージ先が conductor ブランチであること**、PR が開いていること、**Draft でない
-    （Ready for Review の）こと**、**レビューの依頼が残っていないこと**、**未解決のレビュースレッドが
-    無いこと**、**CI が失敗も待機もしていないこと**。`[conductor] require_approval = true` なら、1人以上の
-    承認があり変更の要求が残っていないことも求める（既定では承認は不問）。満たしていなければ
-    終了コード 2 になり、理由が `problems` に入る
-  - 取り込みはローカルの `git merge` と push で行うので、GitHub のブランチ保護や必須チェックは働かない。
-    この検証がその代わりになる
-  - 子が作った PR には、`[conductor] phase_reviewers` のレビュアーが、子の `pr request-reviewers` で
-    アサインされている（設定が空なら何も依頼されない）
-  - `--wait` は、待てば解消しうる問題（CI の実行中、レビューの依頼が残っている）だけで止まっているあいだ、
-    確かめ直す。上限は `[conductor] review_timeout`（既定 15 分。0 なら待たない）。上限を超えると
-    `timedOut: true` で終了コード 2 になる。Draft・未解決の指摘・CI の失敗・マージ先の食い違いは、待っても
-    解消しないので、見つけた時点で返る
-  - **未解決のレビュースレッド**（`threads.unresolved`）があれば、取り込まない。指摘の場所・投稿者・URL を
-    人間に示して上げる。**監督は指摘に自分で対応せず、子を再開して直させることもしない**。人間が対応するか、
-    同意して resolve したら、`check-pr` をやり直す
-  - Draft・承認の不足・CI の失敗・マージ先の食い違い・待機の上限超過も、取り込まずに `problems` を示して
-    人間に上げる（`gh pr ready` で Draft を外したり、依頼を取り下げたりしない）。人間が対応したら
-    `check-pr` をやり直す
-  - **終了コード 1**（`gh` の応答に必須のフィールドが無い、型が違う、取得できないなど、状態を判定できなかった）
-    も、取り込まない。判定できなかった PR を、CI なし・依頼なし・Ready として合格させない。エラーの内容を
-    人間に示して上げる
-  - `none`（CI が1つも無い）は失敗にならない。PR を作った直後にチェックがまだ登録されていない場合は、
-    `--wait` が最初の少しのあいだ待ってから判定するので、再実行は要らない。`none` で通ったら、最後の PR の
-    本文に「フェーズの PR に CI が走っていなかった」と書く
+  - 取り込みはローカルの `git merge` で行い、GitHub のブランチ保護や必須チェックは働かない。この検証が
+    その代わりになる。何を確かめ、どこまで待つかは CLI が決める（`hikyaku help conductor check-pr`）
+  - **終了コード 0** なら取り込む。`none`（CI が1つも無い）で通ったら、最後の PR の本文に
+    「フェーズの PR に CI が走っていなかった」と書く
+  - **終了コード 2**（条件を満たさない、または待機の上限超過）なら取り込まない。`problems` を人間に示して
+    上げる。未解決のレビュースレッド（`threads.unresolved`）は指摘の場所・投稿者・URL も示す。
+    **監督は指摘に自分で対応せず、子を再開して直させることもしない。** レビューの依頼を取り下げたりもしない。
+    人間が対応したら `check-pr` をやり直す。Draft は上の手順で Ready にしてから検証するので、ここで
+    Draft と判定されたら、検証のあいだに誰かが Draft に戻したということ。Ready にし直さずに人間に上げる
+  - **終了コード 1**（状態を判定できなかった）も取り込まない。CI なし・依頼なし・Ready とみなして合格
+    させない。エラーの内容を人間に示して上げる
   - 結果の `headSha` は、検証した PR の head のコミット。取り込みにはブランチ名ではなくこれを使う
 
 - [ ] 検証を通った PR を conductor ブランチに取り込む
@@ -324,12 +324,20 @@ gh pr list --head {conductor ブランチ} --base {baseBranch} --state open --js
 
   - **見つかったら、PR を作らない。** 「最後の PR が既にあるとき」へ進む
   - 見つからなければ、次の手順で作る（閉じられた PR や、マージ済みの PR は対象にしない）
-- [ ] conductor ブランチ → デフォルトブランチの PR を作る
-  - タイトルは `hikyaku pr title conductor {cycle}` で生成する
+- [ ] conductor ブランチ → デフォルトブランチの PR を Draft で作る（`gh pr create --draft`）
+  - タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title conductor {cycle}` で生成する
   - 本文に、取り込んだフェーズの PR を順に並べ、それぞれで**監督が判断した同意ゲート**を1行ずつ示す
     （人間がレビューで確認するため）
-  - 外部連携が有効なら、各ビルドの `hikyaku external ref build-NN {cycle}` の行を本文の末尾に入れる。
+  - 外部連携が有効なら、各ビルドの `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref build-NN {cycle}` の行を本文の末尾に入れる。
     conductor ブランチへのマージではクローズキーワードが効かないため、ここでまとめて閉じる
+  - リポジトリが Draft PR に対応しておらず作成に失敗したら、`--draft` を外して作り直し、下の
+    「Ready にする」は飛ばす。Draft にできなかったことを最後の案内で伝える
+- [ ] Step 0 の `config` 出力の `pr.autoReady`（`[pr] auto_ready`、既定 true）が true なら、この PR を
+  Ready for Review にする（`gh pr ready {PR の URL}`）
+  - false なら Draft のまま残し、最後の案内で「確認後に `gh pr ready {PR の URL}` で Ready にする」と伝える。
+    **false のときに自分の判断で Ready にしない**（フェーズの PR を取り込む前に Ready にするのとは別。
+    この PR は人間がマージする）
+  - 失敗したら、Draft のままであることと再実行のコマンドを最後の案内で伝える
 - [ ] この PR にレビュアーをアサインする（`[pr] reviewers` が空、または `[pr] reviewers_skip` に
   `conductor` があれば何もしない）。人間がレビューする PR なので、待たない
 
@@ -345,8 +353,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers conductor 
 
 - [ ] 最後の PR の本文に無い、conductor ブランチに取り込んだフェーズの PR があれば（指摘を受けて足した
   architect とビルドの PR）、本文の一覧に追記する（`gh pr edit {PR} --body-file {ファイル}`）。
-  レビュアーのアサイン（上の手順。依頼済みの相手には重ねて依頼しない）を行い、PR の URL を示して
-  **終了**する
+  最後の PR が Draft で `pr.autoReady` が true なら Ready にする（上の手順）。レビュアーのアサイン
+  （上の手順。依頼済みの相手には重ねて依頼しない）を行い、PR の URL を示して**終了**する
 - [ ] 追記するものが無ければ、PR の URL を示し、最後の PR の指摘にビルドを足して対応するかを人間に
   尋ねる（`AskUserQuestion`）。対応しないなら、マージ後の再開を案内して**終了**する
 - [ ] 対応するなら、対応する指摘を人間から受け取る（PR のコメントの URL と内容。監督は指摘を選ばない）。
@@ -366,8 +374,14 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch architect {cyc
 
 ### Step 5: 完了
 
-close-cycle の子が done になったら、`cycle status` が `closed` であることを確認し、
-CLOSE の PR を示して終了する。
+close-cycle の子が done になったら、`cycle status` が `closed` であることを確認する。
+
+- [ ] CLOSE の PR は Draft で届く（子は Ready にしない）。Step 0 の `config` 出力の `pr.autoReady` が
+  true なら、`gh pr ready {PR の URL}` で Ready for Review にする
+  - false なら Draft のまま残し、「確認後に `gh pr ready {PR の URL}` で Ready にする」と案内する。
+    **false のときに自分の判断で Ready にしない**（この PR は取り込まず、人間がマージする）
+  - 失敗したら、Draft のままであることと再実行のコマンドを示す
+- [ ] CLOSE の PR を示して終了する
 
 ## 問いへの答え方
 
@@ -384,7 +398,7 @@ CLOSE の PR を示して終了する。
 | `G2` / `G4` / `G7` | 成果物を読み、承認観点（スキルが示すもの）に沿って承認するか差し戻す |
 | `retrospective` | 実施する |
 | `docs-link` | `--dry-run` の差分がマーカーで囲まれた索引ブロックの中だけなら承認する |
-| `G6` | 分割・依存が design-delta と矛盾せず、各ビルドの予測ピークが `split_above` 以下（超えるなら issue.md に許容する理由がある）なら承認する。「マージ時点で残る危険」を書いたビルドがあれば、`hikyaku config {cycle} --json` の `unsafeSplit.allowed` が true であることも確かめる |
+| `G6` | 分割・依存が design-delta と矛盾せず、各ビルドの予測ピークが `split_above` 以下（超えるなら issue.md に許容する理由がある）なら承認する。「マージ時点で残る危険」を書いたビルドがあれば、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json` の `unsafeSplit.allowed` が true であることも確かめる |
 | `G8` | 「検証の義務」の G8 を行い、満たしていれば承認する |
 | `G10` | 「検証の義務」の G10 を行い、除外すべき候補を外して承認する |
 | `questions` | 成果物から導けるものだけ答える。導けないものは人間に上げる |

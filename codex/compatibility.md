@@ -8,13 +8,15 @@
 4. 元の手順や CLI の出力にある `/hikyaku:<name>` は Claude Code のコマンド表記である。Codex 用入口がある場合は `<plugin-root>/codex/skills/<name>/SKILL.md` を開き、その内部手順を現在のフェーズの文脈で実行する。次のセッションを案内するときは、そのスキル名を `$hikyaku:<name>` として伝える。
 5. 元の手順にある `AskUserQuestion`、`Read`、`Bash` 等のツール名は、Codex で利用可能な同等の機能に読み替える。セッション名を変更する機能が無い場合は、元の手順どおりその操作を省く。
 6. `agents/<name>.md` を使う箇所では、その本文を役割・判定基準・出力形式としてサブエージェントへ渡す。Claude 固有の `model`、`tools`、`color` は Codex の設定値として使わない。委任時は対象ファイル、担当範囲、必要な戻り値を明示し、元の手順が要求する複数案・独立レビュー・結果の統合を保つ。サブエージェントが使えない環境では同じ観点を順に自分で処理し、その制約を報告する。
-7. 元のスキルの `user-invocable`、`argument-hint` は Claude Code 固有の起動設定である。Codex では各入口の `description` と、このファイルの「内部手順は呼び出し元からのみ実行する」という条件を使う。利用者から依頼されていない次のフェーズを自動開始しない。
+7. 元のスキルの `user-invocable`、`argument-hint` は Claude Code 固有の起動設定である。Codex では各入口の `description` と、このファイルの「内部手順は呼び出し元からのみ実行する」という条件を使う。利用者から依頼されていない次のフェーズを自動開始しない。navigator で利用者が選んだスキルの実行と、conductor で合意した範囲の子フェーズの逐次起動は、依頼された範囲として扱う。
 8. 元の手順の `hikyaku review resolve` / `review run` に付いた `--self claude` は `--self codex` に読み替える。これは `[review]` の `provider = "auto"` と `provider_for` を、メインのセッションのプロバイダで解決するための値である。`review run` は `claude -p` や `codex exec` を別プロセスとして起動し、ネットワークに接続する。サンドボックスに阻まれたら、承認を得てサンドボックスの外で実行し直す。失敗（終了コード 1）は指摘0件として扱わない。`run_in_background` の指示は、Codex で同等の機能が無ければ通常の実行に読み替える。
 
-conductor は Claude Code 専用で、Codex 用入口はない。`/hikyaku:conductor` の案内は `$hikyaku:conductor` に読み替えず、Codex では architect / builder / close-cycle を個別のセッションで実行するよう案内する。`conductor launch` が生成する `claude -p` のコマンドを Codex の子セッションに置き換えて実行しない。通常の対話実行では、問いの ID（`ask:` / `G8` 等）は識別子として扱い、conductor の非対話規約や承認の委任は適用しない。
+conductor の監督には [Codex 用入口](skills/conductor/SKILL.md)を使う。監督も利用者と対話し、元の手順の委任の合意と検証を行う。子の起動と PR 検証の完了待ちは、この入口の Codex 向け手順に従う。子の CLI は `conductor asks` の `provider` と `providerSource` で確認し、`conductor launch` が生成したコマンドをそのまま使う。クラウドではレビューと同じ環境判定で実行先が固定される。
+
+conductor から起動された子は、プロンプトに渡された非対話規約を適用し、質問ツールを使わず gate を出して終了する。監督が回答した箇所から再開し、委任されたフェーズを実行する。非対話規約は監督や通常の対話実行には適用しない。通常の対話実行では、問いの ID（`ask:` / `G8` 等）は識別子として扱い、承認の委任は行わない。
 
 PR 作成後の `pr request-reviewers` も元の手順どおり実行し、失敗した場合は作成済み PR と失敗内容を利用者に伝える。
 
 CLI が返す次の操作の案内も 4 の規則で読み替える。ワークスペース内に書き出すドキュメントや設定ファイルの形式はホストに依存しない。
 
-navigator にも Codex 用入口はない。`/hikyaku:navigator` は `$hikyaku:navigator` に読み替えず、各フェーズの入口を案内する。再開箇所を確認するときは、共通 CLI の `cycle list` / `cycle status` / `next` を使う。
+navigator には [Codex 用入口](skills/navigator/SKILL.md)を使う。利用者が明示的に指定したときだけ実行し、状態の読み取りと候補の提示を行う。利用者が選んだら、対応する Codex 用入口を引数とともに実行する。選択前はファイルやブランチを書き換えない。

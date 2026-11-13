@@ -48,6 +48,16 @@ function assertGraphOk(builds: BuildRecord[]): void {
   }
 }
 
+/**
+ * 見出しに添える予測ピークと依存。表の中だと「指定したつもりが落ちた」ことに気づきにくいため、
+ * 追加・更新したビルドの値だけを見出しで明示する
+ */
+function describeInput(build: BuildRecord): string {
+  const peak = build.peak === undefined ? "なし" : formatK(build.peak);
+  const deps = build.dependsOn.length > 0 ? build.dependsOn.map(buildDirName).join(", ") : "なし";
+  return `予測ピーク: ${peak} / 依存: ${deps}`;
+}
+
 function summarize(builds: BuildRecord[]): string {
   return table(
     builds.map((build) => [
@@ -66,6 +76,8 @@ register({
   name: "tasklist read",
   summary: "tasklist.md を解析してビルド一覧を返す",
   usage: "hikyaku tasklist read [<cycle>] [--json]",
+  options: [],
+  maxOperands: 1,
   details: [
     "サイクルを省略した場合、進行中のサイクルが1つだけならそれを対象にします。",
     "完了判定は PR 列が非空かどうかの一点です。",
@@ -86,6 +98,8 @@ register({
   usage:
     "hikyaku tasklist add [<cycle>] --title <text> [--peak <トークン数>] [--deps 1,2] [--issue <link>] [--dry-run]",
   writes: true,
+  options: ["title", "peak", "bp", "deps", "issue"], // bp は廃止の案内を返すため受け付ける
+  maxOperands: 1,
   details: [
     "buildID は max(既存) + 1 を自動採番します。既存 ID のリナンバリングは行いません。",
     "",
@@ -94,6 +108,10 @@ register({
     "",
     "追加後に依存グラフを再生成し、循環依存と存在しない依存を検証します。",
     "問題があれば書き込まずに終了コード 2 で終了します。",
+    "",
+    "不明なオプションと余分な引数は、書き込まずに終了コード 1 で終了します。",
+    "`--deps 1,2` が空白を含む1つの引数で渡った場合も不明なオプションとして扱います",
+    "（黙って依存なしで登録すると、依存グラフが壊れたことに気づけないため）。",
     "",
     "承認は呼び出し元のスキルが取ります。--dry-run で差分だけを提示してください。",
   ].join("\n"),
@@ -116,7 +134,7 @@ register({
 
     const next = [...ctx.builds, record];
     assertGraphOk(next);
-    finish(ctx, next, args, `${buildDirName(id)} を追加します`, record);
+    finish(ctx, next, args, `${buildDirName(id)} を追加します（${describeInput(record)}）`, record);
   },
 });
 
@@ -126,11 +144,15 @@ register({
   usage:
     "hikyaku tasklist update [<cycle>] --id <n> [--title <text>] [--peak <トークン数>] [--deps 1,2] [--dry-run]",
   writes: true,
+  options: ["id", "title", "peak", "bp", "deps"], // bp は廃止の案内を返すため受け付ける
+  maxOperands: 1,
   details: [
     "ビルドの分割は「元ビルドの update + 新ビルドの add」で表現します。",
     "専用の split コマンドは持ちません（既存コマンドの組み合わせで足りるため）。",
     "",
     "完了済み（PR 列が非空）のビルドは更新できません。依存グラフの整合性が崩れるためです。",
+    "",
+    "不明なオプションと余分な引数は、書き込まずに終了コード 1 で終了します。",
   ].join("\n"),
   run: ({ args, operands }) => {
     const ctx = writableContext(args, operands[0]);
@@ -157,7 +179,7 @@ register({
 
     const next = ctx.builds.map((build) => (build.id === id ? updated : build));
     assertGraphOk(next);
-    finish(ctx, next, args, `${buildDirName(id)} を更新します`, updated);
+    finish(ctx, next, args, `${buildDirName(id)} を更新します（${describeInput(updated)}）`, updated);
   },
 });
 
@@ -166,6 +188,8 @@ register({
   summary: "ビルドの完了を記録する（PR 列を埋める）",
   usage: "hikyaku tasklist done [<cycle>] --id <n> --pr <url> [--dry-run]",
   writes: true,
+  options: ["id", "pr"],
+  maxOperands: 1,
   details: [
     "PR 列を埋めることがビルドの完了記録そのものです。status 列は持ちません。",
     "",
@@ -208,6 +232,8 @@ register({
   summary: "外部システムへ投影した issue の参照を記録する",
   usage: "hikyaku tasklist link [<cycle>] --id <n> --issue <url> [--dry-run]",
   writes: true,
+  options: ["id", "issue"],
+  maxOperands: 1,
   details: [
     "tasklist.md の issue 列を埋めます。gh CLI が使える場合は external sync が",
     "自動で記録するので、このコマンドを直接使うのは GitHub MCP や Asana MCP で",

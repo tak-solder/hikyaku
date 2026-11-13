@@ -65,8 +65,6 @@ HIKYAKU_ROOT にはサイクルの成果物だけを置く。永続ドキュメ�
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" init --root {HIKYAKU_ROOT}
 ```
 
-既存ファイルは決して上書きされない。
-
 生成するのは次の4つ。
 
 | ファイル | 役割 |

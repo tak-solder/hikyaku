@@ -266,16 +266,24 @@ test("step: plan の done には見積もり直した予測ピークが必須（
   assert.equal(report(directory, "plan-review", "--result", "done").step, "test-spec");
 });
 
-test("step: PR 列が埋まるまで pr は完了にならず、最後まで進むと done", (t) => {
+test("step: 振り返りを PR 前に終え、PR 列と URL が揃うまで完了にしない", (t) => {
   const directory = built(t);
-  configure(directory, 'retrospective = "skip"');
+  configure(directory, 'retrospective = "auto"');
   upToG8(directory);
   report(directory, "G8", "--result", "approved");
   report(directory, "implement", "--result", "done");
   report(directory, "verify", "--result", "done");
   report(directory, "review", "--result", "done");
   write(directory, `${BUILD}/handoff.md`);
-  report(directory, "handoff", "--result", "done");
+  assert.equal(report(directory, "handoff", "--result", "done").step, "retrospective");
+  const premature = cli(directory, "step", "report", "build-01", "pr", "001", "--result", "done", "--pr", "1");
+  assert.equal(premature.status, 1, "振り返り前に PR 作成を完了できない");
+  assert.match(premature.stderr, /現在地のステップ（retrospective）/);
+  report(directory, "peak-actual", "--skill", "retrospective", "--result", "done");
+  report(directory, "analyze", "--skill", "retrospective", "--result", "done");
+  write(directory, `${BUILD}/retrospective.md`, "# 振り返り\n");
+  assert.equal(report(directory, "write", "--skill", "retrospective", "--result", "done").kind, "done");
+  assert.equal(report(directory, "retrospective", "--result", "done").step, "pr");
   const early = cli(directory, "step", "report", "build-01", "pr", "001", "--result", "done", "--pr", "https://github.com/o/r/pull/1");
   assert.equal(early.status, 1);
   succeeds(directory, "tasklist", "done", "001", "--id", "1", "--pr", "https://github.com/o/r/pull/1");

@@ -17,7 +17,7 @@
 import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import { isCyclelessPhase, isPhase, type Phase } from "../lib/branch.mts";
-import { loadGuide, type DocEntry } from "../lib/docs.mts";
+import { isCustomEntry, loadGuide, type DocEntry } from "../lib/docs.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { emit, table } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
@@ -84,6 +84,17 @@ function docReasons(phase: Phase): Record<string, string> {
   return DOC_REASONS[phase] ?? {};
 }
 
+/** リポジトリ固有の永続ドキュメントは中身を Hikyaku が知らないので、概要欄で要否を判断させる */
+const CUSTOM_DOC_REASON = "リポジトリ固有の永続ドキュメント。今回のスコープに関係するかは概要欄で判断する";
+
+/**
+ * リポジトリ固有の永続ドキュメント（既定に無い論理名）を候補に含めるフェーズ。
+ * close は昇格先が決まっているため含めない（振り返りが doc: で指したときだけ書き込む）
+ */
+function includesCustomDocs(phase: Phase): boolean {
+  return phase === "plan" || phase === "architect" || phase.startsWith("build-");
+}
+
 /** そのフェーズで読むサイクル成果物。[サイクルディレクトリからの相対パス, 理由] */
 function cycleArtifacts(phase: Phase): [string, string][] {
   if (phase === "plan") {
@@ -147,6 +158,8 @@ register({
     "",
     "永続ドキュメントの所在は document-guide.md が正です。管理が「対象外」の",
     "ものは候補にも未作成にも出しません（意図的に持たないため）。",
+    "既定に無い論理名（repo 管理のリポジトリ固有ドキュメント）は、plan / architect /",
+    "build-NN の候補に含めます。",
     "",
     "build-NN では、tasklist.md の依存グラフから先行ビルドの handoff.md を",
     "辿ります。手で辿ると漏れるためです。",
@@ -187,7 +200,7 @@ register({
         origin: "doc",
         path,
         ownership: entry.ownership,
-        reason: docReasons(phase)[entry.name] as string,
+        reason: docReasons(phase)[entry.name] ?? CUSTOM_DOC_REASON,
         summary: entry.summary,
       });
     }
@@ -251,7 +264,11 @@ register({
 /** そのフェーズが読む論理名のうち、「対象外」でないものを guide の並びで返す */
 function docEntriesFor(entries: DocEntry[], phase: Phase): DocEntry[] {
   const reasons = docReasons(phase);
-  return entries.filter((e) => reasons[e.name] !== undefined && e.ownership !== "対象外");
+  return entries.filter(
+    (e) =>
+      (reasons[e.name] !== undefined || (isCustomEntry(e) && includesCustomDocs(phase))) &&
+      e.ownership !== "対象外",
+  );
 }
 
 function render(

@@ -6,28 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 各エントリには「何が変わったか」と「利用者に必要な対応」を書きます。設計判断の経緯は issue と `docs/` を参照してください。
 
-## [Unreleased]
-
-### Added
-
-- Codex 用の `.codex-plugin/plugin.json`、`.agents/plugins/marketplace.json`、`codex/skills/*/SKILL.md` を追加した。Codex では専用入口から従来の Hikyaku 手順を読み、パス・引数・内部スキル・エージェント委任の表記を Codex の機能に読み替える
-- `codex/compatibility.md` に Codex での実行規約を追加し、`docs/getting-started-codex.md` に導入と起動方法を記載した
-
-### Changed
-
-- 共通手順の 2.4.1 を取り込み、差し戻し・受け入れ基準の追跡・PR レビュアー割り当て・指摘からの追加設計に対応した
-- Codex 実行規約に architect の引数の読み替えと、conductor が Claude Code 専用であることを明記した
-- Codex 向けの CI を `check-codex-plugin.yml` に分離し、`codex-plugin` ブランチ向け PR でマニフェストのバージョン形式・更新と入口の参照先を検証するようにした。更新検出の対象は Codex 固有のファイルに加え、共通の `skills/`・`agents/`・`scripts/` も含む。スクリプトの型チェック・テストも `codex-plugin` 向け PR で実行する
-- Claude Code 用の全10スキルから `disable-model-invocation` を削除し、モデル（AI 自身）がスキルを呼び出せるようにした。代わりに各スキルの `description` に「モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。」を追記し、ワークフロー外での誤呼び出しを防ぐ。Claude Code 用マニフェストを 2.5.0 に更新した
-- Claude Code 用の全10スキルと Codex 用の全9スキルから、フロントマターの `metadata`（`repository` / `version`）を削除した。バージョンは各プラグインのマニフェストに集約し、Claude Code 用・Codex 用の両マニフェストを 2.4.2 に更新した。開発ルールと CI もスキル内のバージョンを要求しない形に揃えた
-
-### Migration
-
-- `SKILL.md` の `metadata.version` を参照する独自ツールは、対象ホストの `.claude-plugin/plugin.json` または `.codex-plugin/plugin.json` の `version` を参照するよう変更する
-- 対応は不要。`/hikyaku:...` での起動は従来どおり使える。Hikyaku ワークフローの実行中は、AI が次のスキルを自分で呼び出すことがある
-- Claude Code 利用者の操作は変わらない。従来の `/hikyaku:...` と `skills/`・`agents/` の手順は維持する
-- Codex 利用者は `codex plugin marketplace add tak-solder/hikyaku@codex-plugin` でマーケットプレイスを追加し、プラグインをインストールする。`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要。Codex では各フェーズを個別に実行し、conductor は Claude Code で使う
-
 ## [3.0.0]
 
 ### Added
@@ -56,6 +34,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - doctor: `token-guide/guide.md` の版の宣言の不備と、v2 の `bp-guide/` が残っていることを知らせる
 
 ### Changed
+
+- 最新の main を統合し、Draft PR と `[pr] auto_ready`、conductor のプロバイダ別モデル、レビュー指摘の自動修正、独自の論理名、依存グラフの簡約と色分けを v3 の手順へ反映した。builder の振り返りは PR 作成前に行い、完了記録をまとめて push する。BP 廃止後の tasklist の引数検査と出力は `--peak` / 予測ピークに合わせた
 
 - builder: Step 3 以降（plan → レビュー → G8 → 実装 → 検証 → コードレビュー → handoff → PR → 振り返り）を `step next` の転送ループに置き換えた。手順の順序・ゲート・承認は変えていない。各ステップの指示は `skills/builder/steps/<step>.md` に分け、実行するステップの指示だけを読む。SKILL.md は約 35KB から約 16KB になった。差し戻しと PR レビュー対応の手順は `references/return.md` / `references/pr-feedback.md` に移した
 - builder: G7 / G8 の承認は、差し戻すか前のステップを報告し直すまで有効。承認後の成果物の変更では自動で無効にならず、変更は Git の履歴で追う。前のステップを報告し直すと、そこから後ろはやり直しになる
@@ -104,6 +84,110 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Stop フックは、プラグインを有効にすると全てのセッションで動くが、Hikyaku の手順を進めていないセッションでは何もしない。対応は不要
 - v2 の retrospective.md（「BP見積もりの振り返り」）は `tokens history` に並ばない。変更は不要
 - 差分の集計（`tokens history build-NN`）は、ロックファイル・スナップショット・生成コードを数えない。数えたいときは `[diff] exclude = []` を、テストの判定を変えたいときは `[diff] tests` を書く（既定値を置き換える）
+
+## [2.12.0]
+
+### Changed
+
+- **builder の PR 作成後の push を1回にまとめた**: 振り返り（旧 Step 9）を PR 作成の前に移して Step 8 とし、`retrospective.md` までコミットしてから push する。PR 作成後の push は `tasklist done` の1回だけになり、ビルドあたりの CI 実行が3回から2回に減る。PR レビュー指摘への対応でも、振り返りの追記を済ませてからまとめて1回 push する
+- **PR を Draft で作り、フェーズの完了時に Ready にする**: planner・architect・builder・close-cycle の PR と conductor の最後の PR は、常に `gh pr create --draft` で作成する。builder は `tasklist done` を push してから切り替える。完了時に `gh pr ready` で Ready for Review にするかは新しい設定キー `[pr] auto_ready`（既定 true）で決まり、false なら Draft のまま残す。レビュアーのアサインは Ready の後に移した。Draft PR に対応していないリポジトリでは通常の PR で作成し、完了時にその旨を伝える
+- **conductor が子の Draft PR を Ready にする**: 子セッションは非対話規約で `gh pr ready` を禁じられ、builder の PR は Draft のまま監督に渡る。監督は `check-pr` の前に `gh pr ready` で Ready for Review にする。`check-pr` で Draft と判定された場合（確認の途中で Draft に戻された場合）は、従来どおり Ready にし直さず人間に上げる
+
+### Migration
+
+- 設定変更は不要。既定ではビルドの完了時に Ready for Review になる。自分で確認してから Ready にしたい場合は `[pr] auto_ready = false` を設定する。conductor の子が作るフェーズの PR にはこの設定は効かず、監督が取り込む前に Ready にする。Draft の PR で CI を走らせるかどうかは、各リポジトリの CI の設定のまま変わらない
+- Ready への切り替えに失敗した PR は Draft のまま残る。完了の案内に従って `gh pr ready <PR>` を実行する
+
+## [2.11.0]
+
+### Changed
+
+- **builder のレビュー指摘への対応**: `max_rounds = 1` では妥当な指摘を自動修正し、検証後は対応確認・再レビューなしで PR 作成へ進む。`max_rounds` が2以上なら途中の指摘は自動修正し、最終回に未解決の指摘がある場合だけ対応を確認する。同じ指摘の繰り返しによる途中の確認も省く。Claude Code と Codex の両方に適用する
+
+### Migration
+
+- 設定変更は不要。`max_rounds` が1以上の場合は `auto_fix` の値に関わらず妥当な指摘が自動修正される。`auto_fix` は `max_rounds = 0`（無制限）での2回目以降の確認にだけ適用する。無制限の確認・打ち切り方針は従来どおり
+
+## [2.10.0]
+
+### Added
+
+- **conductor のプロバイダ別モデル設定**: `[conductor.claude]` / `[conductor.codex]` の `model` と、その配下の `[models]` によるフェーズ別モデルを追加した。選択したプロバイダの設定だけを初回起動・再開に使い、`conductor asks` に解決済みモデルを表示する。プロバイダ別のフェーズ設定、プロバイダ別の既定、旧形式のフェーズ設定、旧形式の既定の順に優先する（[#59](https://github.com/tak-solder/hikyaku/issues/59)）
+
+### Fixed
+
+- クラウド判定で子のプロバイダが切り替わったとき、旧形式のモデル名が別の CLI に渡る問題を修正した
+
+### Migration
+
+- 同じプロバイダで使う既存の `[conductor] model` / `[conductor.models]` はそのまま使える。旧形式は明示した `provider`（未指定なら `claude`）に属する。クラウド判定で別のプロバイダに切り替わった場合は、その CLI の既定モデルを使うため、固定したいモデルは `[conductor.claude]` / `[conductor.codex]` とその配下の `[models]` に移す
+
+## [2.9.3]
+
+### Fixed
+
+- **planner スキル**: `context plan` が返す候補の説明を、`repo` 管理の独自ドキュメントも含む実装に合わせた。概要欄から今回のスコープに関係するものを選んで読むよう明記した
+
+## [2.9.2]
+
+### Changed
+
+- **SKILL.md の短縮**: planner / architect / builder / close-cycle / build-manager / create-cycle / init / conductor / retrospective の SKILL.md を短くした（合計 3,341 → 2,995 行）。手順・承認ゲート・問いのタグは変えていない。フェーズ間で重複していたサイクル解決・ブランチ確認・状態確認・セッション名・doc-reviewer 起動の記述を縮め、各ゲートに併記していた profile 名を外して `config --json` の `gates` / `reviews` を正にした。builder のセキュリティ判定基準の固定値も外し、`security.triggers` を参照する。設計の経緯や CLI の内部挙動の説明は `docs/` と `hikyaku help` に任せた。retrospective のテンプレートは `skills/retrospective/references/templates.md` に、builder の test-spec.md のフォーマットは `skills/builder/references/templates.md` に移した（[#77](https://github.com/tak-solder/hikyaku/pull/77)）
+
+### Migration
+
+- 対応は不要。成果物の形式（retrospective.md・test-spec.md を含む）は変わらない
+
+## [2.9.1]
+
+### Changed
+
+- **document-guide.md の論理名**: 既定に無い論理名を、管理が `repo` の行で使えるようにした。運用手順書や PRD など、リポジトリ固有の永続ドキュメントを登録できる。`hikyaku validate` / `docs validate` はパスの実在を確かめ、`hikyaku context` は plan・architect・build-NN の候補に含める（理由欄は「リポジトリ固有の永続ドキュメント」、要否は概要欄で判断する）。管理が `hikyaku` / `未作成` / `対象外` の行で既定に無い論理名を使った場合は、従来どおり `validate` がエラーにする。init スキルとドキュメントガイドの記述を合わせた（[#74](https://github.com/tak-solder/hikyaku/issues/74)）
+
+### Fixed
+
+- **`hikyaku tasklist`**: `read` / `add` / `update` / `done` / `link` が、受け付けないオプションと余分な位置引数を黙って無視していたのを、終了コード 1 のエラーにして書き込まないようにした。`--deps 1,2` が空白を含む1つの引数で渡った場合は、`--deps=1,2` の形を案内する。`add` / `update` は出力の見出しに、追加・更新したビルドの BP と依存を表示する（[#75](https://github.com/tak-solder/hikyaku/issues/75)）
+- **conductor / bp-guide スキル**: SKILL.md で省略形の `hikyaku <command>` と書いていた CLI 呼び出し（`pr title` / `external ref` / `config` / `help bp guide`）を、ほかの箇所と同じ `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" <command>` の形に揃えた。省略形は利用者のシェル関数が前提で、エージェントがそのまま実行すると失敗するため（[#78](https://github.com/tak-solder/hikyaku/pull/78)）
+
+### Migration
+
+- 既定に無い論理名を `repo` 管理で登録していたリポジトリでは、`validate` のエラーが消える。対応は不要
+- `tasklist` のコマンドに未知のオプションや余分な引数を渡していたスクリプトは、エラーになるため修正する。シェルの関数から呼ぶ場合は `--deps=1,2` の形で渡すと、単語分割の有無に左右されない
+
+## [2.9.0]
+
+### Added
+
+- Codex 用の conductor / navigator 入口を追加した。Codex を監督にして子セッションを進める手順と、状態を読んで選択したスキルを実行する案内に対応する
+- conductor の子セッションを `[conductor] provider = "codex"` で Codex CLI に切り替え可能にした。非対話規約、JSONL の結果解析と thread_id による再開に対応する。クラウドではレビューと同じ環境判定で、明示指定より優先して同じプロバイダーに固定する。クラウドでない環境の既定は Claude のまま。Codex では `allowed_tools` は空配列、`budget_per_run` は 0 のみ受け付ける
+
+### Changed
+
+- Codex 実行規約に architect の引数の読み替え、conductor の委任と子の完了待ち、navigator から選択したスキルを実行する手順を明記した
+
+### Migration
+
+- Codex を子に使う場合は CLI のインストールと認証を済ませ、`provider = "codex"` を設定する。`workspace-write`・承認なしでテストや git・gh を実行できる環境が必要。監督は Claude Code / Codex のどちらでも実行できる
+- Codex でも `$hikyaku:conductor` と `$hikyaku:navigator` を利用できる
+
+## [2.8.2]
+### Changed
+
+- **tasklist.md の依存グラフ**: `hikyaku tasklist` が生成する Mermaid グラフを、ビルドの状態で色分けするようにした。`PR` 列が埋まったビルドは紫（完了）、着手可能なビルドは緑、先行ビルドに未完了があるビルドはグレー（待機中）で、配色は GitHub の PR（Merged / Open）に合わせた。先行ビルドが未完了の依存線は点線にする。`tasklist.md` のグラフの下に凡例を1行加えた。build-manager のスキルとテンプレート、docs の記述を合わせた
+
+### Migration
+
+- 対応は不要。既存の tasklist.md は、次に `hikyaku tasklist add / update / done` で書き込まれたときに色分けされたグラフへ再生成される。グラフに手で書いた `class` / `linkStyle` は上書きされる
+
+## [2.8.1]
+
+### Changed
+
+- **tasklist.md の依存グラフ**: `hikyaku tasklist` が生成する Mermaid グラフに推移的簡約をかけ、他の依存を経由して到達できる線（`b01 → b02 → b03` があるときの `b01 → b03`）を描かないようにした。到達可能性は変わらず、線だけが減る。`dependencies` 列、着手可否の判定、handoff の参照は従来どおり宣言された直接の依存を使う。循環があるあいだは簡約せず、宣言された線をそのまま描く（`validate` が循環を報告する）。build-manager のスキルとテンプレートの記述を合わせた
+
+### Migration
+
+- 対応は不要。既存の tasklist.md は、次に `hikyaku tasklist add / update / done` で書き込まれたときにグラフが簡約された形へ再生成される
 
 ## [2.8.0]
 
@@ -169,6 +253,35 @@ builder のコードレビューとセキュリティレビューを、Claude Co
 - `/security-review` は origin リモートを使う。origin/HEAD が無いリポジトリでは自動で指示文の形に切り替わる
 - エージェント `hikyaku:code-reviewer` / `hikyaku:security-reviewer` を直接呼んでいた独自の手順は、`hikyaku review run` に置き換える
 - サブエージェントの既定のモデルが Sonnet 固定からメインのセッションのモデルに変わる。従来どおり Sonnet で動かしたい場合は、Claude Code を起動する環境で `CLAUDE_CODE_SUBAGENT_MODEL=sonnet` を設定する
+
+## [2.5.0]
+
+### Changed
+
+- Claude Code 用の全10スキルから `disable-model-invocation` を削除し、モデル（AI 自身）がスキルを呼び出せるようにした。代わりに各スキルの `description` に「モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。」を追記し、ワークフロー外での誤呼び出しを防ぐ
+
+### Migration
+
+- 対応は不要。`/hikyaku:...` での起動は従来どおり使える。Hikyaku ワークフローの実行中は、AI が次のスキルを自分で呼び出すことがある
+
+## [2.4.2]
+
+### Added
+
+- Codex 用の `.codex-plugin/plugin.json`、`.agents/plugins/marketplace.json`、`codex/skills/*/SKILL.md` を追加した。Codex では専用入口から従来の Hikyaku 手順を読み、パス・引数・内部スキル・エージェント委任の表記を Codex の機能に読み替える
+- `codex/compatibility.md` に Codex での実行規約を追加し、`docs/getting-started-codex.md` に導入と起動方法を記載した
+
+### Changed
+
+- 共通手順の 2.4.1 を取り込み、差し戻し・受け入れ基準の追跡・PR レビュアー割り当て・指摘からの追加設計に対応した
+- Codex 向けの CI を `check-codex-plugin.yml` に分離し、`codex-plugin` ブランチ向け PR でマニフェストのバージョン形式・更新と入口の参照先を検証するようにした。更新検出の対象は Codex 固有のファイルに加え、共通の `skills/`・`agents/`・`scripts/` も含む。スクリプトの型チェック・テストも `codex-plugin` 向け PR で実行する
+- Claude Code 用の全10スキルと Codex 用の全9スキルから、フロントマターの `metadata`（`repository` / `version`）を削除した。バージョンは各プラグインのマニフェストに集約した。開発ルールと CI もスキル内のバージョンを要求しない形に揃えた
+
+### Migration
+
+- `SKILL.md` の `metadata.version` を参照する独自ツールは、対象ホストの `.claude-plugin/plugin.json` または `.codex-plugin/plugin.json` の `version` を参照するよう変更する
+- Claude Code 利用者の操作は変わらない。従来の `/hikyaku:...` と `skills/`・`agents/` の手順は維持する
+- Codex 利用者は `codex plugin marketplace add tak-solder/hikyaku@codex-plugin` でマーケットプレイスを追加し、プラグインをインストールする。`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要
 
 ## [2.4.1]
 

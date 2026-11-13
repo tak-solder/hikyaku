@@ -133,7 +133,7 @@ export interface ReviewKindSettings {
   providers: ReviewProviderRule[];
   /** 1 = 1回だけ / n = パスするまで最大 n 回 / 0 = 無制限 */
   maxRounds: number;
-  /** 2ラウンド目以降、指摘への対応を確認せずに直すか */
+  /** maxRounds = 0（無制限）の2ラウンド目以降、指摘への対応を確認せずに直すか */
   autoFix: boolean;
   /** [review.<kind>.<provider>] → [review.<provider>] の順に重ねた値 */
   models: Record<ReviewProvider, ReviewModelSettings>;
@@ -157,7 +157,8 @@ export const REVIEW_PROVIDER_ENV = "HIKYAKU_REVIEW_PROVIDER";
 
 /**
  * 各プロバイダのクラウド環境を示す環境変数。クラウド環境では相手のプロバイダの CLI が無いので、
- * そこで動いているプロバイダに固定する。HIKYAKU_REVIEW_PROVIDER と設定ファイルより優先する。
+ * そこで動いているプロバイダに固定する。レビューと conductor で共用し、設定ファイルより優先する。
+ * レビューでは HIKYAKU_REVIEW_PROVIDER よりも優先する。
  * 両方が立っていれば並びの先（claude）を使う
  */
 export const REVIEW_CLOUD_ENVS: { provider: ReviewProvider; variable: string; matches: (value: string) => boolean }[] = [
@@ -340,7 +341,8 @@ export interface ResolvedConfig {
   gates: Gates;
   reviews: Reviews;
   branch: BranchNaming;
-  pr: { title: string; reviewers: string[]; reviewersSkip: ReviewerSkipTarget[] };
+  /** autoReady: planner / architect / builder / close-cycle / conductor が Draft で作った PR を、フェーズの完了時に Ready for Review に切り替えるか */
+  pr: { title: string; reviewers: string[]; reviewersSkip: ReviewerSkipTarget[]; autoReady: boolean };
   /** セッション名のテンプレート。空文字なら変更しない */
   session: { title: string };
   security: { triggers: string };
@@ -474,13 +476,27 @@ function readStringArray(table: TomlTable | undefined, key: string, where: strin
  * [conductor] を読む。配列はキー単位のマージなので、サイクル設定に書くと
  * ルート設定の配列を置き換える（足し合わせない）
  */
-function readConductor(table: TomlTable | undefined): ConductorConfig {
+export function readConductor(table: TomlTable | undefined, env: NodeJS.ProcessEnv = process.env): ConductorConfig {
   const where = "[conductor]";
   const budget = readNumber(table, "budget_per_run", where) ?? DEFAULT_CONDUCTOR.budgetPerRun;
   if (budget < 0) {
     throw new HikyakuError(`${where}.budget_per_run は 0 以上で指定してください（0 は上限なし）`);
   }
+  const configured = checkEnum(readString(table, "provider", where), ["claude", "codex"] as const, `${where}.provider`);
+  const cloud = detectCloudEnv(env);
+  const provider = cloud?.provider ?? configured ?? DEFAULT_CONDUCTOR.provider;
+  // 旧モデル設定は、環境判定前のプロバイダに属する。クラウドで切り替わっても持ち越さない。
+  const legacy = readConductorModelSettings(table, where);
+  const scoped = Object.fromEntries(REVIEW_PROVIDERS.map((name) => {
+    const providerTable = requireTable(table, name, where);
+    assertKnownKeys(providerTable, ["model", "models"], `[conductor.${name}]`);
+    return [name, readConductorModelSettings(providerTable, `[conductor.${name}]`)];
+  })) as Record<ReviewProvider, Pick<ConductorConfig, "model" | "models">>;
+  const fallback = provider === (configured ?? DEFAULT_CONDUCTOR.provider) ? legacy : DEFAULT_CONDUCTOR;
+  const selected = scoped[provider];
   const conductor: ConductorConfig = {
+    provider,
+    providerSource: cloud !== undefined ? "cloud" : configured !== undefined ? "config" : "default",
     escalate: readStringArray(table, "escalate", where) ?? DEFAULT_CONDUCTOR.escalate,
     delegate: readStringArray(table, "delegate", where) ?? DEFAULT_CONDUCTOR.delegate,
     allowedTools: readStringArray(table, "allowed_tools", where) ?? DEFAULT_CONDUCTOR.allowedTools,
@@ -488,9 +504,13 @@ function readConductor(table: TomlTable | undefined): ConductorConfig {
     requireApproval: readBoolean(table, "require_approval", where) ?? DEFAULT_CONDUCTOR.requireApproval,
     phaseReviewers: readReviewers(table, "phase_reviewers", where),
     reviewTimeoutMinutes: readTimeout(table, where),
-    model: readModel(table, "model", where),
-    models: readConductorModels(readConductorModelsTable(table, where)),
+    model: selected.model ?? fallback.model,
+    // プロバイダ別の既定モデルは、旧形式のフェーズ別モデルよりも優先する。
+    models: { ...(selected.model === undefined ? fallback.models : {}), ...selected.models },
   };
+  if (provider === "codex" && (conductor.allowedTools.length > 0 || budget > 0)) {
+    throw new HikyakuError(`${where}: codex では allowed_tools と budget_per_run は使えません（空配列・0 にしてください）`);
+  }
   checkConductorAsks(conductor, where);
   return conductor;
 }
@@ -540,37 +560,26 @@ function readModel(table: TomlTable | undefined, key: string, where: string): st
   return value;
 }
 
-/**
- * [conductor.models] を読む。フェーズ名のタイプミスを黙って捨てると、指定したつもりの
- * モデルが効かないまま既定のモデルで動くので、未知のキーはエラーにする
- */
-/** [conductor.models] を取り出す。models = "opus" のようにテーブル以外で書かれたら、黙って無視せず止める */
-function readConductorModelsTable(table: TomlTable | undefined, where: string): TomlTable | undefined {
-  if (table?.["models"] === undefined) return undefined;
-  const models = readTable(table, "models");
-  if (models === undefined) {
-    throw new HikyakuError(
-      `${where}.models はテーブルで指定してください`,
-      "全フェーズの既定は [conductor] の model に、フェーズごとの上書きは [conductor.models] の下に build = \"opus\" の形で書きます。",
-    );
+/** 旧形式とプロバイダ別のモデル設定を同じ規則で検査する。未選択のプロバイダも検査する。 */
+function readConductorModelSettings(table: TomlTable | undefined, where: string): Pick<ConductorConfig, "model" | "models"> {
+  const model = readModel(table, "model", where);
+  if (table?.["models"] !== undefined && readTable(table, "models") === undefined) {
+    throw new HikyakuError(`${where}.models はテーブルで指定してください`);
   }
-  return models;
-}
-
-function readConductorModels(table: TomlTable | undefined): Partial<Record<ConductorPhase, string>> {
-  const where = "[conductor.models]";
+  const modelsTable = table === undefined ? undefined : readTable(table, "models");
+  const modelsWhere = `${where.slice(0, -1)}.models]`;
   const models: Partial<Record<ConductorPhase, string>> = {};
-  for (const key of Object.keys(table ?? {})) {
+  for (const key of Object.keys(modelsTable ?? {})) {
     if (!(CONDUCTOR_PHASES as readonly string[]).includes(key)) {
       throw new HikyakuError(
-        `${where} に指定できないキーです: ${key}`,
+        `${modelsWhere} に指定できないキーです: ${key}`,
         `使用できるキー: ${CONDUCTOR_PHASES.join(" | ")}`,
       );
     }
-    const model = readModel(table, key, where);
-    if (model !== undefined) models[key as ConductorPhase] = model;
+    const phaseModel = readModel(modelsTable, key, modelsWhere);
+    if (phaseModel !== undefined) models[key as ConductorPhase] = phaseModel;
   }
-  return models;
+  return { model, models };
 }
 
 /** テーブルに許可していないキーが無いか。タイプミスを黙って捨てると、設定したつもりの値が効かない */
@@ -1264,6 +1273,7 @@ function finalize(
       title: readString(readTable(merged, "pr"), "title", "[pr]") ?? DEFAULT_PR_TITLE,
       reviewers: readReviewers(readTable(merged, "pr"), "reviewers", "[pr]"),
       reviewersSkip: readReviewerSkip(readTable(merged, "pr")),
+      autoReady: readBoolean(readTable(merged, "pr"), "auto_ready", "[pr]") ?? true,
     },
     session: {
       title:
