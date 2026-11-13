@@ -231,7 +231,15 @@ register({
     const estimate = sumComponents(values);
     const verdict = peakVerdict(estimate.total, config.peakBands);
     const markdown = renderEstimateMarkdown(estimate, verdict, config.peakBands, guide);
+    // 版の宣言が本文と合わないガイドで見積もると、補正後の本文が古い版の名前で記録され、
+    // tokens history --group-by guide で補正の前と後を分けられなくなる。先に tokens stamp させる
     const problems = guide.kind === "project" ? guideHeaderProblems(guide) : [];
+    if (problems.length > 0) {
+      throw new HikyakuError(
+        `ガイド（${relative(config.repoRoot, guide.path)}）の版の宣言が本文と合いません: ${problems.join(" / ")}`,
+        "hikyaku tokens stamp で版を整えてから見積もってください。",
+      );
+    }
 
     emit(
       {
@@ -240,7 +248,6 @@ register({
         bands: config.peakBands,
         components: estimate.components,
         guide: { kind: guide.kind, label: guideLabel(guide), version: guide.version ?? null, hash: guide.actualHash, path: guide.path },
-        guideProblems: problems,
         markdown,
       },
       () => {
@@ -248,7 +255,6 @@ register({
           `予測ピーク ${formatK(estimate.total)}`,
           `判定: ${describePeakVerdict(verdict, config.peakBands)}`,
           `ガイド: ${guideLabel(guide)}（${guide.actualHash}）`,
-          ...problems.map((p) => `注意: ガイドの ${p}`),
           "",
         ];
         lines.push(

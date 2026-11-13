@@ -276,7 +276,9 @@ export function planStamp(hikyakuRoot: string): StampPlan {
   const current = readGuide(path, "project");
   const source = readFileSync(path, "utf8");
   const changed = current.hash !== current.actualHash;
-  const version = current.version === undefined ? 1 : changed && current.hash !== undefined ? current.version + 1 : current.version;
+  // 版が無い・1 未満（version: 0 など）なら 1 に正す。正さないと guideHeaderProblems が残り続ける
+  const valid = current.version !== undefined && current.version >= 1 ? current.version : undefined;
+  const version = valid === undefined ? 1 : changed && current.hash !== undefined ? valid + 1 : valid;
   const content = renderGuide({ version, basedOn: current.basedOn }, current.body);
   return {
     content: content === source ? undefined : content,

@@ -168,11 +168,22 @@ test("CLI: tokens stamp は標準からガイドを作り、本文を変えた�
   const stale = cli(directory, "validate", "--json");
   assert.equal(stale.status, 2);
   assert.match(stale.stderr, /tokens stamp/);
+  // 版を上げ忘れたガイドでは見積もらない（補正後の本文が古い版の名前で記録されるため）
+  const estimate = cli(directory, "tokens", "estimate", "--fixed", "0", "--reading", "0", "--implementation", "0", "--tests", "0", "--unknown", "0");
+  assert.equal(estimate.status, 1);
+  assert.match(estimate.stderr, /tokens stamp/);
 
   const bumped = JSON.parse(succeeds(directory, "tokens", "stamp", "--json"));
   assert.equal(bumped.previous, 1);
   assert.equal(bumped.version, 2);
   assert.match(readFileSync(join(directory, guide), "utf8"), /^---\nversion: 2\nbased_on: 標準 v\d+\nhash: [0-9a-f]{8}\n---\n/);
+  assert.equal(JSON.parse(succeeds(directory, "validate", "--json")).ok, true);
+
+  // 1 未満の版は 1 に正す（そのままだと validate が止まり続ける）
+  write(directory, guide, readFileSync(join(directory, guide), "utf8").replace("version: 2", "version: 0"));
+  assert.equal(cli(directory, "validate", "--json").status, 2);
+  const fixed = JSON.parse(succeeds(directory, "tokens", "stamp", "--json"));
+  assert.equal(fixed.version, 1);
   assert.equal(JSON.parse(succeeds(directory, "validate", "--json")).ok, true);
 });
 
