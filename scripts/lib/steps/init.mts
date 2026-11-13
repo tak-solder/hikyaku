@@ -8,7 +8,7 @@
  * 作業単位は HIKYAKU_ROOT 自身で、progress.jsonl はワークスペース直下に置く。
  * init は1リポジトリにつき1回なので、回ごとに分ける必要は無い。
  *
- * 初期化済みかどうかは stop で決める。pr を終えていれば止まる。init の記録が1件も無いのに
+ * 初期化済みかどうかは stop で決める。pr を（PR を添えて）終えていれば止まる。init の記録が1件も無いのに
  * document-guide.md に登録がある（未作成以外の行がある）なら、v2 までに初期化した
  * ワークスペースとみなして止まる。登録が無い（雛形のまま）なら、雛形を生成した直後に
  * 中断したとみなして cleanup から続ける。
@@ -16,6 +16,10 @@
  * 完了の条件は produces / evidence ではなく requires で書く。document-guide.md も AGENTS.md も
  * 雛形の生成や init より前から存在しうるので、produces / evidence にすると
  * 「後ろのステップの成果物があるのに記録が無い」と読まれて止まる。
+ *
+ * requires は完了したあとも毎回確かめるので、link のあとに guide を直して索引と食い違えば、
+ * 現在地は link に戻る（guide と索引が食い違ったまま PR にはしない）。承認は自動では取り直させず、
+ * guide の変更は Git の履歴とレビューで追う。
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -37,7 +41,7 @@ function guideEntries(ctx: StepContext): DocEntry[] | string {
 function initialized(ctx: StepContext): string | undefined {
   // PR まで終えたら、以後 document-guide.md や AGENTS.md が変わっても手順に戻らない
   // （requires が満たされなくなって link に戻り、承認なしで索引を書き直すのを防ぐ）
-  if (ctx.events.some((event) => event.skill === "init" && event.step === "pr" && event.result === "done")) {
+  if (ctx.events.some((event) => event.skill === "init" && event.step === "pr" && event.result === "done" && event.pr !== undefined)) {
     return "このワークスペースは初期化済みです（init の手順をすべて終えています）。";
   }
   if (ctx.events.some((event) => event.skill === "init")) return undefined;
@@ -95,9 +99,13 @@ export const INIT_STEPS: SkillSteps = {
       id: "link-approval",
       kind: "gate",
       title: "AGENTS.md への索引の承認",
-      binds: ["document-guide.md"],
     },
     { id: "link", kind: "run", title: "AGENTS.md への索引の書き込み", requires: indexStale },
-    { id: "pr", kind: "run", title: "ブランチ・コミット・PR" },
+    {
+      id: "pr",
+      kind: "run",
+      title: "ブランチ・コミット・PR",
+      recordsPr: true,
+    },
   ],
 };

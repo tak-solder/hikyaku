@@ -24,5 +24,5 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers create {NN
 cycles.md がデフォルトブランチに入らないと、他サイクルからこのサイクルが見えない。
 並行サイクルの検出が機能しなくなるため、この PR は速やかにマージするよう案内する。
 
-- [ ] `done` を報告する
+- [ ] `done` を報告する（`--pr` に PR の URL）
 - [ ] 同じブランチへコミット & push する（progress.jsonl）

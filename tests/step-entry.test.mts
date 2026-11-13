@@ -12,7 +12,6 @@ interface Directive {
   read?: string;
   report?: Record<string, string>;
   note?: string;
-  binds?: string[];
   progress?: { complete: number; total: number };
 }
 
@@ -91,21 +90,13 @@ test("step init: document-guide.md が検証を通らなければ register を�
   assert.equal(report(directory, "init", "register", "--result", "done").step, "link-approval");
 });
 
-test("step init: 索引の承認は document-guide.md に結びつき、書き込む前に直すと取り直しになる", (t) => {
+test("step init: 索引を承認して書き込み、PR を添えて終えたら初期化済みになる", (t) => {
   const directory = workspace(t);
   report(directory, "init", "cleanup", "--result", "done");
   const gate = report(directory, "init", "register", "--result", "done");
   assert.equal(gate.kind, "gate");
   assert.equal(gate.step, "link-approval");
-  assert.deepEqual(gate.binds, ["document-guide.md"]);
-
   assert.equal(report(directory, "init", "link-approval", "--result", "approved", "--input", "OK").step, "link");
-  const guide = join(directory, GUIDE_FILE);
-  write(directory, GUIDE_FILE, `${readFileSync(guide, "utf8")}\n<!-- 追記 -->\n`);
-  const again = next(directory, "init");
-  assert.equal(again.step, "link-approval");
-  assert.match(again.note ?? "", /承認したあとに成果物が変わっています/);
-  report(directory, "init", "link-approval", "--result", "approved", "--input", "OK");
 
   // 索引を書き込むまでは link を受け付けない
   const early = cli(directory, "step", "report", "init", "link", "--result", "done");
@@ -114,8 +105,21 @@ test("step init: 索引の承認は document-guide.md に結びつき、書き�
   succeeds(directory, "docs", "link");
   assert.equal(report(directory, "init", "link", "--result", "done").step, "pr");
 
+  // PR を添えない done は受け付けない
+  const noPr = cli(directory, "step", "report", "init", "pr", "--result", "done");
+  assert.equal(noPr.status, 1);
+  assert.match(noPr.stderr, /--pr/);
+  // PR の前に guide を直して索引と食い違えば、link に戻る（食い違ったまま PR にしない）
+  const guide = join(directory, GUIDE_FILE);
+  const original = readFileSync(guide, "utf8");
+  write(directory, "docs/overview.md");
+  registerOverview(directory, "repo", "`docs/overview.md`");
+  assert.equal(next(directory, "init").step, "link");
+  writeFileSync(guide, original);
+  assert.equal(next(directory, "init").step, "pr");
+
   // PR まで終えたら初期化済みとして止まり、あとで guide が変わっても手順に戻らない
-  assert.equal(report(directory, "init", "pr", "--result", "done").kind, "stop");
+  assert.equal(report(directory, "init", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1").kind, "stop");
   registerOverview(directory, "対象外", "—");
   assert.equal(next(directory, "init").kind, "stop");
 });
@@ -144,7 +148,9 @@ test("step create: 単独で終えるなら理由付きでスキップし、PR �
   const pr = report(directory, "create", "to-plan", "001", "--result", "skipped", "--reason", "単独で終える");
   assert.equal(pr.step, "pr");
   assert.deepEqual(pr.progress, { complete: 1, total: 2 });
-  assert.equal(report(directory, "create", "pr", "001", "--result", "done").kind, "done");
+  const noPr = cli(directory, "step", "report", "create", "pr", "001", "--result", "done");
+  assert.equal(noPr.status, 1, "PR を添えない done は受け付けない");
+  assert.equal(report(directory, "create", "pr", "001", "--result", "done", "--pr", "https://github.com/o/r/pull/1").kind, "done");
 });
 
 test("step create: サイクルが無ければ進めない", (t) => {
@@ -179,14 +185,13 @@ function started(directory: string): void {
   assert.equal(report(directory, "bp-guide", "generate", "--result", "done").step, "collect");
 }
 
-test("step bp-guide: 変更の承認は rules.toml と cases.toml に結びつく", (t) => {
+test("step bp-guide: 変更を承認し、検査を通った基準表だけを PR にする", (t) => {
   const directory = workspace(t);
   started(directory);
   report(directory, "bp-guide", "collect", "--result", "done");
   const gate = report(directory, "bp-guide", "propose", "--result", "done");
   assert.equal(gate.kind, "gate");
   assert.equal(gate.step, "approve");
-  assert.deepEqual(gate.binds, ["rules.toml", "cases.toml"]);
 
   const rejected = report(directory, "bp-guide", "approve", "--result", "rejected", "--input", "境界のケースを足して");
   assert.equal(rejected.step, "approve");
@@ -200,8 +205,18 @@ test("step bp-guide: 変更の承認は rules.toml と cases.toml に結びつ�
   assert.equal(stale.status, 1);
   assert.match(stale.stderr, /README\.md/);
   succeeds(directory, "bp", "render");
+  // cases.toml が無いと、期待値の検査が既定のケースに落ちて通ってしまうので、揃っていることを別に見る
+  const cases = join(directory, GUIDE, "cases.toml");
+  const casesBody = readFileSync(cases, "utf8");
+  rmSync(cases);
+  assert.equal(next(directory, "bp-guide").step, "generate");
+  writeFileSync(cases, casesBody);
   report(directory, "bp-guide", "render", "--result", "done");
-  assert.equal(report(directory, "bp-guide", "pr", "--result", "done").kind, "done");
+  // render のあとに README を壊せば、PR の前に render へ戻る
+  write(directory, `${GUIDE}/README.md`, "# 基準表\n");
+  assert.equal(next(directory, "bp-guide").step, "render");
+  succeeds(directory, "bp", "render");
+  assert.equal(report(directory, "bp-guide", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1").kind, "done");
 });
 
 test("step bp-guide: 収集や変更案を省くと、承認と再生成を行わずに PR へ進む", (t) => {
@@ -219,7 +234,7 @@ test("step bp-guide: 前の回を終えていれば done が返り、step restar
   const directory = workspace(t);
   started(directory);
   report(directory, "bp-guide", "collect", "--result", "skipped", "--reason", "既定値の固定だけ");
-  report(directory, "bp-guide", "pr", "--result", "done");
+  report(directory, "bp-guide", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1");
   assert.equal(next(directory, "bp-guide").kind, "done");
 
   const restarted = cli(directory, "step", "restart", "bp-guide", "--reason", "新しい回", "--json");
@@ -229,4 +244,15 @@ test("step bp-guide: 前の回を終えていれば done が返り、step restar
   assert.equal(fresh.step, "generate");
   assert.equal(report(directory, "bp-guide", "generate", "--result", "done").step, "collect", "前の回の収集の省略は数えない");
   assert.deepEqual(next(directory, "bp-guide").progress, { complete: 2, total: 7 });
+});
+
+test("step bp-guide: 変更案を作らない回でも、cases.toml が欠けた基準表は PR にしない", (t) => {
+  const directory = workspace(t);
+  started(directory);
+  report(directory, "bp-guide", "collect", "--result", "skipped", "--reason", "既定値の固定だけ");
+  // generate のあとに cases.toml だけが消えた（validate は既定のケースに落ちて通る）
+  rmSync(join(directory, GUIDE, "cases.toml"));
+  const directive = next(directory, "bp-guide");
+  assert.equal(directive.step, "generate");
+  assert.match(directive.note ?? "", /成果物がありません|完了の条件/);
 });

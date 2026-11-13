@@ -13,7 +13,4 @@ AGENTS.md はリポジトリ全体の AI 設定であり、チーム全体に影
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs link --dry-run
 ```
 
-- [ ] 承認されたら `approved` を報告する（`--input` にユーザーの答え）。承認は document-guide.md の
-  ハッシュに結びつくので、承認後に guide を直すと取り直しになる
-- [ ] 直す指示があれば `rejected` を報告し（`--input` にユーザーの答え）、document-guide.md を直してから
-  `step next` に従って提示し直す
+- [ ] 直す指示があれば、document-guide.md を直してから提示し直す

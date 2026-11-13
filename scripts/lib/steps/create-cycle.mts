@@ -33,6 +33,7 @@ export const CREATE_CYCLE_STEPS: SkillSteps = {
       kind: "run",
       title: "単独で終える場合のブランチ・コミット・PR",
       when: toPlanSkipped,
+      recordsPr: true,
     },
   ],
 };

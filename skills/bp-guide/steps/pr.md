@@ -15,5 +15,5 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers bp-guide -
 ```
 
   失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
-- [ ] `done` を報告する
+- [ ] `done` を報告する（`--pr` に PR の URL）
 - [ ] 同じブランチへコミット & push する（progress.jsonl）

@@ -15,6 +15,15 @@
  * init が作っているので、produces にすると「記録が欠けている」と読まれて止まる。同じ理由で generate は
  * 基準表の有無で手順から外さず、あれば何もせずに done を報告させる（生成した直後に
  * 手順から外れると、生成の報告を受け付けなくなるため）。
+ *
+ * render と pr では、3ファイルが揃っていることと validate の検査を確かめる（cases.toml が無いと
+ * 期待値の検査が既定のケースに落ちるため、揃っていることは別に見る）。requires は完了したあとも
+ * 毎回確かめるので、render のあとに基準表を壊せば現在地は前に戻る。pr にも置くのは、変更案を
+ * 作らない回（render が無い）でも検査を通らない基準表を PR にしないため。承認は自動では
+ * 取り直させず、rules.toml / cases.toml の変更は Git の履歴とレビューで追う。
+ *
+ * BP の算出方式（rules.toml の段階表と cases.toml の期待値）は、#68 で v3 の見積もり方を決めるまでの
+ * 暫定のもの。方式を変えるときは、この手順・build-manager の estimate・分割のしきい値を合わせて変える。
  */
 
 import { existsSync } from "node:fs";
@@ -32,6 +41,11 @@ function latestThisRound(ctx: StepContext, step: string): string | undefined {
 function guideMissing(ctx: StepContext): string | undefined {
   const missing = [BP_RULES_FILE, BP_README_FILE, BP_CASES_FILE].filter((name) => !existsSync(join(ctx.unitDirectory, name)));
   return missing.length === 0 ? undefined : `bp-guide/ に ${missing.join(", ")} がありません`;
+}
+
+/** 3ファイルが揃い、README の表・期待値・rules.toml の構文が validate の bp-guide の検査を通るか */
+function guideReady(ctx: StepContext): string | undefined {
+  return guideMissing(ctx) ?? guideInvalid(ctx);
 }
 
 /** README の表・期待値・rules.toml の構文が揃っているか（validate の bp-guide の検査と同じ） */
@@ -62,9 +76,8 @@ export const BP_GUIDE_STEPS: SkillSteps = {
       kind: "gate",
       title: "rules.toml / cases.toml の変更の承認",
       when: proposed,
-      binds: ["rules.toml", "cases.toml"],
     },
-    { id: "render", kind: "run", title: "README の表の再生成と検証", when: proposed, requires: guideInvalid },
-    { id: "pr", kind: "run", title: "コミットと PR" },
+    { id: "render", kind: "run", title: "README の表の再生成と検証", when: proposed, requires: guideReady },
+    { id: "pr", kind: "run", title: "コミットと PR", recordsPr: true, requires: guideReady },
   ],
 };
