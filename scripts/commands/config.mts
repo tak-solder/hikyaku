@@ -3,7 +3,7 @@
 import { flagString } from "../lib/args.mts";
 import { describeProviderRules, loadConfig } from "../lib/config.mts";
 import { DEFAULT_BRANCH_MARK, resolveUnsafeSplit } from "../lib/integrity.mts";
-import { emit } from "../lib/output.mts";
+import { emit, warn } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { describeSource, openCycleIfAny } from "../lib/workspace.mts";
 
@@ -47,7 +47,10 @@ register({
 
     const unsafeSplit = resolveUnsafeSplit(config);
 
-    emit({ ...config, cycle: opened?.context.name, cycleSource: opened?.context.source, unsafeSplit }, () => {
+    const retired = config.retired.map((error) => error.message);
+    for (const error of config.retired) warn(`${error.message}（v3 の作業では止まります）`);
+
+    emit({ ...config, retired, cycle: opened?.context.name, cycleSource: opened?.context.source, unsafeSplit }, () => {
       const lines: string[] = [];
       if (opened) {
         lines.push(
@@ -59,7 +62,6 @@ register({
         `hikyakuRoot  ${config.hikyakuRoot}`,
         `profile      ${config.profile}`,
         `baseBranch   ${config.baseBranch ?? "(自動検出)"}`,
-        `bpMax        ${config.bpMax}`,
         "",
         "承認ゲート（profile 管轄）:",
         `  G1 user-stories      ${onOff(config.gates.userStories)}`,
@@ -105,14 +107,17 @@ register({
         `  allow_unsafe_split  ${config.dataIntegrity.allowUnsafeSplit}`,
         `  安全でない分割      ${unsafeSplit.allowed ? "許す" : "許さない"}（${unsafeSplit.message}）`,
         "",
-        "[bp_actual]:",
-        `  exclude  ${config.bpActual.exclude.join(", ")}`,
-        `  tests    ${config.bpActual.tests.join(", ")}`,
+        "[diff]（tokens history build-NN の差分の集計）:",
+        `  exclude  ${config.diff.exclude.join(", ")}`,
+        `  tests    ${config.diff.tests.join(", ")}`,
         "",
         "[context]（区切りでのコンテキストの目安）:",
         `  approval   ${config.context.approval.toLocaleString("en-US")}`,
         `  implement  ${config.context.implement.toLocaleString("en-US")}`,
         `  review     ${config.context.review.toLocaleString("en-US")}`,
+        "[context]（予測ピークの判定の帯）:",
+        `  merge_below  ${config.peakBands.mergeBelow.toLocaleString("en-US")}`,
+        `  split_above  ${config.peakBands.splitAbove.toLocaleString("en-US")}`,
       );
       if (config.external.githubRepo) lines.push(`  github_repo  ${config.external.githubRepo}`);
       if (config.external.asanaProjectGid) {

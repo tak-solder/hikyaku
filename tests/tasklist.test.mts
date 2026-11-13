@@ -1,18 +1,27 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { HikyakuError } from "../scripts/lib/errors.mts";
-import { blockedBuilds, nextBuildId, parseTasklist, readyBuilds, renderTasklistFile, validateGraph } from "../scripts/lib/tasklist.mts";
+import { blockedBuilds, isLegacyTasklist, nextBuildId, parseTasklist, readyBuilds, renderTasklistFile, validateGraph } from "../scripts/lib/tasklist.mts";
 import { build } from "./helpers.mts";
 
 test("tasklist: ビルド ID と依存 ID の接頭辞・ゼロ埋めを同じように正規化する", () => {
-  const source = `| buildID | title | BP | dependencies | issue | PR |
+  const source = `| buildID | title | 予測ピーク | dependencies | issue | PR |
 | --- | --- | --- | --- | --- | --- |
-| build-01 | 基盤 | 2 | — | - | — |
+| build-01 | 基盤 | 350k | — | - | — |
 | BUILD-003 | API | — | build-01、 002 | [issue](./build-03/issue.md) | — |`;
   assert.deepEqual(parseTasklist(source), [
     build("1", { title: "基盤" }),
-    build("3", { title: "API", bp: undefined, dependsOn: ["1", "2"], issue: "[issue](./build-03/issue.md)" }),
+    build("3", { title: "API", peak: undefined, dependsOn: ["1", "2"], issue: "[issue](./build-03/issue.md)" }),
   ]);
+});
+
+test("tasklist: v2 の見出し（BP 列）は読めるが、BP は予測ピークとして読まない", () => {
+  const source = `| buildID | title | BP | dependencies | issue | PR |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 基盤 | 3 | — | - | — |`;
+  assert.equal(isLegacyTasklist(source), true);
+  assert.deepEqual(parseTasklist(source), [build("1", { title: "基盤", peak: undefined })]);
+  assert.equal(isLegacyTasklist(renderTasklistFile("001-test", [build("1")])), false);
 });
 
 test("tasklist: 想定テーブルが無いと解析失敗を報告する", () => {

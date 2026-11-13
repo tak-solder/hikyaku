@@ -17,12 +17,12 @@
 先行ビルドがマージされていても、そのブランチから積んで（スタックして）いても構いません。
 依存関係がないビルドは並行実行できます。
 
-| buildID | title              | BP | dependencies | issue                        | PR         |
-| ------- | ------------------ | -- | ------------ | ---------------------------- | ---------- |
-| 1       | DB基盤             | 2  | —            | [issue](./build-01/issue.md) | pr/10      |
-| 2       | 認証API            | 3  | 1, 4         | [issue](./build-02/issue.md) | —          |
-| 3       | 投稿API            | 3  | 2            | [issue](./build-03/issue.md) | —          |
-| 4       | 共通ユーティリティ | 2  | 1            | [issue](./build-04/issue.md) | —          |
+| buildID | title              | 予測ピーク | dependencies | issue                        | PR         |
+| ------- | ------------------ | ---------- | ------------ | ---------------------------- | ---------- |
+| 1       | DB基盤             | 320k       | —            | [issue](./build-01/issue.md) | pr/10      |
+| 2       | 認証API            | 410k       | 1, 4         | [issue](./build-02/issue.md) | —          |
+| 3       | 投稿API            | 380k       | 2            | [issue](./build-03/issue.md) | —          |
+| 4       | 共通ユーティリティ | 300k       | 1            | [issue](./build-04/issue.md) | —          |
 
 ## 依存グラフ
 
@@ -45,7 +45,7 @@ graph TD
 |---|---|
 | `buildID` | 作成順の連番。`max(既存) + 1` で採番し、リナンバリングは行わない |
 | `title` | ビルド名 |
-| `BP` | ビルドポイント（`hikyaku bp estimate` の算出値。手順は [bp-guide.md](bp-guide.md)） |
+| `予測ピーク` | architect 段階で見積もった、メインセッションのコンテキストのピーク（`hikyaku tokens estimate` の算出値。手順は [estimate.md](estimate.md)） |
 | `dependencies` | 依存ビルドID。実行順序はこの依存グラフで決まる |
 | `issue` | `build-{NN}/issue.md` への相対リンク。作成時に記録し以後不変 |
 | `PR` | **着手可否と完了判定に使う唯一の列**。当該ビルドの PR に同梱して更新する |
@@ -92,24 +92,27 @@ issue.md の本文は build-manager（LLM）が書きます。tasklist.md の行
 （安全でない分割を使ったビルドだけに書く。使っていなければ節ごと書かない）
 
 - （このビルドをマージした時点で、本番に出ると何が壊れうるか）
-- 安全な分割にできなかった理由: （例: 分けると BP が上限を超える）
+- 安全な分割にできなかった理由: （例: 安全に分けると予測ピークが split_above を大きく超える）
 - 解消するビルド: build-NN（このビルドに依存させる）
 
-## BP見積もり
+## 予測ピーク
 
-（`hikyaku bp estimate {cycle} ... --markdown` の内訳表をそのまま貼る。
-　新規ファイル数の根拠として、作成するファイルを列挙する）
+（`hikyaku tokens estimate {cycle} ... --markdown` の内訳表をそのまま貼る。
+　成分の根拠として、読むファイルと作成するファイルを列挙する）
 
+読むファイル: （例: `design/design-delta.md` の「請求」、`src/billing/*.ts`（8ファイル）, ...）
 作成するファイル: （例: `src/billing/invoice.ts`, `src/billing/invoice.test.ts`, ...）
 
-| 項目 | 値 | BP |
-|------|----|----|
+| 成分 | 予測 | 根拠 |
+|------|------|------|
 | ... | ... | ... |
+
+（split_above を超えたまま1ビルドにした場合だけ、その理由を書く）
 ```
 
-「BP見積もり」の表は build-manager が `bp estimate` の出力を貼るもので、手で計算しません。
-builder は plan.md で入力値を見直して再算出するので、ここに書くのは architect 段階の
-入力値とその BP です。
+「予測ピーク」の表は build-manager が `tokens estimate` の出力を貼るもので、手で計算しません。
+表の最後の行は見積もりに使ったガイドの版で、消しません。builder は plan.md で成分を見直して
+見積もり直すので、ここに書くのは architect 段階の予測です。
 
 「対応する受け入れ基準」の見出しは変えません。`hikyaku validate` がこの見出しの節から番号を読み、
 user-stories.md の受け入れ基準がどれかのビルドに割り当てられているかを検査します。

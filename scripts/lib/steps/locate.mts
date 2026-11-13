@@ -10,7 +10,7 @@
  *
  *   explicit  渡したサイクルだけを見る（step where <cycle>・conductor parse）。終えたサイクルも見る。
  *             close-cycle は cycle close で status を closed にしてから pr を行うため。
- *             HIKYAKU_ROOT 直下（init / bp-guide）は見ない
+ *             HIKYAKU_ROOT 直下（init / token-guide）は見ない
  *   all       HIKYAKU_ROOT 直下と、進行中のサイクルのディレクトリとその直下のディレクトリ
  *             （planning/・design/・build-NN/）を見る（Stop フック）。終えたサイクルは、CLOSE の
  *             手順が残っているときだけサイクルのディレクトリ直下を見る

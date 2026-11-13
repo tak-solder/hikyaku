@@ -26,7 +26,7 @@ export function testEnvironment(): NodeJS.ProcessEnv {
   delete env["HIKYAKU_REVIEW_PROVIDER"];
   delete env["CLAUDE_CODE_REMOTE"];
   delete env["CODEX_ENVIRONMENT_ID"];
-  // 実行中のセッションの記録を bp session に読ませない
+  // 実行中のセッションの記録を tokens session に読ませない
   for (const key of ["CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "CLAUDE_CONFIG_DIR", "CODEX_HOME"]) {
     delete env[key];
   }
@@ -47,7 +47,7 @@ export function cli(directory: string, ...args: string[]) {
   return cliWith(directory, {}, ...args);
 }
 
-/** 環境変数を足して CLI を実行する（bp session の記録の場所を一時ディレクトリへ向ける等） */
+/** 環境変数を足して CLI を実行する（tokens session の記録の場所を一時ディレクトリへ向ける等） */
 export function cliWith(directory: string, extraEnv: NodeJS.ProcessEnv, ...args: string[]) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd: directory, encoding: "utf8", env: { ...testEnvironment(), ...extraEnv }, timeout: 10_000,
@@ -102,7 +102,7 @@ export function snapshot(directory: string): Record<string, string> {
 }
 
 export function build(id: string, overrides: Partial<BuildRecord> = {}): BuildRecord {
-  return { id, title: `ビルド ${id}`, bp: 2, dependsOn: [], issue: "", pr: "", ...overrides };
+  return { id, title: `ビルド ${id}`, peak: 350_000, dependsOn: [], issue: "", pr: "", ...overrides };
 }
 
 export function cycle(id = "001", overrides: Partial<CycleRecord> = {}): CycleRecord {

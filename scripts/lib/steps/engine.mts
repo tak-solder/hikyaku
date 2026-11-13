@@ -35,7 +35,7 @@ export type StepKind = "run" | "gate" | "call";
 /** 定義の条件・成果物を評価するときに渡すもの */
 export interface StepContext {
   config: ResolvedConfig;
-  /** 対象サイクル。サイクルの無いフェーズ（init / bp-guide）では undefined */
+  /** 対象サイクル。サイクルの無いフェーズ（init / token-guide）では undefined */
   cycle: CycleContext | undefined;
   /** 作業単位のフェーズ（build-03 など） */
   unit: string;
@@ -76,8 +76,8 @@ export interface StepDefinition {
   skippable?: boolean;
   /** このステップに入るときに、コンテキストを目安と比べる区切り（#68） */
   checkpoint?: keyof ContextBudget;
-  /** 報告で BP を添えるか。required なら done に --bp が必須、optional なら任意 */
-  bp?: "required" | "optional";
+  /** 報告で予測ピークを添えるか。required なら done に --peak が必須、optional なら任意 */
+  peak?: "required" | "optional";
   /** done に --pr（作った PR の URL か番号）が必須か。記録に PR が無い done は完了とみなさない */
   recordsPr?: boolean;
   /** 設定から解決して指示に添える値 */
@@ -88,7 +88,7 @@ export interface SkillSteps {
   skill: string;
   /**
    * そのフェーズを担うときの、作業単位のディレクトリ（progress.jsonl を置く場所）。
-   * サイクルのあるフェーズはサイクルのディレクトリから、サイクルの無いフェーズ（init / bp-guide）は
+   * サイクルのあるフェーズはサイクルのディレクトリから、サイクルの無いフェーズ（init / token-guide）は
    * HIKYAKU_ROOT からの相対パス。担わないフェーズなら undefined。内部スキルは持たない
    */
   unit?: (phase: Phase) => string | undefined;
@@ -270,12 +270,12 @@ export function currentRound(skill: SkillSteps, events: ProgressEvent[]): string
   return index === -1 ? undefined : events[index]?.round;
 }
 
-/** 報告で添えた BP のうち、最後のもの */
-export function latestBp(events: ProgressEvent[]): number | undefined {
+/** 報告で添えた予測ピークのうち、最後のもの */
+export function latestPeak(events: ProgressEvent[]): number | undefined {
   for (let i = events.length - 1; i >= 0; i -= 1) {
     if (events[i]?.result === RESTART) return undefined;
-    const bp = events[i]?.bp;
-    if (bp !== undefined) return bp;
+    const peak = events[i]?.peak;
+    if (peak !== undefined) return peak;
   }
   return undefined;
 }

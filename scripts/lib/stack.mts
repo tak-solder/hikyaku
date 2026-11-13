@@ -1,7 +1,7 @@
 /**
  * フェーズの解決と、スタック元の導出。
  *
- * PR のマージ先（pr base）と、差分を測る基準（bp actual）は同じ答えでなければ
+ * PR のマージ先（pr base）と、差分を測る基準（tokens history build-NN）は同じ答えでなければ
  * ならない。基準がずれると、PR に含まれない差分を測ったり、逆に先行ビルドの
  * 差分まで数えたりする。導出をここに1つだけ置くのはそのため。
  */
@@ -26,13 +26,13 @@ export function requirePhase(raw: string | undefined): Phase {
   if (raw === undefined) {
     throw new HikyakuError(
       "フェーズを指定してください",
-      "使用できる値: init | bp-guide | create | plan | architect | build-NN | close | conductor",
+      "使用できる値: init | token-guide | create | plan | architect | build-NN | close | conductor",
     );
   }
   if (!isPhase(raw)) {
     throw new HikyakuError(
       `フェーズの値が不正です: ${raw}`,
-      "使用できる値: init | bp-guide | create | plan | architect | build-NN（NN は2桁以上の数字）| close | conductor",
+      "使用できる値: init | token-guide | create | plan | architect | build-NN（NN は2桁以上の数字）| close | conductor",
     );
   }
   return raw;

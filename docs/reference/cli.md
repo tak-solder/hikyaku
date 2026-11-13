@@ -65,7 +65,7 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | コマンド | いつ使うか |
 |---|---|
 | `doctor` | 環境が動く状態かを確認したいとき。導入直後と、動かないとき |
-| `validate [<cycle>]` | ファイルの整合性を確認したいとき。[CI](../operations/ci.md) から呼ぶと効く。`bp-guide/` の構文・README の表の古さ・期待値の不一致、受け入れ基準の割り当て漏れ、「マージ時点で残る危険」の記録の不備も見る |
+| `validate [<cycle>]` | ファイルの整合性を確認したいとき。[CI](../operations/ci.md) から呼ぶと効く。`token-guide/guide.md` の版の宣言と本文の食い違い、受け入れ基準の割り当て漏れ、「マージ時点で残る危険」の記録の不備も見る |
 | `docs validate` | ドキュメントガイドのパスだけを確認したいとき |
 
 ## ドキュメント
@@ -95,7 +95,7 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | コマンド | いつ使うか |
 |---|---|
 | `tasklist add` | ビルドを追加するとき（通常は `build-manager` が呼ぶ） |
-| `tasklist update` | 既存ビルドのタイトル・BP・依存を変えるとき |
+| `tasklist update` | 既存ビルドのタイトル・予測ピーク・依存を変えるとき |
 | `tasklist done --id <n> --pr <url>` | ビルドの完了を記録するとき。当該ビルドの PR に同梱する |
 | `tasklist link --id <n> --issue <url>` | 子 issue の参照を手で記録するとき |
 
@@ -108,48 +108,45 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | `step next <phase> [<cycle>]` | フェーズの中の次の1手を知りたいとき（スキルの転送ループが呼ぶ） |
 | `step report <phase> <step> [<cycle>] --result <結果>` | 1手の結果を記録するとき。記録したあと次の1手を返す |
 | `step status <phase> [<cycle>]` | 手順の一覧と、それぞれが完了・スキップ・未完了・対象外のどれかを見たいとき |
-| `step restart <phase> [<cycle>] [--round <回の種類>] --reason <理由>` | 同じ作業単位で手順を最初から回し直すとき（architect の再設計・追加設計、bp-guide の新しい回、内部スキルの呼び直し） |
+| `step restart <phase> [<cycle>] [--round <回の種類>] --reason <理由>` | 同じ作業単位で手順を最初から回し直すとき（architect の再設計・追加設計、token-guide の新しい回、内部スキルの呼び直し） |
 | `step where [<cycle>]` | このチェックアウトで、どの作業単位の手順が途中かを知りたいとき（navigator が呼ぶ） |
 | `step hook stop` | Claude Code の Stop フックとして呼ばれる。手で実行するものではない |
 | `step lint` | ステップの定義と指示ファイルの対応を確かめるとき（プラグイン自身の CI 用） |
 
-`step next` は、作業単位のディレクトリの `progress.jsonl` と成果物から現在地を導き、次の1手を返します。返る1手は5種類です。`run` はステップを行うもので、読むべき指示ファイルと報告のコマンドが付きます。`gate` はユーザーに承認を求めるもの、`call` は build-manager などの内部スキルを呼ぶものです。`done` は手順をすべて終えたこと、`stop` は止まる理由を表します。止まるのは、v2 で作成したサイクル、builder で architect への差し戻し中のとき、記録が欠けている（成果物はあるのに一度も記録が無い）とき、それにスキルが定めた条件（init で初期化済みのときなど）です。何度呼んでも、同じ状態なら同じ1手が返ります。いま `step` に移っているのは init（`init`）・create-cycle（`create`）・planner（`plan`）・architect（`architect`）・builder（`build-NN`）・close-cycle（`close`）・bp-guide（`bp-guide`）と、内部スキルの build-manager と retrospective です。navigator と conductor は手順を持たず、`step where` と `conductor parse` で手順の位置を読む側です。
+`step next` は、作業単位のディレクトリの `progress.jsonl` と成果物から現在地を導き、次の1手を返します。返る1手は5種類です。`run` はステップを行うもので、読むべき指示ファイルと報告のコマンドが付きます。`gate` はユーザーに承認を求めるもの、`call` は build-manager などの内部スキルを呼ぶものです。`done` は手順をすべて終えたこと、`stop` は止まる理由を表します。止まるのは、v2 で作成したサイクル、builder で architect への差し戻し中のとき、記録が欠けている（成果物はあるのに一度も記録が無い）とき、それにスキルが定めた条件（init で初期化済みのときなど）です。何度呼んでも、同じ状態なら同じ1手が返ります。いま `step` に移っているのは init（`init`）・create-cycle（`create`）・planner（`plan`）・architect（`architect`）・builder（`build-NN`）・close-cycle（`close`）・token-guide（`token-guide`）と、内部スキルの build-manager と retrospective です。navigator と conductor は手順を持たず、`step where` と `conductor parse` で手順の位置を読む側です。
 
-作業単位のディレクトリはフェーズで決まります。PLAN は `planning/`、ARCHITECT は `design/`、ビルドは `build-NN/`、CLOSE と create-cycle はサイクルのディレクトリ自身、init は HIKYAKU_ROOT 自身、bp-guide は `bp-guide/` です。`step` は `.hikyaku.config` から HIKYAKU_ROOT を解決するので、init の雛形を生成する前は使えません。create-cycle も同じで、`cycle new` でサイクルを作るまでは使えません。
+作業単位のディレクトリはフェーズで決まります。PLAN は `planning/`、ARCHITECT は `design/`、ビルドは `build-NN/`、CLOSE と create-cycle はサイクルのディレクトリ自身、init は HIKYAKU_ROOT 自身、token-guide は `token-guide/` です。`step` は `.hikyaku.config` から HIKYAKU_ROOT を解決するので、init の雛形を生成する前は使えません。create-cycle も同じで、`cycle new` でサイクルを作るまでは使えません。
 
 build-manager や retrospective のような内部スキルは、`--skill` を付けて呼び出し元のフェーズで進めます。architect から build-manager が呼ばれたら `step next architect --skill build-manager`、builder の振り返りなら `step next build-NN --skill retrospective` で、記録は呼び出し元と同じ `progress.jsonl` に入ります。呼び出し元が最後に報告したあとの記録だけがその呼び出しの分として数えられるので、呼ばれるたびに最初の手順から始まります。呼び出し元が報告しないまま呼び直すとき（builder の PR レビュー対応での振り返りなど）は、`step restart <phase> [<cycle>] --skill <内部スキル> --reason <理由>` で区切ってから始めます。`call` の1手には、呼ばれた側が最初に実行する `step next` のコマンドが添えられます。
 
-同じ作業単位で手順を回し直すときも `step restart` を使います。bp-guide は何度も回すので、前の回の記録が残っていると `step next` は `done` を返します。新しい回は `step restart bp-guide --reason <理由>` で始めます。前の回の記録はそのまま残り、区切りより後の記録だけが今回の回として数えられます。`--round` は回の種類で、スキルが受け付ける値だけを指定できます。architect では `return` が差し戻しからの再設計、`add` が指摘からの追加設計で、それぞれ返る手順が変わります。`--reason` は自由な理由として記録に残るだけです。
+同じ作業単位で手順を回し直すときも `step restart` を使います。token-guide は何度も回すので、前の回の記録が残っていると `step next` は `done` を返します。新しい回は `step restart token-guide --reason <理由>` で始めます。前の回の記録はそのまま残り、区切りより後の記録だけが今回の回として数えられます。`--round` は回の種類で、スキルが受け付ける値だけを指定できます。architect では `return` が差し戻しからの再設計、`add` が指摘からの追加設計で、それぞれ返る手順が変わります。`--reason` は自由な理由として記録に残るだけです。
 
-`step report` が記録できるのは、現在地のステップと、完了したステップの報告し直しだけです。`step next` が `stop` を返す状態（差し戻し中など）では、前に受け取った報告のコマンドも受け付けません。成果物が要るステップは、成果物が無ければ `done` を受け付けません。`skipped` と `failed` には理由が、ゲートの `rejected` にはユーザーの答えが必須です。builder の `plan` の `done` には再算出した BP（`--bp`）が、PR を作るステップの `done` には PR の URL か番号（`--pr`）が必須です。報告には、その時点のコンテキスト・セッション ID・Hikyaku の版も入ります。
+`step report` が記録できるのは、現在地のステップと、完了したステップの報告し直しだけです。`step next` が `stop` を返す状態（差し戻し中など）では、前に受け取った報告のコマンドも受け付けません。成果物が要るステップは、成果物が無ければ `done` を受け付けません。`skipped` と `failed` には理由が、ゲートの `rejected` にはユーザーの答えが必須です。builder の `plan` の `done` には見積もり直した予測ピーク（`--peak`）が、PR を作るステップの `done` には PR の URL か番号（`--pr`）が必須です。報告には、その時点のコンテキスト・セッション ID・Hikyaku の版も入ります。
 
 ゲートの承認は、差し戻すか、前のステップを報告し直すまで有効です。承認したあとに成果物を直しても、自動では無効になりません。変更は Git の履歴で追い、承認を取り直すかは変更の中身を見て決めます。取り直すときは、作り直したステップを `done` で報告し直すと、そこから後ろがやり直しになります。
 
-`step where` は、作業ツリーにある `progress.jsonl` を読み、記録のある作業単位ごとに `step next` と同じ1手を返します。フェーズを指定しなくてよいので、どこから再開すればよいかが分からないときの手がかりになります。並ぶのは指定したサイクルの作業単位だけで、init と bp-guide の記録は混ざりません。`cycle close` で終えたサイクルも読みます。内部スキル（build-manager / retrospective）を呼んでいる最中の作業単位は、呼ばれたスキルの1手を返します。記録は各フェーズのブランチにコミットされるため、別のブランチで進めた作業単位は見えません。v2 で作成したサイクルでは作業単位を読まず、v2 のまま終える案内を返します。
+`step where` は、作業ツリーにある `progress.jsonl` を読み、記録のある作業単位ごとに `step next` と同じ1手を返します。フェーズを指定しなくてよいので、どこから再開すればよいかが分からないときの手がかりになります。並ぶのは指定したサイクルの作業単位だけで、init と token-guide の記録は混ざりません。`cycle close` で終えたサイクルも読みます。内部スキル（build-manager / retrospective）を呼んでいる最中の作業単位は、呼ばれたスキルの1手を返します。記録は各フェーズのブランチにコミットされるため、別のブランチで進めた作業単位は見えません。v2 で作成したサイクルでは作業単位を読まず、v2 のまま終える案内を返します。
 
 `step hook stop` は、プラグインが Claude Code の Stop フックとして登録しているコマンドです。スキルの転送ループの途中でセッションが止まろうとしたときに、1回だけ続きを促します。止めるのは、そのセッションが手順を進めていて（`progress.jsonl` にそのセッションの ID がある）、次の1手が `run` か `call` のときだけです。ゲートで承認を待つとき、手順を終えたとき、`stop` が返ったときは止めません。同じターンの2回目も止めないので、ステップの途中でユーザーに尋ねたり、ユーザーが中断を指示したりしたときは、そのまま終えられます。Hikyaku を使っていないリポジトリや、記録を読めないときも何もしません。
 
-## BP
+## 予測ピーク
 
 | コマンド | いつ使うか |
 |---|---|
-| `bp guide [<cycle>]` | 現在有効な基準表と、`bp estimate` に渡すオプション名を確認したいとき |
-| `bp estimate [<cycle>] --new-files <n> ...` | 見積もった入力値を BP にするとき（build-manager / builder が呼ぶ）。振り返りで実績 BP を出すときも同じ |
-| `bp actual <phase> [<cycle>]` | 振り返りで、差分から新規ファイル数と追加行数（実装とテストの内訳つき）を測るとき |
-| `bp session [<phase> [<cycle>]]` | 振り返りで、セッションのコンテキストのピークを実測するとき。過去のビルドのセッションを測るときも使う |
-| `bp render` | `bp-guide/rules.toml` を変えたあと、`README.md` の表を再生成するとき |
-| `bp test` | `bp-guide/cases.toml` の期待値が基準表と一致するか確かめるとき。`--builtin` はワークスペースを見ず、組み込みの既定値と既定ケースだけを照合する（プラグイン自身の CI 用） |
-| `bp history [<cycle>]` | 基準表を調整する前に、ビルドごとの見積もり・実績・セッションの実測・区切りでのコンテキストを見渡したいとき。`--group-by` でモデル・版・ホストごとに分ける |
+| `tokens guide [<cycle>]` | 見積もりに使うガイド（プロジェクトか標準か）と、その版を確認したいとき |
+| `tokens estimate [<cycle>] --fixed <n> --reading <n> ...` | 成分ごとに見積もったトークンを合計し、予測ピークと判定を出すとき（build-manager / builder が呼ぶ） |
+| `tokens stamp` | ガイドの本文を変えたあと、版を上げるとき。ガイドが無ければ標準から作る |
+| `tokens session [<phase> [<cycle>]]` | 振り返りで、セッションのコンテキストのピークを実測するとき。過去のビルドのセッションを測るときも使う |
+| `tokens history [<cycle>]` | ガイドを補正する前に、ビルドごとの予測・実測・乖離・区切りでのコンテキストを見渡したいとき。`--group-by` でモデル・版・ホスト・ガイドの版ごとに分ける |
+| `tokens history build-NN [<cycle>]` | 振り返りで、そのビルドの差分（新規ファイル数・追加行数とその実装とテストの内訳）を数えるとき |
 
-`bp estimate` が返すのは、指標と加算要素の値を基準表に当てた BP と内訳です。基準表への当てはめをコマンドに寄せているのは、見積もりが外れたときに入力値の読み違えと基準表の不適合を切り分けるためです。基準表に無いオプションはエラーになります。タイプミスで加算要素が黙って落ちると、そのまま過小見積もりになります。
+`tokens estimate` が返すのは、5つの成分（固定費・読み込み・実装・テスト・未知の領域）の合計と、`[context]` の帯に対する判定と、記録に貼る内訳表です。成分の値はガイドに沿って LLM が見積もり、コマンドは足し算と判定だけを行います。5つの成分はすべて必須で、該当しない成分は 0 を渡します。省いた成分を黙って 0 にすると、考えなかったのか無いと判断したのかが記録から分からなくなるためです。内訳表の最後の行には、見積もりに使ったガイドの版とハッシュが入ります。
 
-`bp actual` が返すのは実測値だけで、BP の値そのものは返しません。差分から機械的に数えられるのは新規ファイル数と追加行数だけで、影響ファイル数や外部 API の該当は実装したセッションが申告するしかないためです。実績 BP は、実測値に申告を添えて `bp estimate` に渡して求めます。比較の起点は `pr base` と同じ導出なので、PR に含まれる差分と、測る差分が一致します。起点を別に持つと、先行ビルドの差分まで数えたり、逆に PR の一部を数え落としたりします。
+`tokens history build-NN` は、PR の base からの差分を数えます。比較の起点は `pr base` と同じ導出なので、PR に含まれる差分と、測る差分が一致します。起点を別に持つと、先行ビルドの差分まで数えたり、逆に PR の一部を数え落としたりします。ワークスペース配下と、ロックファイル・スナップショット・生成コードは書いた量ではないので数えず、除いたファイルを一覧で出します。生成物とテストのパスは `[diff]` で変えられます（[設定](../configuration/config-file.md#diff)）。起点を解決できないときは、推測せず「計測不可」とその理由を返します。実測できなかったことを実測できたように記録させないためです。
 
-ワークスペース配下は数えません。`plan.md` や `handoff.md` が実装行数に混ざると、見積もりの指標（実装コードの規模）と比較する意味が無くなるためです。ロックファイル・スナップショット・生成コードも同じ理由で数えず、除いたファイルを一覧で出します。追加行数はテストのパスに当たるファイルとそれ以外に分けた内訳も返しますが、`--lines` に渡すのは従来どおり合計です。生成物とテストのパスは `[bp_actual]` で変えられます（[設定](../configuration/config-file.md#bp_actual)）。起点を解決できないときはエラーになります。推測値を返さないのは、実測できなかったことを実測できたように記録させないためです。
+`tokens session` は、ホストが残すセッションの記録からコンテキストの大きさを実測します。引数なしでは現在のセッションを測り、Claude Code では `CLAUDE_CODE_SESSION_ID`、Codex では `CODEX_THREAD_ID` で記録を特定します。`<phase> [<cycle>]` を渡すと、そのフェーズのブランチに対応付くセッションを集め、そのブランチでの API 呼び出しが最も多いものを本体として測ります。サブエージェントと Codex の guardian は対象外です。記録のファイルは `--transcript <path>` で直接指定することもできます。記録が見つからないとき、Codex のクラウドで rollout が無いときは、終了コード 0 で「計測不可」とその理由を返します。`--markdown` は `retrospective.md` に貼る表を出します。
 
-`bp session` は、ホストが残すセッションの記録からコンテキストの大きさを実測します。引数なしでは現在のセッションを測り、Claude Code では `CLAUDE_CODE_SESSION_ID`、Codex では `CODEX_THREAD_ID` で記録を特定します。`<phase> [<cycle>]` を渡すと、そのフェーズのブランチに対応付くセッションを集め、そのブランチでの API 呼び出しが最も多いものを本体として測ります。サブエージェントと Codex の guardian は対象外です。記録のファイルは `--transcript <path>` で直接指定することもできます。記録が見つからないとき、Codex のクラウドで rollout が無いときは、終了コード 0 で「計測不可」とその理由を返します。`--markdown` は `retrospective.md` に貼る表を出します。
-
-基準表の構成と調整の手順は [BP の基準表](../configuration/bp-guide.md) にあります。
+ガイドの構成と補正の手順は [予測ピークと見積もりのガイド](../configuration/token-guide.md) にあります。
 
 ## 命名
 
@@ -167,7 +164,7 @@ build-manager や retrospective のような内部スキルは、`--skill` を�
 
 取り込み済みかどうかは、祖先関係とデフォルトブランチの `PR` 列の両方で判定します。squash merge や rebase merge ではマージ済みでもブランチの先端が祖先になりません。祖先関係だけに頼ると、マージ済みのブランチをスタック元と誤判定して、存在しないブランチへ PR を向けることになります。
 
-`branch verify` / `pr title` / `session title` は対象サイクルの設定でテンプレートを展開します。`[branch]` / `[pr]` / `[session]` は[サイクルごとに変えられる](../configuration/config-file.md#サイクルごとに変える)ため、サイクルに属さない `init` と `bp-guide` を除いてサイクルの特定が必要です。ID や slug で渡してもディレクトリ名に解決されるので、`002` からも `hikyaku/002-billing/plan` が返ります。
+`branch verify` / `pr title` / `session title` は対象サイクルの設定でテンプレートを展開します。`[branch]` / `[pr]` / `[session]` は[サイクルごとに変えられる](../configuration/config-file.md#サイクルごとに変える)ため、サイクルに属さない `init` と `token-guide` を除いてサイクルの特定が必要です。ID や slug で渡してもディレクトリ名に解決されるので、`002` からも `hikyaku/002-billing/plan` が返ります。
 
 ## レビュー
 

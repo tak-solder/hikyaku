@@ -64,9 +64,9 @@ export const RETROSPECTIVE_STEPS: SkillSteps = {
       skippable: true,
     },
     {
-      id: "bp-actual",
+      id: "peak-actual",
       kind: "run",
-      title: "BP 実績とセッションの実測の収集",
+      title: "予測ピークの実測と差分の集計",
       when: (ctx) => active(ctx) && ctx.unit.startsWith("build-"),
     },
     { id: "analyze", kind: "run", title: "会話履歴の分析と改善提案の分類", when: active },

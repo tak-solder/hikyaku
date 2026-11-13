@@ -11,13 +11,21 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { HikyakuError } from "./errors.mts";
 import { findTableByHeaders, renderTable } from "./markdown.mts";
+import { formatK, parseTokenAmount } from "./tokens.mts";
 
-export const TASKLIST_HEADERS = ["buildID", "title", "BP", "dependencies", "issue", "PR"];
+export const TASKLIST_HEADERS = ["buildID", "title", "予測ピーク", "dependencies", "issue", "PR"];
+
+/**
+ * v2 の tasklist.md の見出し（3列目が BP）。読むことはできるが、BP は予測ピークではないので
+ * 値は読まない。書き込むと BP の列が消えるので、書き込みは止める（workspace.mts）
+ */
+export const LEGACY_TASKLIST_HEADERS = ["buildID", "title", "BP", "dependencies", "issue", "PR"];
 
 export interface BuildRecord {
   id: string;
   title: string;
-  bp: number | undefined;
+  /** architect 段階の予測ピーク（トークン） */
+  peak: number | undefined;
   dependsOn: string[];
   issue: string;
   pr: string;
@@ -44,8 +52,14 @@ export function tasklistPath(cycleDirectory: string): string {
   return join(cycleDirectory, "tasklist.md");
 }
 
+/** v2 の見出し（BP 列）の tasklist.md か */
+export function isLegacyTasklist(source: string): boolean {
+  return findTableByHeaders(source, TASKLIST_HEADERS) === undefined && findTableByHeaders(source, LEGACY_TASKLIST_HEADERS) !== undefined;
+}
+
 export function parseTasklist(source: string): BuildRecord[] {
-  const table = findTableByHeaders(source, TASKLIST_HEADERS);
+  const legacy = isLegacyTasklist(source);
+  const table = findTableByHeaders(source, legacy ? LEGACY_TASKLIST_HEADERS : TASKLIST_HEADERS);
   if (!table) {
     throw new HikyakuError(
       "tasklist.md に想定するテーブルが見つかりません",
@@ -55,12 +69,10 @@ export function parseTasklist(source: string): BuildRecord[] {
 
   return table.rows
     .map((row) => {
-      const bpText = cellText(row[2]);
-      const bp = Number.parseInt(bpText, 10);
       return {
         id: normalizeBuildId(cellText(row[0])),
         title: cellText(row[1]),
-        bp: Number.isInteger(bp) ? bp : undefined,
+        peak: legacy ? undefined : parseTokenAmount(cellText(row[2])),
         dependsOn: cellText(row[3])
           .split(/[,、]/)
           .map((item) => normalizeBuildId(item))
@@ -92,7 +104,7 @@ function toRow(build: BuildRecord): string[] {
   return [
     build.id,
     build.title,
-    build.bp === undefined ? "—" : String(build.bp),
+    formatK(build.peak),
     build.dependsOn.length > 0 ? build.dependsOn.join(", ") : "—",
     dash(build.issue),
     dash(build.pr),

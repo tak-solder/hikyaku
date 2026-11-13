@@ -25,7 +25,7 @@ test("CLI: init の dry-run は生成予定を JSON で返し、ファイルを�
   const before = snapshot(directory);
   const output = JSON.parse(succeeds(directory, "init", "--root", "docs/hikyaku", "--dry-run", "--json"));
   assert.equal(output.dryRun, true);
-  assert.equal(output.files.length, 7);
+  assert.equal(output.files.length, 4, "bp-guide/ も token-guide/ も生成しない");
   assert.ok(output.files.every((file: { status: string }) => file.status === "create"));
   assert.deepEqual(snapshot(directory), before);
   assert.equal(existsSync(join(directory, "docs/hikyaku")), false);
@@ -68,7 +68,7 @@ test("CLI: cycle new の dry-run は索引とサイクル設定を書き込ま�
 
 test("CLI: tasklist の dry-run とグラフ検証失敗はいずれも既存データを書き換えない", (t) => {
   const directory = workspace(t, true);
-  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--bp", "2");
+  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--peak", "350k");
   const before = snapshot(directory);
   const output = JSON.parse(succeeds(directory, "tasklist", "add", "001", "--title", "API", "--deps", "build-01", "--dry-run", "--json"));
   assert.equal(output.dryRun, true);
@@ -144,19 +144,143 @@ test("CLI: validate は手編集されたサイクル間の循環依存を検出
   assert.match(result.stderr, /サイクル間の依存に循環/);
 });
 
-test("CLI: validate は BP ガイドの表が古い場合と期待値の不一致を検出する", (t) => {
+test("CLI: tokens stamp は標準からガイドを作り、本文を変えたら版を上げる。版を上げ忘れると validate が止める", (t) => {
   const directory = workspace(t);
-  write(directory, "docs/hikyaku/bp-guide/README.md", "# 古い説明\n");
-  let result = cli(directory, "validate", "--json");
-  assert.equal(result.status, 2);
-  assert.match(result.stderr, /食い違っています/);
-  succeeds(directory, "bp", "render");
-  write(directory, "docs/hikyaku/bp-guide/cases.toml", `[cases.mismatch]\nexpect = 999\n[cases.mismatch.input]\nnew_files = 1\n`);
-  result = cli(directory, "validate", "--json");
-  assert.equal(result.status, 2);
-  assert.match(result.stderr, /期待 999/);
-  rmSync(join(directory, "docs/hikyaku/bp-guide/cases.toml"));
+  const guide = "docs/hikyaku/token-guide/guide.md";
+  const shown = JSON.parse(succeeds(directory, "tokens", "guide", "--json"));
+  assert.equal(shown.kind, "standard");
+  assert.match(shown.label, /^標準 v\d+$/);
+
+  const dry = JSON.parse(succeeds(directory, "tokens", "stamp", "--dry-run", "--json"));
+  assert.equal(dry.created, true);
+  assert.equal(existsSync(join(directory, guide)), false);
+
+  const created = JSON.parse(succeeds(directory, "tokens", "stamp", "--json"));
+  assert.equal(created.version, 1);
+  assert.equal(created.basedOn, shown.label);
+  const project = JSON.parse(succeeds(directory, "tokens", "guide", "--json"));
+  assert.equal(project.kind, "project");
+  assert.equal(project.label, "プロジェクト v1");
   assert.equal(JSON.parse(succeeds(directory, "validate", "--json")).ok, true);
+  assert.equal(JSON.parse(succeeds(directory, "tokens", "stamp", "--json")).changed, false);
+
+  write(directory, guide, `${readFileSync(join(directory, guide), "utf8")}\n- 補正: docker の環境に触れるビルドは未知の領域に 100k\n`);
+  const stale = cli(directory, "validate", "--json");
+  assert.equal(stale.status, 2);
+  assert.match(stale.stderr, /tokens stamp/);
+  // 版を上げ忘れたガイドでは見積もらない（補正後の本文が古い版の名前で記録されるため）
+  const estimate = cli(directory, "tokens", "estimate", "--fixed", "0", "--reading", "0", "--implementation", "0", "--tests", "0", "--unknown", "0");
+  assert.equal(estimate.status, 1);
+  assert.match(estimate.stderr, /tokens stamp/);
+
+  const bumped = JSON.parse(succeeds(directory, "tokens", "stamp", "--json"));
+  assert.equal(bumped.previous, 1);
+  assert.equal(bumped.version, 2);
+  assert.match(readFileSync(join(directory, guide), "utf8"), /^---\nversion: 2\nbased_on: 標準 v\d+\nhash: [0-9a-f]{8}\n---\n/);
+  assert.equal(JSON.parse(succeeds(directory, "validate", "--json")).ok, true);
+
+  // 1 未満の版は 1 に正す（そのままだと validate が止まり続ける）
+  write(directory, guide, readFileSync(join(directory, guide), "utf8").replace("version: 2", "version: 0"));
+  assert.equal(cli(directory, "validate", "--json").status, 2);
+  const fixed = JSON.parse(succeeds(directory, "tokens", "stamp", "--json"));
+  assert.equal(fixed.version, 1);
+  assert.equal(JSON.parse(succeeds(directory, "validate", "--json")).ok, true);
+});
+
+test("CLI: tokens estimate は5成分を必須にして合計し、帯で判定してガイドの版を表に残す", (t) => {
+  const directory = workspace(t, true);
+  const all = ["--fixed", "90k", "--reading", "120k", "--implementation", "100k", "--tests", "60k", "--unknown", "30k"];
+  const result = JSON.parse(succeeds(directory, "tokens", "estimate", "001", ...all, "--reading-basis", "design-delta.md", "--json"));
+  assert.equal(result.peak, 400_000);
+  assert.equal(result.verdict, "target");
+  assert.equal(result.guide.kind, "standard");
+  assert.match(result.markdown, /\| 読み込み \| 120k \| design-delta.md \|/);
+  assert.match(result.markdown, /\| ガイド \| 標準 v\d+ \| [0-9a-f]{8} \|$/);
+
+  const split = JSON.parse(succeeds(directory, "tokens", "estimate", "001", ...all.slice(0, -1), "200k", "--json"));
+  assert.equal(split.verdict, "split");
+  const merge = JSON.parse(succeeds(directory, "tokens", "estimate", "001", "--fixed", "90k", "--reading", "50k", "--implementation", "50k", "--tests", "20k", "--unknown", "0", "--json"));
+  assert.equal(merge.verdict, "merge");
+
+  const missing = cli(directory, "tokens", "estimate", "001", ...all.slice(0, -2));
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /--unknown/);
+  assert.match(missing.stderr, /0 を渡します/);
+  const typo = cli(directory, "tokens", "estimate", "001", ...all, "--readng-basis", "x");
+  assert.equal(typo.status, 1);
+  assert.match(typo.stderr, /--readng-basis は使えません/);
+  const invalid = cli(directory, "tokens", "estimate", "001", ...all.slice(0, -1), "many");
+  assert.equal(invalid.status, 1);
+
+  write(directory, ".hikyaku.config", `${readFileSync(join(directory, ".hikyaku.config"), "utf8")}\n[context]\nsplit_above = "350k"\n`);
+  assert.equal(JSON.parse(succeeds(directory, "tokens", "estimate", "001", ...all, "--json")).verdict, "split", "帯は設定に従う");
+});
+
+test("CLI: tasklist は予測ピークを --peak で受け取り、--bp と v2 の tasklist.md への書き込みは止める", (t) => {
+  const directory = workspace(t, true);
+  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--peak", "380k");
+  const read = JSON.parse(succeeds(directory, "tasklist", "read", "001", "--json"));
+  assert.equal(read.builds[0].peak, 380_000);
+  assert.match(readFileSync(join(directory, "docs/hikyaku/cycles/001-test/tasklist.md"), "utf8"), /\| 予測ピーク \|[\s\S]*\| 380k +\|/);
+  const retired = cli(directory, "tasklist", "add", "001", "--title", "API", "--bp", "3");
+  assert.equal(retired.status, 1);
+  assert.match(retired.stderr, /--bp は廃止/);
+
+  write(directory, "docs/hikyaku/cycles/001-test/tasklist.md", "| buildID | title | BP | dependencies | issue | PR |\n| --- | --- | --- | --- | --- | --- |\n| 1 | 基盤 | 3 | — | — | — |\n");
+  assert.equal(JSON.parse(succeeds(directory, "tasklist", "read", "001", "--json")).builds[0].peak, undefined);
+  const legacy = cli(directory, "tasklist", "add", "001", "--title", "API");
+  assert.equal(legacy.status, 1);
+  assert.match(legacy.stderr, /v2 の形式/);
+});
+
+test("CLI: 閉じたサイクルの設定に残った bp_max は履歴として許し、進行中のサイクルでは v3 の作業を止める", (t) => {
+  const directory = workspace(t, true);
+  succeeds(directory, "cycle", "new", "next", "--profile", "standard");
+  write(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config", "bp_max = 13\n[bp_actual]\nexclude = []\n");
+  write(directory, "docs/hikyaku/cycles/002-next/.hikyaku.config", "bp_max = 13\n");
+  const cycles = "docs/hikyaku/cycles.md";
+  write(directory, cycles, readFileSync(join(directory, cycles), "utf8").replace(/^(\| 001 \| test \| )active/m, "$1closed"));
+
+  // 読むだけの操作は止めない
+  succeeds(directory, "cycle", "list");
+  succeeds(directory, "cycle", "status", "001");
+  const closedConfig = JSON.parse(succeeds(directory, "config", "001", "--json"));
+  assert.equal(closedConfig.retired.length, 2);
+  assert.equal(closedConfig.peakBands.splitAbove, 450_000);
+
+  // validate は進行中のサイクルの分だけを知らせる
+  const validate = cli(directory, "validate", "--json");
+  assert.equal(validate.status, 2);
+  assert.match(validate.stderr, /002-next\/\.hikyaku\.config: .*bp_max は v3 で廃止/);
+  assert.doesNotMatch(validate.stderr, /001-test\/\.hikyaku\.config/);
+
+  // v3 の作業は止める
+  const directive = JSON.parse(succeeds(directory, "step", "next", "plan", "002", "--json")).directive;
+  assert.equal(directive.kind, "stop");
+  assert.match(directive.message, /bp_max は v3 で廃止/);
+  const reported = cli(directory, "step", "report", "plan", "inputs", "002", "--result", "done");
+  assert.equal(reported.status, 1);
+  assert.match(reported.stderr, /bp_max/);
+  const estimate = cli(directory, "tokens", "estimate", "002", "--fixed", "0", "--reading", "0", "--implementation", "0", "--tests", "0", "--unknown", "0");
+  assert.equal(estimate.status, 1);
+  const added = cli(directory, "tasklist", "add", "002", "--title", "基盤", "--peak", "350k");
+  assert.equal(added.status, 1);
+  assert.match(added.stderr, /bp_max/);
+  succeeds(directory, "tasklist", "read", "002");
+
+  // ルート設定の bp_max は全サイクルに効くので、読んだ時点で止める
+  write(directory, ".hikyaku.config", `bp_max = 8\n${readFileSync(join(directory, ".hikyaku.config"), "utf8")}`);
+  assert.equal(cli(directory, "cycle", "list").status, 1);
+});
+
+test("CLI: doctor は v2 の bp-guide/ が残っていることを知らせる", (t) => {
+  const directory = workspace(t);
+  const before = JSON.parse(cli(directory, "doctor", "--json").stdout);
+  assert.ok(!before.checks.some((c: { name: string }) => c.name === "bp-guide/"));
+  write(directory, "docs/hikyaku/bp-guide/rules.toml", "levels = [1]\n");
+  const after = JSON.parse(cli(directory, "doctor", "--json").stdout);
+  const check = after.checks.find((c: { name: string }) => c.name === "bp-guide/");
+  assert.equal(check?.status, "warn");
 });
 
 test("CLI: return.md があれば cycle status・next・cycle list が差し戻し中として扱う", (t) => {

@@ -31,7 +31,7 @@ import "./commands/context.mts";
 import "./commands/validate.mts";
 import "./commands/external.mts";
 import "./commands/naming.mts";
-import "./commands/bp.mts";
+import "./commands/tokens.mts";
 import "./commands/conductor.mts";
 import "./commands/reviewers.mts";
 import "./commands/review.mts";

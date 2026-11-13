@@ -53,23 +53,29 @@ hikyaku validate
 
 区切りが無いとブランチ名からサイクルとフェーズを切り出せません。`-` や `_` は使えます。
 
-## BP の基準表
+## 予測ピークと見積もりのガイド
 
-### bp-guide/rules.toml を解析できません / 不明なキーです
+### bp_max は v3 で廃止しました / [bp_actual] は [diff] に改名しました
 
-`{HIKYAKU_ROOT}/bp-guide/rules.toml` が基準表として読めません。無いなら既定値で動きますが、あって読めないものは黙って既定値に落としません。「調整したのに効かない」が最も気づきにくい壊れ方だからです。エラーメッセージの箇所を直し、`hikyaku bp test` と `hikyaku validate` で確認してください。書き方は [BP の基準表](../configuration/bp-guide.md) にあります。
+`.hikyaku.config` に v2 の設定が残っています。ビルドの大きさは BP ではなく予測ピーク（トークン）で判定するようになり、境目は `[context]` の `merge_below` / `split_above` で決めます。`bp_max` を削除し、`[bp_actual]` はテーブル名を `[diff]` に変えてください（[設定](../configuration/config-file.md#context)）。黙って無視しないのは、「設定したのに効かない」が最も気づきにくい壊れ方だからです。
 
-### 基準表の表が rules.toml と食い違っています
+リポジトリルートの設定に残っていると、すべてのコマンドが止まります。サイクルの設定に残っている場合は、そのサイクルで v3 の作業（`step`・`tokens estimate`・`tasklist` の書き込み）をしようとしたときだけ止まります。閉じたサイクルの設定は履歴として読み飛ばすので、`cycle list` や `validate` は止まりません。
 
-`rules.toml` を変えたあと `README.md` の表を再生成していません。`hikyaku bp render` を実行してください。`README.md` の表を手で直した場合も同じです。表は生成物なので、直すのは `rules.toml` 側です。
+### 本文が hash と合いません
 
-### --xxx は基準表にありません
+`{HIKYAKU_ROOT}/token-guide/guide.md` の本文を変えたあと、版を上げていません。`hikyaku tokens stamp` を実行してください。版を上げずに本文だけを変えると、補正の前と後の予測が同じ版として記録され、`tokens history --group-by guide` で区別できなくなります。先頭の `---` の間を手で直した場合も同じで、直すのは本文だけにして `tokens stamp` に任せます（[予測ピークと見積もりのガイド](../configuration/token-guide.md#ガイドの版)）。
 
-`hikyaku bp estimate` に渡したオプションが基準表の指標・加算要素に無い名前です。エラーに使える入力の一覧が出るので、そこから選んでください。タイプミスを黙って捨てると加算要素の取りこぼしになり、そのまま過小見積もりになるためエラーにしています。基準表に要素を足したいなら `/hikyaku:bp-guide` で `rules.toml` に追加します。
+### --fixed（固定費）がありません
 
-### bp test で期待値が一致しません
+`hikyaku tokens estimate` には5つの成分（`--fixed` / `--reading` / `--implementation` / `--tests` / `--unknown`）をすべて渡します。該当しない成分には 0 を渡してください。省略をエラーにしているのは、考えなかった成分と、考えて無いと判断した成分を記録の上で区別するためです。
 
-`rules.toml` の変更で、`cases.toml` に記録されていた期待値が変わりました。意図した変更なら期待値を直し、意図していないなら `rules.toml` を見直します。既存のケースは過去の判断の記録なので、黙って書き換えないでください。
+### --bp は廃止しました
+
+`hikyaku step report` と `hikyaku tasklist add / update` の `--bp` は `--peak` に置き換わりました。`--peak 380k` のように、予測ピークをトークン数で渡します。
+
+### bp-guide/ が残っています（doctor）
+
+v2 の BP 基準表です。v3 は読みません。`bp-guide/README.md` にリポジトリ固有の数え方を書いていたら、`/hikyaku:token-guide` でガイドに書き直してから `bp-guide/` を削除してください。
 
 ## ドキュメントガイド
 

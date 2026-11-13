@@ -36,6 +36,12 @@ argument-hint: "[{cycle}]"
 永続ドキュメントではないが、走行中の他サイクルの planner / architect が読むため、
 フェーズ途中で書き換えると前提が途中で変わる。
 
+予測ピークの見積もりのガイド（`{HIKYAKU_ROOT}/token-guide/guide.md`）は、close-cycle の昇格と
+`/hikyaku:token-guide` が書き換える。ビルドの見積もりの中では書き換えない（build-manager / builder は読むだけ）。
+走行中の他サイクルがあっても補正の昇格は止めない。補正した版はその後に見積もる全ビルドに効き、
+各予測の表には見積もりに使ったガイドの版が残るので、補正の前と後は `tokens history --group-by guide` で
+分けて比べられる。止めて待つより、早く補正したほうが以降の見積もりの精度が上がる。
+
 ## 作業ステップ
 
 ### Step 0: 読み込みと完了確認

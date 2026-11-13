@@ -97,7 +97,7 @@ test("データ整合性: 「マージ時点で残る危険」から解消する
 const build = (id: string, dependsOn: string[] = []): BuildRecord => ({
   id,
   title: `build ${id}`,
-  bp: 3,
+  peak: 350_000,
   dependsOn,
   issue: "",
   pr: "",

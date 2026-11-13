@@ -12,9 +12,13 @@
  *     有無で記録の置き場が変わらないよう、close/ ではなく直下に置く
  *   - CLOSE はサイクルの最後のフェーズで、ほかのフェーズが直下に記録を置くことはない。
  *     置いたとしても、記録はスキル名で分かれるので混ざらない
+ *
+ * 昇格先には予測ピークのガイド（token-guide/guide.md）も入る（#68）。サイクルの実績から
+ * 見積もりの補正を足し、G10 でほかの昇格候補と一緒に承認を取る。
  */
 
 import type { SkillSteps, StepContext } from "./engine.mts";
+import { guideConsistent } from "./token-guide.mts";
 
 /** cycle close で closed / abandoned になったか */
 function cycleClosed(ctx: StepContext): boolean {
@@ -38,7 +42,8 @@ export const CLOSE_CYCLE_STEPS: SkillSteps = {
     { id: "organize", kind: "run", title: "昇格候補の整理" },
     // 昇格候補は会話の中で提示するのでファイルに結びつけない。profile の管轄外で、常に行う
     { id: "G10", kind: "gate", title: "昇格の承認", ask: "G10" },
-    { id: "write", kind: "run", title: "永続ドキュメントへの書き込みと検証" },
+    // 昇格で予測ピークのガイドを補正したら、版を上げてから完了にする（tokens stamp）
+    { id: "write", kind: "run", title: "永続ドキュメントへの書き込みと検証", requires: guideConsistent },
     { id: "close", kind: "run", title: "サイクルの終了（cycle close）", evidence: cycleClosed },
     { id: "pr", kind: "run", title: "PR の作成", recordsPr: true },
   ],

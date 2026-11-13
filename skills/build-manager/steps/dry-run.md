@@ -6,9 +6,10 @@
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist add {cycle} \
-  --title "..." --bp 3 --deps 1,2 --dry-run
+  --title "..." --peak 380k --deps 1,2 --dry-run
 ```
 
-  更新は `tasklist update` に `--dry-run` を付ける。分割は「元ビルドの update + 新ビルドの add」で表す
+  `--peak` は estimate で `tokens estimate` が返した予測ピーク。更新は `tasklist update` に `--dry-run` を付ける。
+  分割は「元ビルドの update + 新ビルドの add」で表す
 - [ ] issue.md の本文（新規なら全文、更新なら変更箇所）を、まだ書き込まずに用意する
 - [ ] `--dry-run` の出力と issue.md の本文は、レビュー・G6 の提示・書き込みで使うので、このセッションに残しておく

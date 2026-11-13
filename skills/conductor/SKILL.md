@@ -384,7 +384,7 @@ CLOSE の PR を示して終了する。
 | `G2` / `G4` / `G7` | 成果物を読み、承認観点（スキルが示すもの）に沿って承認するか差し戻す |
 | `retrospective` | 実施する |
 | `docs-link` | `--dry-run` の差分がマーカーで囲まれた索引ブロックの中だけなら承認する |
-| `G6` | 分割・依存が design-delta と矛盾せず、各ビルドの BP が上限内なら承認する。「マージ時点で残る危険」を書いたビルドがあれば、`hikyaku config {cycle} --json` の `unsafeSplit.allowed` が true であることも確かめる |
+| `G6` | 分割・依存が design-delta と矛盾せず、各ビルドの予測ピークが `split_above` 以下（超えるなら issue.md に許容する理由がある）なら承認する。「マージ時点で残る危険」を書いたビルドがあれば、`hikyaku config {cycle} --json` の `unsafeSplit.allowed` が true であることも確かめる |
 | `G8` | 「検証の義務」の G8 を行い、満たしていれば承認する |
 | `G10` | 「検証の義務」の G10 を行い、除外すべき候補を外して承認する |
 | `questions` | 成果物から導けるものだけ答える。導けないものは人間に上げる |

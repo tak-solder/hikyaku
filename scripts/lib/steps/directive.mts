@@ -87,6 +87,12 @@ export function nextCommand(opened: Opened): string {
   return `${CLI} step next ${opened.phase}${cycleArg(opened.ctx)}${skillArg(opened)}`;
 }
 
+/** サイクル設定に v3 で廃止したキー（bp_max など）が残っていれば、移行の案内 */
+export function retiredConfigMessage(ctx: StepContext): string | undefined {
+  const [first] = ctx.config.retired;
+  return first === undefined ? undefined : [first.message, first.hint].filter(Boolean).join("\n");
+}
+
 export function legacyCycleMessage(cycle: CycleContext | undefined): string | undefined {
   if (cycle === undefined) return undefined;
   const version = cycle.record.hikyaku;
@@ -149,14 +155,14 @@ function reportCommand(opened: Opened, step: string, result: StepResult): string
           ? ' --input "<ユーザーの答え>"'
           : "";
   const definition = opened.skill.steps.find((entry) => entry.id === step);
-  const bp =
-    result !== "done" || definition?.bp === undefined
+  const peak =
+    result !== "done" || definition?.peak === undefined
       ? ""
-      : definition.bp === "required"
-        ? " --bp <再算出した BP>"
-        : " [--bp <算出し直した BP>]";
+      : definition.peak === "required"
+        ? " --peak <見積もり直した予測ピーク>"
+        : " [--peak <見積もり直した予測ピーク>]";
   const pr = result === "done" && definition?.recordsPr === true ? " --pr <PR の URL>" : "";
-  return `${CLI} step report ${opened.phase} ${step}${cycleArg(opened.ctx)}${skillArg(opened)} --result ${result}${extra}${bp}${pr}`;
+  return `${CLI} step report ${opened.phase} ${step}${cycleArg(opened.ctx)}${skillArg(opened)} --result ${result}${extra}${peak}${pr}`;
 }
 
 function progressOf(evaluation: Evaluation): { complete: number; total: number } {
@@ -194,6 +200,8 @@ export function buildDirective(opened: Opened, evaluation: Evaluation, options: 
 
   const legacy = legacyCycleMessage(ctx.cycle);
   if (legacy !== undefined) return { ...base, kind: "stop", message: legacy };
+  const retired = retiredConfigMessage(ctx);
+  if (retired !== undefined) return { ...base, kind: "stop", message: retired };
 
   const stopped = skill.stop?.(ctx);
   if (stopped !== undefined) return { ...base, kind: "stop", message: stopped };

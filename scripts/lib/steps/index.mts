@@ -9,7 +9,6 @@ import { join } from "node:path";
 import type { Phase } from "../branch.mts";
 import { pluginRoot } from "../paths.mts";
 import { ARCHITECT_STEPS } from "./architect.mts";
-import { BP_GUIDE_STEPS } from "./bp-guide.mts";
 import { BUILD_MANAGER_STEPS } from "./build-manager.mts";
 import { BUILDER_STEPS } from "./builder.mts";
 import { CLOSE_CYCLE_STEPS } from "./close-cycle.mts";
@@ -18,6 +17,7 @@ import type { SkillSteps } from "./engine.mts";
 import { INIT_STEPS } from "./init.mts";
 import { PLANNER_STEPS } from "./planner.mts";
 import { RETROSPECTIVE_STEPS } from "./retrospective.mts";
+import { TOKEN_GUIDE_STEPS } from "./token-guide.mts";
 
 export const SKILL_STEPS: SkillSteps[] = [
   INIT_STEPS,
@@ -28,7 +28,7 @@ export const SKILL_STEPS: SkillSteps[] = [
   BUILDER_STEPS,
   CLOSE_CYCLE_STEPS,
   RETROSPECTIVE_STEPS,
-  BP_GUIDE_STEPS,
+  TOKEN_GUIDE_STEPS,
 ];
 
 export function stepsOf(skill: string): SkillSteps | undefined {

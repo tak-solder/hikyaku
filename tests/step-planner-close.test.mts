@@ -45,7 +45,7 @@ function events(path: string): Record<string, unknown>[] {
 function retrospect(directory: string, phase: string): Directive {
   const first = next(directory, phase, "--skill", "retrospective");
   assert.equal(first.skill, "retrospective");
-  assert.equal(first.step, "analyze", "auto では確認せず、build 以外では BP 実績を集めない");
+  assert.equal(first.step, "analyze", "auto では確認せず、build 以外では予測ピークの実測を集めない");
   const writing = report(directory, phase, "analyze", "--skill", "retrospective", "--result", "done");
   write(directory, String(writing.args?.["output"]), "# 振り返り\n");
   return report(directory, phase, "write", "--skill", "retrospective", "--result", "done");
@@ -156,13 +156,13 @@ test("retrospective: prompt で実施しないと答えたら、残りは対象�
   assert.equal(after.kind, "done");
 });
 
-test("retrospective: build では BP 実績の収集から始まり、書き込み先を返す", (t) => {
+test("retrospective: build では予測ピークの実測の収集から始まり、書き込み先を返す", (t) => {
   const directory = workspace(t, true);
-  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--bp", "3");
+  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--peak", "350k");
   write(directory, `${CYCLE}/build-01/issue.md`);
   const first = next(directory, "build-01", "--skill", "retrospective");
-  assert.equal(first.step, "bp-actual");
-  report(directory, "build-01", "bp-actual", "--skill", "retrospective", "--result", "done");
+  assert.equal(first.step, "peak-actual");
+  report(directory, "build-01", "peak-actual", "--skill", "retrospective", "--result", "done");
   const writing = report(directory, "build-01", "analyze", "--skill", "retrospective", "--result", "done");
   assert.equal(writing.step, "write");
   assert.equal(writing.args?.["output"], `${CYCLE}/build-01/retrospective.md`);

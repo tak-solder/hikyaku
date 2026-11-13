@@ -10,7 +10,7 @@ const SESSION = "s-hook";
 /** サイクル 001 にビルド 1 を登録し、issue.md まで置いた状態 */
 function built(t: TestContext): string {
   const directory = workspace(t, true);
-  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--bp", "3");
+  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--peak", "350k");
   write(directory, `${BUILD}/issue.md`);
   return directory;
 }
@@ -31,7 +31,7 @@ function hook(directory: string, input: Record<string, unknown>): { decision?: s
 test("step hook stop: 手順が run の途中なら、1回だけ止める", (t) => {
   const directory = built(t);
   write(directory, `${BUILD}/plan.md`);
-  report(t, directory, "plan", "--result", "done", "--bp", "3");
+  report(t, directory, "plan", "--result", "done", "--peak", "350k");
 
   const blocked = hook(directory, { session_id: SESSION, stop_hook_active: false });
   assert.equal(blocked?.decision, "block");
@@ -44,7 +44,7 @@ test("step hook stop: 手順が run の途中なら、1回だけ止める", (t) 
 test("step hook stop: 別のセッションと、Hikyaku を使っていないリポジトリでは止めない", (t) => {
   const directory = built(t);
   write(directory, `${BUILD}/plan.md`);
-  report(t, directory, "plan", "--result", "done", "--bp", "3");
+  report(t, directory, "plan", "--result", "done", "--peak", "350k");
   assert.equal(hook(directory, { session_id: "other" }), undefined);
 
   const plain = repository(t);
@@ -54,7 +54,7 @@ test("step hook stop: 別のセッションと、Hikyaku を使っていない�
 test("step hook stop: ゲートで止まるのと、非対話規約のブロックで終えるのは止めない", (t) => {
   const directory = built(t);
   write(directory, `${BUILD}/plan.md`);
-  report(t, directory, "plan", "--result", "done", "--bp", "3");
+  report(t, directory, "plan", "--result", "done", "--peak", "350k");
   report(t, directory, "plan-review", "--result", "done");
 
   const message = 'test-spec を書く前に確認します。\n\n<hikyaku-gate id="questions">\n境界値はどれですか？\n</hikyaku-gate>';
@@ -70,8 +70,8 @@ test("step hook stop: ゲートで止まるのと、非対話規約のブロッ�
 test("step hook stop: 内部スキルを呼んでいる最中は、呼ばれたスキルの1手で判定する", (t) => {
   const directory = built(t);
   write(directory, `${BUILD}/plan.md`);
-  report(t, directory, "plan", "--result", "done", "--bp", "5");
-  report(t, directory, "plan-review", "--result", "done", "--bp", "6");
+  report(t, directory, "plan", "--result", "done", "--peak", "400k");
+  report(t, directory, "plan-review", "--result", "done", "--peak", "500k");
 
   const blocked = hook(directory, { session_id: SESSION });
   assert.equal(blocked?.decision, "block");
@@ -92,7 +92,7 @@ test("step where: 記録のある作業単位と、次の1手を並べる", (t) 
   assert.deepEqual(empty.units, []);
 
   write(directory, `${BUILD}/plan.md`);
-  report(t, directory, "plan", "--result", "done", "--bp", "3");
+  report(t, directory, "plan", "--result", "done", "--peak", "350k");
   const output = JSON.parse(succeeds(directory, "step", "where", "001", "--json"));
   assert.equal(output.legacy, null);
   assert.equal(output.units.length, 1);
@@ -119,7 +119,7 @@ function parse(directory: string, text: string): { step: Record<string, unknown>
 test("conductor parse: 子の手順の位置を返し、ブロックとの食い違いを挙げる", (t) => {
   const directory = built(t);
   write(directory, `${BUILD}/plan.md`);
-  report(t, directory, "plan", "--result", "done", "--bp", "3");
+  report(t, directory, "plan", "--result", "done", "--peak", "350k");
 
   const done = parse(directory, "<hikyaku-done next=\"\">\nPR を作りました\n</hikyaku-done>");
   assert.equal(done.step?.["unit"], "build-01");
@@ -149,7 +149,7 @@ test("conductor parse: 子の記録が無いまま done を出したら挙げる
 /** セッション SESSION として、任意のフェーズの手順を報告する */
 function reportAs(t: TestContext, directory: string, phase: string, step: string, ...extra: string[]): void {
   const env = { CLAUDE_CODE_SESSION_ID: SESSION, CLAUDE_CONFIG_DIR: temporaryDirectory(t) };
-  const operands = phase === "bp-guide" ? [phase, step] : [phase, step, "001"];
+  const operands = phase === "token-guide" ? [phase, step] : [phase, step, "001"];
   const result = cliWith(directory, env, "step", "report", ...operands, ...extra);
   assert.equal(result.status, 0, result.stderr);
 }
@@ -194,7 +194,7 @@ test("conductor parse / step hook: cycle close のあとも CLOSE の手順を�
 test("conductor parse / step hook: run のステップの中から呼んだ build-manager の G6 を、呼ばれた側の位置で読む", (t) => {
   const directory = built(t);
   write(directory, `${BUILD}/plan.md`);
-  report(t, directory, "plan", "--result", "done", "--bp", "3");
+  report(t, directory, "plan", "--result", "done", "--peak", "350k");
   report(t, directory, "plan-review", "--result", "done");
   write(directory, `${BUILD}/test-spec.md`);
   report(t, directory, "test-spec", "--result", "done");
@@ -226,11 +226,11 @@ test("conductor parse: 記録の無い子がゲートの ID で止まったら�
   assert.deepEqual(question.stepProblems, []);
 });
 
-test("step where: 対象サイクルの作業単位だけを並べ、init と bp-guide は混ぜない", (t) => {
+test("step where: 対象サイクルの作業単位だけを並べ、init と token-guide は混ぜない", (t) => {
   const directory = built(t);
-  reportAs(t, directory, "bp-guide", "start", "--result", "done");
+  reportAs(t, directory, "token-guide", "start", "--result", "done");
   write(directory, `${BUILD}/plan.md`);
-  report(t, directory, "plan", "--result", "done", "--bp", "3");
+  report(t, directory, "plan", "--result", "done", "--peak", "350k");
   const output = JSON.parse(succeeds(directory, "step", "where", "001", "--json"));
   assert.deepEqual(output.units.map((unit: { directive: { skill: string } }) => unit.directive.skill), ["builder"]);
 });

@@ -43,11 +43,6 @@ jobs:
           node scripts/hikyaku.mts help > /dev/null
           node scripts/hikyaku.mts doctor --json > /dev/null || true
 
-      # 組み込みの BP 既定値が、組み込みの期待値ケースを壊していないか。
-      # ワークスペースの bp-guide/ はこの検証の対象外（利用者側の validate が見る）
-      - name: BP built-in cases
-        run: node scripts/hikyaku.mts bp test --builtin
-
       # スキルに付けた問いの ID（（G8）/（ask: branch））と、conductor の ID の表の突き合わせ
       - name: Conductor ask tags
         run: node scripts/hikyaku.mts conductor lint
