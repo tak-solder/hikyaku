@@ -44,6 +44,12 @@ interface Suggestion {
  *
  * planner に overview を入れていないのは、企画が「何を作るか」の合意であって
  * 実装済みの現実を前提に置く場面ではないため。制約だけは再質問を避けるために読む。
+ *
+ * build-NN は永続ドキュメントを候補に出さない。どの節がそのビルドに効くかは、全文を読んで
+ * 設計した architect が issue.md の「参照する設計ドキュメント」でポインタとして渡す。
+ * 候補に並べると、実装のセッションが設計時と同じ量を読み直すことになる。選び漏れは
+ * plan のレビュー（doc-reviewer）が全文と突き合わせて拾う。conventions は AGENTS.md に
+ * あればホストが自動で読み込む。
  */
 const DOC_REASONS: Record<string, Record<string, string>> = {
   plan: {
@@ -52,35 +58,21 @@ const DOC_REASONS: Record<string, Record<string, string>> = {
   },
   architect: {
     overview: "実装済みの現実。既存コード調査の差分の基準になる",
-    constraints: "既に確定している非機能要件。再度質問しないため",
+    constraints: "設計を縛る条件。再度質問しないため",
     decisions: "過去の設計判断。採用理由とトレードオフを把握し、覆さないため",
-    learnings: "既知の落とし穴",
-    conventions: "規約",
-    "security-model": "認証認可・信頼境界に触れる設計のため",
-    "test-strategy": "テスト方針",
+    conventions: "リポジトリ全体に効く取り決め",
     glossary: "ドメイン用語",
-    "tech-stack": "参考。コードと矛盾したらコードが正",
-    "db-schema": "参考。正はマイグレーション",
-    interfaces: "参考。正は OpenAPI / 型定義",
   },
   close: {
     overview: "昇格先。責務・境界・データフローの変化を反映する",
-    learnings: "昇格先。再現条件が明確な落とし穴",
-    constraints: "昇格先。実装中に判明した制約",
-    conventions: "昇格先。以後の書き方・進め方の取り決め",
+    constraints: "昇格先。実装中に判明した、設計を縛る条件",
+    conventions: "昇格先。リポジトリ全体に効く取り決め",
     decisions: "ADR の status を accepted → implemented に更新する",
+    glossary: "昇格先。このサイクルで定まった用語",
   },
 };
 
-/** build-NN は architect と同じ集合を読む。理由だけ実装視点に寄せる */
-const BUILD_DOC_REASONS: Record<string, string> = {
-  ...DOC_REASONS["architect"],
-  overview: "実装済みの現実。他サイクルの成果も含む",
-  decisions: "過去の設計判断。実装中に覆さない（覆すなら handoff に記録する）",
-};
-
 function docReasons(phase: Phase): Record<string, string> {
-  if (phase.startsWith("build-")) return BUILD_DOC_REASONS;
   return DOC_REASONS[phase] ?? {};
 }
 
@@ -148,8 +140,10 @@ register({
     "永続ドキュメントの所在は document-guide.md が正です。管理が「対象外」の",
     "ものは候補にも未作成にも出しません（意図的に持たないため）。",
     "",
-    "build-NN では、tasklist.md の依存グラフから先行ビルドの handoff.md を",
-    "辿ります。手で辿ると漏れるためです。",
+    "build-NN では永続ドキュメントを候補に出しません。そのビルドに効く節は、",
+    "architect が issue.md の「参照する設計ドキュメント」で指します。",
+    "tasklist.md の依存グラフから先行ビルドの handoff.md は辿ります。",
+    "手で辿ると漏れるためです。",
     "",
     "パスはすべてリポジトリルートからの相対です。--json はサブエージェントへの",
     "委任プロンプトに流し込む用途を想定しています（概要欄で絞る仕組みが",

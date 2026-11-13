@@ -212,24 +212,14 @@ test("retrospective: 内部スキル以外は --skill に指定できない", (t
 // ---------------------------------------------------------------------------
 // close-cycle
 
-test("close-cycle: サイクル直下に記録し、振り返り → 昇格 → G10 → 書き込み → 終了 → PR の順に進む", (t) => {
+test("close-cycle: サイクル直下に記録し、収集 → G10 → 書き込み → 終了 → PR → 別の PR にするもの の順に進む", (t) => {
   const directory = workspace(t, true);
   const first = next(directory, "close");
   assert.equal(first.skill, "close-cycle");
-  assert.equal(first.kind, "call");
-  assert.equal(first.step, "retrospective");
+  assert.equal(first.kind, "run");
+  assert.equal(first.step, "collect", "CLOSE 自身の振り返りは行わない");
 
-  const writing = next(directory, "close", "--skill", "retrospective");
-  assert.equal(writing.step, "analyze");
-  report(directory, "close", "analyze", "--skill", "retrospective", "--result", "done");
-  const output = next(directory, "close", "--skill", "retrospective");
-  assert.equal(output.args?.["output"], `${CYCLE}/close/retrospective.md`);
-  write(directory, `${CYCLE}/close/retrospective.md`);
-  report(directory, "close", "write", "--skill", "retrospective", "--result", "done");
-
-  assert.equal(report(directory, "close", "retrospective", "--result", "done").step, "collect");
-  report(directory, "close", "collect", "--result", "done");
-  const gate = report(directory, "close", "organize", "--result", "done");
+  const gate = report(directory, "close", "collect", "--result", "done");
   assert.equal(gate.kind, "gate");
   assert.equal(gate.step, "G10");
   assert.equal(report(directory, "close", "G10", "--result", "approved", "--input", "OK").step, "write");
@@ -239,28 +229,40 @@ test("close-cycle: サイクル直下に記録し、振り返り → 昇格 → 
   assert.equal(early.status, 1, "cycle close の前は終了を受け付けない");
   succeeds(directory, "cycle", "close", "001", "--summary", "テスト");
   assert.equal(report(directory, "close", "close", "--result", "done").step, "pr");
-  assert.equal(report(directory, "close", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1").kind, "done");
+  const followups = report(directory, "close", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1");
+  assert.equal(followups.step, "followups");
+  assert.deepEqual(followups.args, { guideReview: false, guideReviewReason: "予測と実測の両方があるビルドがありません", hookCandidates: false });
+  assert.equal(report(directory, "close", "followups", "--result", "done").kind, "done");
 
   assert.ok(existsSync(join(directory, CYCLE, "progress.jsonl")));
   assert.equal(existsSync(join(directory, CYCLE, "close", "progress.jsonl")), false);
 });
 
-test("close-cycle: G10 はどの profile でも返り、振り返りが skip なら素材の収集から始まる", (t) => {
+test("close-cycle: G10 はどの profile でも返り、振り返りの設定に関わらず収集から始まる", (t) => {
   const directory = workspace(t, true);
   configure(directory, 'profile = "economy"');
-  configure(directory, 'retrospective = "skip"');
   assert.equal(next(directory, "close").step, "collect");
-  report(directory, "close", "collect", "--result", "done");
-  assert.equal(report(directory, "close", "organize", "--result", "done").step, "G10");
+  assert.equal(report(directory, "close", "collect", "--result", "done").step, "G10");
 });
 
-test("close-cycle: G10 で差し戻すと答えが返り、collect をやり直すと organize もやり直しになる", (t) => {
+test("close-cycle: G10 で差し戻すと答えが返り、collect をやり直すと G10 もやり直しになる", (t) => {
   const directory = workspace(t, true);
-  configure(directory, 'retrospective = "skip"');
   report(directory, "close", "collect", "--result", "done");
-  report(directory, "close", "organize", "--result", "done");
-  const revise = report(directory, "close", "G10", "--result", "rejected", "--input", "learnings は不要");
+  const revise = report(directory, "close", "G10", "--result", "rejected", "--input", "conventions は不要");
   assert.equal(revise.step, "G10");
-  assert.equal((revise as { revise?: string }).revise, "learnings は不要");
-  assert.equal(report(directory, "close", "collect", "--result", "done").step, "organize");
+  assert.equal((revise as { revise?: string }).revise, "conventions は不要");
+  report(directory, "close", "G10", "--result", "approved", "--input", "OK");
+  assert.equal(report(directory, "close", "collect", "--result", "done").step, "G10");
+});
+
+test("close-cycle: followups の指示に、フックの候補の有無を添える", (t) => {
+  const directory = workspace(t, true);
+  write(directory, `${CYCLE}/build-01/handoff.md`, "# 申し送り\n\n## 永続化すること\n\n- `hook` [高]: .env の編集を止める（2回起きた）\n");
+  report(directory, "close", "collect", "--result", "done");
+  report(directory, "close", "G10", "--result", "approved", "--input", "OK");
+  report(directory, "close", "write", "--result", "done");
+  succeeds(directory, "cycle", "close", "001", "--summary", "テスト");
+  report(directory, "close", "close", "--result", "done");
+  const followups = report(directory, "close", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1");
+  assert.equal(followups.args?.["hookCandidates"], true);
 });

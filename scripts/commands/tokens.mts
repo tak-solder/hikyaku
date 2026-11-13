@@ -58,6 +58,7 @@ import {
 } from "../lib/tokens.mts";
 import {
   collectPeakRecords,
+  guideReview,
   deviationOf,
   GROUP_KEYS,
   type GroupKey,
@@ -468,7 +469,11 @@ register({
         ? undefined
         : groupRecords(records, groupBy).map((g) => ({ ...summarizeGroup(g.key, g.records), records: g.records.map(recordJson) }));
 
-    emit({ records: records.map(recordJson), groupBy: groupBy ?? null, groups: groups ?? null }, () => {
+    // 見直しを勧めるかは、サイクルを指定したときだけ出す（close-cycle が読む。全サイクルを混ぜた判定は
+    // token-guide の校正が自分で行う）
+    const review = filter === undefined ? undefined : guideReview(records);
+
+    emit({ records: records.map(recordJson), groupBy: groupBy ?? null, groups: groups ?? null, review: review ?? null }, () => {
       if (records.length === 0) return "予測ピークの振り返りを持つ retrospective.md はまだありません。";
       const lines: string[] = [];
       if (groupBy === undefined) {
@@ -488,6 +493,9 @@ register({
       if (all.paired > 0) {
         const under = records.filter((r) => (deviationOf(r) ?? 0) > 0).length;
         lines.push("", `乖離の平均 ${signedK(all.meanDeviation)}・比率の平均 ${ratio(all.meanRatio)}（${all.paired} 件、過小見積もり ${under} 件）`);
+      }
+      if (review !== undefined) {
+        lines.push("", `見積もりのガイドの見直し: ${review.needed ? "勧める" : "不要"}（${review.reason}）`);
       }
       lines.push("", "乖離の要因は各 retrospective.md の「乖離の要因」を読んでください。");
       return lines.join("\n");

@@ -8,6 +8,9 @@ PR は作らず、報告もしない。`token-guide/progress.jsonl` の変更を
 - [ ] コミットして PR を作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title token-guide` で生成）
   - コミットには `token-guide/progress.jsonl` も含める
   - PR 本文に、変更の根拠（どのビルドの乖離から判断したか）と、ガイドの版の変化（v1 → v2 など）を書く
+  - close-cycle から呼ばれた回（`auto`）では承認を得ていないので、PR だけで採否を判断できるように書く:
+    対象のビルドごとの予測・実測・比率の表、どの成分をどちらへ読み違えたか、変更前後の文面、
+    見送った補正とその理由
 - [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
 
 ```bash

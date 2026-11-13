@@ -51,8 +51,14 @@ tasklist.md の依存グラフ・buildID の整合性はスクリプトが検証
 ### context: plan の入力
 - `cycles/{cycle}/build-{NN}/plan.md`（レビュー対象。「予測ピーク」セクションを含む）
 - 参照: `cycles/{cycle}/build-{NN}/issue.md`, `cycles/{cycle}/design/design-delta.md`,
-  関連する永続ドキュメント, 依存ビルドの `cycles/{cycle}/build-{MM}/handoff.md`,
+  永続ドキュメントの `overview` / `decisions` / `constraints`（**全文**。所在は `document-guide.md` が指す）,
+  依存ビルドの `cycles/{cycle}/build-{MM}/handoff.md`,
   見積もりのガイド（委任元が `hikyaku tokens guide` の示すパスを渡す）と、予測ピークの判定の帯（`peakBands`。委任元プロンプトで渡される）
+
+builder は永続ドキュメントを、issue.md の「参照する設計ドキュメント」が指す節しか読んでいない。
+どの節を渡すかは architect が選んだもので、選び漏れや、選んだあとに他サイクルが足した記述が
+ありうる。あなたは全文を読み、plan.md が指されていない制約・判断に反していないかを確かめる。
+この突き合わせができるのは、全文を読むあなただけ。
 
 予測ピークの合計と判定は `hikyaku tokens estimate` が行っている。レビューで見るのは成分の見積もりで、
 足し算ではない。内訳表の各成分（固定費・読み込み・実装・テスト・未知の領域）とその根拠が、
@@ -130,9 +136,11 @@ builder フェーズ段階の成分が整合しているか。tasklist.md 側の
   - 根拠: 「やらないこと」の引用と、抵触する plan.md のステップを示せる
 - マージ時点のデータ安全の不備: plan.md の実装ステップ（スキーマ・保存形式・API の契約・既存データの読み書き）が、マージ直後の本番で既存データや既存機能を壊しうるのに、「マージ時点のデータ安全」に根拠が無い、または issue.md の「マージ時点で残る危険」の範囲を超えている
   - 根拠: 該当する実装ステップと、「マージ時点のデータ安全」（または「マージ時点で残る危険」）の記述を示せる
-- architecture不整合: `interfaces` / `db-schema` / `conventions` と矛盾する設計判断
+- architecture不整合: `overview` / `decisions` / `constraints` / `conventions` と矛盾する設計判断
   - 根拠: 矛盾する両箇所を示せる
-- 依存ビルドとの不整合: 依存ビルドの handoff.md の制約・変更点が計画に反映されていない
+  - issue.md の「参照する設計ドキュメント」が指していない節との矛盾も報告する。その場合は、
+    issue.md にその節へのポインタが欠けていることも添える（選び漏れ）
+- 依存ビルドとの不整合: 依存ビルドの handoff.md の「後続ビルドが前提にすること」が計画に反映されていない
   - 根拠: handoff.md の該当記述と、plan.md 側で無視されていることを示せる
 - 粒度不備: ステップが抽象的すぎる、または実装コード相当まで書き込みすぎている（plan.mdの規約違反）
   - 根拠: 該当ステップを引用

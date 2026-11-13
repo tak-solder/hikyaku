@@ -7,7 +7,8 @@ argument-hint: "[{cycle}]"
 
 # Hikyaku Close Cycle
 
-全ビルドが完了したサイクルを締め、サイクルの成果を永続ドキュメントへ昇格させる。
+全ビルドが完了したサイクルを締め、サイクルで得た知見を永続化する。足すだけでなく、
+役に立たなかった記述や古くなった記述を消し、置き換える。
 
 ## なぜ独立したフェーズなのか
 
@@ -23,22 +24,24 @@ argument-hint: "[{cycle}]"
 
 最終ビルドに混ぜないのは、builder のコンテキストが実装だけに集中できなくなるため。
 
-## あなたは永続ドキュメントを書ける唯一のスキル
+## 誰が何を書くか
 
-| スキル | 永続ドキュメント |
+置き場は読み込まれ方で選ぶ（基準は [persistence.md](references/persistence.md)）。書く人は置き場で決まる。
+
+| 置き場 | 書く人 |
 |---|---|
-| planner | ✗ |
-| architect | ADR の追記のみ（決定した時点で記録するのが ADR 本来の思想） |
-| builder | ✗ |
-| close-cycle | ✓（唯一） |
+| コード（lint・テスト・ヘルパー・その場のコメント）、パス指定の rule | builder（見つけたビルドの PR）。後続のビルドに間に合わせるため |
+| 永続ドキュメント（overview / decisions / constraints / conventions / glossary） | close-cycle だけ。ADR の追記は architect |
+| `{HIKYAKU_ROOT}/instructions.md`、スキル | close-cycle だけ |
+| フック | close-cycle が別のブランチの PR にする |
+| 見積もりのガイド（`token-guide/guide.md`） | `/hikyaku:token-guide`。乖離が大きいサイクルでは close-cycle が呼ぶ |
 
-`{HIKYAKU_ROOT}/instructions.md` も同じ扱いで、書き換えるのは close-cycle だけ。
-永続ドキュメントではないが、走行中の他サイクルの planner / architect が読むため、
-フェーズ途中で書き換えると前提が途中で変わる。
+永続ドキュメントと `instructions.md` を close-cycle だけが書くのは、走行中の他サイクルの
+planner / architect が読むため。フェーズ途中で書き換えると前提が途中で変わる。
 
-予測ピークの見積もりのガイド（`{HIKYAKU_ROOT}/token-guide/guide.md`）は、close-cycle の昇格と
-`/hikyaku:token-guide` が書き換える。走行中の他サイクルの build-manager / builder が読むので、
-サイクルの途中で書き換えないのは instructions.md と同じ理由。
+あなたは追加だけでなく、削除と置き換えも提案できる。ただし範囲は、このサイクルの記録（handoff・
+振り返り）に根拠があるものと、このサイクルのビルドが書いた rule に限る。根拠の無い記述の正否は、
+このサイクルの知識では判断できない。
 
 ## 作業ステップ
 
@@ -51,9 +54,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context close {cycle}
 ```
 
-`context` は昇格先の所在と、素材（全ビルドの `handoff.md` / `design-delta.md`）を
-まとめて返す。末尾の「未作成」は昇格先の候補で、そこへ昇格させるなら新規作成に
-なるため、昇格の承認で併せて承認を得る。
+`context` は昇格先の所在を返す。全文は読まない。読むのは、集めた候補が指す節だけ（collect の指示）。
+末尾の「未作成」は昇格先の候補で、そこへ昇格させるなら新規作成になるため、昇格の承認で併せて承認を得る。
 
 HIKYAKU_ROOT は `.hikyaku.config` から解決されるので、引数では受け取らない。
 `$ARGUMENTS[0]` でサイクルが指定されていなければ、現在のブランチ → `.hikyaku.local`
@@ -122,9 +124,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title close {cycle}
 
 ### Step 1 以降: step に従って進める
 
-ここから先の手順（振り返り → 素材の収集 → 昇格候補の整理 → G10 → 書き込み → サイクルの終了 → PR）は、
-`step next` が設定と進捗から1手ずつ返す。**手順を自分で組み立てない。** 振り返りを行うかは
-step が `retrospective` の設定から決める。
+ここから先の手順（候補の収集 → 整理と G10 → 書き込み → サイクルの終了 → PR → 別の PR にするもの）は、
+`step next` が設定と進捗から1手ずつ返す。**手順を自分で組み立てない。**
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next close {cycle}
@@ -136,16 +137,15 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next close {cycle}
 |---|---|
 | `run` | 「指示」のファイルを読み、そのとおりに行う。終えたら `done` を報告する |
 | `gate` | 「指示」のファイルを読み、ユーザーに提示して承認を求める。承認されたら `approved`、フィードバックなら `rejected` を報告する。どちらも `--input` にユーザーの答えを添える。`rejected` のあとは答えを反映し、`step next` に従って提示し直す |
-| `call` | 「指示」のファイルを読み、「呼ぶスキル」を呼び出す。「呼ばれたスキルの手順」があれば、呼ばれたスキルはそのコマンドから始める。呼ばれたスキルが手順を終えて戻ったら、指示ファイルの「戻ったら」に従って `done` を報告する。呼ばれたスキルが `stop` で止まったら報告せず、そのメッセージを伝えて止まる |
 | `done` | 手順をすべて終えた。下の「完了の案内」へ |
 | `stop` | メッセージをユーザーに伝えて終了する |
 
 - `step report` は記録したあと、次の1手を返す。それに従って続ける
 - 成果物や完了の条件、報告に添える値（`--pr`）は CLI が確かめ、足りなければ報告を受け付けない。
   メッセージに従って直す。報告を通すために成果物を空で作ったり、別のステップとして報告したりしない
-- 再開したとき、前のステップで会話の中に作った成果（集めた素材、昇格の候補）が手元に無ければ、
-  `collect` を `done` で報告し直してやり直す（G10 の指示も参照）
-- 報告したら、成果物（永続ドキュメントの変更、`close/retrospective.md`）とサイクルのディレクトリ直下の
+- 再開したとき、候補が会話の中に無ければ、`hikyaku promotions {cycle}` を実行し直す。候補はスクリプトで
+  再現できるので、`collect` を報告し直す必要はない
+- 報告したら、成果物（永続ドキュメント・rule・スキルの変更）とサイクルのディレクトリ直下の
   `cycles/{cycle}/progress.jsonl` をコミット & push する。pr の指示にコミットの時機の定めがあれば、そちらに従う
 - 迷ったら `step next` を呼び直す。同じ状態なら同じ1手が返る
 
@@ -156,6 +156,13 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next close {cycle}
 ```
 サイクル {cycle} を closed にしました。
 
+（別の PR を作った場合）
+見積もりのガイドの見直し: {PR の URL}
+フックの提案: {PR の URL}
+どちらも、採るかはマージで決めてください。
+
 次のサイクルを開始するには:
 /hikyaku:create-cycle <slug>
 ```
+
+見送ったもの（未マージの token-guide の PR がある等）や、失敗したものがあれば、理由と一緒に伝える。
