@@ -17,4 +17,4 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers close {cyc
 ```
 
   失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
-- [ ] `done` を報告し、progress.jsonl をコミット & push する
+- [ ] `done` を報告し（`--pr` に PR の URL）、progress.jsonl をコミット & push する

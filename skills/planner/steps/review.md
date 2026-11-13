@@ -14,5 +14,3 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc plan {cycle}
 - [ ] 渡す情報: `cycles/{cycle}/planning/user-stories.md`, `planning/questions.md`（存在する場合）
   - 出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/agents/doc-reviewer.md` を参照
 - [ ] 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
-- [ ] `done` を報告する
-- [ ] コミット & push する（progress.jsonl も含める）

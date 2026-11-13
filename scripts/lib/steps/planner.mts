@@ -33,7 +33,6 @@ export const PLANNER_STEPS: SkillSteps = {
       kind: "gate",
       title: "user-stories.md の承認",
       when: (ctx) => ctx.config.gates.userStories,
-      binds: ["user-stories.md"],
       ask: "G1",
     },
     {
@@ -44,6 +43,6 @@ export const PLANNER_STEPS: SkillSteps = {
       when: (ctx) => ctx.config.reviews.retrospective !== "skip",
       reason: () => "企画フェーズの最後の振り返り",
     },
-    { id: "pr", kind: "run", title: "親 issue と PR の作成" },
+    { id: "pr", kind: "run", title: "親 issue と PR の作成", recordsPr: true },
   ],
 };

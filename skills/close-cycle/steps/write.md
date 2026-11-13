@@ -19,6 +19,3 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs link --dry-run
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate {cycle}
 ```
-
-- [ ] `done` を報告する
-- [ ] コミット & push する（progress.jsonl も含める）

@@ -14,7 +14,6 @@ interface Directive {
   read?: string;
   args?: Record<string, unknown>;
   report?: Record<string, string>;
-  binds?: string[];
   call?: string;
   callNext?: string;
   note?: string;
@@ -75,7 +74,6 @@ test("planner: planning/ に記録し、user-stories → レビュー → G1 →
   const gate = report(directory, "plan", "review", "--result", "done");
   assert.equal(gate.kind, "gate");
   assert.equal(gate.step, "G1");
-  assert.deepEqual(gate.binds, ["user-stories.md"]);
 
   const call = report(directory, "plan", "G1", "--result", "approved", "--input", "OK");
   assert.equal(call.kind, "call");
@@ -87,7 +85,9 @@ test("planner: planning/ に記録し、user-stories → レビュー → G1 →
   assert.equal(next(directory, "plan").step, "retrospective", "呼び出し元が報告するまで planner は進まない");
 
   assert.equal(report(directory, "plan", "retrospective", "--result", "done").step, "pr");
-  assert.equal(report(directory, "plan", "pr", "--result", "done").kind, "done");
+  const noPr = cli(directory, "step", "report", "plan", "pr", "001", "--result", "done");
+  assert.equal(noPr.status, 1, "PR を添えない done は受け付けない");
+  assert.equal(report(directory, "plan", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1").kind, "done");
 
   const log = events(join(directory, PLANNING, "progress.jsonl"));
   assert.deepEqual(
@@ -99,7 +99,7 @@ test("planner: planning/ に記録し、user-stories → レビュー → G1 →
   );
 });
 
-test("planner: G1 の承認は user-stories.md に結びつき、G1 より前に直すと取り直しになる", (t) => {
+test("planner: G1 の承認は、承認後に user-stories.md を直しても自動では取り直しにならない", (t) => {
   const directory = workspace(t, true);
   configure(directory, 'retrospective = "skip"');
   report(directory, "plan", "inputs", "--result", "done");
@@ -109,10 +109,10 @@ test("planner: G1 の承認は user-stories.md に結びつき、G1 より前に
   report(directory, "plan", "review", "--result", "done");
   assert.equal(report(directory, "plan", "G1", "--result", "approved", "--input", "OK").step, "pr");
 
+  // 変更は Git の履歴で追う。取り直すと決めたら user-stories を報告し直す
   write(directory, `${PLANNING}/user-stories.md`, "# stories（範囲を変更）\n");
-  const again = next(directory, "plan");
-  assert.equal(again.step, "G1");
-  assert.match(again.note ?? "", /承認したあとに成果物が変わっています/);
+  assert.equal(next(directory, "plan").step, "pr");
+  assert.equal(report(directory, "plan", "user-stories", "--result", "done").step, "review");
 });
 
 test("planner: レビューと振り返りが無効なら、その手順は返らない", (t) => {
@@ -232,7 +232,6 @@ test("close-cycle: サイクル直下に記録し、振り返り → 昇格 → 
   const gate = report(directory, "close", "organize", "--result", "done");
   assert.equal(gate.kind, "gate");
   assert.equal(gate.step, "G10");
-  assert.deepEqual(gate.binds, []);
   assert.equal(report(directory, "close", "G10", "--result", "approved", "--input", "OK").step, "write");
   assert.equal(report(directory, "close", "write", "--result", "done").step, "close");
 
@@ -240,7 +239,7 @@ test("close-cycle: サイクル直下に記録し、振り返り → 昇格 → 
   assert.equal(early.status, 1, "cycle close の前は終了を受け付けない");
   succeeds(directory, "cycle", "close", "001", "--summary", "テスト");
   assert.equal(report(directory, "close", "close", "--result", "done").step, "pr");
-  assert.equal(report(directory, "close", "pr", "--result", "done").kind, "done");
+  assert.equal(report(directory, "close", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1").kind, "done");
 
   assert.ok(existsSync(join(directory, CYCLE, "progress.jsonl")));
   assert.equal(existsSync(join(directory, CYCLE, "close", "progress.jsonl")), false);

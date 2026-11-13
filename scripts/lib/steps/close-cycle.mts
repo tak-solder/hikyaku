@@ -40,6 +40,6 @@ export const CLOSE_CYCLE_STEPS: SkillSteps = {
     { id: "G10", kind: "gate", title: "昇格の承認", ask: "G10" },
     { id: "write", kind: "run", title: "永続ドキュメントへの書き込みと検証" },
     { id: "close", kind: "run", title: "サイクルの終了（cycle close）", evidence: cycleClosed },
-    { id: "pr", kind: "run", title: "PR の作成" },
+    { id: "pr", kind: "run", title: "PR の作成", recordsPr: true },
   ],
 };

@@ -11,6 +11,3 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle close {cycle} \
 `--status abandoned` を付ける。
 
 サイクルディレクトリは残す。PR 履歴から辿れることに価値がある。
-
-- [ ] `done` を報告する。cycles.md の status が `active` のままなら受け付けられない
-- [ ] コミット & push する（progress.jsonl も含める）
