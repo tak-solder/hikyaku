@@ -145,3 +145,127 @@ test("conductor parse: 子の記録が無いまま done を出したら挙げる
   assert.equal(done.step, null);
   assert.match(done.stepProblems[0] ?? "", /記録がありません/);
 });
+
+/** セッション SESSION として、任意のフェーズの手順を報告する */
+function reportAs(t: TestContext, directory: string, phase: string, step: string, ...extra: string[]): void {
+  const env = { CLAUDE_CODE_SESSION_ID: SESSION, CLAUDE_CONFIG_DIR: temporaryDirectory(t) };
+  const operands = phase === "bp-guide" ? [phase, step] : [phase, step, "001"];
+  const result = cliWith(directory, env, "step", "report", ...operands, ...extra);
+  assert.equal(result.status, 0, result.stderr);
+}
+
+function restartAs(t: TestContext, directory: string, phase: string, ...extra: string[]): void {
+  const env = { CLAUDE_CODE_SESSION_ID: SESSION, CLAUDE_CONFIG_DIR: temporaryDirectory(t) };
+  const result = cliWith(directory, env, "step", "restart", phase, "001", ...extra);
+  assert.equal(result.status, 0, result.stderr);
+}
+
+/** ルートの設定に、テーブルより前の最上位のキーを足す */
+function configure(directory: string, line: string): void {
+  const path = join(directory, ".hikyaku.config");
+  writeFileSync(path, `${line}\n${readFileSync(path, "utf8")}`);
+}
+
+const PR = ["--pr", "https://github.com/o/r/pull/1"];
+
+test("conductor parse / step hook: cycle close のあとも CLOSE の手順を探し、正しく終えた子を誤判定しない", (t) => {
+  const directory = workspace(t, true);
+  configure(directory, 'retrospective = "skip"');
+  reportAs(t, directory, "close", "collect", "--result", "done");
+  reportAs(t, directory, "close", "organize", "--result", "done");
+  reportAs(t, directory, "close", "G10", "--result", "approved", "--input", "OK");
+  reportAs(t, directory, "close", "write", "--result", "done");
+  succeeds(directory, "cycle", "close", "001", "--summary", "テスト");
+  reportAs(t, directory, "close", "close", "--result", "done");
+
+  // 終えたサイクルでも、pr が残っていれば Stop フックは止める
+  const blocked = hook(directory, { session_id: SESSION });
+  assert.equal(blocked?.decision, "block");
+  assert.match(blocked?.reason ?? "", /close-cycle close/);
+
+  reportAs(t, directory, "close", "pr", "--result", "done", ...PR);
+  assert.equal(hook(directory, { session_id: SESSION }), undefined);
+  const done = parse(directory, "<hikyaku-done next=\"\">\nPR を作りました\n</hikyaku-done>");
+  assert.deepEqual(done.stepProblems, []);
+  assert.equal(done.step?.["skill"], "close-cycle");
+  assert.equal(done.step?.["kind"], "done");
+});
+
+test("conductor parse / step hook: run のステップの中から呼んだ build-manager の G6 を、呼ばれた側の位置で読む", (t) => {
+  const directory = built(t);
+  write(directory, `${BUILD}/plan.md`);
+  report(t, directory, "plan", "--result", "done", "--bp", "3");
+  report(t, directory, "plan-review", "--result", "done");
+  write(directory, `${BUILD}/test-spec.md`);
+  report(t, directory, "test-spec", "--result", "done");
+  report(t, directory, "test-spec-review", "--result", "done");
+  report(t, directory, "G8", "--result", "approved", "--input", "OK");
+  // implement の途中で、想定外の依存が見つかって build-manager を呼んだ
+  for (const step of ["load", "scope", "estimate", "dry-run", "tasklist-review"]) {
+    report(t, directory, step, "--skill", "build-manager", "--result", "done");
+  }
+  assert.equal(hook(directory, { session_id: SESSION }), undefined, "G6 で止まるのは正しい");
+  const gate = parse(directory, '<hikyaku-gate id="G6">\n承認しますか？\n</hikyaku-gate>');
+  assert.deepEqual(gate.stepProblems, []);
+  assert.equal(gate.step?.["skill"], "build-manager");
+  assert.equal(gate.step?.["ask"], "G6");
+
+  report(t, directory, "G6", "--skill", "build-manager", "--result", "approved", "--input", "OK");
+  const blocked = hook(directory, { session_id: SESSION });
+  assert.match(blocked?.reason ?? "", /build-manager .*write|write/, "書き込みの途中で止まろうとしたら引き止める");
+  report(t, directory, "write", "--skill", "build-manager", "--result", "done");
+  assert.match(hook(directory, { session_id: SESSION })?.reason ?? "", /run implement/, "build-manager を終えたら implement に戻る");
+});
+
+test("conductor parse: 記録の無い子がゲートの ID で止まったら挙げ、ステップの途中の問いは挙げない", (t) => {
+  const directory = built(t);
+  const early = parse(directory, '<hikyaku-gate id="G8">\n承認しますか？\n</hikyaku-gate>');
+  assert.equal(early.step, null);
+  assert.match(early.stepProblems[0] ?? "", /G8 で止まりましたが.*記録がありません/);
+  const question = parse(directory, '<hikyaku-gate id="questions">\nどちらにしますか？\n</hikyaku-gate>');
+  assert.deepEqual(question.stepProblems, []);
+});
+
+test("step where: 対象サイクルの作業単位だけを並べ、init と bp-guide は混ぜない", (t) => {
+  const directory = built(t);
+  reportAs(t, directory, "bp-guide", "start", "--result", "done");
+  write(directory, `${BUILD}/plan.md`);
+  report(t, directory, "plan", "--result", "done", "--bp", "3");
+  const output = JSON.parse(succeeds(directory, "step", "where", "001", "--json"));
+  assert.deepEqual(output.units.map((unit: { directive: { skill: string } }) => unit.directive.skill), ["builder"]);
+});
+
+test("step where / step hook: close-cycle の最初の振り返りの途中も、close-cycle の作業単位として読む", (t) => {
+  const directory = workspace(t, true);
+  reportAs(t, directory, "create", "to-plan", "--result", "done");
+  reportAs(t, directory, "close", "analyze", "--skill", "retrospective", "--result", "done");
+
+  const blocked = hook(directory, { session_id: SESSION });
+  assert.equal(blocked?.decision, "block");
+  assert.match(blocked?.reason ?? "", /retrospective close/);
+
+  const output = JSON.parse(succeeds(directory, "step", "where", "001", "--json"));
+  const units = output.units as { directive: { skill: string; unit: string; kind: string; step?: string } }[];
+  const create = units.find((unit) => unit.directive.unit === "create");
+  assert.equal(create?.directive.kind, "done", "同じファイルの create-cycle は振り返りに引きずられない");
+  const close = units.find((unit) => unit.directive.unit === "close");
+  assert.equal(close?.directive.skill, "retrospective");
+  assert.equal(close?.directive.step, "write");
+});
+
+test("step hook stop: 手順を終えたあとに呼び直した振り返り（PR レビュー対応）の途中も引き止める", (t) => {
+  const directory = workspace(t, true);
+  configure(directory, 'retrospective = "skip"');
+  write(directory, "docs/hikyaku/cycles/001-test/planning/user-stories.md");
+  for (const step of ["inputs", "scope", "user-stories", "review"]) reportAs(t, directory, "plan", step, "--result", "done");
+  reportAs(t, directory, "plan", "G1", "--result", "approved", "--input", "OK");
+  reportAs(t, directory, "plan", "pr", "--result", "done", ...PR);
+  assert.equal(hook(directory, { session_id: SESSION }), undefined, "planner は終えている");
+
+  const config = join(directory, ".hikyaku.config");
+  writeFileSync(config, readFileSync(config, "utf8").replace('retrospective = "skip"', 'retrospective = "auto"'));
+  restartAs(t, directory, "plan", "--skill", "retrospective", "--reason", "PR レビュー対応");
+  const blocked = hook(directory, { session_id: SESSION });
+  assert.equal(blocked?.decision, "block");
+  assert.match(blocked?.reason ?? "", /retrospective plan/);
+});

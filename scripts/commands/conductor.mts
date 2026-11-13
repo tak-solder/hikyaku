@@ -330,15 +330,18 @@ function childStep(
   if (parsed.sessionId === null || (parsed.outcome !== "gate" && parsed.outcome !== "done" && parsed.outcome !== "blocked")) {
     return { position: null, problems: [] };
   }
-  const located = locateSession(config.hikyakuRoot, [context.record], parsed.sessionId);
+  // 終えたサイクルも見る（close-cycle は cycle close のあとに pr を行う）
+  const located = locateSession(config.hikyakuRoot, { records: [context.record], explicit: true }, parsed.sessionId);
   if (located === undefined) {
-    return {
-      position: null,
-      problems:
-        parsed.outcome === "done"
-          ? ["子は done を出しましたが、このサイクルに子のセッションの手順の記録がありません（hikyaku step where で確かめてください）"]
-          : [],
-    };
+    const problems: string[] = [];
+    if (parsed.outcome === "done") {
+      problems.push("子は done を出しましたが、このサイクルに子のセッションの手順の記録がありません（hikyaku step where で確かめてください）");
+    }
+    // ゲートの ID（G8 など）は手順の位置で確かめる。記録が無いのにゲートで止まるのは早すぎる。ステップの途中の問いは照合しない
+    if (parsed.outcome === "gate" && parsed.id !== undefined && /^G\d+$/.test(parsed.id)) {
+      problems.push(`子は ${parsed.id} で止まりましたが、このサイクルに子のセッションの手順の記録がありません（まだ何も報告していません）`);
+    }
+    return { position: null, problems };
   }
   const { directive } = directiveOf(located.unit, root === undefined ? {} : { root });
   const position: ChildStep = {

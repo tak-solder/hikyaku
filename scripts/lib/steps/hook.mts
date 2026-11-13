@@ -49,7 +49,7 @@ export function stopReason(input: StopInput): string | undefined {
 
   const config = loadConfig();
   const records = existsSync(cyclesPath(config.hikyakuRoot)) ? loadCycles(config.hikyakuRoot) : [];
-  const position = locateSession(config.hikyakuRoot, records, input.session_id);
+  const position = locateSession(config.hikyakuRoot, { records, explicit: false }, input.session_id);
   if (position === undefined) return undefined;
 
   const { opened, directive } = directiveOf(position.unit);

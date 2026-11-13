@@ -2,7 +2,7 @@
 name: create-cycle
 description: "Hikyaku サイクル作成: チケットを起点に新しいサイクルを採番し、profile と、ルート設定の ask に並んだキー（base_branch / ブランチ規則 / PR タイトル / セッション名 / 外部投影先）を決めて cycles.md に登録する。モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。"
 user-invocable: true
-argument-hint: "[{slug}]"
+argument-hint: "[{slug}|{cycle}]"
 ---
 
 # Hikyaku Create Cycle
@@ -27,6 +27,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config --json
 ```
 
 未初期化（`document-guide.md` が無い）の場合は `/hikyaku:init` を案内して終了する。
+
+- [ ] `$ARGUMENTS[0]` が既存のサイクル（`NNN` か `NNN-slug`。`cycle list` に並ぶもの）なら、作成済みの
+  サイクルの手順の再開（PLAN へ進むかの確認や、単独で終える PR の途中で中断した）。新しく作らずに
+  `step next create {NNN}-{slug}` を呼び、返った1手から Step 4 の転送ループで続ける。`done` が返ったら
+  再開するものは無いので、`/hikyaku:navigator` を案内して終える
 
 - [ ] 進行中のサイクルを確認する
 

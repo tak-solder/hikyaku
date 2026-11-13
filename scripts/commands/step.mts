@@ -391,7 +391,7 @@ register({
     const { config, context } = openCycle(args, operands[0]);
     const root = flagString(args, "root");
     const legacy = legacyCycleMessage(context);
-    const units = legacy !== undefined ? [] : findUnits(config.hikyakuRoot, [context.record]).map((unit) => {
+    const units = legacy !== undefined ? [] : findUnits(config.hikyakuRoot, { records: [context.record], explicit: true }).map((unit) => {
       const { opened, directive } = directiveOf(unit, root === undefined ? {} : { root });
       return { directive, next: nextCommand(opened) };
     });

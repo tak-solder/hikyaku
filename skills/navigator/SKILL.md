@@ -98,15 +98,19 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step where {cycle} --json
 | `building` かつ `mergePending` のみ | PR のマージ待ち。人間の作業として伝える |
 | `completed` | `/hikyaku:close-cycle {cycle}` |
 
-`step where` の作業単位とスキルの対応（`directive.skill` で引く）:
+`step where` の作業単位とスキルの対応（`directive.unit` で引く）:
 
-| `directive.skill` | 起動するスキル |
+| `directive.unit` | 起動するスキル |
 |---|---|
-| `planner` | `/hikyaku:planner {cycle}` |
+| `plan` | `/hikyaku:planner {cycle}` |
 | `architect` | `/hikyaku:architect {cycle}` |
-| `builder` | `/hikyaku:builder {cycle} {NN}`（`directive.unit` の `build-NN`） |
-| `close-cycle` | `/hikyaku:close-cycle {cycle}` |
-| `create-cycle` | `/hikyaku:planner {cycle}`（サイクルを作ったあとの PLAN） |
+| `build-NN` | `/hikyaku:builder {cycle} {NN}` |
+| `close` | `/hikyaku:close-cycle {cycle}` |
+| `create` | `/hikyaku:create-cycle {cycle}`（作成済みのサイクルの手順の再開。PLAN へ進むかの確認か、単独で終える PR） |
+
+`directive.skill` は、内部スキルを呼んでいる最中なら `build-manager` / `retrospective` になる。どちらも
+呼び出し元のスキルの中で再開するので、`directive.unit` から呼び出し元を引く（例: `architect` の
+`build-manager` の G6 なら `/hikyaku:architect {cycle}`）。
 
 `kind` が `stop` の作業単位は、次の一手を決める根拠にしない（この表の以降の行で決める）。止まる理由（記録の欠けなど）は、`directive.message` をそのまま添えて伝える。
 `kind` が `done` の作業単位は終えた手順なので、再開の根拠にしない。作業単位が複数あれば、

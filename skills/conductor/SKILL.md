@@ -192,9 +192,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor parse {resultFile} {c
 `ask.handler` で分岐する。
 
 - **`supervisor`**: 「問いへの答え方」に従って判断する。ただし、そこに書いた「人間に上げる」条件に
-  当たれば `human` と同じに扱う。ゲート（`step.kind` が `gate`）なら、承認の観点は `step.read` の指示ファイルに
-  あり、読む成果物は `step.binds`（`step.directory` からの相対パス）。承認は子が `step report` で
-  これらのファイルのハッシュに結びつけて記録するので、回答を渡してから子が成果物を書き換えると取り直しになる
+  当たれば `human` と同じに扱う。ゲート（`step.kind` が `gate`）なら、承認の観点と読む成果物は `step.read` の
+  指示ファイルにある（成果物のパスは `step.directory` から辿る）
 - **`human`**: 子の問い（`body`）を要約せずに `AskUserQuestion` で人間に示し、回答を得る
 
 回答をスクラッチパッドのファイルに書き、同じ session-id で再開する。
