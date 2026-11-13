@@ -98,7 +98,7 @@ builder フェーズ段階の成分が整合しているか。tasklist.md 側の
 
 ### context: architecture で報告する
 
-- ドキュメント間不整合: 例: `interfaces` のAPI定義と `db-schema` のテーブル定義が矛盾
+- ドキュメント間不整合: 例: design-delta.md のデータフローの記述と、`constraints` の上限の記述が矛盾
   - 根拠: 矛盾する2ドキュメントの該当箇所を両方示せる
 - codebase-surveyとの不整合: 新設計が既存パターン・拡張ポイントの調査結果と矛盾
   - 根拠: codebase-survey.md の記述と矛盾する設計ドキュメントの箇所を示せる

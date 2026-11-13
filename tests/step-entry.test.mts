@@ -124,6 +124,44 @@ test("step init: 索引を承認して書き込み、PR を添えて終えたら
   assert.equal(next(directory, "init").kind, "stop");
 });
 
+test("step init: 廃止した論理名が残っていれば移行を案内し、migrate の回で振り分けから PR まで進む", (t) => {
+  const directory = workspace(t);
+  write(directory, "docs/learnings.md", "# 落とし穴\n");
+  write(directory, "AGENTS.md", "# 規約\n");
+  const guide = (rows: string[]): string =>
+    ["| 論理名 | 管理 | パス | 概要 |", "| --- | --- | --- | --- |", ...rows, ""].join("\n");
+  const kept = [
+    "| overview | 未作成 | — | 概要 |",
+    "| decisions | 未作成 | — | ADR |",
+    "| constraints | 未作成 | — | 制約 |",
+    "| conventions | repo | `AGENTS.md` | 規約 |",
+  ];
+  write(directory, "docs/hikyaku/document-guide.md", guide([...kept, "| learnings | hikyaku | `docs/learnings.md` | 落とし穴 |"]));
+
+  const stopped = next(directory, "init") as Directive & { message?: string };
+  assert.equal(stopped.kind, "stop");
+  assert.match(stopped.message ?? "", /learnings/);
+  assert.match(stopped.message ?? "", /--round migrate/);
+
+  succeeds(directory, "step", "restart", "init", "--round", "migrate", "--reason", "v3 への移行");
+  assert.equal(next(directory, "init").step, "triage", "初期化の手順（cleanup / register）は返さない");
+  assert.equal(report(directory, "init", "triage", "--result", "done").step, "triage-approval");
+  assert.equal(report(directory, "init", "triage-approval", "--result", "approved", "--input", "OK").step, "triage-write");
+
+  const early = cli(directory, "step", "report", "init", "triage-write", "--result", "done");
+  assert.equal(early.status, 1, "廃止した論理名の行が残っていれば受け付けない");
+  assert.match(early.stderr, /廃止した論理名/);
+
+  write(directory, "docs/hikyaku/document-guide.md", guide(kept));
+  assert.equal(report(directory, "init", "triage-write", "--result", "done").step, "link-approval");
+  report(directory, "init", "link-approval", "--result", "approved", "--input", "OK");
+  succeeds(directory, "docs", "link");
+  assert.equal(report(directory, "init", "link", "--result", "done").step, "pr");
+  const done = report(directory, "init", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/9") as Directive & { message?: string };
+  assert.equal(done.kind, "stop");
+  assert.match(done.message ?? "", /移行は完了/);
+});
+
 // ---------------------------------------------------------------------------
 // create-cycle
 
