@@ -87,7 +87,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" init --root {HIKYAKU_ROOT}
 | `{HIKYAKU_ROOT}/.gitignore` | `.hikyaku.local` の1行だけ（既にあれば1行だけ追記する） |
 
 予測ピークの見積もりのガイド（`{HIKYAKU_ROOT}/token-guide/guide.md`）は生成しない。無ければプラグインの
-標準のガイドで見積もり、close-cycle の昇格や `/hikyaku:token-guide` で補正するときに作られる。
+標準のガイドで見積もり、`/hikyaku:token-guide` で補正するときに作られる。
 
 出た警告は、Step 4 の最初の手順（cleanup）で扱う。
 

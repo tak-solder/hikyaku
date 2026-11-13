@@ -55,7 +55,7 @@ close-cycle が token-guide を呼ぶかどうかは、`hikyaku tokens history {
 
 `/hikyaku:token-guide` は、ブランチの確認、素材の収集、変更案、承認、書き込みと版の更新、PR の順に進みます。この順序は `hikyaku step next token-guide` が1手ずつ返し、進み具合は `token-guide/progress.jsonl` に記録されます。調整は何度も行うので、前の回の記録は PR と一緒にデフォルトブランチに残ります。次に実行すると、スキルは前の回が終わっていることを読み取り、`hikyaku step restart token-guide` で区切って新しい回として始めます。
 
-ガイドを書き換えるのは `/hikyaku:token-guide` だけです。build-manager と builder は読むだけです。ガイドはワークスペース全体に効くので、走行中のサイクルの途中で動かすと、そのサイクルの中で予測を比べられなくなります。
+ガイドを書き換えるのは `/hikyaku:token-guide` だけです。build-manager と builder は読むだけです。ガイドはワークスペース全体に効くので、ほかに走行中のサイクルがあれば、その残りのビルドは補正後の版で見積もられます。それでも見直しは止めません。各予測の表には見積もりに使ったガイドの版が残るので、補正の前と後は `hikyaku tokens history --group-by guide` で分けて比べられます。止めて待つより、早く補正したほうが以降の見積もりの精度が上がります。
 
 ## v2 の BP 基準表からの移行
 

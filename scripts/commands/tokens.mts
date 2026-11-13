@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { flagBoolean, flagString, type ParsedArgs } from "../lib/args.mts";
 import { branchName } from "../lib/branch.mts";
-import { loadConfig, type ResolvedConfig } from "../lib/config.mts";
+import { assertCurrentConfig, loadConfig, type ResolvedConfig } from "../lib/config.mts";
 import { cycleDirName, loadCycles } from "../lib/cycles.mts";
 import { renderDiffMarkdown, summarizeDiff } from "../lib/diff-stats.mts";
 import { HikyakuError } from "../lib/errors.mts";
@@ -224,6 +224,7 @@ register({
       );
     }
     const config = configFor(args, operands[0]);
+    assertCurrentConfig(config);
     const guide = loadTokenGuide(config.hikyakuRoot);
     const values = Object.fromEntries(
       COMPONENTS.map((c) => [c.key, { tokens: readComponentTokens(args, c.key), basis: flagString(args, `${c.key}-basis`) }]),
@@ -231,7 +232,15 @@ register({
     const estimate = sumComponents(values);
     const verdict = peakVerdict(estimate.total, config.peakBands);
     const markdown = renderEstimateMarkdown(estimate, verdict, config.peakBands, guide);
+    // 版の宣言が本文と合わないガイドで見積もると、補正後の本文が古い版の名前で記録され、
+    // tokens history --group-by guide で補正の前と後を分けられなくなる。先に tokens stamp させる
     const problems = guide.kind === "project" ? guideHeaderProblems(guide) : [];
+    if (problems.length > 0) {
+      throw new HikyakuError(
+        `ガイド（${relative(config.repoRoot, guide.path)}）の版の宣言が本文と合いません: ${problems.join(" / ")}`,
+        "hikyaku tokens stamp で版を整えてから見積もってください。",
+      );
+    }
 
     emit(
       {
@@ -240,7 +249,6 @@ register({
         bands: config.peakBands,
         components: estimate.components,
         guide: { kind: guide.kind, label: guideLabel(guide), version: guide.version ?? null, hash: guide.actualHash, path: guide.path },
-        guideProblems: problems,
         markdown,
       },
       () => {
@@ -248,7 +256,6 @@ register({
           `予測ピーク ${formatK(estimate.total)}`,
           `判定: ${describePeakVerdict(verdict, config.peakBands)}`,
           `ガイド: ${guideLabel(guide)}（${guide.actualHash}）`,
-          ...problems.map((p) => `注意: ガイドの ${p}`),
           "",
         ];
         lines.push(
@@ -425,7 +432,7 @@ register({
     "開始時の固定分・区切りでのコンテキスト（progress.jsonl から）・呼び出し回数・コンパクション・",
     "差分の追加行数・モデル・見積もりに使ったガイドの版・Hikyaku の版を並べます。",
     "",
-    "ガイドを補正する素材です（close-cycle の昇格と /hikyaku:token-guide）。同じ成分を同じ向きに",
+    "ガイドを補正する素材です（/hikyaku:token-guide）。同じ成分を同じ向きに",
     "読み違え続けているなら、ガイドの見積もり方を直します。",
     "",
     "--group-by はモデル・Hikyaku の版・ホスト・ガイドの版ごとに分け、件数・予測と実測の平均・実測の範囲・",

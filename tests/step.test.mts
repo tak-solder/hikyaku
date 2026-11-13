@@ -146,6 +146,20 @@ test("step: 見積もり直した予測ピークが split_above を超えたら 
   assert.equal(report(directory, "split", "--result", "done").step, "test-spec");
 });
 
+test("step: split_above をわずかに超えた予測ピークも、表の値のまま渡せば分割の検討になる", (t) => {
+  const directory = built(t);
+  write(directory, `${BUILD}/plan.md`);
+  const estimate = JSON.parse(succeeds(directory, "tokens", "estimate", "001",
+    "--fixed", "90k", "--reading", "130.4k", "--implementation", "100k", "--tests", "60k", "--unknown", "70k", "--json"));
+  assert.equal(estimate.peak, 450_400);
+  assert.equal(estimate.verdict, "split");
+  const shown = /\*\*予測ピーク\*\* \| \*\*([^*]+)\*\*/.exec(estimate.markdown)?.[1];
+  assert.equal(shown, "450.4k", "表の予測ピークは丸めない");
+  report(directory, "plan", "--result", "done", "--peak", shown ?? "");
+  assert.equal(events(directory).at(-1)?.["peak"], 450_400);
+  assert.equal(report(directory, "plan-review", "--result", "done").step, "split");
+});
+
 test("step: G8 の承認は、差し戻しと報告し直しでだけ取り直しになる", (t) => {
   const directory = built(t);
   upToG8(directory);

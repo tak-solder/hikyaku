@@ -29,6 +29,7 @@ import { register } from "../lib/registry.mts";
 import { openCycle } from "../lib/workspace.mts";
 import { formatTokens, measureCurrent } from "../lib/session.mts";
 import { parseTokenAmount } from "../lib/tokens.mts";
+import { assertCurrentConfig } from "../lib/config.mts";
 import {
   allowedResults,
   evaluate,
@@ -146,6 +147,7 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
 
   const legacy = legacyCycleMessage(opened.ctx.cycle);
   if (legacy !== undefined) throw new HikyakuError(legacy);
+  assertCurrentConfig(opened.ctx.config);
   // step next が stop を返す状態（差し戻し中など）では、前に受け取った directive の報告も受け付けない
   const stopped = opened.skill.stop?.(opened.ctx);
   if (stopped !== undefined) throw new HikyakuError(stopped);

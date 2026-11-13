@@ -42,11 +42,19 @@ export function parseTokenAmount(raw: string): number | undefined {
   return Number.isFinite(tokens) && tokens >= 0 ? tokens : undefined;
 }
 
-/** 380000 → 380k。予測は粗い値なので k 単位で書く（1000 未満はそのまま） */
+/**
+ * 380000 → 380k、450400 → 450.4k。k 単位で書くが、丸めない（1000 未満はそのまま）。
+ * 表の値はそのまま --peak や tasklist に渡され、判定の帯と比べ直されるので、丸めると
+ * 450,400（分割を検討）が 450k（狙いの帯）になって判定が変わる。parseTokenAmount で元の値に戻る
+ */
 export function formatK(value: number | undefined): string {
   if (value === undefined) return "—";
-  if (value < 1_000) return String(value);
-  return `${Math.round(value / 1_000)}k`;
+  if (!Number.isInteger(value)) return String(value);
+  if (Math.abs(value) < 1_000) return String(value);
+  const whole = Math.trunc(value / 1_000);
+  const rest = Math.abs(value % 1_000);
+  if (rest === 0) return `${whole}k`;
+  return `${value < 0 && whole === 0 ? "-" : ""}${whole}.${String(rest).padStart(3, "0").replace(/0+$/, "")}k`;
 }
 
 // ---------------------------------------------------------------------------
@@ -268,7 +276,9 @@ export function planStamp(hikyakuRoot: string): StampPlan {
   const current = readGuide(path, "project");
   const source = readFileSync(path, "utf8");
   const changed = current.hash !== current.actualHash;
-  const version = current.version === undefined ? 1 : changed && current.hash !== undefined ? current.version + 1 : current.version;
+  // 版が無い・1 未満（version: 0 など）なら 1 に正す。正さないと guideHeaderProblems が残り続ける
+  const valid = current.version !== undefined && current.version >= 1 ? current.version : undefined;
+  const version = valid === undefined ? 1 : changed && current.hash !== undefined ? valid + 1 : valid;
   const content = renderGuide({ version, basedOn: current.basedOn }, current.body);
   return {
     content: content === source ? undefined : content,

@@ -12,6 +12,7 @@ import {
   validateGraph,
   type BuildRecord,
 } from "../lib/tasklist.mts";
+import { assertCurrentConfig } from "../lib/config.mts";
 import { formatRef } from "../lib/refs.mts";
 import { formatK, parseTokenAmount } from "../lib/tokens.mts";
 import { openCycle, writeTasklist, type CycleContext } from "../lib/workspace.mts";
@@ -30,6 +31,13 @@ function readPeak(args: Parameters<typeof flagString>[0]): number | undefined {
 
 function context(args: Parameters<typeof flagString>[0], key: string | undefined): CycleContext {
   return openCycle(args, key).context;
+}
+
+/** 書き込む操作の対象サイクル。サイクル設定に v3 で廃止したキーが残っていれば止める */
+function writableContext(args: Parameters<typeof flagString>[0], key: string | undefined): CycleContext {
+  const opened = openCycle(args, key);
+  assertCurrentConfig(opened.config);
+  return opened.context;
 }
 
 /** 変更後のグラフを検証し、問題があれば書き込まずに終了する */
@@ -90,7 +98,7 @@ register({
     "承認は呼び出し元のスキルが取ります。--dry-run で差分だけを提示してください。",
   ].join("\n"),
   run: ({ args, operands }) => {
-    const ctx = context(args, operands[0]);
+    const ctx = writableContext(args, operands[0]);
     const title = flagString(args, "title");
     if (title === undefined) throw new HikyakuError("--title を指定してください");
 
@@ -125,7 +133,7 @@ register({
     "完了済み（PR 列が非空）のビルドは更新できません。依存グラフの整合性が崩れるためです。",
   ].join("\n"),
   run: ({ args, operands }) => {
-    const ctx = context(args, operands[0]);
+    const ctx = writableContext(args, operands[0]);
     const rawId = flagString(args, "id");
     const id = rawId === undefined ? undefined : normalizeBuildId(rawId);
     if (id === undefined) throw new HikyakuError("--id を指定してください");
@@ -170,7 +178,7 @@ register({
     "先にデフォルトブランチへ入れてしまうと、未マージのビルドを完了と誤判定します。",
   ].join("\n"),
   run: ({ args, operands }) => {
-    const ctx = context(args, operands[0]);
+    const ctx = writableContext(args, operands[0]);
     const rawId = flagString(args, "id");
     const id = rawId === undefined ? undefined : normalizeBuildId(rawId);
     const pr = flagString(args, "pr");
@@ -210,7 +218,7 @@ register({
     "外部システムは可視化のためのビューにすぎません。",
   ].join("\n"),
   run: ({ args, operands }) => {
-    const ctx = context(args, operands[0]);
+    const ctx = writableContext(args, operands[0]);
     const rawId = flagString(args, "id");
     const id = rawId === undefined ? undefined : normalizeBuildId(rawId);
     const issue = flagString(args, "issue");
