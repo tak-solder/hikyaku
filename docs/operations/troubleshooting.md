@@ -95,7 +95,7 @@ v2 の BP 基準表です。v3 は読みません。`bp-guide/README.md` にリ�
 
 ### 必要なドキュメントの行がありません
 
-必須の論理名（overview / decisions / constraints / learnings / conventions）は、`未作成` や `対象外` であっても行が必要です。「意図的に持たない」と「まだ決めていない」を区別するためです。
+必須の論理名（overview / decisions / constraints / conventions）は、`未作成` や `対象外` であっても行が必要です。「意図的に持たない」と「まだ決めていない」を区別するためです。
 
 ## サイクルとビルド
 

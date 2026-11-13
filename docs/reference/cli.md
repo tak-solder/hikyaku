@@ -67,6 +67,7 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | `doctor` | 環境が動く状態かを確認したいとき。導入直後と、動かないとき |
 | `validate [<cycle>]` | ファイルの整合性を確認したいとき。[CI](../operations/ci.md) から呼ぶと効く。`token-guide/guide.md` の版の宣言と本文の食い違い、受け入れ基準の割り当て漏れ、「マージ時点で残る危険」の記録の不備も見る |
 | `docs validate` | ドキュメントガイドのパスだけを確認したいとき |
+| `rules check` | パス指定の rule（`.claude/rules/`）を足したり直したりしたあと。glob が広すぎて本文が長い rule と、どのファイルにも一致しなくなった rule を見つける |
 
 ## ドキュメント
 
@@ -79,7 +80,13 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 
 `context` はフェーズ→論理名の対応の唯一の正です。各 SKILL.md に「何を読むか」を書くと4箇所に同じ表が載って必ず食い違うため、ここに集約しています。返すのは候補と理由までで、絞り込みはしません。どれが今回のスコープに関係するかは概要欄を読んで判断することで、それはスキル（LLM）の仕事です。
 
-`build-NN` では `tasklist.md` の依存グラフから先行ビルドの `handoff.md` も辿ります（手で辿ると漏れるため）。
+`build-NN` では永続ドキュメントを候補に出しません。そのビルドに効く節は、全文を読んで設計した architect が `issue.md` の「参照する設計ドキュメント」で指すためです。`tasklist.md` の依存グラフから先行ビルドの `handoff.md` は辿ります（手で辿ると漏れるため）。
+
+| コマンド | いつ使うか |
+|---|---|
+| `promotions [<cycle>]` | サイクルを締めるとき。各ビルドの `handoff.md` と各フェーズの `retrospective.md` から、永続化の候補と「役に立たなかった記述」を集めて束ねる |
+
+`promotions` は集めて束ねるだけで、取捨選択はしません。重複の判定、マージ済みのコードとの照合、重要度の見直しは close-cycle が行います。書式どおりに読めなかった行も捨てずに返すので、候補を落としたまま気づかないことはありません。考え方は [知見の置き場](../configuration/persistence.md) にあります。
 
 ## サイクル
 

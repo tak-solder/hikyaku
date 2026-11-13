@@ -281,6 +281,10 @@ function render(
     lines.push(`未作成: ${missing.join(", ")}`, "");
   }
 
-  lines.push("概要欄を見て、今回のスコープに関係するものだけを読んでください。");
+  lines.push(
+    phase.startsWith("build-")
+      ? "永続ドキュメントは、issue.md の「参照する設計ドキュメント」が指す節だけを読んでください。"
+      : "概要欄を見て、今回のスコープに関係するものだけを読んでください。",
+  );
   return lines.join("\n");
 }

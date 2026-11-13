@@ -33,6 +33,8 @@
 - 予測ピークの標準のガイド（`skills/build-manager/references/token-guide.md`）の本文を変えたら、先頭の `version` を上げて `hash` を本文に合わせてください。`tests/tokens.test.mts` が食い違いを検出し、CI（check-scripts）の `npm test` も同じテストを実行します
 - 書き込みを伴うコマンドには必ず `--dry-run` を用意してください。承認はスキル側が取ります
 - 子として動くスキル（architect / builder / build-manager / close-cycle / retrospective）にユーザーへ尋ねる箇所を足したら、`（ask: <id>）` のタグを付け、`scripts/lib/conductor.mts` の `ASKS` にも同じ ID を足してください。ID の改名・削除も両方で行います。`node scripts/hikyaku.mts conductor lint` が食い違いを検出し、CI（check-scripts）も同じコマンドを実行します。タグの付け忘れは検出できません
+- 知見の重要度と置き場の基準は `skills/close-cycle/references/persistence.md` が唯一の正です。builder・retrospective・close-cycle の手順と `agents/doc-triager.md` には写さず、このファイルを読ませてください。利用者向けの説明は `docs/configuration/persistence.md` に置きます
+- handoff.md と retrospective.md の「永続化すること」「役に立たなかった記述」は、`scripts/lib/promotions.mts` が見出しと行頭を読みます。見出し・宛先・理由の語を変えるときは、テンプレート（`skills/builder/references/templates.md`・`skills/retrospective/steps/write.md`）と `persistence.md` とスクリプトを同じ PR で直してください
 - PR を作るスキルを足したら、PR を作った直後に `hikyaku pr request-reviewers <phase> [<cycle>] --pr <PR>` を呼ぶ手順を入れ、そのフェーズを `scripts/lib/config.mts` の `REVIEWER_SKIP_TARGETS` にも足してください（`[pr] reviewers_skip` でオフにできるようにするため）
 
 ## ドキュメント

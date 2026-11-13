@@ -4,10 +4,12 @@
 リポジトリルート/
 ├── .hikyaku.config            # 振る舞いの設定（必須）。ドキュメントの所在は含まない
 ├── AGENTS.md                  # 永続ドキュメントの索引ブロックが埋め込まれる
+├── .claude/
+│   ├── rules/                 # パス指定の rule（builder がビルドの PR で書く）
+│   └── skills/                # このリポジトリのスキル（close-cycle が作る）
 ├── docs/                      # 永続ドキュメント（所在はリポジトリ規約に従う）
 │   ├── overview.md
 │   ├── constraints.md
-│   ├── learnings.md
 │   └── adr/
 └── docs/hikyaku/              # HIKYAKU_ROOT
     ├── document-guide.md      # 永続ドキュメントの所在を宣言（必須）
@@ -39,16 +41,16 @@
 | `document-guide.md` | 永続ドキュメントの所在と管理主体。無ければ Hikyaku は動かない | init / close-cycle |
 | `cycles.md` | サイクル索引。並行サイクル検出の起点 | create-cycle / close-cycle |
 | `instructions.md` | このリポジトリで Hikyaku を回すときの手順・前提（任意） | close-cycle |
-| `token-guide/guide.md` | 予測ピークの見積もりのガイド。標準のガイドを置き換える（任意。無ければ標準） | close-cycle / token-guide |
+| `token-guide/guide.md` | 予測ピークの見積もりのガイド。標準のガイドを置き換える（任意。無ければ標準） | token-guide |
 | `.hikyaku.local` | このチェックアウトで最後に作業したサイクル | `cycle use` |
 | `.gitignore` | `.hikyaku.local` の1行だけ | init |
 | `progress.jsonl` | init の手順の進捗。`token-guide/progress.jsonl` は token-guide の手順の進捗 | `hikyaku step report` |
 
-`.gitignore` に包括パターンを書かないでください。close-cycle は別セッションで `retrospective.md` を昇格素材として読むため、まとめて除外すると読めなくなります。
+`.gitignore` に包括パターンを書かないでください。close-cycle は別セッションで `handoff.md` と `retrospective.md` から候補を集めるため、まとめて除外すると読めなくなります。
 
 `instructions.md` はインストラクションの優先順位で SKILL.md より上位にあり、スキルの挙動を上書きするための正規の場所です。走行中の他サイクルも読むため、書き換えるのは close-cycle だけです。
 
-`token-guide/guide.md` も同じ理由で、書き換えるのは close-cycle の昇格と、ワークフローの外の `/hikyaku:token-guide` だけです。ガイドはワークスペース全体の見積もりに効くため、サイクルの途中で動かすとそのサイクルの中で予測を比べられなくなります。構成と補正の手順は [予測ピークと見積もりのガイド](../configuration/token-guide.md) にあります。
+`token-guide/guide.md` を書き換えるのは `/hikyaku:token-guide` だけです。乖離が大きいサイクルでは close-cycle がこのスキルを呼び、変更は別のブランチの PR になります。ガイドはワークスペース全体の見積もりに効くため、サイクルの途中で動かすとそのサイクルの中で予測を比べられなくなります。構成と補正の手順は [予測ピークと見積もりのガイド](../configuration/token-guide.md) にあります。
 
 ## サイクルディレクトリ
 
@@ -59,7 +61,7 @@ cycles/{NNN}-{slug}/
 │   ├── questions.md          # 質問が発生した場合のみ
 │   ├── user-stories.md
 │   ├── progress.jsonl        # planner の手順の進捗
-│   └── retrospective.md
+│   └── retrospective.md      # 振り返り（永続化すること / 役に立たなかった記述）
 ├── design/
 │   ├── codebase-survey.md    # 既存コードがある場合
 │   ├── design-questions.md   # 質問が発生した場合のみ
@@ -81,7 +83,7 @@ cycles/{NNN}-{slug}/
 
 ディレクトリ名は `{NNN}-{slug}` です。slug は英数字とハイフンに正規化されます（ブランチ名の解析を壊さないため）。`closed` になったサイクルのディレクトリも残します。PR 履歴から辿れることに価値があるためです。
 
-`handoff.md` と `retrospective.md` は close-cycle の昇格素材になります。どちらもコミット対象です。
+`handoff.md` と `retrospective.md` は、close-cycle が永続化の候補を集める元になります。どちらもコミット対象です。
 
 `progress.jsonl` は、フェーズの手順がどこまで進んだかの記録です。置き場所はフェーズで決まり、PLAN は `planning/`、ARCHITECT は `design/`、BUILD は `build-{NN}/`、CLOSE と create-cycle はサイクルのディレクトリ直下、init は HIKYAKU_ROOT 直下、token-guide は `token-guide/` です。CLOSE がサイクルの直下なのは、成果物がサイクルの外にあり、フェーズ専用のディレクトリを持たないためです。build-manager と振り返り（retrospective）の記録は、呼び出し元のフェーズと同じファイルに入ります。`hikyaku step report` が1手ごとに1行を追記し、成果物と一緒にコミットされます。現在地そのものは保存されず、`hikyaku step next` がこの記録と成果物から毎回導き直します。別のセッションや別のマシンから再開しても、同じ続きが返るのはこのためです。手で編集すると読めなくなるので、記録を直すときも `step report` を使います。
 

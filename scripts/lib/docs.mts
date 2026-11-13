@@ -91,9 +91,9 @@ export const RETIRED_DOCS: Record<string, string> = {
   interfaces: "正は OpenAPI / 型定義。overview にポインタを1行書けば足ります",
 };
 
-/** 廃止した論理名の行を消す手順の案内 */
+/** 廃止した論理名が残っているときの案内 */
 export const RETIRED_HINT =
-  "/hikyaku:init を実行すると、中身の振り分けを提案します。ファイル自体は消さず、document-guide.md の行だけを外します";
+  "行を消すだけにせず、/hikyaku:init を実行して中身を振り分けてください（再発しても気づけない知見が混ざっていることがあります）";
 
 export interface DocEntry {
   name: string;
