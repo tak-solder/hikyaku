@@ -21,7 +21,6 @@ interface Directive {
   report?: Record<string, string>;
   note?: string;
   revise?: string;
-  binds?: string[];
   call?: string;
   callNext?: string;
   reason?: string;
@@ -105,7 +104,6 @@ test("architect: G2 は codebase_survey_gate が有効なときだけ返り、�
   const gate = report(directory, "survey", "--result", "done");
   assert.equal(gate.kind, "gate");
   assert.equal(gate.step, "G2");
-  assert.deepEqual(gate.binds, ["codebase-survey.md"]);
 
   const fresh = workspace(t, true);
   configure(fresh, "codebase_survey_gate = true");
@@ -142,7 +140,6 @@ test("architect: G4 の差し戻しで design-delta を報告し直すと、レ�
   upToG4(directory);
   const gate = next(directory);
   assert.equal(gate.step, "G4");
-  assert.deepEqual(gate.binds, ["design-delta.md"]);
   const revise = report(directory, "G4", "--result", "rejected", "--input", "移行の段階を足して");
   assert.equal(revise.revise, "移行の段階を足して");
 
@@ -213,7 +210,9 @@ test("architect: 振り返りと PR まで進むと done", (t) => {
   assert.equal(retrospective.kind, "call");
   assert.equal(retrospective.call, "retrospective");
   assert.equal(report(directory, "retrospective", "--result", "done").step, "pr");
-  assert.equal(report(directory, "pr", "--result", "done").kind, "done");
+  const noPr = cli(directory, "step", "report", "architect", "pr", "001", "--result", "done");
+  assert.equal(noPr.status, 1, "PR を添えない done は受け付けない");
+  assert.equal(report(directory, "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/9").kind, "done");
 });
 
 test("build-manager: 外部投影は [external] target が none 以外のときだけ返る", (t) => {
@@ -256,7 +255,7 @@ function designed(t: Parameters<typeof workspace>[0]): string {
   succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--bp", "3");
   report(directory, "build-split", "--result", "done");
   report(directory, "validate", "--result", "done");
-  assert.equal(report(directory, "pr", "--result", "done").kind, "done");
+  assert.equal(report(directory, "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/9").kind, "done");
   return directory;
 }
 
@@ -295,6 +294,15 @@ test("architect: 差し戻し中は、再設計の回を区切るまで止まる
   const ids = (JSON.parse(succeeds(directory, "step", "status", "architect", "001", "--json")).steps as { id: string; status: string }[])
     .map((step) => `${step.id}:${step.status}`);
   assert.ok(ids.includes("pr:off"), ids.join(", "));
+
+  // 同じブランチで、もう一度差し戻された。前の回のまま新しい return.md を消すだけでは解決できない
+  write(directory, `${CYCLE}/return.md`, "# 差し戻し: build-01（2回目）\n");
+  const again = next(directory);
+  assert.equal(again.kind, "stop");
+  assert.match(again.message ?? "", /もう一度 architect に差し戻されています/);
+  const refused = cli(directory, "step", "report", "architect", "survey", "001", "--result", "done");
+  assert.equal(refused.status, 1, "止まっている間は報告も受け付けない");
+  assert.equal(restart(directory, "return", "build-01 からの2回目の差し戻し").step, "survey");
 });
 
 test("architect: 追加設計の回は調査を行わず、設計を変えなければビルドの追加へ進む", (t) => {
@@ -315,6 +323,11 @@ test("architect: 追加設計の回は調査を行わず、設計を変えなけ
   succeeds(directory, "tasklist", "add", "001", "--title", "指摘への対応", "--bp", "2");
   report(directory, "build-split", "--result", "done");
   assert.equal(report(directory, "validate", "--result", "done").step, "pr");
+  // 足したビルドが PR まで進んでも、完了した build-split に巻き戻らない
+  succeeds(directory, "tasklist", "done", "001", "--id", "2", "--pr", "https://github.com/o/r/pull/2");
+  assert.equal(next(directory).step, "pr");
+  report(directory, "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/3");
+  assert.equal(next(directory).kind, "done");
 
   const status = JSON.parse(succeeds(directory, "step", "status", "architect", "001", "--json"));
   const ids = (status.steps as { id: string; status: string }[]).map((step) => `${step.id}:${step.status}`);

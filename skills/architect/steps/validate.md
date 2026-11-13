@@ -10,4 +10,3 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate {cycle}
   `step next architect {cycle} --skill build-manager` から始める。このステップの中で2回目以降に呼ぶときは
   「呼び直し」と伝え、build-manager が `step restart architect {cycle} --skill build-manager` で区切ってから始める）
 - [ ] 報告が無くなったら `done` を報告する
-- [ ] コミット & push する（progress.jsonl も含める）

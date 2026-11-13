@@ -61,6 +61,11 @@ export interface StepDefinition {
    * 満たさないなら、何が足りないかを返す
    */
   requires?: (ctx: StepContext) => string | undefined;
+  /**
+   * done を報告するときだけ確かめる条件。完了したあとは見直さない（後の作業で崩れてよい条件に使う。
+   * 追加設計で「未完了のビルドが足された」は、そのビルドが PR まで進めば崩れる）。満たさないなら理由を返す
+   */
+  accepts?: (ctx: StepContext) => string | undefined;
   /** ゲートの問いの ID（conductor の ASKS） */
   ask?: string;
   /** call で呼ぶ内部スキル */

@@ -1,6 +1,5 @@
 # tasklist-review: doc-reviewer による tasklist のレビュー
 
-`tasklist_review` が有効なとき（express / standard / thorough）に返る。
 `doc-reviewer` を起動する（`context: tasklist`）。`{phase}` は値 `caller`（呼び出し元のフェーズ。
 architect から呼ばれたら `architect`、builder からなら `build-{NN}`）。
 
@@ -24,4 +23,4 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc {phase} {cyc
   取りこぼしが無いか）。表への当てはめはコマンドが行っているので、そこは見ない
 - [ ] 明確な不整合・入力値の乖離は反映する（主観的な指摘は無視してよい）。
   反映が必要な場合は `scope` を `done` で報告し直し、整理と `bp estimate` からやり直す
-- [ ] 反映が要らなければ `done` を報告する。レビュー結果とその対応は G6 の提示で使う
+- [ ] 反映が要らなければ `done` を報告する。レビュー結果とその対応は G6 の提示で使うので、このセッションに残しておく

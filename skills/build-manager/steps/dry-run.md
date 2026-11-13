@@ -11,5 +11,4 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist add {cycle} \
 
   更新は `tasklist update` に `--dry-run` を付ける。分割は「元ビルドの update + 新ビルドの add」で表す
 - [ ] issue.md の本文（新規なら全文、更新なら変更箇所）を、まだ書き込まずに用意する
-- [ ] `done` を報告する。`--dry-run` の出力と issue.md の本文は、レビューと G6 の提示で使うので
-  このセッションに残しておく
+- [ ] `--dry-run` の出力と issue.md の本文は、レビュー・G6 の提示・書き込みで使うので、このセッションに残しておく

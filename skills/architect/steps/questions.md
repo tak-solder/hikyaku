@@ -13,5 +13,4 @@ codebase-survey.md・planning/・永続ドキュメントに明記されてい�
   - 質問が発生した場合のみ `cycles/{cycle}/design/design-questions.md` に記録する
   - 未回答の質問を放置しない
 - [ ] 設計判断に必要な情報が揃うまで繰り返す
-- [ ] `done` を報告する。質問が無かった場合も `done` でよい
-- [ ] design-questions.md を作ったら、progress.jsonl と一緒にコミット & push する
+- [ ] 質問が無かった場合も `done` を報告してよい

@@ -10,5 +10,3 @@
   - **トレードオフ欄に「特になし」と書かない。** 書きたくなるなら `options` の分岐判定が誤っている
   - 既存エントリは書き換えない（覆すときは新エントリ + 旧を superseded）
   - express（`designChoiceGate` が false）では、trade-off表と推奨理由をそのまま「検討した案」「採用理由」に残す
-- [ ] `done` を報告する
-- [ ] コミット & push する（progress.jsonl も含める）

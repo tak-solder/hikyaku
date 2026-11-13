@@ -430,6 +430,8 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
   if (result === "rejected" && (input === undefined || input.trim() === "")) {
     throw new HikyakuError("rejected には --input でユーザーの答えを添えてください");
   }
+  const refused = result === "done" ? definition.accepts?.(opened.ctx) : undefined;
+  if (refused !== undefined) throw new HikyakuError(`${definition.id} の完了の条件を満たしていません: ${refused}`);
   if (result === "done" && !hasEvidence(definition, opened.ctx)) {
     const missing = missingRequirement(definition, opened.ctx);
     throw new HikyakuError(

@@ -1,5 +1,9 @@
 # estimate: BP見積もり
 
+このステップの役割は、着手前に作業量を予測し、根拠を issue.md に残し、分割するかを判断すること。
+下の BP の算出方法（`bp estimate` と基準表のしきい値）は、v3 の見積もり方を
+[#68](https://github.com/tak-solder/hikyaku/issues/68) で決めるまでの暫定の方式。
+
 - [ ] `${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/bp-guide.md` の手順に従い、入力値を見積もってコマンドに渡す
   - ビルドが関わるワークスペース（パッケージ）を特定する
   - ワークスペースごとに、指標（新規ファイル数、実装行数、API操作数、画面数、DBテーブル数）と
@@ -32,5 +36,3 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" bp estimate {cycle} \
 見つかるなら、そちらを選ぶ。
 
 分割で範囲が変わったら `scope` を `done` で報告し直してから見積もり直す。
-
-- [ ] 見積もりを終えたら `done` を報告する

@@ -26,5 +26,3 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" bp guide {cycle}
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist read {cycle}
 ```
-
-- [ ] `done` を報告する

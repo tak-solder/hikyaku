@@ -1,6 +1,6 @@
 # external-sync: 外部システムへの投影
 
-`[external] target` が `none` 以外（値 `target`）のときに返る。書き込み後に投影を試みる。
+書き込み後に、値 `target` の外部システムへ投影を試みる。
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external sync {cycle}
@@ -26,5 +26,3 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist link {cycle} --id {bui
 
 Asana も同じ形で、反映は Asana MCP ツールを持つスキル側が行う。
 
-- [ ] `done` を報告する
-- [ ] 参照を記録したら、progress.jsonl と一緒にコミット & push する

@@ -19,7 +19,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers architect 
 ```
 
   失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
-- [ ] `done` を報告し、progress.jsonl をコミット & push する（PR に含める）
+- [ ] `done` を報告し（`--pr` に PR の URL）、progress.jsonl をコミット & push する（PR に含める）
 
 この PR も速やかにマージすることを想定している。 tasklist.md がデフォルトブランチに
 入らないと、他のサイクルからも外からもこのサイクルの進捗が見えない。

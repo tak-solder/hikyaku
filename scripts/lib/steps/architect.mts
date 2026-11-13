@@ -14,6 +14,10 @@
  *            指摘に対応するビルドを足す
  *
  * --round を付けずに区切った回と、区切りが無い回は通常の設計（design）。
+ *
+ * 再設計の回で差し戻しを解決した（resolve-return を終えた）あとに、同じブランチで新しく差し戻されたら、
+ * 前の回のまま進めずに止まる。改めて step restart --round return で区切らないと、新しい return.md を
+ * 消すだけで差し戻しを解決できてしまうため。
  */
 
 import { existsSync } from "node:fs";
@@ -47,15 +51,28 @@ function otherActiveCycles(ctx: StepContext): boolean {
   return loadCycles(ctx.config.hikyakuRoot).some((record) => record.status === "active" && record.id !== self);
 }
 
+/** いまの回で、そのスキルのそのステップが done と記録されたか */
+function doneThisRound(ctx: StepContext, skill: string, step: string): boolean {
+  return currentEvents(ARCHITECT_STEPS, ctx.events).some((event) => event.skill === skill && event.step === step && event.result === "done");
+}
+
 /**
- * build-manager が書き込んだ印。追加設計では完了済みのビルドしか無かったところに、
- * 未完了のビルドが足されたこと。それ以外の回では tasklist.md にビルドがあること
+ * build-manager が書き込んだ印。tasklist.md にビルドがあること。追加設計の回では、それに加えて
+ * この回で build-manager が書き込み（write）を終えていること。未完了のビルドがあるかは完了の印にしない。
+ * 足したビルドがすべて PR まで進むと条件が崩れ、完了した build-split に巻き戻るため（報告のときだけ
+ * addedBuild で確かめる）
  */
 function splitRecorded(ctx: StepContext): boolean {
   if (ctx.cycle === undefined) return false;
-  const builds = loadTasklist(ctx.cycle.directory);
-  if (roundOf(ctx) === "add") return builds.some((build) => build.pr.trim() === "");
-  return builds.length > 0;
+  if (loadTasklist(ctx.cycle.directory).length === 0) return false;
+  return roundOf(ctx) !== "add" || doneThisRound(ctx, "build-manager", "write");
+}
+
+/** 追加設計の回で、報告の時点で未完了のビルドが足されているか */
+function addedBuild(ctx: StepContext): string | undefined {
+  if (ctx.cycle === undefined || roundOf(ctx) !== "add") return undefined;
+  if (loadTasklist(ctx.cycle.directory).some((build) => build.pr.trim() === "")) return undefined;
+  return "追加設計なのに、未完了のビルドが tasklist.md にありません。build-manager で指摘に対応するビルドを足してください";
 }
 
 /** 追加設計で、指摘への対応に設計の変更が要ると判断したか */
@@ -71,13 +88,18 @@ export const ARCHITECT_STEPS: SkillSteps = {
   rounds: ROUNDS,
   // 差し戻し中なのに再設計の回を始めていなければ、前回の記録のまま進めない
   stop: (ctx) => {
-    if (ctx.cycle === undefined || roundOf(ctx) === "return") return undefined;
+    if (ctx.cycle === undefined) return undefined;
     const record = readReturn(ctx.cycle.directory);
     if (record === undefined) return undefined;
+    // 再設計の回の途中なら進める。その回で差し戻しを解決したあとの return.md は、新しい差し戻し
+    const resolved = roundOf(ctx) === "return" && doneThisRound(ctx, "architect", "resolve-return");
+    if (roundOf(ctx) === "return" && !resolved) return undefined;
     const build = record.buildId === undefined ? "build-NN" : buildDirName(record.buildId);
     const cli = `node "${join(pluginRoot(), "scripts", "hikyaku.mts")}"`;
     return [
-      `このブランチは architect に差し戻されています（${RETURN_FILE}）。再設計の回を区切ってから始めてください:`,
+      resolved
+        ? `前の再設計で差し戻しを解決したあと、もう一度 architect に差し戻されています（${RETURN_FILE}）。新しい再設計の回を区切ってから始めてください:`
+        : `このブランチは architect に差し戻されています（${RETURN_FILE}）。再設計の回を区切ってから始めてください:`,
       `  ${cli} step restart architect ${ctx.cycle.name} --round return --reason "${build} からの差し戻し"`,
     ].join("\n");
   },
@@ -111,7 +133,6 @@ export const ARCHITECT_STEPS: SkillSteps = {
       kind: "gate",
       title: "codebase-survey.md の確認",
       when: (ctx) => roundOf(ctx) !== "add" && ctx.config.gates.codebaseSurvey && !skipped(ctx, "survey"),
-      binds: ["codebase-survey.md"],
       ask: "G2",
     },
     { id: "questions", kind: "run", title: "設計に関する質問（反復ループ）", when: designChanges, args: mode },
@@ -157,7 +178,6 @@ export const ARCHITECT_STEPS: SkillSteps = {
       kind: "gate",
       title: "設計ドキュメントの承認",
       when: (ctx) => designChanges(ctx) && ctx.config.gates.architecture,
-      binds: ["design-delta.md"],
       ask: "G4",
     },
     {
@@ -166,6 +186,7 @@ export const ARCHITECT_STEPS: SkillSteps = {
       title: "ビルド分割（build-manager）",
       call: "build-manager",
       evidence: splitRecorded,
+      accepts: addedBuild,
       reason: (ctx) =>
         ({
           design: "設計に基づいてビルドを分割し、tasklist.md と issue.md を作る（G6 は build-manager が取る）",
@@ -195,6 +216,7 @@ export const ARCHITECT_STEPS: SkillSteps = {
       kind: "run",
       title: "PR の作成とレビュアーのアサイン",
       when: (ctx) => roundOf(ctx) !== "return",
+      recordsPr: true,
       args: (ctx) => ({ designChoiceGate: ctx.config.gates.designChoice, round: roundOf(ctx) }),
     },
   ],
