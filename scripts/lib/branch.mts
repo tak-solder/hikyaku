@@ -14,7 +14,7 @@ import { HikyakuError } from "./errors.mts";
 /** フェーズは閉じた集合。これがブランチ名の解析を成立させている */
 export type Phase =
   | "init"
-  | "bp-guide"
+  | "token-guide"
   | "create"
   | "plan"
   | "architect"
@@ -24,16 +24,16 @@ export type Phase =
 
 /**
  * サイクルに属さないフェーズ。ブランチ名は {prefix}{sep}{phase} になる。
- * init はワークスペースの初期化、bp-guide は BP 基準表の運用（どちらもサイクル横断）
+ * init はワークスペースの初期化、token-guide は予測ピークのガイドの校正（どちらもサイクル横断）
  */
-export const CYCLELESS_PHASES = ["init", "bp-guide"] as const;
+export const CYCLELESS_PHASES = ["init", "token-guide"] as const;
 
 /**
  * conductor はフェーズではなく、/hikyaku:conductor がサイクルの作業を集める統合ブランチ。
  * 各フェーズのブランチはここから切り、PR もここへ向ける。ブランチ名の解析と
  * スタック元の導出に参加させるため、フェーズと同じ閉じた集合に入れる
  */
-export const FIXED_PHASES = ["init", "bp-guide", "create", "plan", "architect", "close", "conductor"] as const;
+export const FIXED_PHASES = ["init", "token-guide", "create", "plan", "architect", "close", "conductor"] as const;
 
 export function isCyclelessPhase(phase: string): boolean {
   return (CYCLELESS_PHASES as readonly string[]).includes(phase);
@@ -55,7 +55,7 @@ export interface BranchNaming {
   separator: string;
 }
 
-/** init / bp-guide はサイクルに属さないので {prefix}{sep}{phase} になる */
+/** init / token-guide はサイクルに属さないので {prefix}{sep}{phase} になる */
 export function branchName(naming: BranchNaming, phase: Phase, cycle?: string): string {
   const parts = isCyclelessPhase(phase) ? [phase] : [cycle ?? "", phase];
   if (!isCyclelessPhase(phase) && (cycle === undefined || cycle === "")) {

@@ -92,7 +92,7 @@ git diff --name-status <codex> <main>
 
 1. 作業差分を最新mainと比較し、禁止対象を編集していないこと、Claude側のバージョンが変わっていないこと、両版のマニフェストの `version` が一致すること、Codex側の必要な対応を失っていないことを確認する。引き継いだ変更も確認し、禁止対象の変更が含まれていたら勝手に破棄せず、push前に止めてユーザーに判断を仰ぐ。`git diff --check` と競合状態の確認も行う。
 2. `.github/workflows/check-codex-plugin.yml` の現行の検証をローカルで実行する。`current` は作業結果、`base` は記録した `<codex>` のツリーとして入力を用意し、マニフェスト、SemVer増分、入口の名前、元手順と実行規約へのリンクを確認する。これは将来の取り込みのための事前検証であり、codex-pluginへのマージは行わない。
-3. main側の共通変更の影響に応じて `.github/workflows/check-scripts.yml` の必要なチェックを実行する。現在の構成では `npx tsc --noEmit`、`npm test`、CLIのversion/help、`node scripts/hikyaku.mts bp test --builtin`、`node scripts/hikyaku.mts conductor lint` が対象。現行CIを読み直して選ぶ。依存が必要ならlockfileに従い、検証目的で依存やlockfileを変更しない。失敗の修正にClaude側の編集が必要なら作業を止める。
+3. main側の共通変更の影響に応じて `.github/workflows/check-scripts.yml` の必要なチェックを実行する。現在の構成では `npx tsc --noEmit`、`npm test`、CLIのversion/help、`node scripts/hikyaku.mts conductor lint` が対象。現行CIを読み直して選ぶ。依存が必要ならlockfileに従い、検証目的で依存やlockfileを変更しない。失敗の修正にClaude側の編集が必要なら作業を止める。
 4. 影響表のシナリオで、入口から共通手順への引数・パス・内部呼び出し・終了条件を確認する。静的確認と実際のCodex上の動作確認を区別する。
 5. push前にmainとcodex-pluginの最新SHAを再取得する。更新があれば追加差分を調査し、必要な修正と検証を更新する。mainへの追随は作業ブランチで行い、禁止対象の競合編集が必要なら止める。古い検証で最新差分の対応完了を宣言しない。
 

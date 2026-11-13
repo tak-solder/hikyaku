@@ -222,7 +222,7 @@ test("CLI: conductor asks はサイクルの profile を反映し、設定の誤
 
 test("CLI: conductor launch は起動コマンドを組み立てるだけで、何も書き込まない", (t) => {
   const directory = workspace(t, true);
-  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--bp", "2");
+  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--peak", "350k");
   write(directory, ".hikyaku.config", `hikyaku_root = "docs/hikyaku"
 [conductor]
 allowed_tools = ["Bash(npm test:*)"]
@@ -279,7 +279,7 @@ test("CLI: conductor launch の architect add は指摘のファイルを必須�
 
 test("CLI: conductor launch は再開時に回答ファイルを渡し、組で指定されなければ拒否する", (t) => {
   const directory = workspace(t, true);
-  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--bp", "2");
+  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--peak", "350k");
   write(directory, "answer.txt", "回答（委任された判断）: 承認する\n");
   const expected = digest(directory);
   const output = JSON.parse(succeeds(
@@ -315,7 +315,7 @@ test("CLI: conductor parse は gate の振り分けまで返す", (t) => {
 
 test("CLI: 合意したときから委任の設定が変わっていれば launch / parse を止める", (t) => {
   const directory = workspace(t, true);
-  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--bp", "2");
+  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--peak", "350k");
   write(directory, "r.json", result('<hikyaku-gate id="G8">\nq\n</hikyaku-gate>'));
   const agreed = digest(directory);
   // 子が .hikyaku.config を書き換えた想定
@@ -329,7 +329,7 @@ test("CLI: 合意したときから委任の設定が変わっていれば launc
 
 test("CLI: [conductor] 以外の設定（base_branch やサイクル設定）が変わっても launch を止める", (t) => {
   const directory = workspace(t, true);
-  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--bp", "2");
+  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--peak", "350k");
   const agreed = digest(directory);
   const launch = () => cli(directory, "conductor", "launch", "builder", "001", "1", "--expect-digest", agreed);
   assert.equal(launch().status, 0);
@@ -396,7 +396,7 @@ test("CLI: デフォルトブランチから切ったばかりの conductor ブ�
 
 test("CLI: [conductor.models] のフェーズ、無ければ model を --model で渡し、どちらも無ければ渡さない", (t) => {
   const directory = workspace(t, true);
-  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--bp", "2");
+  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--peak", "350k");
   const modelOf = (...args: string[]) => {
     const output = JSON.parse(succeeds(
       directory, "conductor", "launch", ...args, "--expect-digest", digest(directory), "--json",
@@ -749,7 +749,7 @@ function reviewerInput(overrides: Partial<ReviewerInput> = {}): ReviewerInput {
 test("reviewers: build-NN は build として、他のフェーズはそのままの名前でオフにできる単位に対応する", () => {
   assert.equal(skipTargetOf("build-03"), "build");
   assert.equal(skipTargetOf("build-120"), "build");
-  for (const phase of ["init", "bp-guide", "create", "plan", "architect", "close", "conductor"]) {
+  for (const phase of ["init", "token-guide", "create", "plan", "architect", "close", "conductor"]) {
     assert.equal(skipTargetOf(phase), phase);
   }
   assert.equal(skipTargetOf("review"), undefined);

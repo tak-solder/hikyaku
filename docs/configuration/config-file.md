@@ -83,7 +83,6 @@ target = "none"         # 同上
 hikyaku_root = "docs/hikyaku"   # リポジトリルートでのみ有効
 profile = "standard"            # 作成時に提示する既定値。無条件には採用されない
 base_branch = "main"            # 未設定ならデフォルトブランチを自動検出
-bp_max = 8
 ```
 
 | キー | 既定値 | 意味 |
@@ -91,9 +90,10 @@ bp_max = 8
 | `hikyaku_root` | なし（必須） | HIKYAKU_ROOT のパス。リポジトリルートからの相対または絶対。リポジトリルート自身（`.`）は指定できません |
 | `profile` | `standard` | `create-cycle` が提示する既定値。express / economy / standard / thorough |
 | `base_branch` | 自動検出 | そのサイクルが向かうブランチ。未設定なら `origin/HEAD` から導出し、それも無ければ `null`（`main` と推測しない） |
-| `bp_max` | `8` | ビルド分割の上限 BP。これを超えると分割必須 |
 
 `profile` は推奨値の提示にすぎません。`create-cycle` は必ず明示的な選択を求めます。毎回意識して選ぶことを担保するためです。
+
+v2 の `bp_max` は廃止しました。書いてあるとエラーになるので削除してください。ビルドの大きさは、予測ピークを [`[context]`](#context) の `merge_below` / `split_above` と比べて判定します。
 
 ## 承認ゲートとレビューの個別指定
 
@@ -162,7 +162,7 @@ PR タイトルは表示専用で解析されないため、テンプレート�
 
 `reviewers` には、PR を作る各スキルが PR を作った直後に、レビューを依頼する相手を書きます。人は login、チームは `org/team`、Copilot は `@copilot` で、1要素に1つずつ書きます。空（既定）なら何も依頼しません。依頼は `hikyaku pr request-reviewers` が行い、PR の作成者本人、すでに依頼した相手、すでにレビューした相手には依頼しません（GitHub は作成者本人を依頼先にできず、`gh` はレビュー済みの相手にも再依頼してしまうためです）。
 
-`reviewers_skip` には、アサインをオフにするスキルを `init` / `bp-guide` / `create` / `plan` / `architect` / `build` / `close` / `conductor` のフェーズ名で並べます。`build` は全てのビルドの PR にあたり、`conductor` は監督が作る最後の PR にあたります。たとえば PLAN と ARCHITECT のドキュメントだけの PR にはレビューを求めず、BUILD の PR にだけ求めるなら、`reviewers_skip = ["init", "bp-guide", "create", "plan", "architect", "close"]` と書きます。名前のタイプミスはエラーになります。この設定は [conductor] の `phase_reviewers` にも効きます。
+`reviewers_skip` には、アサインをオフにするスキルを `init` / `token-guide` / `create` / `plan` / `architect` / `build` / `close` / `conductor` のフェーズ名で並べます。`build` は全てのビルドの PR にあたり、`conductor` は監督が作る最後の PR にあたります。たとえば PLAN と ARCHITECT のドキュメントだけの PR にはレビューを求めず、BUILD の PR にだけ求めるなら、`reviewers_skip = ["init", "token-guide", "create", "plan", "architect", "close"]` と書きます。名前のタイプミスはエラーになります。この設定は [conductor] の `phase_reviewers` にも効きます。
 
 [conductor](../workflow/conductor.md) のフェーズの PR（conductor ブランチ向け）には、`reviewers` ではなく `[conductor] phase_reviewers` が使われます。向き先は PR の実際のマージ先から決まります。
 
@@ -279,7 +279,7 @@ allow_unsafe_split = false        # 安全でない分割を許すか。サイ�
 
 ビルドを分割するとき、architect（build-manager）は各ビルドの PR をマージした時点で本番データが壊れない単位に分けます。カラムの追加と書き込みの切り替えを別のビルドにするなら、どちらを先にマージしても既存データが壊れない順序と形にする、ということです。本番データの破壊は取り返しがつかないので、これが原則です。
 
-ただ、BP の上限を守ろうとすると、どうしてもリリースしてはいけない中間状態で区切るしかないことがあります。これを安全でない分割と呼びます。安全でない分割が許されるのは、サイクルが `allow_unsafe_split = true` を宣言していて、かつ base_branch がリリースされるブランチではないときだけです。`feature/*` のようにサイクル専用で、まだ本番に出ないと分かっているブランチに向けるサイクルを想定しています。リリースされないブランチなら本番データに触れないので、データが壊れないという目的は保たれます。
+ただ、予測ピークを `split_above` 以下に収めようとすると、どうしてもリリースしてはいけない中間状態で区切るしかないことがあります。これを安全でない分割と呼びます。安全でない分割が許されるのは、サイクルが `allow_unsafe_split = true` を宣言していて、かつ base_branch がリリースされるブランチではないときだけです。`feature/*` のようにサイクル専用で、まだ本番に出ないと分かっているブランチに向けるサイクルを想定しています。リリースされないブランチなら本番データに触れないので、データが壊れないという目的は保たれます。
 
 どのブランチがリリースされるかはリポジトリのブランチ運用次第なので、Hikyaku はブランチ名から推測しません。`release_branches` に書いたパターンと、デフォルトブランチ（`origin/HEAD` が指す先）がリリースされるブランチです。デフォルトブランチは書かなくても常に含まれるので、base_branch を設定していないサイクルは緩和されません。パターンは GitHub のブランチ保護と同じ glob で、`*` は `/` をまたがず、`**` はまたぎます。
 
@@ -289,32 +289,38 @@ allow_unsafe_split = false        # 安全でない分割を許すか。サイ�
 
 安全でない分割を使ったビルドの `issue.md` には、マージ時点で何が壊れうるかと、それを解消するビルドが書かれます（[ARCHITECT](../workflow/architect.md#ビルド分割)）。緩和したサイクルの base_branch を、全ビルドが揃う前にリリースされるブランチへマージしないでください。サイクルの外の操作なので、Hikyaku は防げません。
 
-## [bp_actual]
+## [diff]
 
 ```toml
-[bp_actual]
+[diff]
 exclude = ["package-lock.json", "*.lock", "**/__snapshots__/**", "*.snap", "*.generated.*"]
 tests = ["**/tests/**", "*.test.*", "*_test.*"]
 ```
 
-振り返りで `hikyaku bp actual` が差分を数えるときの振り分けです。`exclude` に当たるファイルは生成物として数えず、`tests` に当たるファイルはテストとして、それ以外は実装として行数を分けます（[BP の基準表](bp-guide.md#実績の測り方)）。両方に当たるファイルは生成物として扱います。テストのスナップショットを数えないためです。
+振り返りで `hikyaku tokens history build-NN` がビルドの差分を数えるときの振り分けです。`exclude` に当たるファイルは生成物として数えず、`tests` に当たるファイルはテストとして、それ以外は実装として行数を分けます（[実測と振り返り](token-guide.md#実測と振り返り)）。両方に当たるファイルは生成物として扱います。テストのスナップショットを数えないためです。
 
 パターンはリポジトリルートからのパスに当てる glob です。`/` を含まないパターン（`*.lock`）はファイル名に当て、どのディレクトリにあっても当たります。`/` を含むパターンはパス全体に当て、`**/` は0個以上のディレクトリ、`*` は `/` をまたがない任意の文字列、`?` は `/` 以外の1文字です。
 
-書いた配列は既定値を置き換えます。既定値に足したいときは、`hikyaku config --json` の `bpActual` に出る既定値を写してから足してください。既定の `exclude` は主要なロックファイル（`package-lock.json`・`pnpm-lock.yaml`・`*.lock`・`go.sum` など）、スナップショット（`__snapshots__/`・`*.snap`）、生成コードと圧縮済みの成果物（`*.generated.*`・`*.pb.go`・`*.min.js`・`*.map` など）です。既定の `tests` は `test/`・`tests/`・`__tests__/`・`spec/`・`e2e/` の配下と、`*.test.*`・`*.spec.*`・`*_test.*`・`test_*.py` です。
+書いた配列は既定値を置き換えます。既定値に足したいときは、`hikyaku config --json` の `diff` に出る既定値を写してから足してください。既定の `exclude` は主要なロックファイル（`package-lock.json`・`pnpm-lock.yaml`・`*.lock`・`go.sum` など）、スナップショット（`__snapshots__/`・`*.snap`）、生成コードと圧縮済みの成果物（`*.generated.*`・`*.pb.go`・`*.min.js`・`*.map` など）です。既定の `tests` は `test/`・`tests/`・`__tests__/`・`spec/`・`e2e/` の配下と、`*.test.*`・`*.spec.*`・`*_test.*`・`test_*.py` です。
+
+## [context]
 
 ## [context]
 
 ```toml
 [context]
+merge_below = "300k"
+split_above = "450k"
 approval = "250k"
 implement = "300k"
 review = "400k"
 ```
 
-builder の区切りで、メインセッションのコンテキストと比べる目安（トークン数）です。`"250k"` や `"1.2m"` のように単位を付けた文字列か、`250000` のような整数で書きます。単位を付けるときは引用符が必要です。引用符の無い `250k` は TOML として正しくないためです。`approval` は G8 の提示、`implement` は実装開始前、`review` はレビュー前に当たります（[BUILD](../workflow/build.md#コンテキストの区切り)）。超えていても止まらず、builder が継続するか分割するかを判断します。
+`merge_below` と `split_above` は、予測ピーク（[BUILD](../workflow/build.md#予測ピーク)）の判定の帯です。`merge_below` 未満は統合を検討（推奨のみ）、`split_above` 超は分割を検討（原則として分割する）、その間が狙いの帯です。`merge_below` は `split_above` より小さくしてください。
 
-既定値は、1ビルドのピークを 400k トークン前後に収める狙いから決めた値で、1M のウィンドウを前提にしています。ウィンドウの小さいモデルを使うときや、`hikyaku bp history` の区切りの実績から見て合わないときに変えます。
+`approval` / `implement` / `review` は、builder の区切りで、メインセッションのコンテキストと比べる目安（トークン数）です。`"250k"` や `"1.2m"` のように単位を付けた文字列か、`250000` のような整数で書きます。単位を付けるときは引用符が必要です。引用符の無い `250k` は TOML として正しくないためです。`approval` は G8 の提示、`implement` は実装開始前、`review` はレビュー前に当たります（[BUILD](../workflow/build.md#コンテキストの区切り)）。超えていても止まらず、builder が継続するか分割するかを判断します。
+
+どの値も単位を付けた文字列か整数で書けます。既定値は、1ビルドのピークを 400k トークン前後に収める狙いから決めた値で、1M のウィンドウを前提にしています。ウィンドウの小さいモデルを使うときは、自動コンパクションの閾値の 70% を目安に縮めてください。`hikyaku tokens history` の実績から見て合わないときにも変えます。
 
 ## [conductor]
 

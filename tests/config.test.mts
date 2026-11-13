@@ -7,8 +7,10 @@ test("設定: ルート・サイクル・profile の優先順でマージし、�
   const directory = workspace(t, true);
   write(directory, ".hikyaku.config", `hikyaku_root = "docs/hikyaku"
 profile = "economy"
-bp_max = 13
 ask = ["branch.prefix", "pr.title"]
+[context]
+merge_below = "250k"
+split_above = 500000
 [branch]
 prefix = "root"
 separator = "/"
@@ -20,7 +22,7 @@ github_repo = "example/repo"
   write(directory, cycleConfig, `[branch]\nprefix = "cycle"\n[external]\ntarget = "none"\n`);
   const config = JSON.parse(succeeds(directory, "config", "001", "--json"));
   assert.equal(config.profile, "standard");
-  assert.equal(config.bpMax, 13);
+  assert.deepEqual(config.peakBands, { mergeBelow: 250_000, splitAbove: 500_000 });
   assert.deepEqual(config.branch, { prefix: "cycle", separator: "/" });
   assert.deepEqual(config.external, { target: "none", githubRepo: "example/repo" });
   assert.deepEqual(config.askAtCreate, ["pr.title"]);
@@ -55,7 +57,7 @@ for (const content of [
 
 test("設定: ワークスペース直下に残った旧配置の設定を黙って無視しない", (t) => {
   const directory = workspace(t);
-  write(directory, "docs/hikyaku/.hikyaku.config", "bp_max = 13\n");
+  write(directory, "docs/hikyaku/.hikyaku.config", "profile = \"economy\"\n");
   const result = cli(directory, "config", "--json");
   assert.equal(result.status, 1);
   assert.match(result.stderr, /読み込まれません/);
@@ -63,7 +65,7 @@ test("設定: ワークスペース直下に残った旧配置の設定を黙っ
 
 test("設定: 不正な型・profile を既定値に落とさずエラーにする", (t) => {
   const directory = workspace(t);
-  for (const content of ['profile = "typo"', 'plan_gate = "false"', 'bp_max = 1.5']) {
+  for (const content of ['profile = "typo"', 'plan_gate = "false"', '[context]\nsplit_above = "big"', '[context]\nmerge_below = "500k"\nsplit_above = "450k"']) {
     write(directory, ".hikyaku.config", `hikyaku_root = "docs/hikyaku"\n${content}\n`);
     const result = cli(directory, "config", "--json");
     assert.equal(result.status, 1, content);
@@ -141,4 +143,22 @@ test("設定: [context] の目安は整数か、k / m の単位を付けた文�
     assert.equal(result.status, 1, value);
     assert.match(result.stderr, /\[context\]\.approval はトークン数で指定してください/);
   }
+});
+
+test("設定: v3 で廃止した bp_max と [bp_actual] は、移行先を示して止める", (t) => {
+  const directory = workspace(t);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\nbp_max = 8\n');
+  let result = cli(directory, "config", "--json");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /bp_max は v3 で廃止/);
+  assert.match(result.stderr, /split_above/);
+
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[bp_actual]\nexclude = []\n');
+  result = cli(directory, "config", "--json");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /\[diff\] に改名/);
+
+  write(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config", "bp_max = 8\n");
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n');
+  assert.equal(JSON.parse(succeeds(directory, "config", "--json")).peakBands.splitAbove, 450_000);
 });

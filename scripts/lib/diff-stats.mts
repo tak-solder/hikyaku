@@ -1,17 +1,20 @@
 /**
- * bp actual の差分の振り分け。
+ * ビルドの差分の集計（tokens history build-NN）の振り分け。
  *
  * 差分のファイルを「生成物（数えない）」「テスト」「実装」に分ける。生成物は
  * ロックファイル・スナップショット・生成コードのように、書いた量ではなく
  * ツールが出した量なので、実装の規模と比べると実績を汚す。
  *
- * パターンは既定値を持ち、[bp_actual] で置き換えられる（足し合わせない）。
+ * 差分の集計は予測ピークの算出には使わない。予測と実測のピークが離れたときに、
+ * 書いた量が想定と違ったのかを振り返る素材にする。
+ *
+ * パターンは既定値を持ち、[diff] で置き換えられる（足し合わせない）。
  */
 
 import type { DiffFile } from "./git.mts";
 
 /** 数えない生成物の既定パターン */
-export const DEFAULT_ACTUAL_EXCLUDE: string[] = [
+export const DEFAULT_DIFF_EXCLUDE: string[] = [
   // ロックファイル
   "package-lock.json",
   "npm-shrinkwrap.json",
@@ -35,7 +38,7 @@ export const DEFAULT_ACTUAL_EXCLUDE: string[] = [
 ];
 
 /** テストとして数える既定パターン */
-export const DEFAULT_ACTUAL_TESTS: string[] = [
+export const DEFAULT_DIFF_TESTS: string[] = [
   "**/test/**",
   "**/tests/**",
   "**/__tests__/**",
@@ -47,7 +50,7 @@ export const DEFAULT_ACTUAL_TESTS: string[] = [
   "test_*.py",
 ];
 
-export interface ActualPatterns {
+export interface DiffPatterns {
   exclude: string[];
   tests: string[];
 }
@@ -92,18 +95,18 @@ function matchesAny(patterns: string[], path: string): boolean {
 export type FileKind = "generated" | "test" | "implementation";
 
 /** 生成物の判定が先。テストのスナップショットは生成物として数えない */
-export function classifyPath(patterns: ActualPatterns, path: string): FileKind {
+export function classifyPath(patterns: DiffPatterns, path: string): FileKind {
   if (matchesAny(patterns.exclude, path)) return "generated";
   if (matchesAny(patterns.tests, path)) return "test";
   return "implementation";
 }
 
-export interface ActualStats {
-  /** 生成物を除いた新規ファイル数（実装 + テスト） → bp estimate の --new-files */
+export interface DiffStats {
+  /** 生成物を除いた新規ファイル数（実装 + テスト） */
   newFiles: number;
   /** 生成物を除いた、差分に現れたファイル数（リネームは1件） */
   changedFiles: number;
-  /** 生成物を除いた追加行数（実装 + テスト） → bp estimate の --lines */
+  /** 生成物を除いた追加行数（実装 + テスト） */
   addedLines: number;
   deletedLines: number;
   /** 行数を数えられないファイル数（生成物を除く）。addedLines には含まれない */
@@ -120,8 +123,8 @@ export interface ActualStats {
   generatedPaths: string[];
 }
 
-export function summarizeDiff(files: DiffFile[], patterns: ActualPatterns): ActualStats {
-  const stats: ActualStats = {
+export function summarizeDiff(files: DiffFile[], patterns: DiffPatterns): DiffStats {
+  const stats: DiffStats = {
     newFiles: 0,
     changedFiles: 0,
     addedLines: 0,
@@ -162,4 +165,52 @@ export function summarizeDiff(files: DiffFile[], patterns: ActualPatterns): Actu
     }
   }
   return stats;
+}
+
+// ---------------------------------------------------------------------------
+// retrospective.md に貼る表（tokens history build-NN --markdown）
+
+export const DIFF_TABLE_HEADERS = ["差分の集計", "値"];
+
+export const DIFF_LABELS = {
+  newFiles: "新規ファイル数",
+  changedFiles: "変更ファイル数",
+  addedLines: "追加行数",
+  deletedLines: "削除行数",
+  generated: "生成物（数えていない）",
+} as const;
+
+function count(value: number): string {
+  return value.toLocaleString("en-US");
+}
+
+export function renderDiffMarkdown(stats: DiffStats | undefined, reason?: string): string {
+  const rows: [string, string][] =
+    stats === undefined
+      ? [[DIFF_LABELS.addedLines, `計測不可（${reason ?? "理由不明"}）`]]
+      : [
+          [DIFF_LABELS.newFiles, `${count(stats.newFiles)}（実装 ${count(stats.implementationNewFiles)} / テスト ${count(stats.testNewFiles)}）`],
+          [DIFF_LABELS.changedFiles, `${count(stats.changedFiles)}（実装 ${count(stats.implementationFiles)} / テスト ${count(stats.testFiles)}）`],
+          [DIFF_LABELS.addedLines, `${count(stats.addedLines)}（実装 ${count(stats.implementationLines)} / テスト ${count(stats.testLines)}）`],
+          [DIFF_LABELS.deletedLines, count(stats.deletedLines)],
+          [DIFF_LABELS.generated, `${count(stats.generatedFiles)} ファイル・${count(stats.generatedLines)} 行`],
+        ];
+  return [
+    `| ${DIFF_TABLE_HEADERS.join(" | ")} |`,
+    `|${DIFF_TABLE_HEADERS.map(() => "------").join("|")}|`,
+    ...rows.map(([label, value]) => `| ${label} | ${value.replace(/\|/g, "\\|")} |`),
+  ].join("\n");
+}
+
+/** 「820（実装 600 / テスト 220）」を合計・実装・テストに分けて読む。読めなければ undefined */
+export function parseSplitCount(cell: string | undefined): { total: number; implementation: number | undefined; tests: number | undefined } | undefined {
+  if (cell === undefined) return undefined;
+  const plain = cell.replace(/\*/g, "").replace(/,/g, "");
+  const match = /^\s*(\d+)\s*(?:（実装\s*(\d+)\s*\/\s*テスト\s*(\d+)）)?/.exec(plain);
+  if (match === null) return undefined;
+  return {
+    total: Number.parseInt(match[1] as string, 10),
+    implementation: match[2] === undefined ? undefined : Number.parseInt(match[2], 10),
+    tests: match[3] === undefined ? undefined : Number.parseInt(match[3], 10),
+  };
 }

@@ -35,56 +35,75 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **`hikyaku step next / report / status / lint`**: フェーズの中の手順を、設定と進捗から1手ずつ返す。`step next` は `run`（ステップを行う）・`gate`（承認を求める）・`call`（内部スキルを呼ぶ）・`done`・`stop` のどれか1つを、読むべき指示ファイルと報告のコマンドを添えて返す。`step report` は結果を記録して次の1手を返す。現在地は保存せず、作業単位のディレクトリの `progress.jsonl` と成果物から毎回導出する（[#50](https://github.com/tak-solder/hikyaku/issues/50)）
 - **`hikyaku step restart`**: 同じ作業単位で、スキルの手順を最初から回し直す区切りを記録する。これより前の記録は現在地の導出に使わない（architect の追加設計、内部スキルの呼び直し）。`--round` で回の種類（スキルが定義した値だけ）を記録でき、スキルの定義はその値で手順を変える
 - ステップの定義に `requires`（記録の欠けの判定には使わない完了の条件）を足した。前から存在しうるファイルの検査を、完了の条件としてスクリプトで確かめられる
-- **`progress.jsonl`**: 作業単位のディレクトリに追記される手順の記録。結果・理由・ユーザーの答え・再算出した BP・作った PR・報告した時点のコンテキスト・セッション ID・Hikyaku の版が入る。成果物と一緒にコミットする
+- **`progress.jsonl`**: 作業単位のディレクトリに追記される手順の記録。結果・理由・ユーザーの答え・見積もり直した予測ピーク・作った PR・報告した時点のコンテキスト・セッション ID・Hikyaku の版が入る。成果物と一緒にコミットする
 - **区切りでのコンテキストの実測**: G8 の提示・実装開始前・レビュー前で、`step next` がメインセッションのコンテキストを測り、`[context]` の目安（既定 250k / 300k / 400k）と比べる。超えても止めず、builder が継続か分割かを判断し、継続するなら次のゲートの報告で伝える。Codex の記録でウィンドウが 500k 未満なら、上げ方を添えて注意を出す（[#68](https://github.com/tak-solder/hikyaku/issues/68)）
 - **`[context]` 設定**: `approval` / `implement` / `review`。整数か、単位を付けた文字列（`"250k"`）で書く
-- `hikyaku bp history`: 区切りでのコンテキスト（G8・実装前・レビュー前）を `progress.jsonl` から読んで並べる
 - `docs/migration/v2-to-v3.md`
 - **Stop フック**（`hooks/hooks.json` → `hikyaku step hook stop`）: スキルの手順の途中でセッションが止まろうとしたら、1回だけ続きを促す。止めるのは、そのセッションが手順を進めていて（`progress.jsonl` にそのセッションの ID がある）、次の1手が `run` か `call` のときだけ。内部スキルを呼んでいる最中は、呼ばれたスキルの1手で判定する（`call` のほか、`run` のステップの中から呼んだときや、手順を終えたあとに呼び直したときも含む）。`cycle close` で終えたサイクルも、CLOSE の手順が PR まで残っていれば見る。`gate` / `done` / `stop`、同じターンの2回目（`stop_hook_active`）、非対話規約のブロックで終えた出力では止めない。判定できないときも止めず、終了コードは常に 0（[#50](https://github.com/tak-solder/hikyaku/issues/50)）
-- **`hikyaku step where [<cycle>]`**: このチェックアウトの作業ツリーにある `progress.jsonl` を読み、記録のある作業単位ごとに `step next` と同じ1手を返す。指定したサイクルの作業単位だけを並べ（init / bp-guide は混ぜない）、終えたサイクルも読む。close-cycle の最初の振り返りの途中も、close-cycle の作業単位として並べる。v2 で作成したサイクルでは `legacy` に案内を返す
-- **`hikyaku bp session [<phase> [<cycle>]]`**: セッションのコンテキストを、ホストの記録（Claude Code のトランスクリプト、Codex の rollout）から実測する。ピーク・開始時の固定分・最新の値・API 呼び出し回数・出力トークンの合計・コンパクション回数・モデル・ホストとその版・ウィンドウ（Codex のみ）を返す。引数なしでは `CLAUDE_CODE_SESSION_ID` / `CODEX_THREAD_ID` で現在のセッションを測り、`<phase>` を渡すとそのブランチのセッションから、そのブランチでの API 呼び出しが最も多いものを本体として選ぶ（候補と、対象外にしたサブエージェント・guardian も出力する）。`--transcript <path>` で記録を直接指定できる。読めない・見つからないときは推測せず「計測不可」とその理由を返す（Codex のクラウドでは rollout が保存されないため計測不可）。BP をコンテキストの消費量で校正するための計測の基盤で、見積もりの算出は変えない（[#68](https://github.com/tak-solder/hikyaku/issues/68)）
-- **`[bp_actual]` 設定**: `exclude`（生成物として数えないパスの glob）と `tests`（テストとして分けるパスの glob）。既定値はロックファイル・スナップショット・生成コードと、一般的なテストのパス。書いた配列は既定値を置き換える
-- **`hikyaku bp history --group-by model|hikyaku|host`**: モデル・Hikyaku の版・ホストごとに分けて並べ、件数・実績 BP とピークの平均・ピークの範囲・実績 1BP あたりのピークを添える
+- **`hikyaku step where [<cycle>]`**: このチェックアウトの作業ツリーにある `progress.jsonl` を読み、記録のある作業単位ごとに `step next` と同じ1手を返す。指定したサイクルの作業単位だけを並べ（init / token-guide は混ぜない）、終えたサイクルも読む。close-cycle の最初の振り返りの途中も、close-cycle の作業単位として並べる。v2 で作成したサイクルでは `legacy` に案内を返す
+- **予測ピーク**: ビルドの大きさを、BP ではなくメインセッションのコンテキストのピークの予測（トークン）で判定する。予測は固定費・読み込み・実装・テスト・未知の領域の5成分の和で、build-manager と builder が見積もりのガイドに沿って成分ごとにトークンと根拠を出し、CLI が合計・判定・記録を行う。判定は `[context]` の帯で、既定では 300k 未満が統合を検討（推奨のみ）、300k〜450k が狙い、450k 超が分割を検討（原則として分割）。BP は表が外れると見積もりと実績が同じように外れ、校正できなかったため（[#68](https://github.com/tak-solder/hikyaku/issues/68)）
+- **`hikyaku tokens estimate [<cycle>] --fixed --reading --implementation --tests --unknown`**: 成分の予測を合計し、予測ピークと判定を返す。5成分すべてが必須（該当しなければ 0）。`--<成分>-basis` で根拠を添える。`--markdown` の表の最後の行に、見積もりに使ったガイドの版とハッシュが入る
+- **`hikyaku tokens guide [<cycle>]`**: 有効なガイド（プロジェクトの `{HIKYAKU_ROOT}/token-guide/guide.md` か、標準の `skills/build-manager/references/token-guide.md`）と、その版・ハッシュ・判定の帯を返す
+- **`hikyaku tokens stamp`**: プロジェクトのガイドの版を上げる。無ければ標準の本文をコピーして version 1・`based_on` 付きで作り、本文が変わっていれば version を上げて hash を合わせる。`--dry-run` あり
+- **見積もりのガイドの版**: ガイドの先頭に `version`・`based_on`・`hash`（本文のハッシュ）を持つ。hash が本文と合わないガイドは `validate`・`doctor`・ガイドを書き込むステップ（close-cycle の `write`・token-guide の `write` / `pr`）が止める
+- **token-guide スキル（`/hikyaku:token-guide [show|tune]`）**: サイクルをまたいでガイドを校正する（ブランチ → 収集 → 変更案 → 承認 → 書き込み → PR）。`step next token-guide` で進み、進捗は `token-guide/progress.jsonl` に記録する。Codex 用入口 `$hikyaku:token-guide`
+- close-cycle: 昇格先に見積もりのガイド（token-guide）を加えた。collect で `tokens history {cycle}` と各ビルドの「乖離の要因」を読み、複数のビルドに共通する偏りがあるときだけ補正を候補にし、G10 で承認を得て書き込む。ガイドが無ければ標準をコピーしてから補正する
+- **`[context] merge_below` / `split_above`**: 予測ピークの判定の帯（既定 `"300k"` / `"450k"`）。`merge_below` は `split_above` より小さくなければならない
+- **`hikyaku tokens session [<phase> [<cycle>]]`**: セッションのコンテキストを、ホストの記録（Claude Code のトランスクリプト、Codex の rollout）から実測する。ピーク・開始時の固定分・最新の値・API 呼び出し回数・出力トークンの合計・コンパクション回数・モデル・ホストとその版・ウィンドウ（Codex のみ）を返す。引数なしでは `CLAUDE_CODE_SESSION_ID` / `CODEX_THREAD_ID` で現在のセッションを測り、`<phase>` を渡すとそのブランチのセッションから、そのブランチでの API 呼び出しが最も多いものを本体として選ぶ（候補と、対象外にしたサブエージェント・guardian も出力する）。`--transcript <path>` で記録を直接指定できる。読めない・見つからないときは推測せず「計測不可」とその理由を返す（Codex のクラウドでは rollout が保存されないため計測不可）。予測ピークと突き合わせる実測（[#68](https://github.com/tak-solder/hikyaku/issues/68)）
+- **`[diff]` 設定**: `exclude`（生成物として数えないパスの glob）と `tests`（テストとして分けるパスの glob）。`tokens history build-NN` の差分の集計に使う。既定値はロックファイル・スナップショット・生成コードと、一般的なテストのパス。書いた配列は既定値を置き換える
+- **`hikyaku tokens history [<cycle>] [--group-by model|hikyaku|host|guide]`**: 各ビルドの retrospective.md の「予測ピークの振り返り」から、予測（architect / builder 段階）・実測のピーク・乖離・比率・開始時の固定分・区切りでのコンテキスト（`progress.jsonl` から）・呼び出し回数・コンパクション・追加行数・モデル・ガイドの版・Hikyaku の版を並べる。`--group-by` は群ごとに件数・予測と実測の平均・実測の範囲・乖離と比率の平均を添える
+- **`hikyaku tokens history build-NN [<cycle>]`**: PR の base からの差分を数える（v2 の `bp actual` の後継）。`[diff] exclude` に当たる生成物は数えず、追加行数などを実装とテストに分けて返す。`--markdown` は retrospective.md の「差分の集計」に貼る表。起点を解決できないときは推測せず「計測不可」とその理由を返す
+- doctor: `token-guide/guide.md` の版の宣言の不備と、v2 の `bp-guide/` が残っていることを知らせる
 
 ### Changed
 
 - builder: Step 3 以降（plan → レビュー → G8 → 実装 → 検証 → コードレビュー → handoff → PR → 振り返り）を `step next` の転送ループに置き換えた。手順の順序・ゲート・承認は変えていない。各ステップの指示は `skills/builder/steps/<step>.md` に分け、実行するステップの指示だけを読む。SKILL.md は約 35KB から約 16KB になった。差し戻しと PR レビュー対応の手順は `references/return.md` / `references/pr-feedback.md` に移した
 - builder: G7 / G8 の承認は、差し戻すか前のステップを報告し直すまで有効。承認後の成果物の変更では自動で無効にならず、変更は Git の履歴で追う。前のステップを報告し直すと、そこから後ろはやり直しになる
-- builder: `plan` の `done` には再算出した BP（`--bp`）が、`pr` の `done` には PR の URL か番号（`--pr`）が必須。`step next` が `stop` を返す状態（差し戻し中など）では、`step report` も受け付けない
+- builder: `plan` の `done` には見積もり直した予測ピーク（`--peak`。`380k` のように書ける）が、`pr` の `done` には PR の URL か番号（`--pr`）が必須。`step next` が `stop` を返す状態（差し戻し中など）では、`step report` も受け付けない
 - builder: 各ステップの指示から、転送ループと定義が決めること（報告の仕方、有効になる条件、CLI が確かめる完了の条件）を除き、作業内容と判断基準に絞った。doc-reviewer の起動方法は SKILL.md にまとめた
 - builder: 設定で無効なステップ（plan / test-spec のレビュー、G7、振り返り）は手順に含まれない。スキップできるのは test-spec だけで、理由が記録に残る
 - planner: Step 2 以降（インプットの読み込み → スコープのすり合わせ → user-stories → レビュー → G1 → 振り返り → PR）を `step next plan` の転送ループに置き換えた。進捗は `planning/progress.jsonl` に入る。G1 の承認は差し戻しと報告し直しでだけ取り直しになる。PR の `done` には `--pr` が必須。init / create-cycle の代行とブランチの確認は SKILL.md に残した
 - architect: Step 1 以降（並行サイクルの確認 → 既存コードの調査 → G2 → 質問 → 設計案 → G3 → ADR → design-delta → レビュー → G4 → ビルド分割 → 検証 → 振り返り → PR）を `step next architect` の転送ループに置き換えた。手順の順序・ゲート・承認は変えていない。各ステップの指示は `skills/architect/steps/<step>.md` に分けた。並行サイクルの確認は他に進行中のサイクルがあるときだけ返り、スキップできるのは既存コードの調査（新規開発）と設計案（分岐する判断が無いとき）だけで、理由が記録に残る。G2 / G4 の承認は差し戻しと報告し直しでだけ取り直しになる。PR の `done` には `--pr` が必須。進捗は `design/progress.jsonl` に記録する
 - architect: 差し戻しからの再設計（`build-NN`）と指摘からの追加設計（`add`）も `step next` で進める。どちらも `step restart architect {cycle} --round return` / `--round add` で回を区切ってから始める（architect の定義は `rounds: ["return", "add"]` を宣言し、回の種類を `currentRound` で読む）。再設計の回は PR の代わりに差し戻しの解決（`resolve-return`）を返し、追加設計の回は並行サイクルの確認と調査を返さず、最初の `design-change` で設計の変更が要らないと判断すればビルドの追加へ進む。差し戻し中なのに回を区切っていなければ、`step next` は区切りのコマンドを示して止まる。再設計の回で差し戻しを解決したあとに同じブランチで差し戻されたときも、新しい回を区切るまで止まる。追加設計の回のビルド分割は、報告の時点で未完了のビルドがあることを確かめ（ステップの定義の `accepts`）、完了したあとは build-manager の書き込みの記録で判定する（足したビルドが PR まで進んでも巻き戻らない）準備（ブランチ・入力・区切り方）は `references/return.md` / `references/add.md` に置いた
-- build-manager: 手順（読み込み → 変更の整理 → BP 見積もり → `--dry-run` → レビュー → G6 → 書き込み → 外部投影）を `step next {phase} --skill build-manager` の転送ループに置き換えた。呼び出し元（architect の `design/`、builder の `build-NN/`）の `progress.jsonl` に記録し、呼ばれるたびに最初の手順から始まる。呼び出し元が報告しないまま呼び直すときは `step restart {phase} --skill build-manager` で区切る。外部投影は `[external] target` が `none` 以外のときだけ返る。builder の分割の検討（`split`）の指示も、呼ばれた側がこのコマンドから始める形に直した
-- architect / build-manager: 各ステップの指示から、転送ループと定義が決めること（報告の仕方、有効になる条件、CLI が確かめる完了の条件）を除き、作業内容と判断基準に絞った。`call` の行は、指示ファイルを読み、呼んだスキルが `stop` で止まったら報告しない形にした。build-manager の `estimate` には、ステップの役割（着手前の予測・根拠の記録・分割の判断）と、BP の算出方法が [#68](https://github.com/tak-solder/hikyaku/issues/68) で方式を決めるまでの暫定のものであることを書いた
+- build-manager: 手順（読み込み → 変更の整理 → 予測ピークの見積もり → `--dry-run` → レビュー → G6 → 書き込み → 外部投影）を `step next {phase} --skill build-manager` の転送ループに置き換えた。呼び出し元（architect の `design/`、builder の `build-NN/`）の `progress.jsonl` に記録し、呼ばれるたびに最初の手順から始まる。呼び出し元が報告しないまま呼び直すときは `step restart {phase} --skill build-manager` で区切る。外部投影は `[external] target` が `none` 以外のときだけ返る。builder の分割の検討（`split`）の指示も、呼ばれた側がこのコマンドから始める形に直した
+- architect / build-manager: 各ステップの指示から、転送ループと定義が決めること（報告の仕方、有効になる条件、CLI が確かめる完了の条件）を除き、作業内容と判断基準に絞った。`call` の行は、指示ファイルを読み、呼んだスキルが `stop` で止まったら報告しない形にした。build-manager の `estimate` は、ガイドに沿って成分を見積もり、`tokens estimate` の表を issue.md の「予測ピーク」に貼り、判定に応じて分割（450k 超）か統合（300k 未満、推奨のみ）を検討する。450k 超で分割せずに済ませてよいのは、コンフリクトが避けられないときと、分割の一方がビルドとして成立しないときだけ
 - init: 雛形の生成（`hikyaku init`）より後の手順（警告と旧名ファイルの後始末 → 既存ドキュメントの登録 → AGENTS.md への索引の承認 → 書き込み → PR）を `step next init` の転送ループに置き換えた。doctor・HIKYAKU_ROOT の決定・v1 の移行・雛形の生成は、設定がまだ無いので SKILL.md に残した。v1 の移行の手順は `references/v1.md` に移した。進捗は `{HIKYAKU_ROOT}/progress.jsonl` に記録する。旧名のファイルが残っている、`document-guide.md` が検証を通らない、AGENTS.md の索引が guide と一致しない、のいずれかなら、該当するステップの完了を受け付けない。初期化済みかどうかは `step next init` が判定し（PR を添えて `pr` まで終えた、または init の記録が無く guide に登録がある）、雛形を生成した直後に中断した場合は続きから再開できる
 - close-cycle: Step 1 以降（振り返り → 素材の収集 → 昇格候補の整理 → G10 → 書き込み → サイクルの終了 → PR）を `step next close` の転送ループに置き換えた。進捗はサイクルのディレクトリ直下の `progress.jsonl` に入る。サイクルの終了は、`cycles.md` の status が `active` でなくなるまで完了にならない
-- retrospective: `step next <phase> <cycle> --skill retrospective` で進む内部スキルにした（確認 → BP 実績の収集 → 分析と分類 → 書き込み）。確認は `prompt` のとき、BP 実績の収集は `build-NN` のときだけ返る。`prompt` で実施しないと答えると、残りは対象外になって呼び出し元に戻る。書き込みは retrospective.md が無いと完了にならない。BP 実績の収集では、区切りでのコンテキスト（`step status` が `progress.jsonl` から出す値）も確かめる
+- retrospective: `step next <phase> <cycle> --skill retrospective` で進む内部スキルにした（確認 → 予測ピークの実測の収集 → 分析と分類 → 書き込み）。確認は `prompt` のとき、予測ピークの実測の収集（`peak-actual`）は `build-NN` のときだけ返る。`prompt` で実施しないと答えると、残りは対象外になって呼び出し元に戻る。書き込みは retrospective.md が無いと完了にならない。予測ピークの実測の収集では、`tokens session` でセッションのピークを、`tokens history build-NN` で差分と区切りでのコンテキストを測る
 - builder: 振り返りの指示（`steps/retrospective.md`）を、呼ばれた retrospective が `step next --skill retrospective` で進む形にした。PR レビュー対応で振り返るときは、`step restart build-NN <cycle> --skill retrospective` で区切ってから呼ぶ
 - planner / close-cycle / retrospective: 各ステップの指示から、転送ループと定義が決めること（報告の仕方、有効になる条件、CLI が確かめる完了の条件）を除き、作業内容と判断基準に絞った。呼んだ retrospective が `stop` で止まったら、呼び出し元は振り返りのステップを報告せずに止まる。close-cycle の PR の `done` には `--pr` が必須
 - create-cycle: `cycle new` より後の手順（PLAN へ進むかの確認 → plan のブランチで planner へ、または単独で PR）を `step next create <cycle>` の転送ループに置き換えた。PLAN へ進まないときは `to-plan` を理由付きでスキップし、そのときだけ PR のステップが手順に入る。進捗はサイクルのディレクトリの `progress.jsonl` に記録する。サイクルを作るまでの手順と、planner から代行されたときの流れは変えていない
-- bp-guide: 前提の確認（`show` での表示を含む）より後の手順（ブランチ → 基準表の生成 → 素材の収集 → 変更案 → 承認 → 再生成と検証 → PR）を `step next bp-guide` の転送ループに置き換えた。進捗は `bp-guide/progress.jsonl` に記録する。収集か変更案を理由付きでスキップすると、承認と再生成を行わずに PR へ進む。基準表の3ファイルが揃うまで生成を、3ファイルが揃い、README の表・期待値・`rules.toml` の構文が `validate` を通るまで再生成と PR を完了にしない（`cases.toml` が無いときに既定のケースで通ってしまわないよう、揃っていることは別に確かめる）。基準表による BP の算出は、[#68](https://github.com/tak-solder/hikyaku/issues/68) で v3 の見積もり方を決めるまでの暫定の方式と明記した。前の回の記録が残っていて `step next` が `done` を返したら、`step restart bp-guide` で区切って新しい回を始める
+- token-guide（v2 の bp-guide の後継）: 前提の確認（`show` での表示を含む）より後の手順を `step next token-guide` の転送ループにした。収集か変更案を理由付きでスキップすると、承認と書き込みを行わずに PR へ進む。書き込みはガイドがあり版の宣言が本文と合うまで、PR は版の宣言が本文と合うまで完了にしない。前の回の記録が残っていて `step next` が `done` を返したら、`step restart token-guide` で区切って新しい回を始める
 - `conductor lint` が `skills/<skill>/steps/` のタグも読むようにした
 - create-cycle: 既存のサイクル（`NNN` / `NNN-slug`）を引数に渡すと、作成済みのサイクルの手順（PLAN へ進むかの確認、単独で終える PR）を再開する
 - navigator: 作業中のサイクルについて `step where` を呼び、フェーズの中の位置（「build-02 の G8 の承認待ち」など）を示すようにした。途中の手順がある作業単位は、その作業単位のスキルの再開を提案する（内部スキルの途中なら、`directive.unit` から呼び出し元のスキルを引く）。v2 で作成したサイクルは、v2 のまま終えるよう案内してスキルを勧めない
 - `conductor parse`: 子の手順の位置（`step`）を返すようにした。子のセッション ID で `progress.jsonl` を引き、子が最後に進めた作業単位の次の1手（ゲートなら問いの ID・承認に結びつくファイル・指示ファイル）を返す。done なのに手順が終わっていない、子の記録が無い、ゲートの ID で止まったのに手順がそのゲートに居ない、のいずれかなら `stepProblems` に理由が入る
 - conductor: `stepProblems` があれば子を1回だけ再開して `step next` から続けさせ、2回目は人間に上げるようにした。`conductor parse` は終えたサイクルの記録も読み（close-cycle の `cycle close` のあと）、子の記録が無いのに `G\d+` のゲートで止まったときも食い違いとして挙げる。ゲートの判断では `step.read` の指示ファイルと、そこに書かれた成果物を読む。非対話規約に、ゲートでの `id` の書き方と、ブロックを出さずに終えると Stop フックが引き止めることを足した
 - CI（check-scripts）で `step lint` を実行する
-- retrospective: 「BP見積もりの振り返り」に「セッションの実測」表（`bp session --markdown` の出力）を加えた。ピーク・開始時の固定分・呼び出し回数・出力トークン・コンパクション・ウィンドウ・モデル・ホスト・Hikyaku の版・セッションを記録する
-- `hikyaku bp history`: セッションの実測を BP と並べて表示し、`--json` の各レコードに `context` として返す。表の無い retrospective.md は「—」で読む
-- `hikyaku bp actual`: `[bp_actual] exclude` に当たる生成物を数えなくなった。`newFiles` / `changedFiles` / `addedLines` / `deletedLines` / `binaryFiles` は生成物を除いた値になる。新たに `implementationLines` / `testLines`（追加行数の内訳）、`implementationFiles` / `testFiles` / `implementationNewFiles` / `testNewFiles`、`generatedFiles` / `generatedLines` / `generatedPaths` を返す。`estimateArgs` の `--lines` は従来どおり実装とテストの合計
-- bp-guide: `bp history` のセッションの実測と `--group-by` を、素材の読み方に加えた
+- retrospective: 「BP見積もりの振り返り」を「予測ピークの振り返り」に置き換えた。段階表（architect / builder 段階の予測ピーク）・セッション行・乖離（実測 − builder 段階）・成分ごとの乖離の要因・builder 段階の内訳表・セッションの実測表（`tokens session --markdown`）・差分の集計表（`tokens history build-NN --markdown`）を記録する。実績 BP（実測と申告からの算出）は廃止した
+- tasklist.md: `BP` 列を `予測ピーク` 列（`380k` の形）にした。`tasklist add / update` は `--bp` の代わりに `--peak <トークン数>` を受け取る。v2 の見出し（`BP` 列）の tasklist.md は読めるが、書き込みは止める
+- builder: plan で予測ピークを見積もり直し、`--peak` が `[context] split_above` を超えたら分割の検討（split）を返す。plan.md の「BP見積もり」は「予測ピーク」（読むファイル・作成するファイルの列挙と内訳表）になった
+- doc-reviewer: `context: tasklist` / `plan` の BP 入力値の乖離の観点を、予測ピークの成分の乖離（読み込みと未知の領域の取りこぼしを優先して見る）に置き換えた
+- init: `bp-guide/` を生成しなくなった。生成する `.hikyaku.config` の雛形から `bp_max` を外し、`[context]` の雛形を加えた
+- validate: `bp-guide/` の検査を、`token-guide/guide.md` の版の宣言の検査に置き換えた
+
+### Removed
+
+- BP（ビルドポイント）と `bp_max` 設定。`.hikyaku.config` に `bp_max` があるとエラーになる
+- `hikyaku bp guide / estimate / render / test / actual / history`（`hikyaku tokens` に置き換え）と、`{HIKYAKU_ROOT}/bp-guide/` の基準表（`rules.toml` / `README.md` / `cases.toml`）。CI の `bp test --builtin` も外した
+- `/hikyaku:bp-guide`（`/hikyaku:token-guide` に置き換え）。ブランチのフェーズ名 `bp-guide` と、`[pr] reviewers_skip` の `bp-guide` も `token-guide` になった
+- `step report` / `tasklist add` / `tasklist update` の `--bp`（`--peak` に置き換え）
 
 ### Migration
 
+- **BP は予測ピークに置き換わり、換算できないので自動では移行しない。** `.hikyaku.config` の `bp_max` を削除する（分割の境目は `[context] split_above`、既定 450k）。`{HIKYAKU_ROOT}/bp-guide/README.md` にリポジトリ固有の数え方を書いていたら、`/hikyaku:token-guide` で見積もりのガイドに書き直してから `bp-guide/` を削除する。`[pr] reviewers_skip` の `bp-guide` は `token-guide` に直す（`docs/migration/v2-to-v3.md`）
+- 見積もりのガイドは、無ければ標準で動くので、置かなくてよい。close-cycle の昇格か `/hikyaku:token-guide` が補正するときに作られる
 - **v2 で作成したサイクルは、v3 の各フェーズ（planner / architect / builder / close-cycle）では扱わない。** `step next` が止まり、v2 のまま終えるよう案内する。進行中のサイクルは v2 のプラグインで終えてから上げる（`docs/migration/v2-to-v3.md`）
-- `progress.jsonl` はコミット対象。`.gitignore` で除外しない。置き場所は `planning/`・`design/`・`build-NN/`、サイクルのディレクトリ直下（create-cycle・close-cycle）、HIKYAKU_ROOT 直下（init）、`bp-guide/`（bp-guide）
+- `progress.jsonl` はコミット対象。`.gitignore` で除外しない。置き場所は `planning/`・`design/`・`build-NN/`、サイクルのディレクトリ直下（create-cycle・close-cycle）、HIKYAKU_ROOT 直下（init）、`token-guide/`（token-guide）
 - `[context]` は既定値のままで動くので、設定の変更は不要
 - Stop フックは、プラグインを有効にすると全てのセッションで動くが、Hikyaku の手順を進めていないセッションでは何もしない。対応は不要
-- 既存の retrospective.md は変更不要。セッションの実測が無いビルドは `bp history` で「—」になる
-- `bp actual` の値は、差分にロックファイル・スナップショット・生成コードが含まれるビルドで以前より小さくなる。以前の実績と比べるときはこの差に注意する。以前の数え方に戻したいときは `[bp_actual] exclude = []` を書く
-- `bp actual --json` の既存のキーは残っている。テストの判定を変えたいときは `[bp_actual] tests` を書く（既定値を置き換える）
+- v2 の retrospective.md（「BP見積もりの振り返り」）は `tokens history` に並ばない。変更は不要
+- 差分の集計（`tokens history build-NN`）は、ロックファイル・スナップショット・生成コードを数えない。数えたいときは `[diff] exclude = []` を、テストの判定を変えたいときは `[diff] tests` を書く（既定値を置き換える）
 
 ## [2.8.0]
 

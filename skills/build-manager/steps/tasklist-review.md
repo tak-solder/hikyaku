@@ -17,10 +17,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc {phase} {cyc
 - [ ] この時点ではまだファイルに書き込まれていない。`--dry-run` の出力（変更後の一覧・依存グラフ）と
   issue.md の本文をプロンプトに直接含めて渡す
 - [ ] 参照として渡す: `cycles/{cycle}/planning/user-stories.md`, `cycles/{cycle}/design/design-delta.md`（存在する場合）,
-  `{HIKYAKU_ROOT}/bp-guide/README.md`（存在する場合。無ければ `bp guide --markdown` の出力を
-  プロンプトに含める）
-- [ ] BP のレビュー対象は入力値（列挙したファイル数がスコープと合っているか、加算要素の
-  取りこぼしが無いか）。表への当てはめはコマンドが行っているので、そこは見ない
-- [ ] 明確な不整合・入力値の乖離は反映する（主観的な指摘は無視してよい）。
-  反映が必要な場合は `scope` を `done` で報告し直し、整理と `bp estimate` からやり直す
+  見積もりに使ったガイド（`tokens guide {cycle}` が示すパス）、予測ピークの判定の帯（値 `mergeBelow` / `splitAbove`）
+- [ ] 予測ピークのレビュー対象は成分の見積もり（列挙した読むファイル・作成するファイルがスコープと合っているか、
+  未知の領域の取りこぼしが無いか）。合計と判定はコマンドが行っているので、そこは見ない
+- [ ] 明確な不整合・見積もりの乖離は反映する（主観的な指摘は無視してよい）。
+  反映が必要な場合は `scope` を `done` で報告し直し、整理と `tokens estimate` からやり直す
 - [ ] 反映が要らなければ `done` を報告する。レビュー結果とその対応は G6 の提示で使うので、このセッションに残しておく

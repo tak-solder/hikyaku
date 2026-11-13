@@ -149,14 +149,14 @@ function reportCommand(opened: Opened, step: string, result: StepResult): string
           ? ' --input "<ユーザーの答え>"'
           : "";
   const definition = opened.skill.steps.find((entry) => entry.id === step);
-  const bp =
-    result !== "done" || definition?.bp === undefined
+  const peak =
+    result !== "done" || definition?.peak === undefined
       ? ""
-      : definition.bp === "required"
-        ? " --bp <再算出した BP>"
-        : " [--bp <算出し直した BP>]";
+      : definition.peak === "required"
+        ? " --peak <見積もり直した予測ピーク>"
+        : " [--peak <見積もり直した予測ピーク>]";
   const pr = result === "done" && definition?.recordsPr === true ? " --pr <PR の URL>" : "";
-  return `${CLI} step report ${opened.phase} ${step}${cycleArg(opened.ctx)}${skillArg(opened)} --result ${result}${extra}${bp}${pr}`;
+  return `${CLI} step report ${opened.phase} ${step}${cycleArg(opened.ctx)}${skillArg(opened)} --result ${result}${extra}${peak}${pr}`;
 }
 
 function progressOf(evaluation: Evaluation): { complete: number; total: number } {

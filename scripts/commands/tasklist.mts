@@ -1,6 +1,6 @@
 /** tasklist read / add / update / done — ビルド一覧の操作 */
 
-import { flagBoolean, flagInteger, flagList, flagString } from "../lib/args.mts";
+import { flagBoolean, flagList, flagString } from "../lib/args.mts";
 import { HikyakuError, ValidationError } from "../lib/errors.mts";
 import { emit, table } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
@@ -13,7 +13,20 @@ import {
   type BuildRecord,
 } from "../lib/tasklist.mts";
 import { formatRef } from "../lib/refs.mts";
+import { formatK, parseTokenAmount } from "../lib/tokens.mts";
 import { openCycle, writeTasklist, type CycleContext } from "../lib/workspace.mts";
+
+/** --peak（380k・380000）。--bp は廃止 */
+function readPeak(args: Parameters<typeof flagString>[0]): number | undefined {
+  if (args.flags.has("bp")) {
+    throw new HikyakuError("--bp は廃止しました", "architect 段階の予測ピークを --peak <トークン数>（380k など）で渡してください。");
+  }
+  const raw = flagString(args, "peak");
+  if (raw === undefined) return undefined;
+  const peak = parseTokenAmount(raw);
+  if (peak === undefined || peak === 0) throw new HikyakuError(`--peak はトークン数で指定してください（現在: ${raw}）`, "例: --peak 380k");
+  return peak;
+}
 
 function context(args: Parameters<typeof flagString>[0], key: string | undefined): CycleContext {
   return openCycle(args, key).context;
@@ -32,12 +45,12 @@ function summarize(builds: BuildRecord[]): string {
     builds.map((build) => [
       buildDirName(build.id),
       build.title,
-      build.bp === undefined ? "—" : String(build.bp),
+      formatK(build.peak),
       build.dependsOn.length > 0 ? build.dependsOn.map(buildDirName).join(", ") : "—",
       isComplete(build) ? "完了" : "未完了",
       build.pr || "—",
     ]),
-    ["build", "title", "BP", "依存", "状態", "PR"],
+    ["build", "title", "予測ピーク", "依存", "状態", "PR"],
   );
 }
 
@@ -63,7 +76,7 @@ register({
   name: "tasklist add",
   summary: "ビルドを追加し、依存グラフを再生成する",
   usage:
-    "hikyaku tasklist add [<cycle>] --title <text> [--bp <n>] [--deps 1,2] [--issue <link>] [--dry-run]",
+    "hikyaku tasklist add [<cycle>] --title <text> [--peak <トークン数>] [--deps 1,2] [--issue <link>] [--dry-run]",
   writes: true,
   details: [
     "buildID は max(既存) + 1 を自動採番します。既存 ID のリナンバリングは行いません。",
@@ -87,7 +100,7 @@ register({
     const record: BuildRecord = {
       id,
       title,
-      bp: flagInteger(args, "bp"),
+      peak: readPeak(args),
       dependsOn: (flagList(args, "deps") ?? []).map(normalizeBuildId),
       issue: flagString(args, "issue") ?? `[issue](./${buildDirName(id)}/issue.md)`,
       pr: "",
@@ -101,9 +114,9 @@ register({
 
 register({
   name: "tasklist update",
-  summary: "既存ビルドのタイトル・BP・依存を更新する",
+  summary: "既存ビルドのタイトル・予測ピーク・依存を更新する",
   usage:
-    "hikyaku tasklist update [<cycle>] --id <n> [--title <text>] [--bp <n>] [--deps 1,2] [--dry-run]",
+    "hikyaku tasklist update [<cycle>] --id <n> [--title <text>] [--peak <トークン数>] [--deps 1,2] [--dry-run]",
   writes: true,
   details: [
     "ビルドの分割は「元ビルドの update + 新ビルドの add」で表現します。",
@@ -130,7 +143,7 @@ register({
     const updated: BuildRecord = {
       ...target,
       title: flagString(args, "title") ?? target.title,
-      bp: flagInteger(args, "bp") ?? target.bp,
+      peak: readPeak(args) ?? target.peak,
       dependsOn: deps ? deps.map(normalizeBuildId) : target.dependsOn,
     };
 

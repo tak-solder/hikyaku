@@ -31,6 +31,6 @@ navigator にも Codex 用の入口はありません。再開箇所は CLI の 
 
 PR 作成後は共通の設定に従ってレビュアーを割り当てます。設定方法は [設定ファイル](configuration/config-file.md) を参照してください。
 
-BP 基準表の確認・調整には `$hikyaku:bp-guide` を使います。`build-manager` と `retrospective` はフェーズの途中で呼ばれる内部手順です。
+予測ピークの見積もりのガイドの確認・校正には `$hikyaku:token-guide` を使います。`build-manager` と `retrospective` はフェーズの途中で呼ばれる内部手順です。
 
 Hikyaku CLI の一部の案内には Claude Code の `/hikyaku:...` 表記が残っています。Codex のスキルは、conductor と navigator を除き、その案内を対応する `$hikyaku:...` スキルとして解釈します。シェルから CLI を直接実行する場合は [実行方法](reference/cli.md#実行方法) を参照してください。

@@ -3,7 +3,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { flagString } from "../lib/args.mts";
-import { BP_CASES_FILE, BP_GUIDE_DIR, BP_README_FILE, BP_RULES_FILE, bpGuideProblems } from "../lib/bp.mts";
 import { loadConfig } from "../lib/config.mts";
 import { cycleDir, cycleDirName, loadCycles } from "../lib/cycles.mts";
 import { loadGuide, RENAMED_FILES, validateGuide } from "../lib/docs.mts";
@@ -11,6 +10,7 @@ import { HikyakuError, ValidationError } from "../lib/errors.mts";
 import { ISSUE_UNSAFE_HEADING, RESOLVED_BY_LABEL, resolveUnsafeSplit, validateUnsafeSplits } from "../lib/integrity.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
+import { TOKEN_GUIDE_DIR, TOKEN_GUIDE_FILE, tokenGuideProblems } from "../lib/tokens.mts";
 import { buildDirName, loadTasklist, validateGraph } from "../lib/tasklist.mts";
 import { definedCriteria, ISSUE_CRITERIA_HEADING, validateTraceability } from "../lib/traceability.mts";
 import type { TraceabilityIssue } from "../lib/traceability.mts";
@@ -29,8 +29,8 @@ register({
     "検証する内容:",
     "  - 読み込まれなくなった旧名のファイルが残っていないか",
     "  - document-guide.md のパスが実在するか（docs validate と同じ）",
-    `  - ${BP_GUIDE_DIR}/ があれば、${BP_RULES_FILE} を基準表として解釈でき、${BP_README_FILE} の表が最新で、`,
-    `    ${BP_CASES_FILE} の期待値がすべて一致するか（bp test と同じ）`,
+    `  - ${TOKEN_GUIDE_DIR}/${TOKEN_GUIDE_FILE} があれば、先頭の version と hash があり、hash が本文と合っているか`,
+    "    （本文を変えたのに tokens stamp で版を上げていない状態を止める）",
     "  - cycles.md の依存先サイクルが存在するか、循環していないか",
     "  - 各サイクルのディレクトリが存在するか",
     "  - 各 tasklist.md の依存グラフに循環や存在しない依存が無いか",
@@ -68,7 +68,7 @@ register({
       problems.push({ scope: `document-guide/${problem.entry}`, message: problem.message });
     }
 
-    problems.push(...bpGuideProblems(config.hikyakuRoot));
+    problems.push(...tokenGuideProblems(config.hikyakuRoot));
 
     const records = loadCycles(config.hikyakuRoot);
     const ids = new Set(records.map((record) => record.id));

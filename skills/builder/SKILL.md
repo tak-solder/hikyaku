@@ -230,7 +230,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next build-{NN} {cycle}
 | `stop` | メッセージをユーザーに伝えて終了する |
 
 - `step report` は記録したあと、次の1手を返す。それに従って続ける
-- 成果物や完了の条件（PR 列など）、報告に添える値（`--bp` / `--pr`）は CLI が確かめ、足りなければ
+- 成果物や完了の条件（PR 列など）、報告に添える値（`--peak` / `--pr`）は CLI が確かめ、足りなければ
   報告を受け付けない。メッセージに従って直す。報告を通すために成果物を空で作ったり、別のステップと
   して報告したりしない
 - `skipped` は、指示ファイルがスキップを指示する場合だけ。理由を `--reason` に書く
@@ -301,7 +301,7 @@ Build {NN} が完了しました。
 
 ## ビルド管理（実装中のスコープ変更）
 
-実装中に以下が判明した場合、`/hikyaku:build-manager {cycle}` を呼び出す。再算出した BP による分割の
+実装中に以下が判明した場合、`/hikyaku:build-manager {cycle}` を呼び出す。見積もり直した予測ピークによる分割の
 検討は、step が `call` として返す。build-manager は `step next build-{NN} {cycle} --skill build-manager`
 から始め、このビルドの progress.jsonl に記録する。前回の build-manager の呼び出しのあと builder が
 何も報告していないうちに呼び直すときは「呼び直し」と伝え、build-manager が
@@ -312,8 +312,8 @@ Build {NN} が完了しました。
 - handoff 作成時 — 意図的に先送りした作業 → 新ビルドの追加
 
 呼び出し後の対応:
-- 現在のビルドのスコープが変わった場合: plan.md を修正して `bp estimate` で算出し直し、`plan` を
-  `done` で報告し直す（`--bp` に算出し直した BP）。そこから後ろはやり直しになり、G8 の承認も取り直す
+- 現在のビルドのスコープが変わった場合: plan.md を修正して `tokens estimate` で見積もり直し、`plan` を
+  `done` で報告し直す（`--peak` に見積もり直した予測ピーク）。そこから後ろはやり直しになり、G8 の承認も取り直す
 - 新ビルドが追加されただけの場合: 現在の作業を続行する
 
 ## architect への差し戻し（設計の前提が崩れたとき）

@@ -5,7 +5,6 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { flagString } from "../lib/args.mts";
-import { BP_GUIDE_DIR, bpRulesPath } from "../lib/bp.mts";
 import { loadConfig } from "../lib/config.mts";
 import { ValidationError } from "../lib/errors.mts";
 import { isTracked } from "../lib/git.mts";
@@ -13,6 +12,7 @@ import { LOCAL_FILE, localPath } from "../lib/local.mts";
 import { displayWidth, emit, padDisplay } from "../lib/output.mts";
 import { findHikyakuRoot, pluginVersion, repoRoot } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
+import { projectGuidePath, TOKEN_GUIDE_DIR, TOKEN_GUIDE_FILE, tokenGuideProblems } from "../lib/tokens.mts";
 
 const run = promisify(execFile);
 
@@ -75,7 +75,8 @@ register({
     "  - Node.js が v22.18.0 以上か（型剥がしがフラグ無しで動くか）",
     "  - リポジトリルートの .hikyaku.config があり、解析でき、廃止キーが残っていないか",
     "  - HIKYAKU_ROOT が解決でき、必須ファイルが揃っているか",
-    `  - ${BP_GUIDE_DIR}/ があるか（無くても既定値で動くので注意のみ）`,
+    `  - ${TOKEN_GUIDE_DIR}/${TOKEN_GUIDE_FILE} があるか（無ければ標準のガイドで動く）と、その版の宣言が本文と合っているか`,
+    "  - v2 の BP 基準表（bp-guide/）が残っていないか（v3 では読まれない）",
     "  - .hikyaku.local が git 管理下に入っていないか（他人の栞を掴む事故になる）",
     "  - origin に到達できるか（着手中ブランチの検出に使う）",
     "",
@@ -152,17 +153,25 @@ register({
               },
         );
       }
+      const guideName = `${TOKEN_GUIDE_DIR}/${TOKEN_GUIDE_FILE}`;
+      const guideProblems = tokenGuideProblems(hikyakuRoot);
       checks.push(
-        existsSync(bpRulesPath(hikyakuRoot))
-          ? { name: `${BP_GUIDE_DIR}/`, status: "ok", detail: "あり（BP の基準表はこのワークスペースのもの）" }
-          : {
-              name: `${BP_GUIDE_DIR}/`,
-              status: "warn",
-              detail:
-                "無し。BP の基準表は Hikyaku の既定値で動きます。\n" +
-                "    リポジトリに合わせて調整するなら hikyaku init --root <HIKYAKU_ROOT> を再実行して生成してください",
-            },
+        !existsSync(projectGuidePath(hikyakuRoot))
+          ? { name: guideName, status: "ok", detail: "無し（標準のガイドで見積もります。close-cycle か /hikyaku:token-guide が補正するときに作ります）" }
+          : guideProblems.length === 0
+            ? { name: guideName, status: "ok", detail: "あり（このワークスペースのガイドで見積もります）" }
+            : { name: guideName, status: "warn", detail: guideProblems.map((p) => p.message).join("\n    ") },
       );
+      // v2 の BP 基準表。v3 は読まないので、残っていると「調整したのに効かない」と誤解される
+      if (existsSync(join(hikyakuRoot, "bp-guide"))) {
+        checks.push({
+          name: "bp-guide/",
+          status: "warn",
+          detail:
+            "v2 の BP 基準表です。v3 は読みません（予測ピークは token-guide で見積もります）。\n" +
+            "    README.md にリポジトリ固有の数え方を書いていたら、/hikyaku:token-guide でガイドに移してから削除してください（docs/migration/v2-to-v3.md）",
+        });
+      }
     }
 
     if (hikyakuRoot !== undefined && existsSync(localPath(hikyakuRoot))) {

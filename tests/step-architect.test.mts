@@ -191,7 +191,7 @@ test("architect: ビルド分割で build-manager を呼び、同じ design/prog
   assert.equal(next(directory).step, "build-split");
   const early = cli(directory, "step", "report", "architect", "build-split", "001", "--result", "done");
   assert.equal(early.status, 1, "tasklist にビルドが無ければ完了にならない");
-  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--bp", "3");
+  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--peak", "350k");
   assert.equal(report(directory, "build-split", "--result", "done").step, "validate");
   assert.ok(events(directory).some((event) => event["skill"] === "build-manager" && event["step"] === "G6"));
 
@@ -204,7 +204,7 @@ test("architect: 振り返りと PR まで進むと done", (t) => {
   upToG4(directory);
   report(directory, "G4", "--result", "approved", "--input", "OK");
   runManager(directory);
-  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--bp", "3");
+  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--peak", "350k");
   report(directory, "build-split", "--result", "done");
   const retrospective = report(directory, "validate", "--result", "done");
   assert.equal(retrospective.kind, "call");
@@ -228,12 +228,12 @@ test("build-manager: 外部投影は [external] target が none 以外のとき�
 
 test("build-manager: builder の分割の検討から呼ぶと、ビルドの progress.jsonl に記録する", (t) => {
   const directory = workspace(t, true);
-  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--bp", "3");
+  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--peak", "350k");
   const build = `${CYCLE}/build-01`;
   write(directory, `${build}/issue.md`);
   write(directory, `${build}/plan.md`);
-  succeeds(directory, "step", "report", "build-01", "plan", "001", "--result", "done", "--bp", "5");
-  const call = parse(succeeds(directory, "step", "report", "build-01", "plan-review", "001", "--result", "done", "--bp", "6", "--json"));
+  succeeds(directory, "step", "report", "build-01", "plan", "001", "--result", "done", "--peak", "400k");
+  const call = parse(succeeds(directory, "step", "report", "build-01", "plan-review", "001", "--result", "done", "--peak", "500k", "--json"));
   assert.equal(call.step, "split");
   assert.match(call.callNext ?? "", /step next build-01 001-test --skill build-manager/);
 
@@ -252,7 +252,7 @@ function designed(t: Parameters<typeof workspace>[0]): string {
   upToG4(directory);
   report(directory, "G4", "--result", "approved", "--input", "OK");
   runManager(directory);
-  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--bp", "3");
+  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--peak", "350k");
   report(directory, "build-split", "--result", "done");
   report(directory, "validate", "--result", "done");
   assert.equal(report(directory, "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/9").kind, "done");
@@ -320,7 +320,7 @@ test("architect: 追加設計の回は調査を行わず、設計を変えなけ
   runManager(directory);
   const early = cli(directory, "step", "report", "architect", "build-split", "001", "--result", "done");
   assert.equal(early.status, 1, "未完了のビルドが足されるまで完了にならない");
-  succeeds(directory, "tasklist", "add", "001", "--title", "指摘への対応", "--bp", "2");
+  succeeds(directory, "tasklist", "add", "001", "--title", "指摘への対応", "--peak", "350k");
   report(directory, "build-split", "--result", "done");
   assert.equal(report(directory, "validate", "--result", "done").step, "pr");
   // 足したビルドが PR まで進んでも、完了した build-split に巻き戻らない

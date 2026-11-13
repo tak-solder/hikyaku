@@ -36,6 +36,10 @@ argument-hint: "[{cycle}]"
 永続ドキュメントではないが、走行中の他サイクルの planner / architect が読むため、
 フェーズ途中で書き換えると前提が途中で変わる。
 
+予測ピークの見積もりのガイド（`{HIKYAKU_ROOT}/token-guide/guide.md`）は、close-cycle の昇格と
+`/hikyaku:token-guide` が書き換える。走行中の他サイクルの build-manager / builder が読むので、
+サイクルの途中で書き換えないのは instructions.md と同じ理由。
+
 ## 作業ステップ
 
 ### Step 0: 読み込みと完了確認

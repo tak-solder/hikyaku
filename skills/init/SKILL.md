@@ -67,19 +67,17 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" init --root {HIKYAKU_ROOT}
 
 既存ファイルは決して上書きされない。
 
-生成するのは次の5つ。
+生成するのは次の4つ。
 
 | ファイル | 役割 |
 |---|---|
 | リポジトリルート/`.hikyaku.config` | 設定のベース（必須）。`hikyaku_root` の唯一の宣言先 |
 | `{HIKYAKU_ROOT}/cycles.md` | サイクル索引 |
 | `{HIKYAKU_ROOT}/document-guide.md` | ドキュメントガイドの雛形 |
-| `{HIKYAKU_ROOT}/bp-guide/` | BP の基準表（`rules.toml` 正本 / `README.md` 説明 / `cases.toml` 期待値テスト）。Hikyaku の既定値から生成 |
 | `{HIKYAKU_ROOT}/.gitignore` | `.hikyaku.local` の1行だけ（既にあれば1行だけ追記する） |
 
-`bp-guide/` はワークスペースの持ち物で、以後プラグインを更新しても変わらない。
-無くても既定値で動くので、v2.0 で初期化済みのワークスペースに足すときも同じコマンドを
-再実行すればよい（無いファイルだけ生成する）。調整は `/hikyaku:bp-guide` で行う。
+予測ピークの見積もりのガイド（`{HIKYAKU_ROOT}/token-guide/guide.md`）は生成しない。無ければプラグインの
+標準のガイドで見積もり、close-cycle の昇格や `/hikyaku:token-guide` で補正するときに作られる。
 
 出た警告は、Step 4 の最初の手順（cleanup）で扱う。
 

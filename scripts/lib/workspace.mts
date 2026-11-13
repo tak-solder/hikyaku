@@ -1,6 +1,6 @@
 /** サイクルの解決とファイル書き込みの共通処理 */
 
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { flagString, type ParsedArgs } from "./args.mts";
 import { parseBranch, type BranchNaming } from "./branch.mts";
 import { cycleBranchNaming, loadConfig, type ResolvedConfig } from "./config.mts";
@@ -16,7 +16,7 @@ import { HikyakuError } from "./errors.mts";
 import { currentBranch } from "./git.mts";
 import { readLocalState } from "./local.mts";
 import { warn } from "./output.mts";
-import { loadTasklist, renderTasklistFile, tasklistPath, type BuildRecord } from "./tasklist.mts";
+import { isLegacyTasklist, loadTasklist, renderTasklistFile, tasklistPath, type BuildRecord } from "./tasklist.mts";
 
 /** 対象サイクルをどう決めたか。スキルが根拠を表示できるようにする */
 export type CycleSource = "explicit" | "branch" | "local" | "single-active";
@@ -222,5 +222,12 @@ export function openCycleIfAny(args: ParsedArgs, key: string | undefined): Opene
 }
 
 export function writeTasklist(context: CycleContext, builds: BuildRecord[]): void {
+  const path = tasklistPath(context.directory);
+  if (existsSync(path) && isLegacyTasklist(readFileSync(path, "utf8"))) {
+    throw new HikyakuError(
+      `${context.name} の tasklist.md は v2 の形式（BP 列）です`,
+      "v2 で作成したサイクルは v3 では更新しません。v2 のプラグインで終えてください（docs/migration/v2-to-v3.md）。",
+    );
+  }
   writeFileSync(tasklistPath(context.directory), renderTasklistFile(context.name, builds), "utf8");
 }

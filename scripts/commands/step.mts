@@ -28,6 +28,7 @@ import {
 import { register } from "../lib/registry.mts";
 import { openCycle } from "../lib/workspace.mts";
 import { formatTokens, measureCurrent } from "../lib/session.mts";
+import { parseTokenAmount } from "../lib/tokens.mts";
 import {
   allowedResults,
   evaluate,
@@ -91,7 +92,7 @@ register({
   name: "step report",
   summary: "1手の結果を進捗に記録し、次の1手を返す",
   usage:
-    "hikyaku step report <phase> <step> [<cycle>] [--skill <内部スキル>] --result done|skipped|approved|rejected|failed [--reason <理由>] [--input <答え>] [--bp <N>] [--pr <URL|番号>] [--dry-run] [--json]",
+    "hikyaku step report <phase> <step> [<cycle>] [--skill <内部スキル>] --result done|skipped|approved|rejected|failed [--reason <理由>] [--input <答え>] [--peak <トークン数>] [--pr <URL|番号>] [--dry-run] [--json]",
   writes: true,
   details: [
     "作業単位のディレクトリの progress.jsonl に1行追記します。報告できるのは現在地のステップと、",
@@ -105,7 +106,8 @@ register({
     "  rejected  ゲートの差し戻し。--input にユーザーの答えが必須",
     "  failed    失敗した。--reason が必須。現在地は動かない",
     "",
-    "--bp は再算出した BP です（分割の検討の判定に使う）。plan の done では必須、plan-review では任意です。",
+    "--peak は見積もり直した予測ピークです（380000・380k。分割の検討の判定に使う）。plan の done では必須、",
+    "plan-review では任意です。[context] split_above を超えると、builder は分割の検討（split）を返します。",
     "--pr は作った PR の URL か番号です。PR を作るステップ（pr）の done では必須です。",
     "記録には、報告した時点のコンテキスト・セッション ID・Hikyaku の版が入ります（#68）。",
     "progress.jsonl は成果物と一緒にコミットしてください。",
@@ -190,15 +192,20 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
   if (reason !== undefined) event.reason = reason;
   if (input !== undefined) event.input = input;
 
-  const bpRaw = flagString(args, "bp");
-  if (bpRaw !== undefined) {
-    if (definition.bp === undefined) throw new HikyakuError(`${definition.id} には --bp を添えられません`);
-    const bp = Number(bpRaw);
-    if (!Number.isInteger(bp) || bp < 0) throw new HikyakuError(`--bp は0以上の整数で指定してください（現在: ${bpRaw}）`);
-    event.bp = bp;
-  } else if (definition.bp === "required" && result === "done") {
-    // BP が無いと分割の検討（split）の判定ができず、報告の漏れで分割の検討を飛ばせてしまう
-    throw new HikyakuError(`${definition.id} の done には --bp で再算出した BP を添えてください`);
+  if (args.flags.has("bp")) {
+    throw new HikyakuError("--bp は廃止しました", "見積もり直した予測ピークを --peak <トークン数>（380k など）で添えてください。");
+  }
+  const peakRaw = flagString(args, "peak");
+  if (peakRaw !== undefined) {
+    if (definition.peak === undefined) throw new HikyakuError(`${definition.id} には --peak を添えられません`);
+    const peak = parseTokenAmount(peakRaw);
+    if (peak === undefined || peak === 0) {
+      throw new HikyakuError(`--peak はトークン数で指定してください（現在: ${peakRaw}）`, "例: --peak 380k / --peak 380000");
+    }
+    event.peak = peak;
+  } else if (definition.peak === "required" && result === "done") {
+    // 予測ピークが無いと分割の検討（split）の判定ができず、報告の漏れで分割の検討を飛ばせてしまう
+    throw new HikyakuError(`${definition.id} の done には --peak で見積もり直した予測ピークを添えてください`);
   }
 
   const prRaw = flagString(args, "pr");

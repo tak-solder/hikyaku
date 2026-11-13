@@ -24,7 +24,8 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { type ActualPatterns, DEFAULT_ACTUAL_EXCLUDE, DEFAULT_ACTUAL_TESTS } from "./bp-actual.mts";
+import { type DiffPatterns, DEFAULT_DIFF_EXCLUDE, DEFAULT_DIFF_TESTS } from "./diff-stats.mts";
+import { DEFAULT_PEAK_BANDS, type PeakBands } from "./tokens.mts";
 import type { BranchNaming } from "./branch.mts";
 import {
   checkConductorAsks,
@@ -293,13 +294,12 @@ export const DEFAULT_PR_TITLE = "[hikyaku] {cycle}: {phase} {title}";
  * レビュアーのアサインをオフにできる単位。PR を作るスキルに対応する。
  * build は build-NN の全て、conductor は監督が作る最後の PR
  */
-export const REVIEWER_SKIP_TARGETS = ["init", "bp-guide", "create", "plan", "architect", "build", "close", "conductor"] as const;
+export const REVIEWER_SKIP_TARGETS = ["init", "token-guide", "create", "plan", "architect", "build", "close", "conductor"] as const;
 export type ReviewerSkipTarget = (typeof REVIEWER_SKIP_TARGETS)[number];
 /** セッション名の既定。空文字にするとセッション名を変更しない */
 export const DEFAULT_SESSION_TITLE = "{cycle} {phase} {title}";
 export const DEFAULT_BRANCH_PREFIX = "hikyaku";
 export const DEFAULT_BRANCH_SEPARATOR = "/";
-export const DEFAULT_BP_MAX = 8;
 
 const DEFAULT_NAMING: BranchNaming = {
   prefix: DEFAULT_BRANCH_PREFIX,
@@ -337,7 +337,6 @@ export interface ResolvedConfig {
   profile: ProfileName;
   /** 未設定ならリポジトリのデフォルトブランチを自動検出する（スキル側の責務） */
   baseBranch: string | undefined;
-  bpMax: number;
   gates: Gates;
   reviews: Reviews;
   branch: BranchNaming;
@@ -351,10 +350,12 @@ export interface ResolvedConfig {
   conductor: ConductorConfig;
   /** [data_integrity] — ビルドのマージで本番データを壊さないための宣言 */
   dataIntegrity: DataIntegrityConfig;
-  /** [bp_actual] — bp actual が数えない生成物と、テストとして分けるパス */
-  bpActual: ActualPatterns;
+  /** [diff] — ビルドの差分の集計（tokens history build-NN）が数えない生成物と、テストとして分けるパス */
+  diff: DiffPatterns;
   /** [context] — builder の区切りで、メインセッションのコンテキストと比べる目安 */
   context: ContextBudget;
+  /** [context] merge_below / split_above — 予測ピークの判定の帯 */
+  peakBands: PeakBands;
   /**
    * ルート設定の ask に並んでいて、まだ答えが記録されていないキー。
    * create-cycle が尋ねる対象。サイクルを重ねた結果ここに残っていれば、
@@ -870,6 +871,7 @@ function loadFile(path: string): TomlTable | undefined {
 
 /** v1 の設定キーを検出して、移行を促す */
 function checkLegacyKeys(table: TomlTable, path: string): { docRoot?: string } {
+  assertNoRetiredKeys(table, path);
   if (table["issue_backend"] !== undefined) {
     throw new HikyakuError(
       `${path}: issue_backend は v2.0.0 で廃止されました`,
@@ -918,11 +920,11 @@ function mergeTables(base: TomlTable, override: TomlTable): TomlTable {
 }
 
 /**
- * [bp_actual] を読む。配列は既定値を置き換える（足し合わせない）。
- * 既定値に足したいときは、既定値（hikyaku config --json の bpActual）を写してから足す
+ * [diff] を読む。配列は既定値を置き換える（足し合わせない）。
+ * 既定値に足したいときは、既定値（hikyaku config --json の diff）を写してから足す
  */
-function readBpActual(table: TomlTable | undefined): ActualPatterns {
-  const where = "[bp_actual]";
+function readDiffPatterns(table: TomlTable | undefined): DiffPatterns {
+  const where = "[diff]";
   const read = (key: string, fallback: string[]): string[] => {
     const values = readStringArray(table, key, where) ?? fallback;
     if (values.some((pattern) => pattern.trim() === "")) {
@@ -930,7 +932,7 @@ function readBpActual(table: TomlTable | undefined): ActualPatterns {
     }
     return values;
   };
-  return { exclude: read("exclude", DEFAULT_ACTUAL_EXCLUDE), tests: read("tests", DEFAULT_ACTUAL_TESTS) };
+  return { exclude: read("exclude", DEFAULT_DIFF_EXCLUDE), tests: read("tests", DEFAULT_DIFF_TESTS) };
 }
 
 /**
@@ -963,6 +965,56 @@ function readContextBudget(table: TomlTable | undefined): ContextBudget {
     return value;
   };
   return { approval: read("approval"), implement: read("implement"), review: read("review") };
+}
+
+/** [context] merge_below / split_above。merge_below は split_above より小さくなければならない */
+function readPeakBands(table: TomlTable | undefined): PeakBands {
+  const where = "[context]";
+  const read = (key: string, fallback: number): number => {
+    const raw = table?.[key];
+    if (raw === undefined) return fallback;
+    const value = parseTokenCount(raw);
+    if (value === undefined) {
+      throw new HikyakuError(
+        `${where}.${key} はトークン数で指定してください（現在: ${JSON.stringify(raw)}）`,
+        '正の整数（300000）か、k / m の単位を付けた文字列（"300k"）で書いてください。',
+      );
+    }
+    return value;
+  };
+  const bands = {
+    mergeBelow: read("merge_below", DEFAULT_PEAK_BANDS.mergeBelow),
+    splitAbove: read("split_above", DEFAULT_PEAK_BANDS.splitAbove),
+  };
+  if (bands.mergeBelow >= bands.splitAbove) {
+    throw new HikyakuError(
+      `${where}.merge_below（${bands.mergeBelow}）は split_above（${bands.splitAbove}）より小さくしてください`,
+      "merge_below 未満が統合の検討、split_above 超が分割の検討、その間が狙いの帯です。",
+    );
+  }
+  return bands;
+}
+
+/**
+ * v3 で廃止したキー。黙って無視すると「設定したのに効かない」になるので、移行先を示して止める
+ */
+function assertNoRetiredKeys(table: TomlTable, where: string): void {
+  if (table["bp_max"] !== undefined) {
+    throw new HikyakuError(
+      `${where}: bp_max は v3 で廃止しました`,
+      [
+        "ビルドの大きさは BP ではなく、メインセッションのコンテキストの予測ピーク（トークン）で判定します。",
+        '分割を検討する境目は [context] split_above（既定 "450k"）、統合を検討する境目は merge_below（既定 "300k"）です。',
+        "bp_max を削除してください（docs/migration/v2-to-v3.md）。",
+      ].join("\n"),
+    );
+  }
+  if (table["bp_actual"] !== undefined) {
+    throw new HikyakuError(
+      `${where}: [bp_actual] は [diff] に改名しました`,
+      "exclude / tests の書き方は同じです。テーブル名を [diff] に変えてください。",
+    );
+  }
 }
 
 function readDataIntegrity(table: TomlTable | undefined): DataIntegrityConfig {
@@ -1178,7 +1230,6 @@ function finalize(
     hikyakuRoot,
     profile,
     baseBranch: readString(merged, "base_branch", "config"),
-    bpMax: readInteger(merged, "bp_max", "config") ?? DEFAULT_BP_MAX,
     gates,
     reviews,
     branch: readBranchNaming(readTable(merged, "branch"), DEFAULT_NAMING),
@@ -1202,8 +1253,9 @@ function finalize(
     },
     conductor: readConductor(readTable(merged, "conductor")),
     dataIntegrity: readDataIntegrity(readTable(merged, "data_integrity")),
-    bpActual: readBpActual(readTable(merged, "bp_actual")),
+    diff: readDiffPatterns(readTable(merged, "diff")),
     context: readContextBudget(readTable(merged, "context")),
+    peakBands: readPeakBands(readTable(merged, "context")),
     askAtCreate,
     sources,
   };

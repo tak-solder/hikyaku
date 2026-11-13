@@ -9,21 +9,23 @@
 
 import { readReturn, RETURN_FILE } from "../phase.mts";
 import { buildDirName, loadTasklist, normalizeBuildId } from "../tasklist.mts";
-import { currentEvents, latestBp, type SkillSteps, type StepContext } from "./engine.mts";
+import { formatK } from "../tokens.mts";
+import { currentEvents, latestPeak, type SkillSteps, type StepContext } from "./engine.mts";
 
 function testSpecSkipped(ctx: StepContext): boolean {
   const events = currentEvents(BUILDER_STEPS, ctx.events).filter((event) => event.skill === "builder" && event.step === "test-spec");
   return events[events.length - 1]?.result === "skipped";
 }
 
-/** 再算出した BP が bp_max − 2 以上なら、分割を検討する（build-manager） */
-function splitThreshold(ctx: StepContext): number {
-  return ctx.config.bpMax - 2;
+/** builder が最後に報告した予測ピーク（plan / plan-review） */
+function reportedPeak(ctx: StepContext): number | undefined {
+  return latestPeak(ctx.events.filter((event) => event.skill === "builder"));
 }
 
+/** 見積もり直した予測ピークが split_above を超えたら、分割を検討する（build-manager） */
 function needsSplit(ctx: StepContext): boolean {
-  const bp = latestBp(ctx.events.filter((event) => event.skill === "builder"));
-  return bp !== undefined && bp >= splitThreshold(ctx);
+  const peak = reportedPeak(ctx);
+  return peak !== undefined && peak > ctx.config.peakBands.splitAbove;
 }
 
 /** tasklist.md（作業ツリー）の PR 列が埋まっているか */
@@ -45,13 +47,13 @@ export const BUILDER_STEPS: SkillSteps = {
     ].join("\n");
   },
   steps: [
-    { id: "plan", kind: "run", title: "plan.md の作成と BP の再算出", produces: ["plan.md"], bp: "required" },
+    { id: "plan", kind: "run", title: "plan.md の作成と予測ピークの見積もり直し", produces: ["plan.md"], peak: "required" },
     {
       id: "plan-review",
       kind: "run",
       title: "doc-reviewer による plan.md のレビュー",
       when: (ctx) => ctx.config.reviews.plan,
-      bp: "optional",
+      peak: "optional",
     },
     {
       id: "split",
@@ -60,7 +62,7 @@ export const BUILDER_STEPS: SkillSteps = {
       call: "build-manager",
       when: needsSplit,
       reason: (ctx) =>
-        `再算出した BP が ${latestBp(ctx.events.filter((event) => event.skill === "builder")) ?? "?"} で、bp_max − 2（${splitThreshold(ctx)}）以上です`,
+        `見積もり直した予測ピークが ${formatK(reportedPeak(ctx))} で、split_above（${formatK(ctx.config.peakBands.splitAbove)}）を超えています`,
     },
     {
       id: "G7",

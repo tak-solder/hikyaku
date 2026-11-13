@@ -39,8 +39,8 @@ export interface ProgressEvent {
   input?: string;
   /** step restart で始めた回の種類（architect の return / add など）。スキルが定義で読む */
   round?: string;
-  /** 報告で添えた BP（plan / plan-review） */
-  bp?: number;
+  /** 報告で添えた予測ピーク（トークン。plan / plan-review） */
+  peak?: number;
   /** 報告で添えた PR（URL か番号。pr ステップ） */
   pr?: string;
   /** 報告した時点のメインセッションのコンテキスト（#68）。計測できなければ記録しない */

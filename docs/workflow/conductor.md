@@ -114,7 +114,7 @@ PR を作るスキル（conductor を使わずに自分で実行する planner �
 ```toml
 [pr]
 reviewers = ["alice", "@copilot"]   # デフォルトブランチ向けの PR（通常のフローと、conductor の最後の PR）
-reviewers_skip = ["init", "bp-guide"] # アサインをオフにするスキル
+reviewers_skip = ["init", "token-guide"] # アサインをオフにするスキル
 
 [conductor]
 phase_reviewers = ["@copilot"]      # conductor ブランチ向けのフェーズの PR
