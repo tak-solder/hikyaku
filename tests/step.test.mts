@@ -29,7 +29,6 @@ interface Directive {
   report?: Record<string, string>;
   note?: string;
   revise?: string;
-  binds?: string[];
   call?: string;
   context?: { tokens: number | null; budget: number; over: boolean; unavailable: string | null };
   overruns?: { checkpoint: string; tokens: number }[];
@@ -88,7 +87,7 @@ test("step report: 成果物が無ければ done を受け付けず、記録も�
 test("step report: 記録して次の1手を返す。--dry-run では書かない", (t) => {
   const directory = built(t);
   write(directory, `${BUILD}/plan.md`);
-  const dry = JSON.parse(succeeds(directory, "step", "report", "build-01", "plan", "001", "--result", "done", "--dry-run", "--json"));
+  const dry = JSON.parse(succeeds(directory, "step", "report", "build-01", "plan", "001", "--result", "done", "--bp", "3", "--dry-run", "--json"));
   assert.equal(dry.dryRun, true);
   assert.equal(existsSync(join(directory, BUILD, "progress.jsonl")), false);
 
@@ -117,7 +116,7 @@ test("step: 設定で無効なステップは返らない（plan_review = false�
   const directory = built(t);
   configure(directory, "plan_review = false");
   write(directory, `${BUILD}/plan.md`);
-  assert.equal(report(directory, "plan", "--result", "done").step, "test-spec");
+  assert.equal(report(directory, "plan", "--result", "done", "--bp", "3").step, "test-spec");
   const off = cli(directory, "step", "report", "build-01", "plan-review", "001", "--result", "done");
   assert.equal(off.status, 1);
   assert.match(off.stderr, /行わないステップ/);
@@ -134,7 +133,6 @@ test("step: test-spec のスキップは理由が必須で、スキップする�
   const directive = report(directory, "test-spec", "--result", "skipped", "--reason", "ドキュメントのみ");
   assert.equal(directive.kind, "gate");
   assert.equal(directive.step, "G8");
-  assert.deepEqual(directive.binds, ["plan.md"]);
 });
 
 test("step: 再算出した BP が bp_max − 2 以上なら build-manager を呼ぶ", (t) => {
@@ -148,7 +146,7 @@ test("step: 再算出した BP が bp_max − 2 以上なら build-manager を�
   assert.equal(report(directory, "split", "--result", "done").step, "test-spec");
 });
 
-test("step: G8 の承認はハッシュに結びつき、実装前に plan.md が変わると取り直しになる", (t) => {
+test("step: G8 の承認は、差し戻しと報告し直しでだけ取り直しになる", (t) => {
   const directory = built(t);
   upToG8(directory);
   const rejected = cli(directory, "step", "report", "build-01", "G8", "001", "--result", "rejected");
@@ -160,18 +158,19 @@ test("step: G8 の承認はハッシュに結びつき、実装前に plan.md �
 
   const approved = report(directory, "G8", "--result", "approved", "--input", "OK");
   assert.equal(approved.step, "implement");
-  assert.deepEqual(Object.keys(events(directory).at(-1)?.["hashes"] as object), ["plan.md", "test-spec.md"]);
+  const last = events(directory).at(-1);
+  assert.equal(last?.["input"], "OK");
+  assert.equal(last?.["hashes"], undefined, "承認対象のハッシュは記録しない");
 
-  write(directory, `${BUILD}/plan.md`, "# plan（スコープ変更）\n");
-  const again = next(directory);
-  assert.equal(again.step, "G8");
-  assert.match(again.note ?? "", /承認したあとに成果物が変わっています/);
-
-  report(directory, "G8", "--result", "approved", "--input", "OK");
+  // 実装中のチェックボックスの更新など、承認後の plan.md の変更では巻き戻らない（変更は Git の履歴で追う）
+  write(directory, `${BUILD}/plan.md`, "# plan\n- [x] ステップ 1\n");
+  assert.equal(next(directory).step, "implement");
   report(directory, "implement", "--result", "done");
-  // 実装が進んだあと（PR のレビュー対応など）の修正では巻き戻らない
-  write(directory, `${BUILD}/plan.md`, "# plan（レビュー対応）\n");
   assert.equal(next(directory).step, "verify");
+
+  // 取り直すと決めたら、前のステップを報告し直す
+  report(directory, "plan", "--result", "done", "--bp", "3");
+  assert.equal(next(directory).step, "plan-review");
 });
 
 test("step: 前のステップをやり直すと、後ろのステップもやり直しになる", (t) => {
@@ -192,7 +191,7 @@ test("step: 前のステップをやり直すと、後ろのステップもや�
   rmSync(join(directory, BUILD, "test-spec.md"));
   assert.equal(next(directory).step, "plan");
   write(directory, `${BUILD}/plan.md`, "# plan v2\n");
-  report(directory, "plan", "--result", "done");
+  report(directory, "plan", "--result", "done", "--bp", "3");
   assert.equal(next(directory).step, "plan-review", "古い plan-review の完了は数えない");
 });
 
@@ -225,6 +224,29 @@ test("step: 差し戻し中（return.md）なら止まる", (t) => {
   assert.match(directive.message ?? "", /\/hikyaku:architect 001-test build-01/);
 });
 
+test("step: 差し戻し中（return.md）は、前に受け取った directive の報告も受け付けない", (t) => {
+  const directory = built(t);
+  write(directory, `${BUILD}/plan.md`);
+  write(directory, "docs/hikyaku/cycles/001-test/return.md", "# 差し戻し: build-01\n");
+  const result = cli(directory, "step", "report", "build-01", "plan", "001", "--result", "done", "--bp", "3");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /差し戻されています/);
+  assert.equal(existsSync(join(directory, BUILD, "progress.jsonl")), false);
+});
+
+test("step: plan の done には再算出した BP が必須（分割の検討を報告の漏れで飛ばさない）", (t) => {
+  const directory = built(t);
+  write(directory, `${BUILD}/plan.md`);
+  assert.match(next(directory).report?.["done"] ?? "", / --bp <再算出した BP>$/);
+  const missing = cli(directory, "step", "report", "build-01", "plan", "001", "--result", "done");
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /--bp/);
+  const directive = report(directory, "plan", "--result", "done", "--bp", "3");
+  assert.equal(directive.step, "plan-review");
+  assert.match(directive.report?.["done"] ?? "", /\[--bp <算出し直した BP>\]/, "plan-review では任意");
+  assert.equal(report(directory, "plan-review", "--result", "done").step, "test-spec");
+});
+
 test("step: PR 列が埋まるまで pr は完了にならず、最後まで進むと done", (t) => {
   const directory = built(t);
   configure(directory, 'retrospective = "skip"');
@@ -235,10 +257,33 @@ test("step: PR 列が埋まるまで pr は完了にならず、最後まで進�
   report(directory, "review", "--result", "done");
   write(directory, `${BUILD}/handoff.md`);
   report(directory, "handoff", "--result", "done");
-  const early = cli(directory, "step", "report", "build-01", "pr", "001", "--result", "done");
+  const early = cli(directory, "step", "report", "build-01", "pr", "001", "--result", "done", "--pr", "https://github.com/o/r/pull/1");
   assert.equal(early.status, 1);
   succeeds(directory, "tasklist", "done", "001", "--id", "1", "--pr", "https://github.com/o/r/pull/1");
-  assert.equal(report(directory, "pr", "--result", "done").kind, "done");
+  assert.match(next(directory).report?.["done"] ?? "", / --pr <PR の URL>$/);
+  const noPr = cli(directory, "step", "report", "build-01", "pr", "001", "--result", "done");
+  assert.equal(noPr.status, 1, "PR を添えない done は受け付けない");
+  assert.match(noPr.stderr, /--pr/);
+  const invalid = cli(directory, "step", "report", "build-01", "pr", "001", "--result", "done", "--pr", "あとで");
+  assert.equal(invalid.status, 1);
+  assert.match(invalid.stderr, /URL か番号/);
+  const misplaced = cli(directory, "step", "report", "build-01", "handoff", "001", "--result", "done", "--pr", "1");
+  assert.equal(misplaced.status, 1);
+  assert.match(misplaced.stderr, /--pr を添えられません/);
+  assert.equal(report(directory, "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1").kind, "done");
+  assert.equal(events(directory).at(-1)?.["pr"], "https://github.com/o/r/pull/1");
+});
+
+test("engine: PR を作るステップは、記録に PR の無い done を完了とみなさない", () => {
+  const skill: SkillSteps = { skill: "helper", steps: [{ id: "pr", kind: "run", title: "PR", recordsPr: true }] };
+  const at = "2026-11-13T00:00:00Z";
+  const ctx = (events: ProgressEvent[]): StepContext => ({
+    config: {} as StepContext["config"], cycle: undefined, unit: "init", unitDirectory: "/nonexistent", events,
+  });
+  const without = evaluate(skill, ctx([{ at, skill: "helper", step: "pr", result: "done" }]));
+  assert.equal(without.current?.definition.id, "pr");
+  assert.match(without.current?.note ?? "", /PR がありません/);
+  assert.equal(evaluate(skill, ctx([{ at, skill: "helper", step: "pr", result: "done", pr: "12" }])).current, undefined);
 });
 
 test("step: 区切りでは現在のセッションのコンテキストを目安と比べ、報告に記録する", (t) => {
@@ -316,7 +361,7 @@ test("step: 作業単位のディレクトリがまだ無くても進められ�
   assert.equal(existsSync(join(directory, BUILD)), false);
   assert.equal(next(directory).step, "plan");
   write(directory, `${BUILD}/plan.md`);
-  report(directory, "plan", "--result", "done");
+  report(directory, "plan", "--result", "done", "--bp", "3");
   assert.equal(existsSync(join(directory, BUILD, "progress.jsonl")), true);
 });
 
@@ -324,7 +369,7 @@ test("step: 前のステップに戻っても、記録のある後ろのステ�
   const directory = built(t);
   upToG8(directory);
   // plan を報告し直す（test-spec.md は残っている）
-  const directive = report(directory, "plan", "--result", "done");
+  const directive = report(directory, "plan", "--result", "done", "--bp", "3");
   assert.equal(directive.kind, "run");
   assert.equal(directive.step, "plan-review");
 });

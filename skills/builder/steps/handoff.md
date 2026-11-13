@@ -9,6 +9,3 @@
 handoff.md の後半は節ごとに昇格先が決まっている（overview・constraints・learnings・ADR）。
 どこに書くか迷う発見は、後から読む人が何を直すことになるかで節を選ぶと、close-cycle が
 仕分けし直さずに昇格させられる。あなたが永続ドキュメントを直接書き換えることはない。
-
-- [ ] `done` を報告する
-- [ ] コミット & push する（progress.jsonl も含める）

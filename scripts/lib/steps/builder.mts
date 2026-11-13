@@ -45,13 +45,13 @@ export const BUILDER_STEPS: SkillSteps = {
     ].join("\n");
   },
   steps: [
-    { id: "plan", kind: "run", title: "plan.md の作成と BP の再算出", produces: ["plan.md"], reportsBp: true },
+    { id: "plan", kind: "run", title: "plan.md の作成と BP の再算出", produces: ["plan.md"], bp: "required" },
     {
       id: "plan-review",
       kind: "run",
       title: "doc-reviewer による plan.md のレビュー",
       when: (ctx) => ctx.config.reviews.plan,
-      reportsBp: true,
+      bp: "optional",
     },
     {
       id: "split",
@@ -67,7 +67,6 @@ export const BUILDER_STEPS: SkillSteps = {
       kind: "gate",
       title: "plan.md 単独の承認",
       when: (ctx) => ctx.config.gates.plan,
-      binds: ["plan.md"],
       ask: "G7",
     },
     {
@@ -87,7 +86,6 @@ export const BUILDER_STEPS: SkillSteps = {
       id: "G8",
       kind: "gate",
       title: "plan.md と test-spec.md の承認",
-      binds: ["plan.md", "test-spec.md"],
       ask: "G8",
       checkpoint: "approval",
     },
@@ -101,7 +99,7 @@ export const BUILDER_STEPS: SkillSteps = {
       args: (ctx) => ({ codeReview: ctx.config.reviews.code, securityReview: ctx.config.reviews.security }),
     },
     { id: "handoff", kind: "run", title: "handoff.md の作成", produces: ["handoff.md"] },
-    { id: "pr", kind: "run", title: "PR の作成と完了の記録", evidence: prRecorded },
+    { id: "pr", kind: "run", title: "PR の作成と完了の記録", evidence: prRecorded, recordsPr: true },
     {
       id: "retrospective",
       kind: "call",

@@ -31,7 +31,6 @@ import { formatTokens, measureCurrent, smallWindowNotice, type CurrentContext } 
 import { requirePhase, scopeFor } from "../lib/stack.mts";
 import {
   allowedResults,
-  currentHashes,
   evaluate,
   hasEvidence,
   missingRequirement,
@@ -145,7 +144,6 @@ interface Directive {
   /** 差し戻されたゲートの、ユーザーの答え */
   revise?: string;
   ask?: string;
-  binds?: string[];
   call?: string;
   reason?: string;
   /** 呼ぶ内部スキルが step に移っていれば、そのスキルが最初に呼ぶコマンド */
@@ -167,8 +165,15 @@ function reportCommand(opened: Opened, step: string, result: StepResult): string
         : result === "approved"
           ? ' --input "<ユーザーの答え>"'
           : "";
-  const bp = result === "done" && opened.skill.steps.find((definition) => definition.id === step)?.reportsBp === true ? " [--bp <再算出した BP>]" : "";
-  return `${CLI} step report ${opened.phase} ${step}${cycleArg(opened.ctx)}${skillArg(opened)} --result ${result}${extra}${bp}`;
+  const definition = opened.skill.steps.find((entry) => entry.id === step);
+  const bp =
+    result !== "done" || definition?.bp === undefined
+      ? ""
+      : definition.bp === "required"
+        ? " --bp <再算出した BP>"
+        : " [--bp <算出し直した BP>]";
+  const pr = result === "done" && definition?.recordsPr === true ? " --pr <PR の URL>" : "";
+  return `${CLI} step report ${opened.phase} ${step}${cycleArg(opened.ctx)}${skillArg(opened)} --result ${result}${extra}${bp}${pr}`;
 }
 
 function progressOf(evaluation: Evaluation): { complete: number; total: number } {
@@ -235,7 +240,6 @@ function buildDirective(opened: Opened, evaluation: Evaluation): Directive {
   if (current.revise !== undefined) directive.revise = current.revise;
   if (definition.kind === "gate") {
     directive.ask = definition.ask ?? definition.id;
-    directive.binds = Object.keys(currentHashes(definition, ctx));
   }
   if (definition.kind === "call") {
     directive.call = definition.call ?? "";
@@ -267,7 +271,6 @@ function renderDirective(directive: Directive): string {
   lines.push(head, "", `${directive.kind}: ${directive.step}（${directive.title}）`, `指示: ${directive.read} を読んで行う`);
   if (directive.kind === "gate") {
     lines.push(`問いの ID: ${directive.ask}`);
-    if ((directive.binds ?? []).length > 0) lines.push(`承認に結びつくファイル: ${(directive.binds ?? []).join(", ")}`);
   }
   if (directive.kind === "call") {
     lines.push(`呼ぶスキル: /hikyaku:${directive.call}`, `理由: ${directive.reason}`);
@@ -318,8 +321,7 @@ register({
     "同じ状態なら何度呼んでも同じものを返すので、迷ったら呼び直してください。",
     "",
     "  run    ステップを行う。指示ファイル（read）を読み、終えたら report のコマンドで返す",
-    "  gate   ユーザーに承認を求める。承認は結びつくファイル（binds）のハッシュと一緒に記録され、",
-    "         承認後にファイルが変わると無効になる",
+    "  gate   ユーザーに承認を求める。承認は差し戻すか前のステップを報告し直すまで有効",
     "  call   内部スキル（call）を呼ぶ。終えたら呼び出し元が report で返す",
     "  done   手順をすべて終えた",
     "  stop   止まる。message をユーザーに伝えて終了する",
@@ -343,20 +345,22 @@ register({
   name: "step report",
   summary: "1手の結果を進捗に記録し、次の1手を返す",
   usage:
-    "hikyaku step report <phase> <step> [<cycle>] [--skill <内部スキル>] --result done|skipped|approved|rejected|failed [--reason <理由>] [--input <答え>] [--bp <N>] [--dry-run] [--json]",
+    "hikyaku step report <phase> <step> [<cycle>] [--skill <内部スキル>] --result done|skipped|approved|rejected|failed [--reason <理由>] [--input <答え>] [--bp <N>] [--pr <URL|番号>] [--dry-run] [--json]",
   writes: true,
   details: [
     "作業単位のディレクトリの progress.jsonl に1行追記します。報告できるのは現在地のステップと、",
     "完了したステップの done の報告し直し（成果物を作り直したとき）です。報告し直すと、",
     "そこから後ろのステップはやり直しになります（承認も取り直し）。",
+    "手順に入る前に止まる状態（builder の差し戻し中など）では、報告を受け付けません。",
     "",
     "  done      ステップを終えた。成果物が要るステップは、成果物が無ければ受け付けない",
     "  skipped   スキップした。--reason が必須。スキップできるステップだけ",
-    "  approved  ゲートの承認。結びつくファイルのハッシュを記録する",
+    "  approved  ゲートの承認。--input にユーザーの答えを添えられる",
     "  rejected  ゲートの差し戻し。--input にユーザーの答えが必須",
     "  failed    失敗した。--reason が必須。現在地は動かない",
     "",
-    "--bp は plan / plan-review で、再算出した BP を添えるときに使います（分割の検討の判定に使う）。",
+    "--bp は再算出した BP です（分割の検討の判定に使う）。plan の done では必須、plan-review では任意です。",
+    "--pr は作った PR の URL か番号です。PR を作るステップ（pr）の done では必須です。",
     "記録には、報告した時点のコンテキスト・セッション ID・Hikyaku の版が入ります（#68）。",
     "progress.jsonl は成果物と一緒にコミットしてください。",
   ].join("\n"),
@@ -394,6 +398,9 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
 
   const legacy = legacyCycleMessage(opened.ctx);
   if (legacy !== undefined) throw new HikyakuError(legacy);
+  // step next が stop を返す状態（差し戻し中など）では、前に受け取った directive の報告も受け付けない
+  const stopped = opened.skill.stop?.(opened.ctx);
+  if (stopped !== undefined) throw new HikyakuError(stopped);
   if (evaluated.status === "off") {
     throw new HikyakuError(`${definition.id} は、このサイクルの設定では行わないステップです`);
   }
@@ -434,14 +441,27 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
   const event: ProgressEvent = { at: new Date().toISOString(), skill: opened.skill.skill, step: definition.id, result };
   if (reason !== undefined) event.reason = reason;
   if (input !== undefined) event.input = input;
-  if (result === "approved") event.hashes = currentHashes(definition, opened.ctx);
 
   const bpRaw = flagString(args, "bp");
   if (bpRaw !== undefined) {
-    if (definition.reportsBp !== true) throw new HikyakuError(`${definition.id} には --bp を添えられません`);
+    if (definition.bp === undefined) throw new HikyakuError(`${definition.id} には --bp を添えられません`);
     const bp = Number(bpRaw);
     if (!Number.isInteger(bp) || bp < 0) throw new HikyakuError(`--bp は0以上の整数で指定してください（現在: ${bpRaw}）`);
     event.bp = bp;
+  } else if (definition.bp === "required" && result === "done") {
+    // BP が無いと分割の検討（split）の判定ができず、報告の漏れで分割の検討を飛ばせてしまう
+    throw new HikyakuError(`${definition.id} の done には --bp で再算出した BP を添えてください`);
+  }
+
+  const prRaw = flagString(args, "pr");
+  if (prRaw !== undefined) {
+    if (definition.recordsPr !== true) throw new HikyakuError(`${definition.id} には --pr を添えられません`);
+    if (!isPrReference(prRaw)) {
+      throw new HikyakuError(`--pr は PR の URL か番号で指定してください（現在: ${prRaw}）`, "例: --pr https://github.com/owner/repo/pull/12 / --pr 12");
+    }
+    event.pr = prRaw.trim();
+  } else if (definition.recordsPr === true && result === "done") {
+    throw new HikyakuError(`${definition.id} の done には --pr で作った PR の URL を添えてください`);
   }
 
   const measured = measureCurrent(process.env);
@@ -450,6 +470,12 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
   if (measured.sessionId !== undefined) event.session = measured.sessionId;
   event.hikyaku = pluginVersion();
   return event;
+}
+
+/** PR の URL か番号（12 / #12）。実在の確認はしない（ネットワークへ行かない） */
+function isPrReference(value: string): boolean {
+  const trimmed = value.trim();
+  return /^#?\d+$/.test(trimmed) || /^https?:\/\/\S+$/.test(trimmed);
 }
 
 register({

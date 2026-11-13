@@ -41,7 +41,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist done {cycle} \
 
 PR を作ってからでないと URL が無い。だから PR 作成が先で、PR 列の更新は後になる。
 
-- [ ] `done` を報告する（PR 列が埋まっていないと受け付けない）
+- [ ] `done` を報告する（`--pr` に PR の URL）
 - [ ] 同じブランチへコミット & push する（tasklist.md と progress.jsonl）
 
 **この変更は必ずこのビルドの PR に同梱する。** 先にデフォルトブランチへ入れると、

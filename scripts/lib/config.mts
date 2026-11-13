@@ -933,11 +933,33 @@ function readBpActual(table: TomlTable | undefined): ActualPatterns {
   return { exclude: read("exclude", DEFAULT_ACTUAL_EXCLUDE), tests: read("tests", DEFAULT_ACTUAL_TESTS) };
 }
 
+/**
+ * トークン数の指定。整数（250000）か、k / m の単位を付けた文字列（"250k"・"1.2m"）で書ける。
+ * 引用符の無い 250k は TOML として不正なので、単位を付けるときは文字列にする
+ */
+export function parseTokenCount(value: unknown): number | undefined {
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : undefined;
+  if (typeof value !== "string") return undefined;
+  const match = /^\s*(\d+(?:\.\d+)?)\s*([kKmM]?)\s*$/.exec(value);
+  if (match === null) return undefined;
+  const unit = (match[2] ?? "").toLowerCase();
+  const scale = unit === "k" ? 1_000 : unit === "m" ? 1_000_000 : 1;
+  const tokens = Number(match[1]) * scale;
+  return Number.isInteger(tokens) && tokens > 0 ? tokens : undefined;
+}
+
 function readContextBudget(table: TomlTable | undefined): ContextBudget {
   const where = "[context]";
   const read = (key: keyof ContextBudget): number => {
-    const value = readInteger(table, key, where) ?? DEFAULT_CONTEXT_BUDGET[key];
-    if (value <= 0) throw new HikyakuError(`${where}.${key} は正の整数で指定してください`);
+    const raw = table?.[key];
+    if (raw === undefined) return DEFAULT_CONTEXT_BUDGET[key];
+    const value = parseTokenCount(raw);
+    if (value === undefined) {
+      throw new HikyakuError(
+        `${where}.${key} はトークン数で指定してください（現在: ${JSON.stringify(raw)}）`,
+        '正の整数（250000）か、k / m の単位を付けた文字列（"250k"）で書いてください。',
+      );
+    }
     return value;
   };
   return { approval: read("approval"), implement: read("implement"), review: read("review") };

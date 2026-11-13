@@ -10,7 +10,6 @@
  * 別のセッション・別のマシンから再開したときも、ここから続きを導出できる。
  */
 
-import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { HikyakuError } from "./errors.mts";
@@ -38,12 +37,12 @@ export interface ProgressEvent {
   reason?: string;
   /** ゲートでのユーザーの答え */
   input?: string;
-  /** 承認に結びつけた成果物のハッシュ（作業単位のディレクトリからの相対パス → sha256 の先頭12桁） */
-  hashes?: Record<string, string>;
   /** step restart で始めた回の種類（architect の return / add など）。スキルが定義で読む */
   round?: string;
   /** 報告で添えた BP（plan / plan-review） */
   bp?: number;
+  /** 報告で添えた PR（URL か番号。pr ステップ） */
+  pr?: string;
   /** 報告した時点のメインセッションのコンテキスト（#68）。計測できなければ記録しない */
   context?: number;
   /** 計測できなかった理由 */
@@ -102,11 +101,4 @@ export function appendProgress(unitDirectory: string, event: ProgressEvent): voi
   const path = progressPath(unitDirectory);
   mkdirSync(dirname(path), { recursive: true });
   appendFileSync(path, `${JSON.stringify(event)}\n`, "utf8");
-}
-
-/** 承認に結びつけるハッシュ。改行コードの違いで承認が外れないよう、LF に揃えてから計算する */
-export function fileHash(path: string): string | undefined {
-  if (!existsSync(path)) return undefined;
-  const text = readFileSync(path, "utf8").replace(/\r\n/g, "\n");
-  return createHash("sha256").update(text).digest("hex").slice(0, 12);
 }

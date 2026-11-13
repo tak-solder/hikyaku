@@ -22,5 +22,4 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" bp estimate {cycle} \
 
   - 加算要素を落とさない。過小見積もりの多くは、影響ファイル数・基盤セットアップ・
     外部API連携・大規模リファクタの取りこぼしから来る。使える入力は `bp guide {cycle}` の「入力」列
-- [ ] `done` を報告する。**再算出した BP を `--bp` に添える**（分割の検討が要るかは step が判定する）
-- [ ] コミット & push する（progress.jsonl も含める）
+- [ ] 再算出した BP を、報告の `--bp` に添える

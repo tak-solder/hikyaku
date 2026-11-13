@@ -15,8 +15,9 @@
  *   - 成果物が要るステップは、成果物が無ければ完了イベントがあっても未完了
  *   - 完了したステップを報告し直すと（成果物を作り直したとき）、そこから後ろはやり直しになる
  *   - step restart の区切りより前の記録は使わない（同じ作業単位で手順を回し直すとき）
- *   - ゲートの承認は、承認した時点の成果物のハッシュと一致するときだけ有効。ただし
- *     承認のあとに後ろのステップが完了していれば、そのまま有効とする
+ *   - ゲートの承認は、差し戻すか前のステップを報告し直すまで有効。承認したあとの成果物の
+ *     変更は Git の履歴で追い、取り直すかは変更のレビューで決める（成果物のハッシュで自動的に
+ *     無効にすると、plan.md のチェックボックスの更新のような通常の作業でも巻き戻るため）
  *
  * 判定はすべてここで行い、LLM には結果（directive）だけを渡す。条件の分岐を SKILL.md の
  * 文章で書くと、省略や取り違えが起きるため。
@@ -26,7 +27,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Phase } from "../branch.mts";
 import type { ContextBudget, ResolvedConfig } from "../config.mts";
-import { fileHash, RESTART, type ProgressEvent, type StepResult } from "../progress.mts";
+import { RESTART, type ProgressEvent, type StepResult } from "../progress.mts";
 import type { CycleContext } from "../workspace.mts";
 
 export type StepKind = "run" | "gate" | "call";
@@ -60,8 +61,6 @@ export interface StepDefinition {
    * 満たさないなら、何が足りないかを返す
    */
   requires?: (ctx: StepContext) => string | undefined;
-  /** ゲートが結びつくファイル（作業単位からの相対パス）。存在するものだけ結びつける */
-  binds?: string[];
   /** ゲートの問いの ID（conductor の ASKS） */
   ask?: string;
   /** call で呼ぶ内部スキル */
@@ -72,8 +71,10 @@ export interface StepDefinition {
   skippable?: boolean;
   /** このステップに入るときに、コンテキストを目安と比べる区切り（#68） */
   checkpoint?: keyof ContextBudget;
-  /** 報告で BP を添えられるか */
-  reportsBp?: boolean;
+  /** 報告で BP を添えるか。required なら done に --bp が必須、optional なら任意 */
+  bp?: "required" | "optional";
+  /** done に --pr（作った PR の URL か番号）が必須か。記録に PR が無い done は完了とみなさない */
+  recordsPr?: boolean;
   /** 設定から解決して指示に添える値 */
   args?: (ctx: StepContext) => Record<string, unknown>;
 }
@@ -154,42 +155,6 @@ function hasAnyArtifact(definition: StepDefinition, ctx: StepContext): boolean {
   return produced || (definition.evidence !== undefined && definition.evidence(ctx));
 }
 
-/** ゲートが結びつくファイルの現在のハッシュ。存在するファイルだけ */
-export function currentHashes(definition: StepDefinition, ctx: StepContext): Record<string, string> {
-  const hashes: Record<string, string> = {};
-  for (const path of definition.binds ?? []) {
-    const hash = fileHash(join(ctx.unitDirectory, path));
-    if (hash !== undefined) hashes[path] = hash;
-  }
-  return hashes;
-}
-
-function sameHashes(a: Record<string, string> | undefined, b: Record<string, string>): boolean {
-  const left = a ?? {};
-  const keys = new Set([...Object.keys(left), ...Object.keys(b)]);
-  return [...keys].every((key) => left[key] === b[key]);
-}
-
-/**
- * 承認のあとに、後ろのステップが完了しているか。完了していれば、承認した成果物の上で
- * 作業が進んでいるので、成果物が変わっても承認を取り直させない（PR のレビュー対応で
- * plan.md を直したときに、手順が G8 まで巻き戻らないため）
- */
-function proceededAfter(
-  skill: SkillSteps,
-  gate: StepDefinition,
-  indexed: { event: ProgressEvent; index: number }[],
-  approvedAt: number,
-): boolean {
-  const later = skill.steps.slice(skill.steps.indexOf(gate) + 1);
-  return indexed.some(
-    ({ event, index }) =>
-      index > approvedAt &&
-      event.skill === skill.skill &&
-      later.some((step) => step.id === event.step && COMPLETING[step.kind].includes(event.result)),
-  );
-}
-
 export function evaluate(skill: SkillSteps, ctx: StepContext): Evaluation {
   const steps: EvaluatedStep[] = [];
   // 前のステップを完了とみなしたイベントの位置。これより後のイベントだけが有効。
@@ -223,15 +188,6 @@ export function evaluate(skill: SkillSteps, ctx: StepContext): Evaluation {
           definition, status: "pending", event: latest.event,
           note: "差し戻されています。答えに沿って直してから、提示し直してください", revise: latest.event.input ?? "",
         };
-      } else if (
-        latest.event.result === "approved" &&
-        !sameHashes(latest.event.hashes, currentHashes(definition, ctx)) &&
-        !proceededAfter(skill, definition, indexed, latest.index)
-      ) {
-        evaluated = {
-          definition, status: "pending", event: latest.event,
-          note: "承認したあとに成果物が変わっています。提示し直して承認を取り直してください", revise: undefined,
-        };
       } else if (latest.event.result === "approved") {
         evaluated = { definition, status: "complete", event: latest.event, note: undefined, revise: undefined };
         floor = latest.index;
@@ -242,6 +198,11 @@ export function evaluate(skill: SkillSteps, ctx: StepContext): Evaluation {
       if (latest.event.result === "skipped") {
         evaluated = { definition, status: "skipped", event: latest.event, note: undefined, revise: undefined };
         floor = latest.index;
+      } else if (definition.recordsPr === true && latest.event.pr === undefined) {
+        evaluated = {
+          definition, status: "pending", event: latest.event,
+          note: "完了の記録に PR がありません。--pr に PR の URL を添えて報告し直してください", revise: undefined,
+        };
       } else if (!hasEvidence(definition, ctx)) {
         evaluated = {
           definition, status: "pending", event: latest.event,
