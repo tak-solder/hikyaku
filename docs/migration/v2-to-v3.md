@@ -38,7 +38,7 @@ v3 では BP（ビルドポイント）を廃止し、ビルドの大きさを�
 
 BP と予測ピークは別の量で換算できないため、次のものは自動では移行しません。
 
-- `.hikyaku.config` の `bp_max` はエラーになります。削除してください。分割を検討する境目は `[context] split_above`（既定 450k）、統合を検討する境目は `merge_below`（既定 300k）です
+- リポジトリルートの `.hikyaku.config` の `bp_max` はエラーになります。削除してください。分割を検討する境目は `[context] split_above`（既定 450k）、統合を検討する境目は `merge_below`（既定 300k）です。閉じたサイクルの `.hikyaku.config` に残っている `bp_max` と `[bp_actual]` は履歴として読み飛ばすので、消さなくて構いません。進行中のサイクルに残っていると、そのサイクルの v3 の作業（`step`・`tokens estimate`・`tasklist` の書き込み）が止まり、`hikyaku validate` も知らせます
 - `{HIKYAKU_ROOT}/bp-guide/`（`rules.toml`・`README.md`・`cases.toml`）は読まれません。`README.md` にリポジトリ固有の数え方の注意を書いていた場合は、`/hikyaku:token-guide` で見積もりのガイド（`{HIKYAKU_ROOT}/token-guide/guide.md`）の言葉に書き直してから、`bp-guide/` を削除してください。残っているあいだは `hikyaku doctor` が注意を出します
 - `hikyaku bp` のコマンドは `hikyaku tokens` に置き換わりました。`bp guide` は `tokens guide`、`bp estimate` は `tokens estimate`（成分の合計）、`bp history` は `tokens history`、`bp actual` は `tokens history build-NN` です。`bp render`・`bp test` は無くなり、ガイドの版の更新は `tokens stamp` が行います。セッションの実測には `tokens session` が加わりました
 - `step report` と `tasklist add / update` の `--bp` は `--peak <トークン数>` になりました

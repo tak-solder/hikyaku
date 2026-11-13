@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { flagBoolean, flagString, type ParsedArgs } from "../lib/args.mts";
 import { branchName } from "../lib/branch.mts";
-import { loadConfig, type ResolvedConfig } from "../lib/config.mts";
+import { assertCurrentConfig, loadConfig, type ResolvedConfig } from "../lib/config.mts";
 import { cycleDirName, loadCycles } from "../lib/cycles.mts";
 import { renderDiffMarkdown, summarizeDiff } from "../lib/diff-stats.mts";
 import { HikyakuError } from "../lib/errors.mts";
@@ -223,6 +223,7 @@ register({
       );
     }
     const config = configFor(args, operands[0]);
+    assertCurrentConfig(config);
     const guide = loadTokenGuide(config.hikyakuRoot);
     const values = Object.fromEntries(
       COMPONENTS.map((c) => [c.key, { tokens: readComponentTokens(args, c.key), basis: flagString(args, `${c.key}-basis`) }]),

@@ -87,6 +87,12 @@ export function nextCommand(opened: Opened): string {
   return `${CLI} step next ${opened.phase}${cycleArg(opened.ctx)}${skillArg(opened)}`;
 }
 
+/** サイクル設定に v3 で廃止したキー（bp_max など）が残っていれば、移行の案内 */
+export function retiredConfigMessage(ctx: StepContext): string | undefined {
+  const [first] = ctx.config.retired;
+  return first === undefined ? undefined : [first.message, first.hint].filter(Boolean).join("\n");
+}
+
 export function legacyCycleMessage(cycle: CycleContext | undefined): string | undefined {
   if (cycle === undefined) return undefined;
   const version = cycle.record.hikyaku;
@@ -194,6 +200,8 @@ export function buildDirective(opened: Opened, evaluation: Evaluation, options: 
 
   const legacy = legacyCycleMessage(ctx.cycle);
   if (legacy !== undefined) return { ...base, kind: "stop", message: legacy };
+  const retired = retiredConfigMessage(ctx);
+  if (retired !== undefined) return { ...base, kind: "stop", message: retired };
 
   const stopped = skill.stop?.(ctx);
   if (stopped !== undefined) return { ...base, kind: "stop", message: stopped };

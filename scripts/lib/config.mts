@@ -364,6 +364,11 @@ export interface ResolvedConfig {
   askAtCreate: AskKey[];
   /** 読み込んだ設定ファイルのパス（デバッグ用） */
   sources: string[];
+  /**
+   * サイクル設定に残っている v3 で廃止したキーのエラー。読むだけの操作では無視し、
+   * v3 の作業に使うときに assertCurrentConfig で止める
+   */
+  retired: HikyakuError[];
 }
 
 /**
@@ -871,7 +876,6 @@ function loadFile(path: string): TomlTable | undefined {
 
 /** v1 の設定キーを検出して、移行を促す */
 function checkLegacyKeys(table: TomlTable, path: string): { docRoot?: string } {
-  assertNoRetiredKeys(table, path);
   if (table["issue_backend"] !== undefined) {
     throw new HikyakuError(
       `${path}: issue_backend は v2.0.0 で廃止されました`,
@@ -995,26 +999,42 @@ function readPeakBands(table: TomlTable | undefined): PeakBands {
   return bands;
 }
 
+/** v3 で廃止したキー */
+const RETIRED_KEYS = ["bp_max", "bp_actual"] as const;
+
 /**
- * v3 で廃止したキー。黙って無視すると「設定したのに効かない」になるので、移行先を示して止める
+ * v3 で廃止したキーの、移行先を示すエラー。黙って無視すると「設定したのに効かない」になるので、
+ * v3 の作業に使う設定からは必ず止める（ルート設定は読んだ時点、サイクル設定は assertCurrentConfig で）
  */
-function assertNoRetiredKeys(table: TomlTable, where: string): void {
+function retiredKeyErrors(table: TomlTable, where: string): HikyakuError[] {
+  const errors: HikyakuError[] = [];
   if (table["bp_max"] !== undefined) {
-    throw new HikyakuError(
+    errors.push(new HikyakuError(
       `${where}: bp_max は v3 で廃止しました`,
       [
         "ビルドの大きさは BP ではなく、メインセッションのコンテキストの予測ピーク（トークン）で判定します。",
         '分割を検討する境目は [context] split_above（既定 "450k"）、統合を検討する境目は merge_below（既定 "300k"）です。',
         "bp_max を削除してください（docs/migration/v2-to-v3.md）。",
       ].join("\n"),
-    );
+    ));
   }
   if (table["bp_actual"] !== undefined) {
-    throw new HikyakuError(
+    errors.push(new HikyakuError(
       `${where}: [bp_actual] は [diff] に改名しました`,
       "exclude / tests の書き方は同じです。テーブル名を [diff] に変えてください。",
-    );
+    ));
   }
+  return errors;
+}
+
+/**
+ * サイクル設定に残った廃止キーを、v3 の作業（step の手順・予測ピークの見積もり・tasklist の書き込み）に
+ * 使う前に止める。読むだけの操作（cycle list / status、validate の閉じたサイクル）では止めない。
+ * 閉じた v2 のサイクルの設定には bp_max が残っていてよく、それで全体の操作が止まらないようにするため
+ */
+export function assertCurrentConfig(config: ResolvedConfig): void {
+  const [first] = config.retired;
+  if (first !== undefined) throw first;
 }
 
 function readDataIntegrity(table: TomlTable | undefined): DataIntegrityConfig {
@@ -1103,6 +1123,9 @@ export function loadConfig(options: LoadOptions = {}): ResolvedConfig {
     );
   }
   const legacy = repoConfig ? checkLegacyKeys(repoConfig, repoConfigPath) : {};
+  // ルート設定は全サイクルに効くので、読んだ時点で止める
+  const [retiredAtRoot] = repoConfig ? retiredKeyErrors(repoConfig, repoConfigPath) : [];
+  if (retiredAtRoot !== undefined) throw retiredAtRoot;
   const askDeclared = readAskKeys(repoConfig, repoConfigPath);
 
   // HIKYAKU_ROOT: --root → config の hikyaku_root（旧 doc_root）
@@ -1152,19 +1175,23 @@ export function loadConfig(options: LoadOptions = {}): ResolvedConfig {
   // 宣言されたキーのうち、そのサイクルがまだ答えていないもの。
   // サイクルが決まっていない（create-cycle 前）なら宣言そのまま
   let askAtCreate = askDeclared;
+  let retired: HikyakuError[] = [];
   if (options.cycleDir !== undefined) {
     const cycleConfigPath = join(options.cycleDir, ".hikyaku.config");
     const cycleConfig = loadFile(cycleConfigPath);
     if (cycleConfig) {
       sources.push(cycleConfigPath);
       checkLegacyKeys(cycleConfig, cycleConfigPath);
+      // 閉じた v2 のサイクルにも残りうるので、ここでは止めずに記録し、v3 の作業に使うときに止める
+      retired = retiredKeyErrors(cycleConfig, cycleConfigPath);
+      for (const key of RETIRED_KEYS) delete cycleConfig[key];
       assertCycleOverridable(cycleConfig, cycleConfigPath);
       askAtCreate = askDeclared.filter((key) => readDotted(cycleConfig, key) === undefined);
       merged = mergeTables(merged, cycleConfig);
     }
   }
 
-  return finalize(merged, root, hikyakuRoot, sources, options.profileOverride, askAtCreate);
+  return { ...finalize(merged, root, hikyakuRoot, sources, options.profileOverride, askAtCreate), retired };
 }
 
 /**
@@ -1258,5 +1285,6 @@ function finalize(
     peakBands: readPeakBands(readTable(merged, "context")),
     askAtCreate,
     sources,
+    retired: [],
   };
 }

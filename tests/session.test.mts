@@ -417,8 +417,8 @@ test("CLI: tokens history は予測と実測を並べ、--group-by でモデル�
   ]));
 
   const text = succeeds(directory, "tokens", "history");
-  assert.match(text, /312k/);
-  assert.match(text, /-88k/);
+  assert.match(text, /312\.4k/, "実測は丸めずに出す");
+  assert.match(text, /-87\.6k/);
   assert.match(text, /0\.78/);
   const grouped = JSON.parse(succeeds(directory, "tokens", "history", "--group-by", "model", "--json"));
   assert.deepEqual(grouped.groups.map((g: { key: string; count: number }) => [g.key, g.count]), [

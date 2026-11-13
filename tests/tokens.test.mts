@@ -31,6 +31,12 @@ test("tokens: トークン数を整数・カンマ区切り・k / m の単位で
   assert.equal(formatK(380_000), "380k");
   assert.equal(formatK(999), "999");
   assert.equal(formatK(undefined), "—");
+  // 表の値は --peak や tasklist にそのまま渡り、帯と比べ直されるので丸めない
+  for (const value of [450_400, 450_401, 450_010, 1_234_567, 1_000, 0]) {
+    assert.equal(parseTokenAmount(formatK(value)), value, String(value));
+  }
+  assert.equal(formatK(450_400), "450.4k");
+  assert.equal(formatK(450_010), "450.01k");
 });
 
 test("tokens: 成分を合計し、帯の境目を含めて判定する", () => {

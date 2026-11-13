@@ -59,6 +59,8 @@ hikyaku validate
 
 `.hikyaku.config` に v2 の設定が残っています。ビルドの大きさは BP ではなく予測ピーク（トークン）で判定するようになり、境目は `[context]` の `merge_below` / `split_above` で決めます。`bp_max` を削除し、`[bp_actual]` はテーブル名を `[diff]` に変えてください（[設定](../configuration/config-file.md#context)）。黙って無視しないのは、「設定したのに効かない」が最も気づきにくい壊れ方だからです。
 
+リポジトリルートの設定に残っていると、すべてのコマンドが止まります。サイクルの設定に残っている場合は、そのサイクルで v3 の作業（`step`・`tokens estimate`・`tasklist` の書き込み）をしようとしたときだけ止まります。閉じたサイクルの設定は履歴として読み飛ばすので、`cycle list` や `validate` は止まりません。
+
 ### 本文が hash と合いません
 
 `{HIKYAKU_ROOT}/token-guide/guide.md` の本文を変えたあと、版を上げていません。`hikyaku tokens stamp` を実行してください。版を上げずに本文だけを変えると、補正の前と後の予測が同じ版として記録され、`tokens history --group-by guide` で区別できなくなります。先頭の `---` の間を手で直した場合も同じで、直すのは本文だけにして `tokens stamp` に任せます（[予測ピークと見積もりのガイド](../configuration/token-guide.md#ガイドの版)）。

@@ -42,7 +42,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **Stop フック**（`hooks/hooks.json` → `hikyaku step hook stop`）: スキルの手順の途中でセッションが止まろうとしたら、1回だけ続きを促す。止めるのは、そのセッションが手順を進めていて（`progress.jsonl` にそのセッションの ID がある）、次の1手が `run` か `call` のときだけ。内部スキルを呼んでいる最中は、呼ばれたスキルの1手で判定する（`call` のほか、`run` のステップの中から呼んだときや、手順を終えたあとに呼び直したときも含む）。`cycle close` で終えたサイクルも、CLOSE の手順が PR まで残っていれば見る。`gate` / `done` / `stop`、同じターンの2回目（`stop_hook_active`）、非対話規約のブロックで終えた出力では止めない。判定できないときも止めず、終了コードは常に 0（[#50](https://github.com/tak-solder/hikyaku/issues/50)）
 - **`hikyaku step where [<cycle>]`**: このチェックアウトの作業ツリーにある `progress.jsonl` を読み、記録のある作業単位ごとに `step next` と同じ1手を返す。指定したサイクルの作業単位だけを並べ（init / token-guide は混ぜない）、終えたサイクルも読む。close-cycle の最初の振り返りの途中も、close-cycle の作業単位として並べる。v2 で作成したサイクルでは `legacy` に案内を返す
 - **予測ピーク**: ビルドの大きさを、BP ではなくメインセッションのコンテキストのピークの予測（トークン）で判定する。予測は固定費・読み込み・実装・テスト・未知の領域の5成分の和で、build-manager と builder が見積もりのガイドに沿って成分ごとにトークンと根拠を出し、CLI が合計・判定・記録を行う。判定は `[context]` の帯で、既定では 300k 未満が統合を検討（推奨のみ）、300k〜450k が狙い、450k 超が分割を検討（原則として分割）。BP は表が外れると見積もりと実績が同じように外れ、校正できなかったため（[#68](https://github.com/tak-solder/hikyaku/issues/68)）
-- **`hikyaku tokens estimate [<cycle>] --fixed --reading --implementation --tests --unknown`**: 成分の予測を合計し、予測ピークと判定を返す。5成分すべてが必須（該当しなければ 0）。`--<成分>-basis` で根拠を添える。`--markdown` の表の最後の行に、見積もりに使ったガイドの版とハッシュが入る
+- **`hikyaku tokens estimate [<cycle>] --fixed --reading --implementation --tests --unknown`**: 成分の予測を合計し、予測ピークと判定を返す。表と tasklist の値は k 単位で書くが丸めない（`450.4k`）ので、そのまま `--peak` に渡しても判定は変わらない。5成分すべてが必須（該当しなければ 0）。`--<成分>-basis` で根拠を添える。`--markdown` の表の最後の行に、見積もりに使ったガイドの版とハッシュが入る
 - **`hikyaku tokens guide [<cycle>]`**: 有効なガイド（プロジェクトの `{HIKYAKU_ROOT}/token-guide/guide.md` か、標準の `skills/build-manager/references/token-guide.md`）と、その版・ハッシュ・判定の帯を返す
 - **`hikyaku tokens stamp`**: プロジェクトのガイドの版を上げる。無ければ標準の本文をコピーして version 1・`based_on` 付きで作り、本文が変わっていれば version を上げて hash を合わせる。`--dry-run` あり
 - **見積もりのガイドの版**: ガイドの先頭に `version`・`based_on`・`hash`（本文のハッシュ）を持つ。hash が本文と合わないガイドは `validate`・`doctor`・ガイドを書き込むステップ（close-cycle の `write`・token-guide の `write` / `pr`）が止める
@@ -89,14 +89,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Removed
 
-- BP（ビルドポイント）と `bp_max` 設定。`.hikyaku.config` に `bp_max` があるとエラーになる
+- BP（ビルドポイント）と `bp_max` 設定。リポジトリルートの `.hikyaku.config` に `bp_max` があるとエラーになる。サイクルの設定では、v3 の作業に使うときだけエラーになる
 - `hikyaku bp guide / estimate / render / test / actual / history`（`hikyaku tokens` に置き換え）と、`{HIKYAKU_ROOT}/bp-guide/` の基準表（`rules.toml` / `README.md` / `cases.toml`）。CI の `bp test --builtin` も外した
 - `/hikyaku:bp-guide`（`/hikyaku:token-guide` に置き換え）。ブランチのフェーズ名 `bp-guide` と、`[pr] reviewers_skip` の `bp-guide` も `token-guide` になった
 - `step report` / `tasklist add` / `tasklist update` の `--bp`（`--peak` に置き換え）
 
 ### Migration
 
-- **BP は予測ピークに置き換わり、換算できないので自動では移行しない。** `.hikyaku.config` の `bp_max` を削除する（分割の境目は `[context] split_above`、既定 450k）。`{HIKYAKU_ROOT}/bp-guide/README.md` にリポジトリ固有の数え方を書いていたら、`/hikyaku:token-guide` で見積もりのガイドに書き直してから `bp-guide/` を削除する。`[pr] reviewers_skip` の `bp-guide` は `token-guide` に直す（`docs/migration/v2-to-v3.md`）
+- **BP は予測ピークに置き換わり、換算できないので自動では移行しない。** リポジトリルートの `.hikyaku.config` の `bp_max` を削除する（閉じたサイクルの `.hikyaku.config` に残った `bp_max` / `[bp_actual]` は履歴として読み飛ばす。進行中のサイクルに残っていると、そのサイクルの `step`・`tokens estimate`・`tasklist` の書き込みが止まり、`validate` も知らせる）（分割の境目は `[context] split_above`、既定 450k）。`{HIKYAKU_ROOT}/bp-guide/README.md` にリポジトリ固有の数え方を書いていたら、`/hikyaku:token-guide` で見積もりのガイドに書き直してから `bp-guide/` を削除する。`[pr] reviewers_skip` の `bp-guide` は `token-guide` に直す（`docs/migration/v2-to-v3.md`）
 - 見積もりのガイドは、無ければ標準で動くので、置かなくてよい。close-cycle の昇格か `/hikyaku:token-guide` が補正するときに作られる
 - **v2 で作成したサイクルは、v3 の各フェーズ（planner / architect / builder / close-cycle）では扱わない。** `step next` が止まり、v2 のまま終えるよう案内する。進行中のサイクルは v2 のプラグインで終えてから上げる（`docs/migration/v2-to-v3.md`）
 - `progress.jsonl` はコミット対象。`.gitignore` で除外しない。置き場所は `planning/`・`design/`・`build-NN/`、サイクルのディレクトリ直下（create-cycle・close-cycle）、HIKYAKU_ROOT 直下（init）、`token-guide/`（token-guide）

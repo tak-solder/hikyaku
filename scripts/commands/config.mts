@@ -3,7 +3,7 @@
 import { flagString } from "../lib/args.mts";
 import { describeProviderRules, loadConfig } from "../lib/config.mts";
 import { DEFAULT_BRANCH_MARK, resolveUnsafeSplit } from "../lib/integrity.mts";
-import { emit } from "../lib/output.mts";
+import { emit, warn } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { describeSource, openCycleIfAny } from "../lib/workspace.mts";
 
@@ -47,7 +47,10 @@ register({
 
     const unsafeSplit = resolveUnsafeSplit(config);
 
-    emit({ ...config, cycle: opened?.context.name, cycleSource: opened?.context.source, unsafeSplit }, () => {
+    const retired = config.retired.map((error) => error.message);
+    for (const error of config.retired) warn(`${error.message}（v3 の作業では止まります）`);
+
+    emit({ ...config, retired, cycle: opened?.context.name, cycleSource: opened?.context.source, unsafeSplit }, () => {
       const lines: string[] = [];
       if (opened) {
         lines.push(

@@ -129,7 +129,7 @@ register({
         issues.push({ id: build.id, text: readFileSync(issuePath, "utf8") });
       }
 
-      problems.push(...validateCycleUnsafeSplits(config.hikyakuRoot, directory, name, builds, issues));
+      problems.push(...validateCycleUnsafeSplits(config.hikyakuRoot, directory, name, builds, issues, record.status === "active"));
 
       const storiesPath = join(directory, "planning", "user-stories.md");
       if (existsSync(storiesPath)) {
@@ -170,6 +170,7 @@ function validateCycleUnsafeSplits(
   name: string,
   builds: ReturnType<typeof loadTasklist>,
   issues: TraceabilityIssue[],
+  active: boolean,
 ): Problem[] {
   let cycleConfig;
   try {
@@ -178,11 +179,16 @@ function validateCycleUnsafeSplits(
     if (!(error instanceof HikyakuError)) throw error;
     return [{ scope: `${name}/.hikyaku.config`, message: error.message }];
   }
+  // 閉じたサイクルの設定に残った v2 のキー（bp_max など）は履歴として許す。進行中のサイクルでは
+  // v3 の作業が止まるので、ここでも知らせる
+  const retired = active
+    ? cycleConfig.retired.map((error) => ({ scope: `${name}/.hikyaku.config`, message: error.message }))
+    : [];
   const decision = resolveUnsafeSplit(cycleConfig);
-  return validateUnsafeSplits(builds, issues, decision).map((problem) => ({
+  return [...retired, ...validateUnsafeSplits(builds, issues, decision).map((problem) => ({
     scope: `${name}/${buildDirName(problem.build)}`,
     message: problem.message,
-  }));
+  }))];
 }
 
 function findCycleDependencyLoops(
