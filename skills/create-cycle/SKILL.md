@@ -10,7 +10,7 @@ argument-hint: "[{slug}|{cycle}]"
 新しいサイクル（PLAN → ARCHITECT → BUILD → CLOSE の1周）を作成する。
 
 1サイクル = 1チケットを想定している。バックログ管理は Hikyaku のスコープ外で、
-チケットは外部システム（GitHub issue / Asana など）に残る。
+チケットは外部システム（GitHub issue など）に残る。
 
 ## 作業ステップ
 

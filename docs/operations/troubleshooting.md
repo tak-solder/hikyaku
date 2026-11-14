@@ -204,9 +204,9 @@ v2 の BP 基準表です。v3 は読みません。`bp-guide/README.md` にリ�
 
 ### gh CLI が無い（`reason: "gh-not-found"`）
 
-投影内容自体は返るので、スキルが GitHub MCP ツールで適用し、`hikyaku cycle link` / `hikyaku tasklist link` で参照を記録します。エラーではありません。
+起票する内容自体は返るので、スキルが GitHub MCP ツールで起票し、`hikyaku cycle link` で参照を記録します。エラーではありません。
 
-### 投影に失敗した
+### 起票に失敗した
 
 警告が出ますが、ワークフローは止まりません（終了コード 0）。ファイル側が常にマスターなので、後から `hikyaku external sync` をやり直せば収束します。
 

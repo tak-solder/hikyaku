@@ -26,9 +26,8 @@ export function testEnvironment(): NodeJS.ProcessEnv {
   delete env["HIKYAKU_REVIEW_PROVIDER"];
   delete env["HIKYAKU_CONDUCTOR_CHILD"];
   delete env["CLAUDE_CODE_REMOTE"];
-  delete env["CODEX_ENVIRONMENT_ID"];
   // 実行中のセッションの記録を tokens session に読ませない
-  for (const key of ["CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "CLAUDE_CONFIG_DIR", "CODEX_HOME"]) {
+  for (const key of ["CLAUDE_CODE_SESSION_ID", "CLAUDE_CONFIG_DIR"]) {
     delete env[key];
   }
   return env;
@@ -103,7 +102,7 @@ export function snapshot(directory: string): Record<string, string> {
 }
 
 export function build(id: string, overrides: Partial<BuildRecord> = {}): BuildRecord {
-  return { id, title: `ビルド ${id}`, peak: 350_000, dependsOn: [], issue: "", pr: "", ...overrides };
+  return { id, title: `ビルド ${id}`, peak: 350_000, dependsOn: [], pr: "", ...overrides };
 }
 
 export function cycle(id = "001", overrides: Partial<CycleRecord> = {}): CycleRecord {

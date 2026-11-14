@@ -3,7 +3,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { flagBoolean, flagString } from "../lib/args.mts";
-import { ASK_KEYS, PROFILE_NAMES } from "../lib/config.mts";
+import { ASK_KEYS, EXTERNAL_TARGETS, PROFILE_NAMES } from "../lib/config.mts";
 import { LOCAL_FILE } from "../lib/local.mts";
 import { cyclesPath, renderCyclesFile } from "../lib/cycles.mts";
 import { guidePath } from "../lib/docs.mts";
@@ -289,11 +289,10 @@ function renderRepoConfig(hikyakuRoot: string): string {
     "# - 決済",
     "# \"\"\"",
     "",
-    "# 外部システムへは冪等な片方向投影のみを行います。マスターは常にファイル側です。",
+    "# サイクルごとに GitHub issue を1つ起票し、CLOSE の PR で閉じます。マスターは常にファイル側です。",
     "[external]",
-    '# target = "none"        # none | github | asana',
+    `# target = "none"        # ${EXTERNAL_TARGETS.join(" | ")}`,
     '# github_repo = "owner/repo"',
-    '# asana_project_gid = "..."',
     "",
     "# ビルドの大きさは、メインセッションのコンテキストの予測ピーク（トークン）で判定します。",
     "# merge_below 未満は統合を検討、split_above 超は分割を検討します。",

@@ -7,11 +7,10 @@ import { flagBoolean, flagInteger, flagList, flagString, type ParsedArgs } from 
 import {
   REVIEW_KINDS,
   REVIEW_PROVIDER_ENV,
-  REVIEW_PROVIDERS,
+  assertCurrentConfig,
   cloudEnvLabel,
   type ResolvedConfig,
   type ReviewKind,
-  type ReviewProvider,
   type ReviewProviderSource,
 } from "../lib/config.mts";
 import { shellQuote } from "../lib/conductor.mts";
@@ -47,15 +46,14 @@ function requireKind(raw: string | undefined): ReviewKind {
   return raw as ReviewKind;
 }
 
-function requireSelf(args: ParsedArgs): ReviewProvider {
-  const raw = flagString(args, "self");
-  if (raw === undefined || !(REVIEW_PROVIDERS as string[]).includes(raw)) {
+/** --self は v3 で廃止した。メインのセッションは常に Claude Code なので、渡す値が無い */
+function rejectSelf(args: ParsedArgs): void {
+  if (args.flags.has("self")) {
     throw new HikyakuError(
-      raw === undefined ? "--self にメインのセッションのプロバイダを指定してください" : `--self の値が不正です: ${raw}`,
-      `使用できる値: ${REVIEW_PROVIDERS.join(" | ")}（provider = "auto" の解決に使います）`,
+      "--self は v3 で廃止しました",
+      "メインのセッションは常に Claude Code です。--self を外して実行してください。",
     );
   }
-  return raw as ReviewProvider;
 }
 
 interface Resolved {
@@ -72,12 +70,14 @@ interface Resolved {
 async function resolve(args: ParsedArgs, operands: string[]): Promise<Resolved & { kind: ReviewKind }> {
   const kind = requireKind(operands[0]);
   const phase = requirePhase(operands[1]);
-  const self = requireSelf(args);
+  rejectSelf(args);
   if (kind !== "doc" && !phase.startsWith("build-") && !isPatchPhase(phase)) {
     throw new HikyakuError(`${kind} のレビューはビルド（build-NN）と patch でだけ実行します: ${phase}`);
   }
   const scope = scopeFor(args, phase, operands[2]);
   const { config } = scope;
+  // サイクル設定に廃止したキー（provider_for など）が残っていれば、黙って別のプロバイダで動かさない
+  assertCurrentConfig(config);
 
   let base: Resolved["base"];
   let security: Resolved["security"];
@@ -95,7 +95,6 @@ async function resolve(args: ParsedArgs, operands: string[]): Promise<Resolved &
 
   const plan = planReview({
     kind,
-    self,
     settings: config.review[kind],
     baseRef: base?.ref,
     nativeSecurity: security?.native,
@@ -143,15 +142,13 @@ function describe(resolved: Resolved & { kind: ReviewKind }): string[] {
   return lines;
 }
 
-export function sourceLabel(plan: Pick<ReviewPlan, "kind" | "provider" | "providerSource" | "providerKey">): string {
+export function sourceLabel(plan: Pick<ReviewPlan, "kind" | "provider" | "providerSource">): string {
   const source: ReviewProviderSource = plan.providerSource;
   if (source === "cloud") return cloudEnvLabel(plan.provider);
   if (source === "env") return `環境変数 ${REVIEW_PROVIDER_ENV}`;
-  if (source === "kind.provider_for") return `[review.${plan.kind}.provider_for] の ${plan.providerKey}`;
   if (source === "kind") return `[review.${plan.kind}] の provider`;
-  if (source === "review.provider_for") return `[review.provider_for] の ${plan.providerKey}`;
   if (source === "review") return "[review] の provider";
-  return "既定（auto = メインのセッションと同じ）";
+  return "既定（auto = メインのセッションと同じ claude）";
 }
 
 function styleLabel(plan: ReviewPlan): string {
@@ -164,11 +161,10 @@ function styleLabel(plan: ReviewPlan): string {
 register({
   name: "review resolve",
   summary: "レビューを、どのプロバイダ・モデル・回数で、どう起動するかを返す",
-  usage: "hikyaku review resolve <code|security|doc> <phase> [<cycle>] --self <claude|codex> [--no-fetch] [--root <path>] [--json]",
+  usage: "hikyaku review resolve <code|security|doc> <phase> [<cycle>] [--no-fetch] [--root <path>] [--json]",
   details: [
     "[review] の設定を重ねて、レビューの起動方法を決めます。実行はしません。",
-    "",
-    "--self にはメインのセッションのプロバイダを渡します（provider = \"auto\" と provider_for の解決に使います）。",
+    "メインのセッションは Claude Code で、provider = \"auto\" は claude と同じです。",
     "",
     "  mode: agent    メインのセッションのサブエージェント（doc-reviewer）で実行する",
     "  mode: process  review run で別プロセスとして実行する",
@@ -205,7 +201,7 @@ register({
   name: "review run",
   summary: "レビューを別プロセス（claude -p / codex exec）で実行し、生の出力を保存する",
   usage:
-    "hikyaku review run <code|security|doc> <phase> [<cycle>] --self <claude|codex> [--round <n>] " +
+    "hikyaku review run <code|security|doc> <phase> [<cycle>] [--round <n>] " +
     "[--context <context> --files <path,...>] [--dry-run] [--no-fetch] [--root <path>] [--json]",
   details: [
     "review resolve と同じ解決をしたうえで、レビューを実行します。出力の解析や指摘の統合はしません。",
@@ -224,7 +220,7 @@ register({
     "  claude security  claude -p \"/security-review\"（使えないときは観点の指示文）",
     "  codex code       codex exec review --base <ref> -c sandbox_mode=\"read-only\" -o <file>",
     "  codex security   codex exec review -c sandbox_mode=\"read-only\" -o <file> \"<観点の指示文>\"",
-    "  doc（別プロバイダ） doc-reviewer の本文を指示文にして claude -p / codex exec に渡す",
+    "  doc（codex）      doc-reviewer の本文を指示文にして codex exec に渡す",
     "",
     "Claude では Edit / Write / NotebookEdit を禁じ、Codex は読み取り専用のサンドボックスで",
     "起動します。レビューは指摘を返すだけで、修正はメインのセッションが行います。",

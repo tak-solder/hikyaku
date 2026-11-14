@@ -1,6 +1,6 @@
 <!--
 hikyaku review run security が、/security-review を使えないとき（スタックしているビルド、
-origin/HEAD が無いリポジトリ、Codex）に指示文として渡す観点。末尾に対象ビルドと差分の基準が足される。
+origin/HEAD が無いリポジトリ、provider が codex のとき）に指示文として渡す観点。末尾に対象ビルドと差分の基準が足される。
 -->
 
 # セキュリティレビュー

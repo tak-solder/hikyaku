@@ -314,7 +314,7 @@ export type GroupKey = "model" | "hikyaku" | "host" | "guide";
 export const GROUP_KEYS: GroupKey[] = ["model", "hikyaku", "host", "guide"];
 
 /**
- * 分ける軸の値。ホストは版を落として「Claude Code」「Codex」で分ける
+ * 分ける軸の値。ホストは版を落として「Claude Code」などで分ける（v3 のベータ版の記録には「Codex」もある）
  * （版ごとに分けると件数が散って比べられない）
  */
 export function groupValue(record: PeakRecord, key: GroupKey): string {

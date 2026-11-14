@@ -1,15 +1,15 @@
 # review: コードレビュー
 
 機械的な検証では拾えない品質・規約・セキュリティの観点をレビューする。レビューそのものは
-Claude Code / Codex に組み込みのレビュー機能が行い、どのプロバイダ・モデルで何回まで回すかは
+Claude Code（`/code-review`・`/security-review`）か Codex（`codex exec review`）に組み込みのレビュー機能が行い、どのプロバイダ・モデルで何回まで回すかは
 `[review]` の設定で CLI が決める。
 
 - [ ] ローカルでコミットする（push はしない）。未追跡のファイルも含め、実装したものは全てコミットに含める
 - [ ] 起動方法を解決する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve code {phase} {cycle} --self claude --json
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve security {phase} {cycle} --self claude --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve code {phase} {cycle} --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve security {phase} {cycle} --json
 ```
 
 `base.ref` が差分の基準（統合ブランチから切っていればそのブランチ）。**デフォルトブランチを決め打ちしない。**
@@ -25,8 +25,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve security {phase}
 - [ ] レビューを実行する（ラウンド n。初回は 1）。2つを Bash の `run_in_background` で並列に実行する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run code {phase} {cycle} --self claude --round {n}
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run security {phase} {cycle} --self claude --round {n}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run code {phase} {cycle} --round {n}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run security {phase} {cycle} --round {n}
 ```
 
   **終了コード 1 は失敗であって、指摘0件ではない。** メッセージをユーザーに報告して判断を仰ぐ

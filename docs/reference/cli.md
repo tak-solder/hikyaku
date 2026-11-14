@@ -6,7 +6,7 @@
 
 ## 実行方法
 
-Claude Code のスキル内ではプラグインの位置が解決されます。Codex のスキルは読み込まれたスキルの実パスから解決します。自分のシェルから Claude Code のインストール済みプラグインを叩く場合はパスが必要です。次の関数を `~/.zshrc` や `~/.bashrc` に入れてください。
+Claude Code のスキル内ではプラグインの位置が解決されます。自分のシェルから Claude Code のインストール済みプラグインを叩く場合はパスが必要です。次の関数を `~/.zshrc` や `~/.bashrc` に入れてください。
 
 ```bash
 hikyaku() {
@@ -95,7 +95,7 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | `cycle new <slug> --profile <name>` | サイクルを作るとき（通常は `create-cycle` が呼ぶ） |
 | `cycle use <cycle>` | このチェックアウトの作業サイクルを記録するとき |
 | `cycle close <cycle>` | サイクルを `closed` にするとき（通常は `close-cycle` が呼ぶ） |
-| `cycle link <cycle> --external <url>` | 外部システムの親 issue の参照を手で記録するとき |
+| `cycle link <cycle> --external <url>` | サイクルの GitHub issue の参照を手で記録するとき |
 
 ## ビルド
 
@@ -104,7 +104,6 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | `tasklist add` | ビルドを追加するとき（通常は `build-manager` が呼ぶ） |
 | `tasklist update` | 既存ビルドのタイトル・予測ピーク・依存を変えるとき |
 | `tasklist done --id <n> --pr <url>` | ビルドの完了を記録するとき。当該ビルドの PR に同梱する |
-| `tasklist link --id <n> --issue <url>` | 子 issue の参照を手で記録するとき |
 
 ビルドの分割に専用コマンドはありません。「元ビルドの `update` + 新ビルドの `add`」で表現します。
 
@@ -165,7 +164,7 @@ build-manager や retrospective のような内部スキルは、`--skill` を�
 
 `tokens history build-NN` は、PR の base からの差分を数えます。比較の起点は `pr base` と同じ導出なので、PR に含まれる差分と、測る差分が一致します。起点を別に持つと、先行ビルドの差分まで数えたり、逆に PR の一部を数え落としたりします。ワークスペース配下と、ロックファイル・スナップショット・生成コードは書いた量ではないので数えず、除いたファイルを一覧で出します。生成物とテストのパスは `[diff]` で変えられます（[設定](../configuration/config-file.md#diff)）。起点を解決できないときは、推測せず「計測不可」とその理由を返します。実測できなかったことを実測できたように記録させないためです。
 
-`tokens session` は、ホストが残すセッションの記録からコンテキストの大きさを実測します。引数なしでは現在のセッションを測り、Claude Code では `CLAUDE_CODE_SESSION_ID`、Codex では `CODEX_THREAD_ID` で記録を特定します。`<phase> [<cycle>]` を渡すと、そのフェーズのブランチに対応付くセッションを集め、そのブランチでの API 呼び出しが最も多いものを本体として測ります。サブエージェントと Codex の guardian は対象外です。記録のファイルは `--transcript <path>` で直接指定することもできます。記録が見つからないとき、Codex のクラウドで rollout が無いときは、終了コード 0 で「計測不可」とその理由を返します。`--markdown` は `retrospective.md` に貼る表を出します。
+`tokens session` は、Claude Code が残すトランスクリプトからコンテキストの大きさを実測します。引数なしでは現在のセッションを測り、`CLAUDE_CODE_SESSION_ID` で記録を特定します。`<phase> [<cycle>]` を渡すと、そのフェーズのブランチに対応付くセッションを集め、そのブランチでの API 呼び出しが最も多いものを本体として測ります。サブエージェントは対象外です。記録のファイルは `--transcript <path>` で直接指定することもできます。記録が見つからないときは、終了コード 0 で「計測不可」とその理由を返します。`--markdown` は `retrospective.md` に貼る表を出します。
 
 ガイドの構成と補正の手順は [予測ピークと見積もりのガイド](../configuration/token-guide.md) にあります。
 
@@ -195,21 +194,21 @@ patch（`patch-YYYYMM-slug`）は、サイクルに属さなければ `<cycle>` 
 | コマンド | いつ使うか |
 |---|---|
 | `review action` | コード・セキュリティの指摘の妥当性を判断したあと、対応確認と再レビューの要否を設定から決めるとき |
-| `review resolve <kind> <phase> [<cycle>] --self <provider>` | レビューをどのプロバイダ・モデル・回数で、どう起動するか確かめるとき |
-| `review run <kind> <phase> [<cycle>] --self <provider>` | コードやセキュリティのレビューを別プロセスで実行するとき（builder と patch が呼ぶ）。別プロバイダの doc-reviewer も同じ |
+| `review resolve <kind> <phase> [<cycle>]` | レビューをどのプロバイダ・モデル・回数で、どう起動するか確かめるとき |
+| `review run <kind> <phase> [<cycle>]` | コードやセキュリティのレビューを別プロセスで実行するとき（builder と patch が呼ぶ）。Codex で動かす doc-reviewer も同じ |
 
-`<kind>` は `code` / `security` / `doc` です。`--self` にはメインのセッションのプロバイダ（`claude` / `codex`）を渡します。`[review]` の `provider = "auto"` と `provider_for` をこれで解決します（[.hikyaku.config](../configuration/config-file.md#review)）。
+`<kind>` は `code` / `security` / `doc` です。プロバイダは `[review]` の設定で決まり、`provider = "auto"` はメインのセッションと同じ `claude` です（[.hikyaku.config](../configuration/config-file.md#review)）。
 
 `review run` は `claude -p` や `codex exec` を起動し、生の出力を `.git` の中（`git rev-parse --git-path hikyaku/reviews` の下）に保存して返します。出力の解析や指摘の統合はしません。自由な文章なので、判断は呼び出したセッションが行います。空の結果、エラー、タイムアウトは終了コード 1 になります。origin/HEAD が無いときの `/security-review` のように、失敗が空の結果として返る場合があり、それを指摘0件と取り違えないためです。`max_rounds` を超える `--round` もエラーになります。
 
-環境変数 `HIKYAKU_REVIEW_PROVIDER` を設定すると、設定ファイルの `provider` より優先されます。設定したプロバイダの CLI が使えない環境のためのものです。Claude Code と Codex のクラウド環境では、環境変数からそれを判定し、そこで動いているプロバイダに自動で固定します。詳しくは [.hikyaku.config](../configuration/config-file.md#review) を参照してください。
+環境変数 `HIKYAKU_REVIEW_PROVIDER` を設定すると、設定ファイルの `provider` より優先されます。設定したプロバイダの CLI が使えない環境のためのものです。Claude Code のクラウド環境では codex の CLI が無いので、環境変数からそれを判定し、`claude` に自動で固定します。詳しくは [.hikyaku.config](../configuration/config-file.md#review) を参照してください。
 
 ## 外部連携
 
 | コマンド | いつ使うか |
 |---|---|
-| `external sync [<target>] [<cycle>]` | 投影が抜けたときに同期し直すとき |
-| `external ref <phase> [<cycle>]` | PR 本文に入れる参照行を生成するとき |
+| `external sync [<target>] [<cycle>]` | サイクルの issue の起票が抜けたときに起票し直すとき |
+| `external ref <phase> [<cycle>]` | PR 本文に入れる、サイクルの issue への参照行を生成するとき |
 
 ## conductor
 

@@ -25,8 +25,6 @@
 
 ## Agent Skills
 
-このリポジトリの開発用 Codex スキルは `.agents/skills/` に置きます。`$sync-codex-plugin <PR番号またはURL>` は、`main → codex-plugin` の差分を調べ、main由来の `update-for-codex` ブランチでCodex向けの修正・検証を行い、pushしてmain向けPRを作成・更新します。既存ブランチは原則引き継ぎます。Claude側の変更が必要なら停止してユーザーに確認し、codex-pluginへのpushやPRのマージは行いません。配布する Hikyaku のスキル（`skills/` と `codex/skills/`）とは別に管理します。
-
 スキルを編集する際は次のページを参照して、仕様やベストプラクティスを遵守してください。
 
 - Agent Skills の仕様: https://agentskills.io/specification.md
@@ -73,12 +71,10 @@
 
 ## 作業時の注意
 
-- Claude Code 用の開発の取り込み先は `main`、Codex 用は `codex-plugin` です。
+- 開発の取り込み先は `main` です。v3 で Codex のホスト対応（`codex-plugin` ブランチの配布）は廃止しました。Codex はレビューの実行先（`[review] provider = "codex"`）としてだけ使い、Codex で Hikyaku のスキルを動かすための入口や読み替えは足さないでください。
 - `main` 向け PR で `skills/`, `agents/`, `scripts/`, `hooks/`, `.claude-plugin/` を変更したときは、`.claude-plugin/plugin.json` の `version` を更新してください。
 - `beta/v<N>`（次のメジャーを積むブランチ）向けの PR では、`version` を `<N>.0.0` に固定し、CHANGELOG は `[<N>.0.0]` の節に追記してください。PR ごとには上げません。
-- `codex-plugin` 向け PR で `skills/`, `agents/`, `scripts/`, `codex/`, `.codex-plugin/`, `.agents/plugins/` を変更したときは、`.codex-plugin/plugin.json` の `version` を更新してください。共通手順・エージェント・CLI の変更も Codex に影響します。
-- バージョンは `MAJOR.MINOR.PATCH` の形式で、変更の内容に応じて適切にインクリメントしてください。スキルのフロントマターに `metadata` は置かず、各プラグインのマニフェストで管理します。CHANGELOG は共通のため、Codex向けの同期時には両ホストのバージョンを揃えます。
-- Codex 向けの共通部分の変更では、入口と `codex/compatibility.md` で読み替えられるか確認し、必要なら同じ PR で修正してください。バージョン検証だけでは動作の互換性は保証されません。
+- バージョンは `MAJOR.MINOR.PATCH` の形式で、変更の内容に応じて適切にインクリメントしてください。スキルのフロントマターに `metadata` は置かず、プラグインのマニフェストで管理します。
 - `docs/`, `README.md`, `AGENTS.md`, `CHANGELOG.md` だけの変更ではバージョンを上げません（プラグインの挙動が変わらないため）。
 - バージョンを上げる際は`CHANGELOG.md`に変更内容を記載してください。
     - **何が変わったか**（どのスキル・エージェント・設定キーがどうなったか）を具体的に書いてください。
@@ -87,20 +83,15 @@
 
 ## プラグイン構成
 
-このリポジトリは Claude Code のプラグイン仕様（[plugins.md](https://code.claude.com/docs/en/plugins.md), [plugins-reference.md](https://code.claude.com/docs/en/plugins-reference.md)）と [Codex のプラグイン仕様](https://developers.openai.com/plugins/build/plugins) に準拠しています。
+このリポジトリは Claude Code のプラグイン仕様（[plugins.md](https://code.claude.com/docs/en/plugins.md), [plugins-reference.md](https://code.claude.com/docs/en/plugins-reference.md)）に準拠しています。
 
 ```
 ./
 ├── .claude-plugin/
 │   ├── plugin.json            # プラグインマニフェスト
 │   └── marketplace.json       # マーケットプレイス定義（リポジトリ自身を単一プラグイン構成のマーケットプレイスとして配布）
-├── .codex-plugin/plugin.json  # Codex 用マニフェスト。Codex 用スキルだけを指定
-├── .agents/plugins/marketplace.json # Codex 用マーケットプレイス定義
 ├── agents/<name>.md           # スキルから委任される各サブエージェント定義
 ├── hooks/hooks.json           # Claude Code のフック（Stop: 手順の途中で止まるのを1回だけ引き止める）
-├── codex/
-│   ├── compatibility.md       # Codex での呼び出しとパスの読み替え
-│   └── skills/<name>/SKILL.md # Codex 専用入口。詳細は skills/ を参照
 ├── scripts/                   # CLI（実行時依存ゼロ）
 │   ├── hikyaku.mts
 │   ├── lib/

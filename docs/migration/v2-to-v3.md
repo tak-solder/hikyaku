@@ -22,7 +22,7 @@ claude plugin install hikyaku@hikyaku
 
 マーケットプレイスを削除すると、そこから入れたプラグインもアンインストールされます。入れ直したら `claude plugin list` で版が 2.9.2 になっていることを確かめてください。進行中のサイクルをすべて閉じたら、同じ手順でタグを付けずに追加し直すと v3 に戻ります。
 
-Codex で使っている場合も、進行中のサイクルは v2 のプラグインのまま終えてください。
+Codex で使っている場合も、進行中のサイクルは v2 のプラグインのまま終えてください。v3 には Codex 用のプラグインがありません（[Codex のホスト対応の廃止](#codex-のホスト対応の廃止)）。
 
 ## 対応が必要なもの
 
@@ -45,6 +45,28 @@ BP と予測ピークは別の量で換算できないため、次のものは�
 - `/hikyaku:bp-guide` は `/hikyaku:token-guide` になり、ブランチのフェーズ名も `bp-guide` から `token-guide` に変わりました。`[pr] reviewers_skip` に `bp-guide` を書いていたら `token-guide` に直してください
 
 v2 で作成したサイクルの `tasklist.md`（`BP` 列）と `retrospective.md`（「BP見積もりの振り返り」）は、v3 では読み取りだけを行います。`tasklist.md` の更新はエラーで止まり、`tokens history` には並びません。
+
+## Codex のホスト対応の廃止
+
+v3 では、Codex で Hikyaku のスキルを動かすためのプラグイン（`codex-plugin` ブランチで配布していた `$hikyaku:*` のスキル）を廃止しました。Hikyaku のスキルを動かすメインのセッションは Claude Code だけです。共通の手順を変えるたびに Codex 向けの読み替えを確かめる必要があり、手順の変更を重くしていたためです。
+
+Codex はレビューの実行先として残ります。`[review] provider = "codex"`（種類ごとなら `[review.<種類>] provider`）と書けば、コード・セキュリティ・ドキュメントのレビューを `codex exec` で実行します。
+
+次のものは自動では移行しません。
+
+- `[review.provider_for]` と `[review.<種類>.provider_for]` はエラーになります。`claude = "codex"` と書いていたなら `provider = "codex"` に書き換え、`codex` の行だけなら削除してください。閉じたサイクルの `.hikyaku.config` に残っているものは読み飛ばします
+- `hikyaku review resolve` / `review run` の `--self` と、`hikyaku tokens session` の `--host` はエラーになります。外して実行してください
+- Codex のクラウド環境（`CODEX_ENVIRONMENT_ID`）でのプロバイダの固定と、`tokens session` による Codex の rollout の計測は無くなりました。Codex で回したビルドの `retrospective.md` は、`tokens history` でこれまでどおり読めます
+- Codex にインストールした Hikyaku は v2 のまま残ります。v3 には上げられないので、不要ならアンインストールしてください
+
+## ビルドごとの外部起票の廃止
+
+v3 では、ビルドごとの issue（GitHub の子 issue・Asana のタスク）の起票をやめ、外部システムへの投影をサイクルごとの GitHub issue の作成とクローズだけにしました（[サイクルの GitHub issue](../configuration/external.md)）。ビルドの分割や完了を外部へ写すと、写し漏れや古い表示が残り、どちらが正しいのか分からなくなるためです。ビルドの一覧と進捗の正は、これまでどおり `tasklist.md` です。
+
+- `[external] target = "asana"` と `asana_project_gid` はエラーになります。`target` を `"github"` か `"none"` にし、`asana_project_gid` を削除してください。閉じたサイクルの `.hikyaku.config` に残っているものは読み飛ばします
+- `tasklist.md` の `issue` 列は無くなりました。既存の `issue` 列のある `tasklist.md` もそのまま読めて、`tasklist` のコマンドで書き込むと列が落ちます。列にあった子 issue の参照は消えるので、残したい場合は GitHub 側で閉じておくか、手で控えてください
+- `hikyaku tasklist link`、`tasklist add` の `--issue`、`cycle new` の `--external-project` は無くなりました
+- ビルドの PR は子 issue を閉じず、サイクルの issue を `Refs` で参照します。既に起票済みの子 issue は Hikyaku からは閉じられないので、不要なら手で閉じてください
 
 ## 永続ドキュメントの論理名の整理
 

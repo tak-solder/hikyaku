@@ -332,7 +332,7 @@ test("CLI: review resolve code は patch でも差分の基準を返し、config
   const directory = committed(t);
   succeeds(directory, "cycle", "use", "001");
   git(directory, "switch", "-q", "-c", `hikyaku/patch/${MONTH}/list-sort`);
-  const resolved = json(directory, "review", "resolve", "code", PHASE, "--self", "claude", "--no-fetch");
+  const resolved = json(directory, "review", "resolve", "code", PHASE, "--no-fetch");
   assert.equal(resolved["base"]["name"], "main");
   assert.equal(json(directory, "config", "--no-cycle")["cycle"], undefined);
   assert.equal(json(directory, "config")["cycle"], "001-test");

@@ -99,7 +99,6 @@ const build = (id: string, dependsOn: string[] = []): BuildRecord => ({
   title: `build ${id}`,
   peak: 350_000,
   dependsOn,
-  issue: "",
   pr: "",
 });
 

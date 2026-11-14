@@ -5,22 +5,38 @@ import { blockedBuilds, graphEdges, isLegacyTasklist, nextBuildId, parseTasklist
 import { build } from "./helpers.mts";
 
 test("tasklist: ビルド ID と依存 ID の接頭辞・ゼロ埋めを同じように正規化する", () => {
-  const source = `| buildID | title | 予測ピーク | dependencies | issue | PR |
-| --- | --- | --- | --- | --- | --- |
-| build-01 | 基盤 | 350k | — | - | — |
-| BUILD-003 | API | — | build-01、 002 | [issue](./build-03/issue.md) | — |`;
+  const source = `| buildID | title | 予測ピーク | dependencies | PR |
+| --- | --- | --- | --- | --- |
+| build-01 | 基盤 | 350k | — | — |
+| BUILD-003 | API | — | build-01、 002 | — |`;
   assert.deepEqual(parseTasklist(source), [
     build("1", { title: "基盤" }),
-    build("3", { title: "API", peak: undefined, dependsOn: ["1", "2"], issue: "[issue](./build-03/issue.md)" }),
+    build("3", { title: "API", peak: undefined, dependsOn: ["1", "2"] }),
   ]);
+});
+
+test("tasklist: issue 列のある見出し（v3 のベータ版）を読み、書き戻すと列を落とす", () => {
+  const source = `| buildID | title | 予測ピーク | dependencies | issue | PR |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 基盤 | 350k | — | [#12](https://example.com/issues/12) | [#3](https://example.com/pull/3) |
+| 2 | API | 300k | 1 | [issue](./build-02/issue.md) | — |`;
+  assert.equal(isLegacyTasklist(source), false);
+  const builds = parseTasklist(source);
+  assert.deepEqual(builds, [
+    build("1", { title: "基盤", pr: "[#3](https://example.com/pull/3)" }),
+    build("2", { title: "API", peak: 300_000, dependsOn: ["1"] }),
+  ]);
+  const rendered = renderTasklistFile("001-test", builds);
+  assert.doesNotMatch(rendered, /\| issue \|/);
+  assert.deepEqual(parseTasklist(rendered), builds);
 });
 
 test("tasklist: v2 の見出し（BP 列）は読めるが、BP は予測ピークとして読まない", () => {
   const source = `| buildID | title | BP | dependencies | issue | PR |
 | --- | --- | --- | --- | --- | --- |
-| 1 | 基盤 | 3 | — | - | — |`;
+| 1 | 基盤 | 3 | — | - | [#5](https://example.com/pull/5) |`;
   assert.equal(isLegacyTasklist(source), true);
-  assert.deepEqual(parseTasklist(source), [build("1", { title: "基盤", peak: undefined })]);
+  assert.deepEqual(parseTasklist(source), [build("1", { title: "基盤", peak: undefined, pr: "[#5](https://example.com/pull/5)" })]);
   assert.equal(isLegacyTasklist(renderTasklistFile("001-test", [build("1")])), false);
 });
 
