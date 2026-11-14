@@ -340,8 +340,8 @@ gh pr list --head {conductor ブランチ} --base {baseBranch} --state open --js
   - `gh pr create --draft` で作る。Draft に対応していない場合だけ通常の PR で作り、その旨を案内する
   - 本文に、取り込んだフェーズの PR を順に並べ、それぞれで**監督が判断した同意ゲート**を1行ずつ示す
     （人間がレビューで確認するため）
-  - 外部連携が有効なら、各ビルドの `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref build-NN {cycle}` の行を本文の末尾に入れる。
-    conductor ブランチへのマージではクローズキーワードが効かないため、ここでまとめて閉じる
+  - 外部連携が有効なら、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref conductor {cycle}` の行
+    （サイクルの issue への `Refs #12`）を本文の末尾に入れる。issue は CLOSE の PR で閉じる
 - [ ] 設定に従って公開する（失敗したら、再実行のコマンドと Draft のままであることを案内する）
 
 ```bash

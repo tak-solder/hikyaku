@@ -8,8 +8,8 @@
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref build-{NN} {cycle}
 ```
 
-`Closes #12`（GitHub）またはタスクの URL（Asana）が返る。空なら何も入れない。
-issue が閉じても完了判定には使わない。判定は常に tasklist.md の PR 列。
+サイクルの issue への `Refs #12` が返る（ビルドごとの issue は無いので、閉じない）。
+空なら何も入れない。
 
 - [ ] PR のマージ先を決める
 
@@ -46,14 +46,3 @@ PR を作ってからでないと URL が無い。だから PR 作成が先で�
 **この変更は必ずこのビルドの PR に同梱する。** 先にデフォルトブランチへ入れると、
 未マージのビルドを完了と誤判定する。PR 列が非空であること自体が「マージ済み = 完了」を
 意味するのは、この同梱が守られているからこそ成立する。
-
-
-
-- [ ] 外部投影が有効な場合は同期を試みる（失敗してもワークフローは止めない）
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external sync {cycle}
-```
-
-gh CLI が無い環境では投影内容だけが返る（`reason: "gh-not-found"`）。その場合は
-GitHub MCP ツールで適用し、`cycle link` / `tasklist link` で参照を記録する。

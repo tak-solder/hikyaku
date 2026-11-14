@@ -47,7 +47,7 @@ export interface ProgressEvent {
   context?: number;
   /** 計測できなかった理由 */
   contextUnavailable?: string;
-  /** CLAUDE_CODE_SESSION_ID / CODEX_THREAD_ID */
+  /** CLAUDE_CODE_SESSION_ID */
   session?: string;
   /** 報告した Hikyaku の版 */
   hikyaku?: string;

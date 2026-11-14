@@ -1,7 +1,7 @@
 /** config — 解決済みの設定を出力する */
 
 import { flagBoolean, flagString } from "../lib/args.mts";
-import { describeProviderRules, loadConfig } from "../lib/config.mts";
+import { describeProvider, loadConfig } from "../lib/config.mts";
 import { DEFAULT_BRANCH_MARK, resolveUnsafeSplit } from "../lib/integrity.mts";
 import { emit, warn } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
@@ -98,7 +98,7 @@ register({
               return model === undefined && effort === undefined ? "" : `  ${provider}: ${[model, effort].filter(Boolean).join(" / ")}`;
             })
             .join("");
-          return `  ${kind.padEnd(9)}${describeProviderRules(settings.providers)}${rounds}${models}`;
+          return `  ${kind.padEnd(9)}${describeProvider(settings.provider)}${rounds}${models}`;
         }),
         "",
         `branch       ${config.branch.prefix}${config.branch.separator}{cycle}${config.branch.separator}{phase}`,
@@ -125,9 +125,6 @@ register({
         `  split_above  ${config.peakBands.splitAbove.toLocaleString("en-US")}`,
       );
       if (config.external.githubRepo) lines.push(`  github_repo  ${config.external.githubRepo}`);
-      if (config.external.asanaProjectGid) {
-        lines.push(`  asana_project_gid  ${config.external.asanaProjectGid}`);
-      }
       if (config.askAtCreate.length > 0) {
         lines.push(
           "",

@@ -1,4 +1,4 @@
-# pr: 親 issue と PR の作成
+# pr: サイクルの issue と PR の作成
 
 - [ ] コミット前にブランチを確認する
 
@@ -6,19 +6,19 @@
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify plan {cycle}
 ```
 
-- [ ] 外部連携が有効なら、親 issue を作る
+- [ ] 外部連携が有効なら、サイクルの issue を作る
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external sync {cycle}
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref plan {cycle}
 ```
 
-親 issue はここで作る。この時点なら user-stories があって親の要約として成立し、
-以降のすべての PR が親を参照できる。参照は `cycles.md` の外部列に記録され、この PR で
-デフォルトブランチに入るので、並行セッションからも見える。
+サイクルの issue はここで1回だけ作る。この時点なら user-stories があって要約として成立し、
+以降のすべての PR がこの issue を参照できる。参照は `cycles.md` の外部列に記録され、この PR で
+デフォルトブランチに入るので、並行セッションからも見える。ビルドごとの issue は作らない。
 
 gh CLI が無い環境では投影内容だけが返る（`reason: "gh-not-found"`）。その場合は
-GitHub MCP ツールで適用し、`cycle link {cycle} --external {URL}` で記録する。
+GitHub MCP ツールで起票し、`cycle link {cycle} --external {URL}` で記録する。
 
 - [ ] PR を Draft で作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title plan {cycle}` で生成）
   - `external ref` が返した行（`Refs #12` など）を本文の末尾に入れる。空なら入れない

@@ -49,11 +49,11 @@ Hikyaku の手順そのものに穴があると思える場合も、このリポ
 
 `doc-reviewer` は渡された context（`user-stories` / `architecture` / `tasklist` / `plan` / `test-spec`）に応じて観点を切り替えます。architecture と plan ではセキュリティ設計の考慮漏れも見ます。tasklist は予測ピークの見積もりの妥当性と分割の網羅性が対象で、tasklist.md・issue.md がまだファイルに書き込まれていない段階でレビューするため、build-manager が内容をプロンプトへ直接渡します。plan と test-spec はそれぞれの成果物の完成直後にレビューされ、`plan` は plan.md 作成直後、`test-spec` は test-spec.md 作成後という位置は、どのプロファイルでも変わりません。plan は受け入れ基準の網羅とスコープ逸脱に加えて、plan.md に書かれた予測ピークの成分の妥当性も見ます（tasklist は issue.md のスコープ記述から、plan は実装計画から、それぞれ内訳表の成分と根拠が記述と合っているかを見ます。合計と判定はコマンドが行うので対象外です）。test-spec は plan.md・issue.md に対するテストシナリオの網羅性が対象です。
 
-`doc-reviewer` は `[review.doc]` で別のプロバイダを選んだときだけ、定義の本文を指示文にして `claude -p` か `codex exec` で起動されます（[.hikyaku.config](../configuration/config-file.md#review)）。
+`doc-reviewer` は `[review.doc]` で `codex` を選んだときだけ、定義の本文を指示文にして `codex exec` で起動されます（[.hikyaku.config](../configuration/config-file.md#review)）。
 
 ## コードとセキュリティのレビュー
 
-builder のコードレビューとセキュリティレビューは、Hikyaku のエージェントではなく、Claude Code と Codex に組み込みのレビュー機能が行います。起動は `hikyaku review run` が受け持ち、2つのレビューは並列に動いて、指摘は builder が統合します。同じ箇所への重複は1件に束ねられ、セキュリティの指摘が優先されます。
+builder のコードレビューとセキュリティレビューは、Hikyaku のエージェントではなく、Claude Code か Codex に組み込みのレビュー機能が行います。どちらで行うかは `[review]` の `provider` で決まります。起動は `hikyaku review run` が受け持ち、2つのレビューは並列に動いて、指摘は builder が統合します。同じ箇所への重複は1件に束ねられ、セキュリティの指摘が優先されます。
 
 | レビュー | Claude | Codex |
 |---|---|---|
@@ -80,5 +80,3 @@ economy が省くのは `doc-reviewer` と `retrospective` です。調査系（
 ## 定義の場所
 
 エージェントの定義は `agents/{name}.md`、内部スキルは `skills/{name}/SKILL.md` にあります。出力フォーマットや判定基準を確認したい場合はそちらを参照してください。
-
-Codex では `codex/skills/{name}/SKILL.md` が入口になり、同じ手順と判定基準を読みます。起動方法は [Codex で使い始める](../getting-started-codex.md) を参照してください。

@@ -64,7 +64,7 @@ function upToG4(directory: string): void {
   report(directory, "architecture-review", "--result", "done");
 }
 
-/** build-manager を最初から書き込みまで進める（standard: tasklist-review あり、外部投影なし） */
+/** build-manager を最初から書き込みまで進める（standard: tasklist-review あり） */
 function runManager(directory: string, phase = "architect"): Directive {
   manager(directory, "load", phase, "--result", "done");
   manager(directory, "scope", phase, "--result", "done");
@@ -216,15 +216,13 @@ test("architect: 振り返りと PR まで進むと done", (t) => {
   assert.equal(report(directory, "publish", "--result", "done").kind, "done");
 });
 
-test("build-manager: 外部投影は [external] target が none 以外のときだけ返る", (t) => {
+test("build-manager: [external] target が github でも、書き込みのあとに投影の手順は無い", (t) => {
   const directory = workspace(t, true);
   const path = join(directory, ".hikyaku.config");
   writeFileSync(path, `${readFileSync(path, "utf8")}\n[external]\ntarget = "github"\n`);
   upToG4(directory);
   report(directory, "G4", "--result", "approved", "--input", "OK");
-  const after = runManager(directory);
-  assert.equal(after.step, "external-sync");
-  assert.equal(after.args?.["target"], "github");
+  assert.equal(runManager(directory).kind, "done");
 });
 
 test("build-manager: builder の分割の検討から呼ぶと、ビルドの progress.jsonl に記録する", (t) => {

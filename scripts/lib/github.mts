@@ -15,6 +15,16 @@ import type { PrView, ReviewThread } from "./conductor.mts";
 export const run = promisify(execFile);
 
 /**
+ * リモートの URL から GitHub の owner/repo を取り出す。github.com 以外なら undefined。
+ * https://github.com/o/r(.git)・git@github.com:o/r(.git)・ssh://git@github.com/o/r(.git) に対応する
+ */
+export function githubRepositoryOf(url: string | undefined): string | undefined {
+  if (url === undefined) return undefined;
+  const match = /^(?:https?:\/\/(?:[^@/]+@)?github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([^/\s]+\/[^/\s]+?)(?:\.git)?\/?$/.exec(url.trim());
+  return match?.[1];
+}
+
+/**
  * gh の応答を検証する。
  *
  * 検証の代わりに型だけキャストして欠けたフィールドを空や false として扱うと、CI やレビューの

@@ -15,7 +15,7 @@ TOML 形式の設定ファイルです。ドキュメントの所在は含みま
 
 ## サイクル側で上書きできないキー
 
-サイクル設定に書けないのは次の3つだけで、指定するとエラーになります。それ以外のキーは、ブランチの命名規則や PR タイトル、投影先を含めてすべてサイクルごとに変えられます。
+サイクル設定に書けないのは次の3つだけで、指定するとエラーになります。それ以外のキーは、ブランチの命名規則や PR タイトル、issue の起票先を含めてすべてサイクルごとに変えられます。
 
 | キー | 理由 |
 |---|---|
@@ -33,7 +33,7 @@ TOML 形式の設定ファイルです。ドキュメントの所在は含みま
 
 ## サイクルごとに変える
 
-たとえば「このサイクルだけリリースブランチに向ける」「このサイクルだけ別リポジトリの issue へ投影する」といった使い分けができます。`{HIKYAKU_ROOT}/cycles/002-billing/.hikyaku.config` に書いたキーだけがルートの設定に重なり、書かなかったキーはルートの値のままです。
+たとえば「このサイクルだけリリースブランチに向ける」「このサイクルだけ別リポジトリに issue を起票する」といった使い分けができます。`{HIKYAKU_ROOT}/cycles/002-billing/.hikyaku.config` に書いたキーだけがルートの設定に重なり、書かなかったキーはルートの値のままです。
 
 ```toml
 base_branch = "release/2.x"
@@ -53,7 +53,7 @@ github_repo = "acme/backport"
 
 ## サイクル作成時に決める
 
-サイクルごとに変えたいが、値は作るときまで決まらない、という場合があります。ベースブランチや外部システムの投影先が典型で、ルート設定に固定値を書いても意味がなく、かといって毎回サイクルディレクトリに手でファイルを置くのも忘れます。
+サイクルごとに変えたいが、値は作るときまで決まらない、という場合があります。ベースブランチや issue の起票先が典型で、ルート設定に固定値を書いても意味がなく、かといって毎回サイクルディレクトリに手でファイルを置くのも忘れます。
 
 ルート設定の `ask` にキー名を並べると、`create-cycle` がその値をユーザーに尋ね、答えをそのサイクルの `.hikyaku.config` に記録します。
 
@@ -77,7 +77,7 @@ target = "none"         # 同上
 | `branch.separator` | `--branch-separator <text>` |
 | `pr.title` | `--pr-title <template>` |
 | `session.title` | `--session-title <template>` |
-| `external.target` | `--external <none\|github\|asana>` / `--external-repo` / `--external-project` |
+| `external.target` | `--external <none\|github>` / `--external-repo` |
 
 **答えなくても壊れません。** `hikyaku cycle new` をスキルを通さず直接叩いて値を渡さなくても、エラーにはならずルート設定の値がそのまま使われます。答えていないキーは `hikyaku config <cycle>` に「未回答」として出ます。
 
@@ -193,10 +193,6 @@ max_rounds = 1      # 0 は無制限。未設定ならプロファイルの既�
 auto_fix = false
 timeout = 30        # レビューのプロセス1回あたりの上限（分）
 
-[review.provider_for]  # メインのセッションのプロバイダ → レビューの実行先
-claude = "codex"
-codex = "claude"
-
 [review.claude]
 model = ""          # 空ならそのプロバイダの既定
 effort = ""
@@ -213,21 +209,17 @@ max_rounds = 3
 effort = "high"
 ```
 
-コードレビューとセキュリティレビューは、Claude Code と Codex に組み込みのレビュー機能が行います。Claude なら `/code-review` と `/security-review`、Codex なら `codex exec review` です。`[review]` はそれをどちらのプロバイダで、どのモデルとエフォートで、何回まで回すかを決めます。ドキュメントのレビュー（doc-reviewer）の起動先もここで選べます。
+コードレビューとセキュリティレビューは、Claude Code か Codex に組み込みのレビュー機能が行います。Claude なら `/code-review` と `/security-review`、Codex なら `codex exec review` です。`[review]` はそれをどちらのプロバイダで、どのモデルとエフォートで、何回まで回すかを決めます。ドキュメントのレビュー（doc-reviewer）の起動先もここで選べます。
 
-`provider` の `auto` は、メインのセッションと同じプロバイダを使うという意味です。`claude` や `codex` を指定すると、Claude Code で開発しながら Codex にレビューさせる、あるいはその逆ができます。コードとセキュリティのレビューは、同じプロバイダでも常に別のプロセスとして起動します。実装したセッションのコンテキストからレビューを切り離すためです。ドキュメントのレビューは、メインと同じプロバイダなら従来どおりサブエージェントで動き、別のプロバイダを選んだときだけ別のプロセスになります。
-
-「Claude で開発しているときは Codex で、Codex で開発しているときは Claude でレビューする」のように、メインのプロバイダによって実行先を変えたいときは `[review.provider_for]` を使います。キーがメインのプロバイダ、値がレビューの実行先です。「もう一方」のような相対の指定を用意していないのは、プロバイダが増えたときに意味が決まらなくなるためです。メインのプロバイダの行が無ければ `provider` の値が使われるので、片方だけ書くこともできます。種類ごとに `[review.code.provider_for]` のようにも書けます。
+Hikyaku のスキルを動かすメインのセッションは Claude Code です。Codex はレビューの実行先としてだけ使います。`provider` の `auto` はメインのセッションと同じ `claude` を使うという意味で、`codex` を指定すると Claude Code で開発しながら Codex にレビューさせられます。コードとセキュリティのレビューは、同じプロバイダでも常に別のプロセスとして起動します。実装したセッションのコンテキストからレビューを切り離すためです。ドキュメントのレビューは、`claude` なら従来どおりサブエージェントで動き、`codex` を選んだときだけ別のプロセスになります。
 
 プロバイダは次の順に決まり、最初に決まったものが使われます。
 
-1. クラウド環境の判定（`CLAUDE_CODE_REMOTE=true` なら `claude`、`CODEX_ENVIRONMENT_ID` があれば `codex`）
+1. クラウド環境の判定（`CLAUDE_CODE_REMOTE=true` なら `claude`）
 2. 環境変数 `HIKYAKU_REVIEW_PROVIDER`
-3. `[review.<種類>.provider_for]` のメインのプロバイダの行
-4. `[review.<種類>]` の `provider`
-5. `[review.provider_for]` のメインのプロバイダの行
-6. `[review]` の `provider`
-7. 既定の `auto`
+3. `[review.<種類>]` の `provider`
+4. `[review]` の `provider`
+5. 既定の `auto`
 
 `model` と `effort` はプロバイダごとのテーブルに書きます。モデル名もエフォートの値もプロバイダ間で互換性がないので、`provider` だけを切り替えても、もう一方の値が渡らないようにしてあります。値は `[review.<種類>.<プロバイダ>]`、`[review.<プロバイダ>]`、プロバイダの既定の順に決まり、空文字はキーが無いのと同じです。Claude の `effort` は `low` / `medium` / `high` / `xhigh` / `max` のどれかで、それ以外はエラーになります。Codex の `effort` は使える値がモデルによって変わるため、検証せずにそのまま渡します。
 
@@ -235,11 +227,11 @@ effort = "high"
 
 組み込みのレビュー機能には指示文を渡せないため、plan.md のスコープから外れていないかは builder 自身が確かめます。また Claude の `/security-review` は origin のデフォルトブランチとの差分しか見ないので、スタックしたビルドや origin/HEAD が無いリポジトリでは使いません。その場合と Codex のセキュリティレビューでは、観点を書いた指示文を渡す形に切り替わります。どの形で起動されるかは `hikyaku review resolve` で確認できます。
 
-未知のキーやテーブル名はエラーになります。
+未知のキーやテーブル名はエラーになります。v3 のベータ版まであった `[review.provider_for]` は、移行先を示すエラーになります（[v2 から v3 への移行](../migration/v2-to-v3.md)）。進行中のサイクルの設定に残っていれば、`review resolve` / `review run` も止まります。
 
-各プロバイダのクラウド環境には、もう一方のプロバイダの CLI がありません。そのため Claude Code のクラウド環境（環境変数 `CLAUDE_CODE_REMOTE` が `true`）ではプロバイダを `claude` に、Codex のクラウド環境（環境変数 `CODEX_ENVIRONMENT_ID` が空でない）では `codex` に固定します。この判定は設定ファイルにも `HIKYAKU_REVIEW_PROVIDER` にも優先するので、`provider = "codex"` のまま Claude Code のクラウド環境で動かしても、レビューは Claude で行われます。
+Claude Code のクラウド環境には codex の CLI がありません。そのため環境変数 `CLAUDE_CODE_REMOTE` が `true` のときはプロバイダを `claude` に固定します。この判定は設定ファイルにも `HIKYAKU_REVIEW_PROVIDER` にも優先するので、`provider = "codex"` のままクラウド環境で動かしても、レビューは Claude で行われます。
 
-ローカルでも、設定したプロバイダの CLI が入っていないことがあります。そうした環境では、環境変数 `HIKYAKU_REVIEW_PROVIDER`（`claude` / `codex` / `auto`）を設定すると、設定ファイルのどの `provider` と `provider_for` よりも優先されます。全種類のレビューにまとめて効き、モデルとエフォートは切り替え先のプロバイダのテーブルから取られます。値がどこから来たかは `hikyaku review resolve` と `hikyaku config` に表示されます。変数は Claude Code を起動した環境に設定してください。conductor の子のセッションにもそのまま渡ります。
+ローカルでも、設定したプロバイダの CLI が入っていないことがあります。そうした環境では、環境変数 `HIKYAKU_REVIEW_PROVIDER`（`claude` / `codex` / `auto`）を設定すると、設定ファイルのどの `provider` よりも優先されます。全種類のレビューにまとめて効き、モデルとエフォートは切り替え先のプロバイダのテーブルから取られます。値がどこから来たかは `hikyaku review resolve` と `hikyaku config` に表示されます。変数は Claude Code を起動した環境に設定してください。conductor の子のセッションにもそのまま渡ります。
 
 CLI を起動できなかったときに、Hikyaku が黙って別のプロバイダに切り替えることはしません。設定したつもりのプロバイダでレビューされていないことに気づけなくなるためです。レビューは失敗として報告され、そのメッセージで `HIKYAKU_REVIEW_PROVIDER` が案内されます。
 
@@ -269,12 +261,11 @@ triggers = """
 
 ```toml
 [external]
-target = "none"                 # none | github | asana
+target = "none"                 # none | github
 # github_repo = "owner/repo"
-# asana_project_gid = "..."
 ```
 
-外部システムへの片方向投影の設定です。詳細は [外部システムへの投影](external.md)。
+サイクルごとに GitHub issue を1つ起票し、CLOSE の PR で閉じる設定です。ビルドごとには起票しません。詳細は [サイクルの GitHub issue](external.md)。
 
 ## [data_integrity]
 

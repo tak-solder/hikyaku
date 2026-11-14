@@ -1,7 +1,8 @@
 # review: コードレビュー
 
 機械的検証だけでは検出できない品質・規約・セキュリティ観点をレビューする。
-レビューそのものは Claude Code / Codex に組み込みのレビュー機能が行う。
+レビューそのものは Claude Code（`/code-review`・`/security-review`）か Codex（`codex exec review`）に
+組み込みのレビュー機能が行う。
 どのプロバイダ・モデル・エフォートで何回まで回すかは `[review]` の設定で決まり、
 CLI が起動方法を解決する。
 
@@ -17,11 +18,10 @@ CLI が起動方法を解決する。
 - [ ] 起動方法を解決する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve code build-{NN} {cycle} --self claude --json
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve security build-{NN} {cycle} --self claude --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve code build-{NN} {cycle} --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve security build-{NN} {cycle} --json
 ```
 
-`--self` にはメインのセッションのプロバイダを渡す（`provider = "auto"` と `provider_for` の解決に使う）。
 `enabled` は `code_review` / `security_review` の値、`maxRounds` は回数の上限（0 は無制限）、
 対応確認と再レビューの要否は `review action` で解決する。`base.ref` が差分の基準で、
 スタックしていればスタック元になる。**デフォルトブランチを決め打ちしない。**
@@ -58,8 +58,8 @@ security_review を起動しますか？ [Y/n]
 - [ ] レビューを実行する（ラウンド n。初回は 1）
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run code build-{NN} {cycle} --self claude --round {n}
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run security build-{NN} {cycle} --self claude --round {n}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run code build-{NN} {cycle} --round {n}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run security build-{NN} {cycle} --round {n}
 ```
 
   - 2つを **Bash の `run_in_background` で並列に実行する**（数分かかることがある。`timeout` は最大値）
