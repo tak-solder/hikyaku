@@ -74,3 +74,34 @@ test("pr ready: 不明な状態と公開失敗は成功扱いせず、再試行�
   gh.env.FAIL_READY = "0";
   assert.equal(gh.run(...args).status, 0);
 });
+
+test("pr ready: URL先と既定リポジトリが異なっても、確認したPRのURLを公開に使う", (t) => {
+  const gh = fakeGh(t, { GH_REPO: "fork/project" });
+  const pr = "https://github.com/upstream/project/pull/7";
+  for (const forMerge of [false, true]) {
+    gh.env.VIEW = JSON.stringify({ number: 7, state: "OPEN", isDraft: true,
+      baseRefName: forMerge ? "hikyaku/001-test/conductor" : "main" });
+    const result = gh.run("build-01", "001", "--pr", pr, ...(forMerge ? ["--for-merge"] : []), "--json");
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(gh.calls(), /pr view https:\/\/github\.com\/upstream\/project\/pull\/7 --json/);
+    assert.match(gh.calls(), /pr ready https:\/\/github\.com\/upstream\/project\/pull\/7/);
+    assert.doesNotMatch(gh.calls(), /pr ready 7/);
+  }
+});
+
+test("pr ready: 再実行と手動公開の案内も元のPRのURLを保持する", (t) => {
+  const gh = fakeGh(t, { GH_REPO: "fork/project", FAIL_READY: "1" });
+  const pr = "https://github.com/upstream/project/pull/7";
+  gh.env.VIEW = JSON.stringify({ number: 7, state: "OPEN", isDraft: true, baseRefName: "hikyaku/001-test/conductor" });
+  const failed = gh.run("build-01", "001", "--pr", pr, "--for-merge", "--json");
+  assert.equal(failed.status, 1);
+  assert.ok(failed.stderr.includes(`--pr ${pr} --for-merge`), failed.stderr);
+  assert.doesNotMatch(failed.stderr, /--pr 7/);
+
+  gh.env.FAIL_READY = "0";
+  write(gh.directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nauto_ready = false\n');
+  const manual = gh.run("plan", "001", "--pr", pr);
+  assert.equal(manual.status, 0, manual.stderr);
+  assert.ok(manual.stdout.includes(`gh pr ready ${pr}`), manual.stdout);
+  assert.doesNotMatch(manual.stdout, /gh pr ready 7/);
+});

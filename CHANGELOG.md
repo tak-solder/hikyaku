@@ -69,7 +69,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - main から依存グラフの推移的簡約・状態の色分け、tasklist の厳密な引数検査、CLI 呼び出しと重複した指示文の整理を取り込んだ。tasklist の入力と表示は BP ではなく `--peak` / 予測ピークを使う
 - `review action` がレビュー回数に応じた自動修正・対応確認・再レビューの要否を返す。指摘の妥当性と重複は LLM が判断する
 - builder の振り返りを PR 作成前に移し、成果物の push をまとめた。planner / architect / builder / close-cycle は Draft PR を作り、作成後の `publish` ステップで公開とレビュアー依頼を終える。close-cycle の別 PR を作る followups は公開後に維持する
-- `pr ready` が `[pr] auto_ready`（既定 true）と実行元から Ready への切り替えを決める。conductor の子は Draft のまま返し、監督が取り込む前に `--for-merge` で公開する。公開の失敗は手順の完了として扱わない
+- `pr ready` が `[pr] auto_ready`（既定 true）と実行元から Ready への切り替えを決める。conductor の子は Draft のまま返し、監督が取り込む前に `--for-merge` で公開する。公開の失敗は手順の完了として扱わない。PR の URL は状態確認・公開・再実行の案内まで保持し、既定リポジトリの同番号の PR に操作対象が変わらないようにした
 
 
 - builder: Step 3 以降（plan → レビュー → G8 → 実装 → 検証 → コードレビュー → handoff → PR → 振り返り）を `step next` の転送ループに置き換えた。手順の順序・ゲート・承認は変えていない。各ステップの指示は `skills/builder/steps/<step>.md` に分け、実行するステップの指示だけを読む。SKILL.md は約 35KB から約 16KB になった。差し戻しと PR レビュー対応の手順は `references/return.md` / `references/pr-feedback.md` に移した

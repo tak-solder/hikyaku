@@ -1,6 +1,7 @@
 /** pr ready — 設定・実行元・GitHub の状態から Ready への切り替えを決める。 */
 import { flagBoolean, flagString } from "../lib/args.mts";
 import { branchName } from "../lib/branch.mts";
+import { shellQuote } from "../lib/conductor.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { run } from "../lib/github.mts";
 import { emit } from "../lib/output.mts";
@@ -45,14 +46,14 @@ register({
     const ready = reason === "ready";
     if (ready && !dryRun) {
       try {
-        await run("gh", ["pr", "ready", String(state.number)], { cwd: config.repoRoot, timeout: 30_000 });
+        await run("gh", ["pr", "ready", pr], { cwd: config.repoRoot, timeout: 30_000 });
       } catch (error) {
-        throw new HikyakuError(`PR #${state.number} を Ready にできませんでした`, `${String(error)}\n再実行: hikyaku pr ready ${phase} ${cycle ?? ""} --pr ${state.number}${forMerge ? " --for-merge" : ""}`);
+        throw new HikyakuError(`PR #${state.number} を Ready にできませんでした`, `${String(error)}\n再実行: hikyaku pr ready ${phase} ${cycle ?? ""} --pr ${shellQuote(pr)}${forMerge ? " --for-merge" : ""}`);
       }
     }
     emit({ pr: state.number, ready, reason, dryRun }, () => {
       if (reason === "conductor-child") return "Draft のまま監督へ渡します";
-      if (reason === "auto-ready-off") return `Draft のまま残します。確認後に gh pr ready ${state.number} を実行してください`;
+      if (reason === "auto-ready-off") return `Draft のまま残します。確認後に gh pr ready ${shellQuote(pr)} を実行してください`;
       if (reason === "already-ready") return "既に Ready for Review です";
       return dryRun ? `PR #${state.number} を Ready にします（--dry-run）` : `PR #${state.number} を Ready にしました`;
     });
