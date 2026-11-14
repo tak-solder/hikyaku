@@ -125,9 +125,6 @@ register({
         `  split_above  ${config.peakBands.splitAbove.toLocaleString("en-US")}`,
       );
       if (config.external.githubRepo) lines.push(`  github_repo  ${config.external.githubRepo}`);
-      if (config.external.asanaProjectGid) {
-        lines.push(`  asana_project_gid  ${config.external.asanaProjectGid}`);
-      }
       if (config.askAtCreate.length > 0) {
         lines.push(
           "",

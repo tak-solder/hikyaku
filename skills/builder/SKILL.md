@@ -239,14 +239,14 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next build-{NN} {cycle}
 起動方法は設定で決まる。指示ファイルの `--context` と渡す情報を使う。
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc build-{NN} {cycle} --self claude --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc build-{NN} {cycle} --json
 ```
 
 `mode: agent` ならサブエージェントとして起動する。`mode: process` なら次を実行し、返った本文を
 レビュー結果として扱う。終了コード 1 は失敗で、指摘0件として扱わずユーザーに報告する。
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run doc build-{NN} {cycle} --self claude --context {context} --files <渡す情報のパスをカンマ区切りで>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run doc build-{NN} {cycle} --context {context} --files <渡す情報のパスをカンマ区切りで>
 ```
 
 明確な不整合・網羅漏れは反映する。主観的な指摘は無視してよい。

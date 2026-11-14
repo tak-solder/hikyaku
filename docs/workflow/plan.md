@@ -46,7 +46,7 @@ cycles/{NNN}-{slug}/planning/
 
 ## 終わり方
 
-外部連携が有効なら、ここで親 issue が作られます。user-stories があって親の要約として成立し、以降のすべての PR が親を参照できるようになるタイミングだからです。
+外部連携が有効なら、ここでサイクルの GitHub issue が作られます。user-stories があって issue の要約として成立し、以降のすべての PR がこの issue を参照できるようになるタイミングだからです。issue は CLOSE の PR のマージで閉じます（[サイクルの GitHub issue](../configuration/external.md)）。
 
 PR はドキュメントのみです。**速やかにマージしてください。** デフォルトブランチに入っていない情報は、次の設計フェーズからも他のサイクルからも見えません。PR は Draft で作られ、`[pr] auto_ready` が true（既定）ならすぐに Ready for Review になります（[設定](../configuration/config-file.md#pr)）。
 

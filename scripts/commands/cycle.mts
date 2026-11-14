@@ -59,7 +59,6 @@ interface Decided {
   sessionTitle: string | undefined;
   externalTarget: ExternalTarget | undefined;
   externalGithubRepo: string | undefined;
-  externalAsanaProjectGid: string | undefined;
 }
 
 /** どのキーも渡されていなければ何も書かない */
@@ -77,10 +76,16 @@ function readDecided(args: ParsedArgs): Decided {
   }
 
   const target = flagString(args, "external");
-  if (target !== undefined && target !== "none" && target !== "github" && target !== "asana") {
+  if (target === "asana") {
+    throw new HikyakuError("Asana への投影は v3 で廃止しました", "使用できる値: none | github");
+  }
+  if (args.flags.has("external-project")) {
+    throw new HikyakuError("--external-project は v3 で廃止しました", "Asana への投影は廃止しました。使用できる --external の値: none | github");
+  }
+  if (target !== undefined && target !== "none" && target !== "github") {
     throw new HikyakuError(
       `--external の値が不正です: ${target}`,
-      "使用できる値: none | github | asana",
+      "使用できる値: none | github",
     );
   }
 
@@ -92,7 +97,6 @@ function readDecided(args: ParsedArgs): Decided {
     sessionTitle: flagString(args, "session-title"),
     externalTarget: target,
     externalGithubRepo: flagString(args, "external-repo"),
-    externalAsanaProjectGid: flagString(args, "external-project"),
   };
 }
 
@@ -132,20 +136,13 @@ function renderCycleConfig(cycleName: string, decided: Decided): string {
   if (decided.sessionTitle !== undefined) {
     lines.push("[session]", `title = ${tomlString(decided.sessionTitle)}`, "");
   }
-  if (
-    decided.externalTarget !== undefined ||
-    decided.externalGithubRepo !== undefined ||
-    decided.externalAsanaProjectGid !== undefined
-  ) {
+  if (decided.externalTarget !== undefined || decided.externalGithubRepo !== undefined) {
     lines.push("[external]");
     if (decided.externalTarget !== undefined) {
       lines.push(`target = ${tomlString(decided.externalTarget)}`);
     }
     if (decided.externalGithubRepo !== undefined) {
       lines.push(`github_repo = ${tomlString(decided.externalGithubRepo)}`);
-    }
-    if (decided.externalAsanaProjectGid !== undefined) {
-      lines.push(`asana_project_gid = ${tomlString(decided.externalAsanaProjectGid)}`);
     }
     lines.push("");
   }
@@ -193,7 +190,7 @@ const ASK_FLAGS: Record<AskKey, string> = {
   "branch.separator": "--branch-separator <text>",
   "pr.title": "--pr-title <template>",
   "session.title": "--session-title <template>",
-  "external.target": "--external <none|github|asana> [--external-repo <owner/repo>]",
+  "external.target": "--external <none|github> [--external-repo <owner/repo>]",
 };
 
 register({
@@ -203,8 +200,7 @@ register({
     "hikyaku cycle new <slug> --profile <name> [--ticket <ref>] [--depends 001,002]\n" +
     "                           [--base-branch <name>] [--branch-prefix <text>] [--branch-separator <text>]\n" +
     "                           [--pr-title <template>] [--session-title <template>]\n" +
-    "                           [--external <none|github|asana>] [--external-repo <owner/repo>]\n" +
-    "                           [--external-project <gid>] [--dry-run]",
+    "                           [--external <none|github>] [--external-repo <owner/repo>] [--dry-run]",
   writes: true,
   details: [
     "--profile は必須です。サイクルの進め方は作成時に明示的に選ぶ必要があります",
@@ -408,13 +404,12 @@ register({
 
 register({
   name: "cycle link",
-  summary: "外部システムへ投影した親 issue / 親タスクの参照を記録する",
+  summary: "GitHub に起票したサイクルの issue の参照を記録する",
   usage: "hikyaku cycle link [<cycle>] --external <url> [--dry-run]",
   writes: true,
   details: [
     "cycles.md の外部列を埋めます。gh CLI が使える場合は external sync が自動で",
-    "記録するので、このコマンドを直接使うのは GitHub MCP や Asana MCP で",
-    "スキル側が投影した場合です。",
+    "記録するので、このコマンドを直接使うのは GitHub MCP でスキル側が起票した場合です。",
     "",
     "参照は `[#12](URL)` に整えて記録します。表記が揃っていないと表が横に伸びて",
     "読めなくなるためで、判定に使う値ではありません（完了判定は常に PR 列）。",
@@ -426,11 +421,11 @@ register({
     const { config, context: ctx } = openCycle(args, operands[0]);
     const external = flagString(args, "external");
     if (external === undefined) {
-      throw new HikyakuError("--external に親 issue / 親タスクの URL を指定してください");
+      throw new HikyakuError("--external にサイクルの issue の URL を指定してください");
     }
 
     const records = loadCycles(config.hikyakuRoot);
-    const formatted = formatRef(external, "親issue");
+    const formatted = formatRef(external, "issue");
     const next = records.map((record) =>
       record.id === ctx.record.id ? { ...record, external: formatted } : record,
     );

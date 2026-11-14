@@ -33,12 +33,6 @@ function settings(
   };
 }
 
-/** --self を渡したときに決まるプロバイダ（review resolve の JSON） */
-function resolvedProvider(directory: string, kind: string, self: string): { provider: string; providerSource: string } {
-  const plan = JSON.parse(succeeds(directory, "review", "resolve", kind, "build-01", "--self", self, "--no-fetch", "--json"));
-  return { provider: plan.provider, providerSource: plan.providerSource };
-}
-
 const ROOT_CONFIG = 'hikyaku_root = "docs/hikyaku"\nbase_branch = "main"\n';
 
 function reviewConfig(directory: string, body = ""): Record<string, unknown> {
@@ -114,9 +108,8 @@ test("レビュー設定: 不正な値・未知のキーを黙って捨てずに
     ["[review.codex]\nreasoning = \"high\"\n", /\[review\.codex\] に指定できないキー/],
     ['[review]\ncode = "codex"\n', /\[review\.code\]/],
     ["[review]\ntimeout = 0\n", /timeout/],
-    ['[review.provider_for]\nclaude = "auto"\n', /provider_for\]\.claude の値が不正/],
-    ['[review.provider_for]\ngemini = "codex"\n', /\[review\.provider_for\] に指定できないキー/],
-    ['[review]\nprovider_for = "codex"\n', /\[review\.provider_for\]/],
+    ['[review.provider_for]\nclaude = "codex"\n', /provider_for は v3 で廃止/],
+    ['[review.doc.provider_for]\nclaude = "codex"\n', /provider_for は v3 で廃止/],
   ];
   for (const [body, pattern] of cases) {
     write(directory, ".hikyaku.config", ROOT_CONFIG + body);
@@ -126,22 +119,22 @@ test("レビュー設定: 不正な値・未知のキーを黙って捨てずに
   }
 });
 
-test("レビューの解決: code / security は常に別プロセス、doc はメインと同じならサブエージェント", () => {
+test("レビューの解決: code / security は常に別プロセス、doc は claude ならサブエージェント", () => {
   assert.deepEqual(
-    [planReview({ kind: "code", self: "claude", settings: settings() })].map((plan) => [plan.provider, plan.mode, plan.style]),
+    [planReview({ kind: "code", settings: settings() })].map((plan) => [plan.provider, plan.mode, plan.style]),
     [["claude", "process", "code-review"]],
   );
-  const doc = planReview({ kind: "doc", self: "codex", settings: settings() });
-  assert.equal(doc.mode, "agent");
-  const otherDoc = planReview({ kind: "doc", self: "codex", settings: settings({ provider: "claude" }) });
+  const doc = planReview({ kind: "doc", settings: settings() });
+  assert.deepEqual([doc.provider, doc.mode], ["claude", "agent"]);
+  const otherDoc = planReview({ kind: "doc", settings: settings({ provider: "codex" }) });
   assert.deepEqual([otherDoc.mode, otherDoc.style], ["process", "prompt"]);
 
-  const native = planReview({ kind: "security", self: "claude", settings: settings(), nativeSecurity: true });
+  const native = planReview({ kind: "security", settings: settings(), nativeSecurity: true });
   assert.equal(native.style, "security-review");
-  const stacked = planReview({ kind: "security", self: "claude", settings: settings(), nativeSecurity: false });
+  const stacked = planReview({ kind: "security", settings: settings(), nativeSecurity: false });
   assert.equal(stacked.style, "prompt");
   // Codex にはセキュリティ専用のレビュー機能が無い
-  const codex = planReview({ kind: "security", self: "claude", settings: settings({ provider: "codex" }), nativeSecurity: true });
+  const codex = planReview({ kind: "security", settings: settings({ provider: "codex" }), nativeSecurity: true });
   assert.equal(codex.style, "prompt");
 });
 
@@ -154,7 +147,7 @@ test("レビューの解決: /security-review は origin のデフォルトブ�
 
 test("レビューのコマンド: プロバイダと種類ごとに組み立て、書き換えを禁じる", () => {
   const models = { claude: { model: "opus", effort: "high" }, codex: { model: "gpt-a", effort: "xhigh" } };
-  const claudeCode = buildInvocation(planReview({ kind: "code", self: "claude", settings: settings({ models }) }), {
+  const claudeCode = buildInvocation(planReview({ kind: "code", settings: settings({ models }) }), {
     baseRef: "origin/main",
     prompt: undefined,
     outputFile: "/tmp/out",
@@ -164,7 +157,7 @@ test("レビューのコマンド: プロバイダと種類ごとに組み立て
   assert.ok(claudeCode.args.includes("--disallowedTools"));
   assert.equal(claudeCode.outputFile, undefined);
 
-  const noEffort = buildInvocation(planReview({ kind: "code", self: "claude", settings: settings() }), {
+  const noEffort = buildInvocation(planReview({ kind: "code", settings: settings() }), {
     baseRef: "main",
     prompt: undefined,
     outputFile: "/tmp/out",
@@ -172,7 +165,7 @@ test("レビューのコマンド: プロバイダと種類ごとに組み立て
   assert.equal(noEffort.args[1], "/code-review main...HEAD");
   assert.ok(!noEffort.args.includes("--model"));
 
-  const codexCode = buildInvocation(planReview({ kind: "code", self: "claude", settings: settings({ provider: "codex", models }) }), {
+  const codexCode = buildInvocation(planReview({ kind: "code", settings: settings({ provider: "codex", models }) }), {
     baseRef: "main",
     prompt: undefined,
     outputFile: "/tmp/out",
@@ -194,14 +187,14 @@ test("レビューのコマンド: プロバイダと種類ごとに組み立て
 
   // --base と指示文は排他なので、セキュリティは指示文だけを渡す
   const codexSecurity = buildInvocation(
-    planReview({ kind: "security", self: "codex", settings: settings() }),
+    planReview({ kind: "security", settings: settings({ provider: "codex" }) }),
     { baseRef: "main", prompt: "観点", outputFile: "/tmp/out" },
   );
   assert.deepEqual(codexSecurity.args.slice(0, 2), ["exec", "review"]);
   assert.ok(!codexSecurity.args.includes("--base"));
   assert.equal(codexSecurity.args.at(-1), "観点");
 
-  const codexDoc = buildInvocation(planReview({ kind: "doc", self: "claude", settings: settings({ provider: "codex" }) }), {
+  const codexDoc = buildInvocation(planReview({ kind: "doc", settings: settings({ provider: "codex" }) }), {
     baseRef: undefined,
     prompt: "doc",
     outputFile: "/tmp/out",
@@ -209,7 +202,7 @@ test("レビューのコマンド: プロバイダと種類ごとに組み立て
   assert.equal(codexDoc.args[1], "-c");
 
   assert.throws(() =>
-    buildInvocation(planReview({ kind: "doc", self: "claude", settings: settings() }), {
+    buildInvocation(planReview({ kind: "doc", settings: settings() }), {
       baseRef: undefined,
       prompt: "doc",
       outputFile: "/tmp/out",
@@ -276,7 +269,7 @@ function buildBranch(t: TestContext, body = ""): string {
 test("review run: 別プロセスの出力を .git の中に保存して返す", (t) => {
   const directory = buildBranch(t);
   const bin = stubs(t, '{"is_error":false,"num_turns":0,"result":"calc.js:3 off-by-one"}');
-  const result = runWith(directory, bin, "review", "run", "code", "build-01", "--self", "claude", "--no-fetch", "--json");
+  const result = runWith(directory, bin, "review", "run", "code", "build-01", "--no-fetch", "--json");
   assert.equal(result.status, 0, result.stderr);
   const output = JSON.parse(result.stdout);
   assert.equal(output.result, "calc.js:3 off-by-one");
@@ -284,7 +277,8 @@ test("review run: 別プロセスの出力を .git の中に保存して返す",
   assert.equal(readFileSync(output.output, "utf8"), "calc.js:3 off-by-one");
   assert.match(readFileSync(join(bin, "claude.args"), "utf8"), /\/code-review main\.\.\.HEAD/);
 
-  const codex = runWith(directory, bin, "review", "run", "code", "build-01", "--self", "codex", "--round", "2", "--no-fetch", "--json");
+  write(directory, ".hikyaku.config", ROOT_CONFIG + '[review.code]\nprovider = "codex"\n');
+  const codex = runWith(directory, bin, "review", "run", "code", "build-01", "--round", "2", "--no-fetch", "--json");
   assert.equal(codex.status, 0, codex.stderr);
   assert.equal(JSON.parse(codex.stdout).result, "[P1] 指摘\n");
   assert.match(readFileSync(join(bin, "codex.args"), "utf8"), /^exec\nreview\n--base\nmain\n/);
@@ -293,15 +287,15 @@ test("review run: 別プロセスの出力を .git の中に保存して返す",
 test("review run: 空の結果・回数の上限・サブエージェントの種類は失敗にする", (t) => {
   const directory = buildBranch(t, "[review.code]\nmax_rounds = 1\n");
   const empty = stubs(t, '{"is_error":false,"num_turns":0,"result":""}');
-  const result = runWith(directory, empty, "review", "run", "code", "build-01", "--self", "claude", "--no-fetch");
+  const result = runWith(directory, empty, "review", "run", "code", "build-01", "--no-fetch");
   assert.equal(result.status, 1);
   assert.match(result.stderr, /空の結果/);
 
-  const over = runWith(directory, empty, "review", "run", "code", "build-01", "--self", "claude", "--round", "2", "--no-fetch");
+  const over = runWith(directory, empty, "review", "run", "code", "build-01", "--round", "2", "--no-fetch");
   assert.equal(over.status, 1);
   assert.match(over.stderr, /最大 1 回/);
 
-  const agent = runWith(directory, empty, "review", "run", "doc", "plan", "--self", "claude", "--context", "plan", "--files", "a.md");
+  const agent = runWith(directory, empty, "review", "run", "doc", "plan", "--context", "plan", "--files", "a.md");
   assert.equal(agent.status, 1);
   assert.match(agent.stderr, /サブエージェント/);
 });
@@ -309,7 +303,7 @@ test("review run: 空の結果・回数の上限・サブエージェントの�
 test("review run --dry-run: コマンドだけを返し、何も実行しない", (t) => {
   const directory = buildBranch(t, '[review.security]\nprovider = "codex"\n');
   const bin = stubs(t, "{}");
-  const result = runWith(directory, bin, "review", "run", "security", "build-01", "--self", "claude", "--dry-run", "--no-fetch", "--json");
+  const result = runWith(directory, bin, "review", "run", "security", "build-01", "--dry-run", "--no-fetch", "--json");
   assert.equal(result.status, 0, result.stderr);
   const output = JSON.parse(result.stdout);
   assert.equal(output.style, "prompt");
@@ -317,7 +311,7 @@ test("review run --dry-run: コマンドだけを返し、何も実行しない"
   assert.equal(existsSync(join(bin, "codex.args")), false);
   assert.equal(existsSync(output.output), false);
 
-  const resolved = JSON.parse(succeeds(directory, "review", "resolve", "security", "build-01", "--self", "claude", "--no-fetch", "--json"));
+  const resolved = JSON.parse(succeeds(directory, "review", "resolve", "security", "build-01", "--no-fetch", "--json"));
   assert.equal(resolved.provider, "codex");
   assert.equal(resolved.security.native, false);
   assert.equal(resolved.enabled, "recommended");
@@ -325,22 +319,22 @@ test("review run --dry-run: コマンドだけを返し、何も実行しない"
 
 test("環境変数 HIKYAKU_REVIEW_PROVIDER: 設定ファイルの provider より優先し、出所を示す", (t) => {
   const directory = buildBranch(t, '[review]\nprovider = "codex"\n[review.security]\nprovider = "codex"\n[review.claude]\neffort = "low"\n');
-  const plain = JSON.parse(succeeds(directory, "review", "resolve", "security", "build-01", "--self", "claude", "--no-fetch", "--json"));
+  const plain = JSON.parse(succeeds(directory, "review", "resolve", "security", "build-01", "--no-fetch", "--json"));
   assert.deepEqual([plain.provider, plain.providerSource], ["codex", "kind"]);
 
-  const overridden = runEnv(directory, { HIKYAKU_REVIEW_PROVIDER: "claude" }, "review", "resolve", "security", "build-01", "--self", "codex", "--no-fetch", "--json");
+  const overridden = runEnv(directory, { HIKYAKU_REVIEW_PROVIDER: "claude" }, "review", "resolve", "security", "build-01", "--no-fetch", "--json");
   assert.equal(overridden.status, 0, overridden.stderr);
   const resolved = JSON.parse(overridden.stdout);
   assert.deepEqual([resolved.provider, resolved.providerSource], ["claude", "env"]);
   // モデルとエフォートは切り替え先のプロバイダの設定が使われる
   assert.equal(resolved.effort, "low");
 
-  const text = runEnv(directory, { HIKYAKU_REVIEW_PROVIDER: "claude" }, "review", "resolve", "code", "build-01", "--self", "claude", "--no-fetch");
+  const text = runEnv(directory, { HIKYAKU_REVIEW_PROVIDER: "claude" }, "review", "resolve", "code", "build-01", "--no-fetch");
   assert.match(text.stdout, /出所 +環境変数 HIKYAKU_REVIEW_PROVIDER/);
   const config = runEnv(directory, { HIKYAKU_REVIEW_PROVIDER: "auto" }, "config", "001");
   assert.match(config.stdout, /code +auto（環境変数 HIKYAKU_REVIEW_PROVIDER）/);
 
-  const empty = runEnv(directory, { HIKYAKU_REVIEW_PROVIDER: "" }, "review", "resolve", "code", "build-01", "--self", "claude", "--no-fetch", "--json");
+  const empty = runEnv(directory, { HIKYAKU_REVIEW_PROVIDER: "" }, "review", "resolve", "code", "build-01", "--no-fetch", "--json");
   assert.equal(JSON.parse(empty.stdout).providerSource, "review");
 
   const invalid = runEnv(directory, { HIKYAKU_REVIEW_PROVIDER: "gemini" }, "config", "001");
@@ -348,92 +342,42 @@ test("環境変数 HIKYAKU_REVIEW_PROVIDER: 設定ファイルの provider よ�
   assert.match(invalid.stderr, /環境変数 HIKYAKU_REVIEW_PROVIDER の値が不正/);
 });
 
-test("クラウド環境: そこで動いているプロバイダに固定し、HIKYAKU_REVIEW_PROVIDER と設定ファイルより優先する", (t) => {
-  const directory = buildBranch(
-    t,
-    '[review]\nprovider = "codex"\n[review.provider_for]\nclaude = "codex"\ncodex = "claude"\n[review.security]\nprovider = "claude"\n',
-  );
-  const claude = runEnv(directory, { CLAUDE_CODE_REMOTE: "true", HIKYAKU_REVIEW_PROVIDER: "codex" }, "review", "resolve", "code", "build-01", "--self", "claude", "--no-fetch", "--json");
+test("クラウド環境: claude に固定し、HIKYAKU_REVIEW_PROVIDER と設定ファイルより優先する", (t) => {
+  const directory = buildBranch(t, '[review]\nprovider = "codex"\n');
+  const claude = runEnv(directory, { CLAUDE_CODE_REMOTE: "true", HIKYAKU_REVIEW_PROVIDER: "codex" }, "review", "resolve", "code", "build-01", "--no-fetch", "--json");
   assert.equal(claude.status, 0, claude.stderr);
   assert.deepEqual([JSON.parse(claude.stdout).provider, JSON.parse(claude.stdout).providerSource], ["claude", "cloud"]);
-
-  const codex = runEnv(directory, { CODEX_ENVIRONMENT_ID: "env-123" }, "review", "resolve", "security", "build-01", "--self", "codex", "--no-fetch", "--json");
-  assert.equal(codex.status, 0, codex.stderr);
-  assert.deepEqual([JSON.parse(codex.stdout).provider, JSON.parse(codex.stdout).providerSource], ["codex", "cloud"]);
-
-  const text = runEnv(directory, { CODEX_ENVIRONMENT_ID: "env-123" }, "review", "resolve", "code", "build-01", "--self", "codex", "--no-fetch");
-  assert.match(text.stdout, /出所 +クラウド環境（CODEX_ENVIRONMENT_ID）/);
   const config = runEnv(directory, { CLAUDE_CODE_REMOTE: "true" }, "config", "001");
   assert.match(config.stdout, /code +claude（クラウド環境（CLAUDE_CODE_REMOTE））/);
 
-  // CLAUDE_CODE_REMOTE は true のときだけ、CODEX_ENVIRONMENT_ID は空でないときだけクラウド環境とみなす
-  for (const env of [{ CLAUDE_CODE_REMOTE: "false" }, { CLAUDE_CODE_REMOTE: "" }, { CODEX_ENVIRONMENT_ID: "" }]) {
-    const result = runEnv(directory, env, "review", "resolve", "code", "build-01", "--self", "claude", "--no-fetch", "--json");
-    assert.equal(JSON.parse(result.stdout).providerSource, "review.provider_for", JSON.stringify(env));
+  // CLAUDE_CODE_REMOTE は true のときだけクラウド環境とみなす。CODEX_ENVIRONMENT_ID はもう見ない
+  for (const env of [{ CLAUDE_CODE_REMOTE: "false" }, { CLAUDE_CODE_REMOTE: "" }, { CODEX_ENVIRONMENT_ID: "env-123" }]) {
+    const result = runEnv(directory, env, "review", "resolve", "code", "build-01", "--no-fetch", "--json");
+    assert.deepEqual([JSON.parse(result.stdout).provider, JSON.parse(result.stdout).providerSource], ["codex", "review"], JSON.stringify(env));
   }
 });
 
-test("review run: クラウド環境で CLI を起動できないときは、環境変数での切り替えを案内しない", (t) => {
+test("review: --self は廃止したことを伝えて止まる", (t) => {
   const directory = buildBranch(t, "");
-  const bin = temporaryDirectory(t);
-  const result = runEnv(
-    directory,
-    { CODEX_ENVIRONMENT_ID: "env-123", PATH: `${bin}${delimiter}/usr/bin${delimiter}/bin` },
-    "review", "run", "code", "build-01", "--self", "claude", "--no-fetch",
-  );
+  const result = cli(directory, "review", "resolve", "code", "build-01", "--self", "claude", "--no-fetch");
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /codex を起動できません/);
-  assert.doesNotMatch(result.stderr, /HIKYAKU_REVIEW_PROVIDER/);
+  assert.match(result.stderr, /--self は v3 で廃止/);
 });
 
 test("review run: CLI を起動できないときは失敗にし、環境変数での切り替えを案内する", (t) => {
   const directory = buildBranch(t, '[review.code]\nprovider = "codex"\n');
   // codex の無い PATH（git だけは使えるようにする）
   const bin = temporaryDirectory(t);
-  const result = runEnv(directory, { PATH: `${bin}${delimiter}/usr/bin${delimiter}/bin` }, "review", "run", "code", "build-01", "--self", "claude", "--no-fetch");
+  const result = runEnv(directory, { PATH: `${bin}${delimiter}/usr/bin${delimiter}/bin` }, "review", "run", "code", "build-01", "--no-fetch");
   assert.equal(result.status, 1);
   assert.match(result.stderr, /codex を起動できません/);
   assert.match(result.stderr, /HIKYAKU_REVIEW_PROVIDER=claude/);
 });
 
-test("provider_for: メインのプロバイダごとにレビューの実行先を決め、行が無ければ provider に戻る", (t) => {
-  const directory = buildBranch(
-    t,
-    [
-      "[review]",
-      'provider = "auto"',
-      "[review.provider_for]",
-      'claude = "codex"',
-      "[review.security]",
-      'provider = "claude"',
-      "[review.doc.provider_for]",
-      'codex = "claude"',
-      "",
-    ].join("\n"),
-  );
-  // Claude で開発していれば Codex でレビューする。Codex の行は無いので auto（Codex のまま）
-  assert.deepEqual(resolvedProvider(directory, "code", "claude"), { provider: "codex", providerSource: "review.provider_for" });
-  assert.deepEqual(resolvedProvider(directory, "code", "codex"), { provider: "codex", providerSource: "review" });
-  // 種類の provider は [review.provider_for] より強い
-  assert.deepEqual(resolvedProvider(directory, "security", "claude"), { provider: "claude", providerSource: "kind" });
-  // 種類の provider_for は種類の provider より強く、行が無ければ下の段へ進む
-  assert.deepEqual(resolvedProvider(directory, "doc", "codex"), { provider: "claude", providerSource: "kind.provider_for" });
-  assert.deepEqual(resolvedProvider(directory, "doc", "claude"), { provider: "codex", providerSource: "review.provider_for" });
-
-  const text = succeeds(directory, "review", "resolve", "code", "build-01", "--self", "claude", "--no-fetch");
-  assert.match(text, /出所 +\[review\.provider_for\] の claude/);
-  const config = succeeds(directory, "config", "001");
-  assert.match(config, /code +provider_for（claude→codex） > auto +回数/);
-
-  // 環境変数は provider_for より強い
-  const env = runEnv(directory, { HIKYAKU_REVIEW_PROVIDER: "claude" }, "review", "resolve", "code", "build-01", "--self", "claude", "--no-fetch", "--json");
-  assert.deepEqual([JSON.parse(env.stdout).provider, JSON.parse(env.stdout).providerSource], ["claude", "env"]);
-});
-
 test("review run: 同じラウンドの再実行で、前回の Codex の出力を今回の結果として読まない", (t) => {
   const directory = buildBranch(t, '[review.code]\nprovider = "codex"\n');
   const bin = stubs(t, "{}");
-  const first = runWith(directory, bin, "review", "run", "code", "build-01", "--self", "claude", "--no-fetch", "--json");
+  const first = runWith(directory, bin, "review", "run", "code", "build-01", "--no-fetch", "--json");
   assert.equal(first.status, 0, first.stderr);
   const output: string = JSON.parse(first.stdout).output;
   assert.ok(existsSync(output.replace(/\.md$/, ".raw")));
@@ -441,7 +385,7 @@ test("review run: 同じラウンドの再実行で、前回の Codex の出力�
   // 2回目の Codex は -o に何も書かずに正常終了する
   write(bin, "codex", "#!/bin/sh\nexit 0\n");
   chmodSync(join(bin, "codex"), 0o755);
-  const second = runWith(directory, bin, "review", "run", "code", "build-01", "--self", "claude", "--no-fetch");
+  const second = runWith(directory, bin, "review", "run", "code", "build-01", "--no-fetch");
   assert.equal(second.status, 1);
   assert.match(second.stderr, /codex が結果を書き出しませんでした/);
   assert.equal(readFileSync(output, "utf8"), "");

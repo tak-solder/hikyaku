@@ -47,7 +47,7 @@ export interface CycleRecord {
   /** 作成時の Hikyaku バージョン */
   hikyaku: string;
   ticket: string;
-  /** 外部システムへ投影した親 issue / 親タスクへの参照 */
+  /** Hikyaku が起票したサイクルの GitHub issue への参照 */
   external: string;
   /** 依存するサイクルの ID。サイクルレベルに留める（ビルドレベルは持たない） */
   dependsOn: string[];
@@ -192,7 +192,7 @@ export function renderCyclesFile(records: CycleRecord[]): string {
     "| `profile` | サイクル作成時に選択した profile（express / economy / standard / thorough） |",
     "| `hikyaku` | 作成時の Hikyaku バージョン。ディレクトリ構造の解釈に使う。以後更新しない |",
     "| `チケット` | このサイクルの発端になった外部チケット（人が作ったもの） |",
-    "| `外部` | Hikyaku が投影した親 issue / 親タスク。可視化のためのビューで、判定には使わない |",
+    "| `外部` | Hikyaku が起票したサイクルの GitHub issue。可視化のためのビューで、判定には使わない |",
     "| `依存` | 依存するサイクルの ID。依存が満たされた = そのサイクルが `closed` |",
     "",
     renderTable(CYCLES_HEADERS, sorted.map(toRow)),

@@ -14,7 +14,7 @@ import { assertCurrentConfig, loadConfig, type ResolvedConfig } from "../lib/con
 import { cycleDirName, loadCycles } from "../lib/cycles.mts";
 import { renderDiffMarkdown, summarizeDiff } from "../lib/diff-stats.mts";
 import { HikyakuError } from "../lib/errors.mts";
-import { currentBranch, diffStats, mainWorktreeRoot, originUrl, worktreePaths } from "../lib/git.mts";
+import { diffStats, mainWorktreeRoot, worktreePaths } from "../lib/git.mts";
 import { emit, table } from "../lib/output.mts";
 import { pluginVersion } from "../lib/paths.mts";
 import { readProgress } from "../lib/progress.mts";
@@ -32,7 +32,6 @@ import {
   renderSessionMarkdown,
   SELECTION_RULE,
   selectMain,
-  type SessionHost,
   type SessionMeasure,
 } from "../lib/session.mts";
 import { requirePhase, resolvePrBase, scopeFor } from "../lib/stack.mts";
@@ -512,12 +511,11 @@ register({
   },
 });
 
-function readHost(args: ParsedArgs): SessionHost | undefined {
-  const raw = flagString(args, "host");
-  if (raw === undefined) return undefined;
-  if (raw === "claude" || raw === "claude-code") return "claude-code";
-  if (raw === "codex") return "codex";
-  throw new HikyakuError(`--host は claude か codex で指定してください（現在: ${raw}）`);
+/** --host は v3 で廃止した。測るのは Claude Code のトランスクリプトだけ */
+function rejectHost(args: ParsedArgs): void {
+  if (args.flags.has("host")) {
+    throw new HikyakuError("--host は v3 で廃止しました", "Claude Code のトランスクリプトだけを測ります。--host を外して実行してください。");
+  }
 }
 
 function sessionJson(measure: SessionMeasure): Record<string, unknown> {
@@ -527,7 +525,6 @@ function sessionJson(measure: SessionMeasure): Record<string, unknown> {
     client: measure.client ?? null,
     path: measure.path,
     sessionId: measure.sessionId ?? null,
-    kind: measure.kind,
     model: measure.model ?? null,
     models: measure.models,
     peak: measure.peak,
@@ -536,7 +533,6 @@ function sessionJson(measure: SessionMeasure): Record<string, unknown> {
     calls: measure.calls,
     outputTokens: measure.outputTokens,
     compactions: measure.compactions,
-    window: measure.window ?? null,
     callsByBranch: measure.callsByBranch,
     startedAt: measure.startedAt ?? null,
     endedAt: measure.endedAt ?? null,
@@ -552,47 +548,46 @@ interface SessionResult {
   selection: string | undefined;
   note: string | undefined;
   candidates: Candidate[];
-  excluded: SessionMeasure[];
   /** 測ったのが現在のセッションか（Hikyaku の版を添えられるのはこのときだけ） */
   isCurrent: boolean;
 }
 
 async function measureSession(args: ParsedArgs, operands: string[]): Promise<SessionResult> {
   const env = process.env;
-  const host = readHost(args);
+  rejectHost(args);
   const transcript = flagString(args, "transcript");
 
   if (transcript !== undefined) {
     const base: SessionResult = {
       mode: "transcript", branch: undefined, measure: undefined, reason: undefined, selection: "--transcript で指定",
-      note: undefined, candidates: [], excluded: [], isCurrent: false,
+      note: undefined, candidates: [], isCurrent: false,
     };
     if (!existsSync(transcript)) return { ...base, reason: `ファイルがありません: ${transcript}` };
-    const measure = readMeasure(transcript, host);
+    const measure = readMeasure(transcript);
     if (measure === undefined) {
       return { ...base, reason: `API 呼び出しの記録を読み取れません: ${transcript}` };
     }
-    const lookups = lookupCurrent(env, host);
+    const lookups = lookupCurrent(env);
     const isCurrent = lookups.some((lookup) => lookup.path !== undefined && resolve(lookup.path) === resolve(transcript));
     return { ...base, measure, note: "指定したファイル", isCurrent };
   }
 
-  const lookups = lookupCurrent(env, host);
+  const lookups = lookupCurrent(env);
   const current = pickCurrent(lookups);
-  const currentMeasure = current?.path === undefined ? undefined : readMeasure(current.path, current.host);
+  const currentMeasure = current?.path === undefined ? undefined : readMeasure(current.path);
 
   if (operands[0] === undefined) {
     if (current === undefined) {
       return {
         mode: "current", branch: undefined, measure: undefined, reason: describeMissingCurrent(env, lookups),
-        selection: undefined, note: undefined, candidates: [], excluded: [], isCurrent: true,
+        selection: undefined, note: undefined, candidates: [], isCurrent: true,
       };
     }
     return {
       mode: "current", branch: undefined, measure: currentMeasure,
       reason: currentMeasure === undefined ? `API 呼び出しの記録がまだありません: ${current.path}` : undefined,
       selection: `${current.variable} で特定した現在のセッション`, note: "現在のセッション",
-      candidates: [], excluded: [], isCurrent: true,
+      candidates: [], isCurrent: true,
     };
   }
 
@@ -601,23 +596,13 @@ async function measureSession(args: ParsedArgs, operands: string[]): Promise<Ses
   const branch = branchName(config.branch, phase, cycle);
   const mainRoot = (await mainWorktreeRoot(config.repoRoot)) ?? config.repoRoot;
   const roots = [...new Set([mainRoot, config.repoRoot, ...(await worktreePaths(config.repoRoot))])];
-  const found = collectBranchSessions(env, { roots, originUrl: await originUrl(config.repoRoot) }, branch, host);
+  const found = collectBranchSessions(env, { roots }, branch);
 
-  const candidates: Candidate[] = found.measures.map((measure) => ({
+  const candidates: Candidate[] = found.map((measure) => ({
     measure,
     branchCalls: measure.callsByBranch[branch] ?? 0,
     current: currentMeasure !== undefined && resolve(measure.path) === resolve(currentMeasure.path),
   }));
-  // Codex はセッション開始時のブランチしか記録しない。ビルドのブランチをセッションの中で
-  // 作った場合でも、いまそのブランチにいる現在のセッションは候補に入れる
-  if (
-    currentMeasure !== undefined &&
-    currentMeasure.kind === "main" &&
-    !candidates.some((c) => c.current) &&
-    currentBranch(config.repoRoot) === branch
-  ) {
-    candidates.push({ measure: currentMeasure, branchCalls: currentMeasure.callsByBranch[branch] ?? currentMeasure.calls, current: true });
-  }
 
   const selected = selectMain(candidates);
   if (selected === undefined) {
@@ -625,21 +610,21 @@ async function measureSession(args: ParsedArgs, operands: string[]): Promise<Ses
     if (lookups.length > 0 && current === undefined) hints.push(describeMissingCurrent(env, lookups));
     return {
       mode: "branch", branch, measure: undefined, reason: hints.join("。"), selection: SELECTION_RULE,
-      note: undefined, candidates, excluded: found.excluded, isCurrent: false,
+      note: undefined, candidates, isCurrent: false,
     };
   }
   const others = candidates.length - 1;
   return {
     mode: "branch", branch, measure: selected.measure, reason: undefined, selection: SELECTION_RULE,
     note: `${selected.current ? "現在のセッション。" : ""}本体${others > 0 ? `。ほか ${others} 件` : ""}`,
-    candidates, excluded: found.excluded, isCurrent: selected.current,
+    candidates, isCurrent: selected.current,
   };
 }
 
 register({
   name: "tokens session",
   summary: "セッションのコンテキストのピークを、ホストの記録から実測する",
-  usage: "hikyaku tokens session [<phase> [<cycle>]] [--transcript <path>] [--host claude|codex] [--markdown] [--json]",
+  usage: "hikyaku tokens session [<phase> [<cycle>]] [--transcript <path>] [--markdown] [--json]",
   details: [
     "予測ピークと突き合わせる実測（メインセッションのコンテキスト）を返します。",
     "予測の算出には使いません。",
@@ -650,11 +635,9 @@ register({
     "  calls        API 呼び出し回数",
     "  outputTokens 出力トークンの合計",
     "  compactions  コンパクションの回数",
-    "  window       コンテキストウィンドウ（Codex のみ。Claude Code は記録しないので null）",
     "  model / host / hostVersion",
     "",
-    "引数なしでは現在のセッションを測ります。Claude Code は CLAUDE_CODE_SESSION_ID、",
-    "Codex は CODEX_THREAD_ID でトランスクリプト（rollout）を特定します。",
+    "引数なしでは現在のセッションを測ります。CLAUDE_CODE_SESSION_ID でトランスクリプトを特定します。",
     "",
     "<phase> [<cycle>] を渡すと、そのフェーズのブランチに対応付くセッションを集めて",
     "本体を選びます（過去のビルドの集計や、PR レビュー対応で別のセッションから測るとき）。",
@@ -662,15 +645,12 @@ register({
     `「${SELECTION_RULE}」という規則で選び、`,
     "どれを採ったかと他の候補を出力に出します。現在のセッションがそのブランチにいれば候補に入ります。",
     "",
-    "  Claude Code  各行の gitBranch で対応付けます。サブエージェントは数えません",
-    "  Codex        session_meta の git.branch（開始時のブランチ）で対応付けます。",
-    "               サブエージェントと guardian（codex-auto-review）は対象外です",
+    "各行の gitBranch で対応付けます。サブエージェントは数えません。",
     "",
-    "記録の場所は CLAUDE_CONFIG_DIR（既定 ~/.claude）と CODEX_HOME（既定 ~/.codex）から引きます。",
-    "--transcript で記録のファイルを直接指定できます（形式は中身から判定し、--host で固定できます）。",
+    "記録の場所は CLAUDE_CONFIG_DIR（既定 ~/.claude）から引きます。",
+    "--transcript で記録のファイルを直接指定できます。",
     "",
     "**読めない・見つからないときは推測せず「計測不可」とその理由を返します**（終了コードは 0）。",
-    "Codex のクラウドでは rollout が保存されないため計測できません。",
     "",
     "--markdown は retrospective.md の「セッションの実測」に貼る表を出します。",
     "Hikyaku の版は、測ったのが現在のセッションのときだけ埋めます（過去のセッションの版は分からないため）。",
@@ -703,7 +683,6 @@ register({
           current: c.current,
           selected: c.measure === result.measure,
         })),
-        excluded: result.excluded.map((m) => ({ path: m.path, sessionId: m.sessionId ?? null, kind: m.kind })),
         hikyakuVersion: hikyakuVersion ?? null,
         markdown,
       },
@@ -726,7 +705,6 @@ register({
           `呼び出し回数    ${m.calls}`,
           `出力トークン    ${formatTokens(m.outputTokens)}`,
           `コンパクション  ${m.compactions}`,
-          `ウィンドウ      ${m.window === undefined ? "—（記録なし）" : formatTokens(m.window)}`,
           `モデル          ${m.models.length > 1 ? `${m.model}（ほか ${m.models.filter((x) => x !== m.model).join(", ")}）` : (m.model ?? "—")}`,
           `ホスト          ${hostLabel(m)}${m.client === undefined ? "" : `（${m.client}）`}`,
           `Hikyaku         ${hikyakuVersion ?? "—（現在のセッションではないため不明）"}`,
@@ -747,9 +725,6 @@ register({
               ["本体", "セッション", "ホスト", "ブランチでの呼び出し", "総呼び出し", "ピーク", ""],
             ),
           );
-        }
-        if (result.excluded.length > 0) {
-          lines.push("", `対象外: ${result.excluded.map((e) => `${(e.sessionId ?? basename(e.path)).slice(0, 8)}（${e.kind}）`).join(", ")}`);
         }
         return lines.join("\n");
       },

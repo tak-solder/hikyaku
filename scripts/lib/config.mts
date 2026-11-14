@@ -42,7 +42,7 @@ export type ProfileName = "express" | "economy" | "standard" | "thorough";
 export type SecurityReviewMode = "off" | "recommended" | "on";
 export type RetrospectiveMode = "skip" | "prompt" | "auto";
 export type ValidateMode = "manual" | "phase" | "step";
-export type ExternalTarget = "none" | "github" | "asana";
+export type ExternalTarget = "none" | "github";
 
 export const PROFILE_NAMES: ProfileName[] = ["express", "economy", "standard", "thorough"];
 
@@ -87,8 +87,12 @@ export interface Reviews {
   validate: ValidateMode;
 }
 
-/** レビューを実行するプロバイダ。auto はメインのセッションと同じものを使う */
+/**
+ * レビューを実行するプロバイダ。auto はメインのセッションと同じもの（claude）を使う。
+ * メインのセッションは常に Claude Code で、Codex はレビューの実行先としてだけ使う
+ */
 export type ReviewProvider = "claude" | "codex";
+export const MAIN_PROVIDER: ReviewProvider = "claude";
 export const REVIEW_PROVIDERS: ReviewProvider[] = ["claude", "codex"];
 export type ReviewProviderChoice = "auto" | ReviewProvider;
 
@@ -106,27 +110,12 @@ export interface ReviewModelSettings {
 }
 
 /** provider の値がどこから来たか。設定ファイルと違う結果になったときに理由を示すため */
-export type ReviewProviderSource =
-  | "cloud"
-  | "env"
-  | "kind.provider_for"
-  | "kind"
-  | "review.provider_for"
-  | "review"
-  | "default";
+export type ReviewProviderSource = "cloud" | "env" | "kind" | "review" | "default";
 
-/**
- * provider を決める規則の1段。
- *   provider     その値をそのまま使う
- *   providerFor  メインのプロバイダの行があればその値を使い、無ければ次の段へ進む
- *
- * provider_for はメインのプロバイダが分からないと決まらないので、設定の段階では規則の列のまま持ち、
- * --self を受け取る review resolve / run で解決する（resolveReviewProvider）
- */
+/** provider を決める規則の1段。優先順に並べ、最初の段で決まる */
 export type ReviewProviderRule =
   | { source: "cloud"; provider: ReviewProvider }
-  | { source: "env" | "kind" | "review" | "default"; provider: ReviewProviderChoice }
-  | { source: "kind.provider_for" | "review.provider_for"; providerFor: Partial<Record<ReviewProvider, ReviewProvider>> };
+  | { source: "env" | "kind" | "review" | "default"; provider: ReviewProviderChoice };
 
 export interface ReviewKindSettings {
   /** 優先順に並んだ規則。最後は必ず default（auto） */
@@ -156,13 +145,11 @@ export const DEFAULT_REVIEW_TIMEOUT_MINUTES = 30;
 export const REVIEW_PROVIDER_ENV = "HIKYAKU_REVIEW_PROVIDER";
 
 /**
- * 各プロバイダのクラウド環境を示す環境変数。クラウド環境では相手のプロバイダの CLI が無いので、
- * そこで動いているプロバイダに固定する。HIKYAKU_REVIEW_PROVIDER と設定ファイルより優先する。
- * 両方が立っていれば並びの先（claude）を使う
+ * クラウド環境を示す環境変数。Claude Code のクラウド環境には codex の CLI が無いので、
+ * claude に固定する。HIKYAKU_REVIEW_PROVIDER と設定ファイルより優先する
  */
 export const REVIEW_CLOUD_ENVS: { provider: ReviewProvider; variable: string; matches: (value: string) => boolean }[] = [
   { provider: "claude", variable: "CLAUDE_CODE_REMOTE", matches: (value) => value === "true" },
-  { provider: "codex", variable: "CODEX_ENVIRONMENT_ID", matches: (value) => value !== "" },
 ];
 
 /** いま動いているクラウド環境。クラウド環境でなければ undefined */
@@ -346,7 +333,7 @@ export interface ResolvedConfig {
   security: { triggers: string };
   /** [review] — 各レビューのプロバイダ・モデル・回数 */
   review: ReviewSettings;
-  external: { target: ExternalTarget; githubRepo?: string; asanaProjectGid?: string };
+  external: { target: ExternalTarget; githubRepo?: string };
   conductor: ConductorConfig;
   /** [data_integrity] — ビルドのマージで本番データを壊さないための宣言 */
   dataIntegrity: DataIntegrityConfig;
@@ -642,7 +629,7 @@ function readReview(
   const where = "[review]";
   assertKnownKeys(
     table,
-    ["provider", "provider_for", "max_rounds", "auto_fix", "timeout", ...REVIEW_PROVIDERS, ...REVIEW_KINDS],
+    ["provider", "max_rounds", "auto_fix", "timeout", ...REVIEW_PROVIDERS, ...REVIEW_KINDS],
     where,
   );
 
@@ -651,7 +638,6 @@ function readReview(
 
   const providers: ReviewProviderChoice[] = ["auto", ...REVIEW_PROVIDERS];
   const configured = readEnum(table, "provider", providers, where);
-  const configuredFor = readProviderFor(requireTable(table, "provider_for", where), "[review.provider_for]");
   const rawEnv = env[REVIEW_PROVIDER_ENV]?.trim();
   // 不正な値を黙って捨てると、設定ファイルのプロバイダに戻って同じように失敗する
   const envProvider =
@@ -672,10 +658,9 @@ function readReview(
     // doc は1回だけのレビューで、回数の設定は持たない（指摘への対応は各フェーズの承認で決める）
     const allowed =
       name === "doc"
-        ? ["provider", "provider_for", ...REVIEW_PROVIDERS]
+        ? ["provider", ...REVIEW_PROVIDERS]
         : [
             "provider",
-            "provider_for",
             "max_rounds",
             "auto_fix",
             ...REVIEW_PROVIDERS,
@@ -691,9 +676,7 @@ function readReview(
       providers: providerRules([
         cloud === undefined ? undefined : { source: "cloud", provider: cloud.provider },
         envProvider === undefined ? undefined : { source: "env", provider: envProvider },
-        ruleFor("kind.provider_for", readProviderFor(requireTable(kindTable, "provider_for", kindWhere), `[review.${name}.provider_for]`)),
         ruleOf("kind", readEnum(kindTable, "provider", providers, kindWhere)),
-        ruleFor("review.provider_for", configuredFor),
         ruleOf("review", configured),
       ]),
       maxRounds: name === "doc" ? 1 : (readMaxRounds(kindTable, kindWhere) ?? baseRounds),
@@ -715,33 +698,8 @@ function readReview(
   return { timeoutMinutes: timeout, code: kind("code"), security: kind("security"), doc: kind("doc") };
 }
 
-/**
- * [review.provider_for] を読む。キーはメインのプロバイダ、値はレビューの実行先。
- * 「もう一方」のような相対の指定にしないのは、プロバイダが増えたときに意味が決まらなくなるため
- */
-function readProviderFor(
-  table: TomlTable | undefined,
-  where: string,
-): Partial<Record<ReviewProvider, ReviewProvider>> | undefined {
-  if (table === undefined) return undefined;
-  assertKnownKeys(table, REVIEW_PROVIDERS, where, `キーにはメインのセッションのプロバイダ（${REVIEW_PROVIDERS.join(" | ")}）を書きます`);
-  const map: Partial<Record<ReviewProvider, ReviewProvider>> = {};
-  for (const key of REVIEW_PROVIDERS) {
-    const value = readEnum(table, key, REVIEW_PROVIDERS, where);
-    if (value !== undefined) map[key] = value;
-  }
-  return map;
-}
-
 function ruleOf(source: "kind" | "review", provider: ReviewProviderChoice | undefined): ReviewProviderRule | undefined {
   return provider === undefined ? undefined : { source, provider };
-}
-
-function ruleFor(
-  source: "kind.provider_for" | "review.provider_for",
-  providerFor: Partial<Record<ReviewProvider, ReviewProvider>> | undefined,
-): ReviewProviderRule | undefined {
-  return providerFor === undefined ? undefined : { source, providerFor };
 }
 
 function providerRules(rules: (ReviewProviderRule | undefined)[]): ReviewProviderRule[] {
@@ -750,17 +708,8 @@ function providerRules(rules: (ReviewProviderRule | undefined)[]): ReviewProvide
 
 /** 規則の列を1行で表す（config の表示用）。左ほど優先 */
 export function describeProviderRules(rules: ReviewProviderRule[]): string {
-  // provider の段で必ず決まるので、それより後ろの段は表示しない
-  const end = rules.findIndex((rule) => !("providerFor" in rule));
   return rules
-    .slice(0, end + 1)
     .map((rule) => {
-      if ("providerFor" in rule) {
-        const pairs = REVIEW_PROVIDERS.filter((key) => rule.providerFor[key] !== undefined).map(
-          (key) => `${key}→${rule.providerFor[key]}`,
-        );
-        return `provider_for（${pairs.length === 0 ? "空" : pairs.join(", ")}）`;
-      }
       if (rule.source === "cloud") return `${rule.provider}（${cloudEnvLabel(rule.provider)}）`;
       return rule.source === "env" ? `${rule.provider}（環境変数 ${REVIEW_PROVIDER_ENV}）` : rule.provider;
     })
@@ -770,21 +719,13 @@ export function describeProviderRules(rules: ReviewProviderRule[]): string {
 export interface ResolvedReviewProvider {
   provider: ReviewProvider;
   source: ReviewProviderSource;
-  /** provider_for で決まったとき、使った行のキー（メインのプロバイダ） */
-  key: ReviewProvider | undefined;
 }
 
-/** 規則の列を、メインのプロバイダ（--self）で解決する。auto はメインと同じ */
-export function resolveReviewProvider(settings: ReviewKindSettings, self: ReviewProvider): ResolvedReviewProvider {
-  for (const rule of settings.providers) {
-    if ("providerFor" in rule) {
-      const target = rule.providerFor[self];
-      if (target !== undefined) return { provider: target, source: rule.source, key: self };
-      continue;
-    }
-    return { provider: rule.provider === "auto" ? self : rule.provider, source: rule.source, key: undefined };
-  }
-  return { provider: self, source: "default", key: undefined };
+/** 規則の列の先頭で決める。auto はメインのセッションと同じ（claude） */
+export function resolveReviewProvider(settings: ReviewKindSettings): ResolvedReviewProvider {
+  const [rule] = settings.providers;
+  if (rule === undefined) return { provider: MAIN_PROVIDER, source: "default" };
+  return { provider: rule.provider === "auto" ? MAIN_PROVIDER : rule.provider, source: rule.source };
 }
 
 function checkEnum<T extends string>(
@@ -1024,7 +965,58 @@ function retiredKeyErrors(table: TomlTable, where: string): HikyakuError[] {
       "exclude / tests の書き方は同じです。テーブル名を [diff] に変えてください。",
     ));
   }
+  const review = table["review"];
+  if (isTable(review) && hasProviderFor(review)) {
+    errors.push(new HikyakuError(
+      `${where}: [review] provider_for は v3 で廃止しました`,
+      [
+        "メインのセッションは常に Claude Code になったので、メインのプロバイダごとに実行先を分ける必要がなくなりました。",
+        'claude = "codex" と書いていたなら、[review] provider = "codex"（種類ごとなら [review.<種類>] provider）に書き換えてください。',
+        "codex の行だけなら削除してください（docs/migration/v2-to-v3.md）。",
+      ].join("\n"),
+    ));
+  }
+  const external = table["external"];
+  if (isTable(external) && (external["target"] === "asana" || external["asana_project_gid"] !== undefined)) {
+    errors.push(new HikyakuError(
+      `${where}: Asana への投影は v3 で廃止しました`,
+      [
+        "外部システムへの投影は、サイクルごとの GitHub issue の作成とクローズだけになりました。",
+        '[external] target を "github" か "none" にし、asana_project_gid を削除してください（docs/migration/v2-to-v3.md）。',
+      ].join("\n"),
+    ));
+  }
   return errors;
+}
+
+function isTable(value: unknown): value is TomlTable {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** [review] と [review.<種類>] のどこかに provider_for があるか */
+function hasProviderFor(review: TomlTable): boolean {
+  return review["provider_for"] !== undefined || REVIEW_KINDS.some((kind) => {
+    const table = review[kind];
+    return isTable(table) && table["provider_for"] !== undefined;
+  });
+}
+
+/** 廃止したキーを取り除く。閉じたサイクルの設定に残っていても、読むだけの操作は止めない */
+function stripRetiredKeys(table: TomlTable): void {
+  for (const key of RETIRED_KEYS) delete table[key];
+  const review = table["review"];
+  if (isTable(review)) {
+    delete review["provider_for"];
+    for (const kind of REVIEW_KINDS) {
+      const kindTable = review[kind];
+      if (isTable(kindTable)) delete kindTable["provider_for"];
+    }
+  }
+  const external = table["external"];
+  if (isTable(external)) {
+    if (external["target"] === "asana") delete external["target"];
+    delete external["asana_project_gid"];
+  }
 }
 
 /**
@@ -1184,7 +1176,7 @@ export function loadConfig(options: LoadOptions = {}): ResolvedConfig {
       checkLegacyKeys(cycleConfig, cycleConfigPath);
       // 閉じた v2 のサイクルにも残りうるので、ここでは止めずに記録し、v3 の作業に使うときに止める
       retired = retiredKeyErrors(cycleConfig, cycleConfigPath);
-      for (const key of RETIRED_KEYS) delete cycleConfig[key];
+      stripRetiredKeys(cycleConfig);
       assertCycleOverridable(cycleConfig, cycleConfigPath);
       askAtCreate = askDeclared.filter((key) => readDotted(cycleConfig, key) === undefined);
       merged = mergeTables(merged, cycleConfig);
@@ -1275,9 +1267,8 @@ function finalize(
     },
     review: readReview(reviewTable, preset.reviewRounds),
     external: {
-      target: readEnum(externalTable, "target", ["none", "github", "asana"], "[external]") ?? "none",
+      target: readEnum(externalTable, "target", ["none", "github"], "[external]") ?? "none",
       githubRepo: readString(externalTable, "github_repo", "[external]"),
-      asanaProjectGid: readString(externalTable, "asana_project_gid", "[external]"),
     },
     conductor: readConductor(readTable(merged, "conductor")),
     dataIntegrity: readDataIntegrity(readTable(merged, "data_integrity")),

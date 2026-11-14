@@ -19,6 +19,7 @@
  */
 
 import {
+  MAIN_PROVIDER,
   resolveReviewProvider,
   type ReviewKind,
   type ReviewKindSettings,
@@ -44,8 +45,6 @@ export type ReviewStyle = "code-review" | "security-review" | "prompt";
 
 export interface ReviewPlanInput {
   kind: ReviewKind;
-  /** メインのセッションのプロバイダ */
-  self: ReviewProvider;
   settings: ReviewKindSettings;
   /** 差分の基準にする、ローカルで解決できる ref（pr base --ref の値）。doc では使わない */
   baseRef?: string | undefined;
@@ -58,8 +57,6 @@ export interface ReviewPlan {
   provider: ReviewProvider;
   /** provider の値の出所 */
   providerSource: ReviewProviderSource;
-  /** provider_for で決まったとき、使った行のキー（メインのプロバイダ） */
-  providerKey: ReviewProvider | undefined;
   mode: ReviewMode;
   style: ReviewStyle;
   model: string | undefined;
@@ -69,13 +66,13 @@ export interface ReviewPlan {
 }
 
 export function planReview(input: ReviewPlanInput): ReviewPlan {
-  const { kind, self, settings } = input;
-  const resolved = resolveReviewProvider(settings, self);
+  const { kind, settings } = input;
+  const resolved = resolveReviewProvider(settings);
   const provider = resolved.provider;
   const models: ReviewModelSettings = settings.models[provider];
   // doc はメインと同じプロバイダなら今までどおりサブエージェントで動かす。
   // code / security は実装したコンテキストから切り離すため、常に別プロセスにする
-  const mode: ReviewMode = kind === "doc" && provider === self ? "agent" : "process";
+  const mode: ReviewMode = kind === "doc" && provider === MAIN_PROVIDER ? "agent" : "process";
   let style: ReviewStyle;
   if (kind === "code") style = "code-review";
   else if (kind === "security" && provider === "claude" && input.nativeSecurity === true) style = "security-review";
@@ -84,7 +81,6 @@ export function planReview(input: ReviewPlanInput): ReviewPlan {
     kind,
     provider,
     providerSource: resolved.source,
-    providerKey: resolved.key,
     mode,
     style,
     model: models.model,

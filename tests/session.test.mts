@@ -6,10 +6,8 @@ import { test } from "node:test";
 import { classifyPath, DEFAULT_DIFF_EXCLUDE, DEFAULT_DIFF_TESTS, matchesPathPattern, parseSplitCount, renderDiffMarkdown, summarizeDiff } from "../scripts/lib/diff-stats.mts";
 import { deviationOf, groupRecords, groupValue, parsePeakRecord, ratioOf, summarizeGroup } from "../scripts/lib/tokens-history.mts";
 import {
-  codexKind,
   encodeProjectPath,
   parseClaudeTranscript,
-  parseCodexRollout,
   renderSessionMarkdown,
   selectMain,
   type SessionMeasure,
@@ -41,27 +39,6 @@ function assistant(id: string, context: number, options: { output?: number; bran
   };
 }
 
-function codexToken(input: number, total: number, output = 50) {
-  return {
-    type: "event_msg",
-    payload: {
-      type: "token_count",
-      info: {
-        total_token_usage: { input_tokens: total, output_tokens: total / 10 },
-        last_token_usage: { input_tokens: input, output_tokens: output },
-        model_context_window: 258_400,
-      },
-    },
-  };
-}
-
-function codexMeta(branch: string, cwd: string, extra: Record<string, unknown> = {}) {
-  return {
-    type: "session_meta",
-    payload: { id: "thread-1", cli_version: "0.163.0", originator: "codex_exec", source: "exec", thread_source: "user", cwd, git: { branch }, ...extra },
-  };
-}
-
 test("session: Claude Code は message.id で重複を除き、サイドチェーンと合成メッセージを数えない", () => {
   const text = jsonl([
     { type: "user", sessionId: "s-main", cwd: "/repo", gitBranch: "main" },
@@ -87,39 +64,7 @@ test("session: Claude Code は message.id で重複を除き、サイドチェ�
   assert.deepEqual(measure.models, ["claude-opus-5-5", "claude-sonnet-5-5"]);
   assert.deepEqual(measure.callsByBranch, { main: 1, "hikyaku/001-test/build-01": 2 });
   assert.equal(measure.hostVersion, "2.1.300");
-  assert.equal(measure.window, undefined);
   assert.equal(parseClaudeTranscript(jsonl([{ type: "user" }]), "/tmp/empty.jsonl"), undefined);
-});
-
-test("session: Codex は同じ累計の token_count をまとめ、コンパクション直後の 0 を除く", () => {
-  const text = jsonl([
-    codexMeta("hikyaku/001-test/build-01", "/repo"),
-    { type: "turn_context", payload: { model: "gpt-6-luna" } },
-    { type: "event_msg", payload: { type: "token_count", info: null } },
-    codexToken(30_000, 30_000),
-    codexToken(30_000, 30_000),
-    codexToken(200_000, 230_000),
-    { type: "compacted", payload: { window_number: 2 } },
-    codexToken(0, 230_000 + 1),
-    codexToken(40_000, 270_000),
-  ]);
-  const measure = parseCodexRollout(text, "/tmp/rollout-x-thread-1.jsonl");
-  assert.ok(measure);
-  assert.equal(measure.calls, 3);
-  assert.equal(measure.peak, 200_000);
-  assert.equal(measure.first, 30_000);
-  assert.equal(measure.latest, 40_000);
-  assert.equal(measure.outputTokens, 150);
-  assert.equal(measure.compactions, 1);
-  assert.equal(measure.window, 258_400);
-  assert.equal(measure.model, "gpt-6-luna");
-  assert.equal(measure.kind, "main");
-  assert.deepEqual(measure.callsByBranch, { "hikyaku/001-test/build-01": 3 });
-
-  assert.equal(codexKind({ source: { subagent: { other: "guardian" } }, thread_source: "guardian_review" }), "guardian");
-  assert.equal(codexKind({ originator: "codex-auto-review" }), "guardian");
-  assert.equal(codexKind({ source: { subagent: "review" }, thread_source: "subagent" }), "subagent");
-  assert.equal(codexKind({ source: "exec", thread_source: "user" }), "main");
 });
 
 test("session: 本体はそのブランチでの呼び出しが最も多いセッション。表は計測不可も同じ形で出す", () => {
@@ -136,8 +81,9 @@ test("session: 本体はそのブランチでの呼び出しが最も多いセ�
   assert.match(measured, /^\| 計測項目 \| 値 \|/);
   assert.match(measured, /\| ピーク \| 312,400 \|/);
   assert.match(measured, /\| Hikyaku \| 2\.9\.0 \|/);
-  const missing = renderSessionMarkdown({ measure: undefined, reason: "rollout が無い", hikyakuVersion: undefined, note: undefined });
-  assert.match(missing, /\| ピーク \| 計測不可（rollout が無い） \|/);
+  assert.doesNotMatch(measured, /ウィンドウ/, "ウィンドウの行はもう書かない");
+  const missing = renderSessionMarkdown({ measure: undefined, reason: "記録が無い", hikyakuVersion: undefined, note: undefined });
+  assert.match(missing, /\| ピーク \| 計測不可（記録が無い） \|/);
   assert.equal(missing.split("\n").length, measured.split("\n").length);
 });
 
@@ -259,7 +205,7 @@ test("tokens history: 予測・内訳・セッションの実測・差分の集�
   assert.equal(record.context.hikyaku, "2.9.0");
   assert.equal(groupValue(record, "host"), "Claude Code");
 
-  const unmeasured = parsePeakRecord(retrospectiveWithSession("計測不可（rollout が無い）", "—", "—"), meta);
+  const unmeasured = parsePeakRecord(retrospectiveWithSession("計測不可（記録が無い）", "—", "—"), meta);
   assert.equal(unmeasured?.context.peak, undefined);
   assert.equal(unmeasured?.context.model, undefined);
   assert.equal(unmeasured && deviationOf(unmeasured), undefined);
@@ -328,8 +274,7 @@ test("CLI: tokens session は現在のセッションを測り、見つからな
   const directory = workspace(t, true);
   const home = temporaryDirectory(t);
   const claudeDir = join(home, "claude");
-  const codexDir = join(home, "codex");
-  const env = { CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: codexDir };
+  const env = { CLAUDE_CONFIG_DIR: claudeDir };
   write(claudeDir, `projects/${encodeProjectPath(directory)}/s-main.jsonl`, jsonl([assistant("m1", 45_000), assistant("m2", 90_000)]));
 
   const current = JSON.parse(cliWith(directory, { ...env, CLAUDE_CODE_SESSION_ID: "s-main" }, "tokens", "session", "--json").stdout);
@@ -345,28 +290,27 @@ test("CLI: tokens session は現在のセッションを測り、見つからな
   assert.equal(JSON.parse(none.stdout).measured, false);
   assert.match(JSON.parse(none.stdout).reason, /CLAUDE_CODE_SESSION_ID/);
 
-  const cloud = JSON.parse(cliWith(directory, { ...env, CODEX_THREAD_ID: "t-1", CODEX_ENVIRONMENT_ID: "env" }, "tokens", "session", "--json").stdout);
-  assert.equal(cloud.measured, false);
-  assert.match(cloud.reason, /Codex のクラウド/);
-  assert.match(cloud.markdown, /計測不可（Codex のクラウド/);
-
-  // ID の一部だけ一致するファイルは採らない
-  write(codexDir, "sessions/2026/10/18/rollout-2026-10-18T00-00-00-xt-1.jsonl", jsonl([codexMeta("main", directory), codexToken(10, 10)]));
-  assert.equal(JSON.parse(cliWith(directory, { ...env, CODEX_THREAD_ID: "t-1" }, "tokens", "session", "--json").stdout).measured, false);
+  const missing = JSON.parse(cliWith(directory, { ...env, CLAUDE_CODE_SESSION_ID: "s-none" }, "tokens", "session", "--json").stdout);
+  assert.equal(missing.measured, false);
+  assert.match(missing.reason, /トランスクリプトが見つかりません/);
+  assert.match(missing.markdown, /計測不可（Claude Code のトランスクリプトが見つかりません/);
 
   const explicit = JSON.parse(
-    cliWith(directory, env, "tokens", "session", "--transcript", join(codexDir, "sessions/2026/10/18/rollout-2026-10-18T00-00-00-xt-1.jsonl"), "--json").stdout,
+    cliWith(directory, env, "tokens", "session", "--transcript", join(claudeDir, `projects/${encodeProjectPath(directory)}/s-main.jsonl`), "--json").stdout,
   );
-  assert.equal(explicit.session.host, "codex");
+  assert.equal(explicit.session.host, "claude-code");
   assert.equal(explicit.hikyakuVersion, null);
+
+  const host = cliWith(directory, env, "tokens", "session", "--host", "codex", "--json");
+  assert.equal(host.status, 1);
+  assert.match(host.stderr, /--host は v3 で廃止/);
 });
 
-test("CLI: tokens session <phase> はブランチのセッションから本体を選び、サブエージェントと guardian を除く", (t) => {
+test("CLI: tokens session <phase> はブランチのセッションから本体を選ぶ", (t) => {
   const directory = workspace(t, true);
   const home = temporaryDirectory(t);
   const claudeDir = join(home, "claude");
-  const codexDir = join(home, "codex");
-  const env = { CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: codexDir };
+  const env = { CLAUDE_CONFIG_DIR: claudeDir };
   const branch = "hikyaku/001-test/build-01";
 
   const empty = JSON.parse(cliWith(directory, env, "tokens", "session", "build-01", "001", "--json").stdout);
@@ -385,10 +329,6 @@ test("CLI: tokens session <phase> はブランチのセッションから本体�
   write(claudeDir, `${project}--claude-worktrees-x/other.jsonl`, jsonl([withCwd({ ...assistant("o1", 10_000), cwd: `${directory}/.claude/worktrees/x` })]).replaceAll('"s-main"', '"other"'));
   // 別のリポジトリの同名ブランチは数えない
   write(claudeDir, "projects/-elsewhere/foreign.jsonl", jsonl([1, 2, 3, 4, 5, 6].map((n) => ({ ...assistant(`f${n}`, 10_000), cwd: "/elsewhere" }))));
-  write(codexDir, "sessions/2026/10/18/rollout-2026-10-18T00-00-00-g-1.jsonl", jsonl([
-    codexMeta(branch, directory, { id: "g-1", source: { subagent: { other: "guardian" } }, thread_source: "guardian_review" }),
-    codexToken(258_000, 258_000),
-  ]));
 
   const result = JSON.parse(cliWith(directory, env, "tokens", "session", "build-01", "001", "--json").stdout);
   assert.equal(result.measured, true);
@@ -398,7 +338,6 @@ test("CLI: tokens session <phase> はブランチのセッションから本体�
   assert.equal(result.session.first, 44_000);
   assert.equal(result.session.calls, 5);
   assert.deepEqual(result.candidates.map((c: { sessionId: string }) => c.sessionId).sort(), ["builder", "other", "review"]);
-  assert.deepEqual(result.excluded.map((e: { kind: string }) => e.kind), ["guardian"]);
   assert.equal(result.hikyakuVersion, null);
   assert.match(result.markdown, /本体。ほか 2 件/);
 });
@@ -434,25 +373,4 @@ test("CLI: tokens history は予測と実測を並べ、--group-by でモデル�
   const byGuide = JSON.parse(succeeds(directory, "tokens", "history", "--group-by", "guide", "--json"));
   assert.deepEqual(byGuide.groups.map((g: { key: string }) => g.key), ["標準 v1", "プロジェクト v2", "—"]);
   assert.equal(cliWith(directory, {}, "tokens", "history", "--group-by", "branch").status, 1);
-});
-
-test("CLI: tokens session <phase> は、別のブランチで始めた Codex の現在のセッションも、いまそのブランチにいれば候補に入れる", (t) => {
-  const directory = workspace(t, true);
-  const home = temporaryDirectory(t);
-  const env = { CLAUDE_CONFIG_DIR: join(home, "claude"), CODEX_HOME: join(home, "codex"), CODEX_THREAD_ID: "t-9" };
-  write(env.CODEX_HOME, "sessions/2026/10/18/rollout-2026-10-18T00-00-00-t-9.jsonl", jsonl([
-    codexMeta("main", directory, { id: "t-9" }),
-    codexToken(40_000, 40_000),
-    codexToken(220_000, 260_000),
-  ]));
-
-  const elsewhere = JSON.parse(cliWith(directory, env, "tokens", "session", "build-01", "001", "--json").stdout);
-  assert.equal(elsewhere.measured, false);
-
-  git(directory, "switch", "--quiet", "-c", "hikyaku/001-test/build-01");
-  const onBranch = JSON.parse(cliWith(directory, env, "tokens", "session", "build-01", "001", "--json").stdout);
-  assert.equal(onBranch.measured, true);
-  assert.equal(onBranch.session.peak, 220_000);
-  assert.equal(onBranch.candidates[0].current, true);
-  assert.notEqual(onBranch.hikyakuVersion, null);
 });

@@ -1,6 +1,6 @@
 # Getting Started
 
-Claude Code でのインストールから最初の1サイクルを締めるまでを通します。Codex を使う場合は [Codex で使い始める](getting-started-codex.md) で導入と起動方法を確認してください。既存のリポジトリに導入する想定で、途中で分岐はありません。プロファイルや設定を選ぶ判断は、ひととおり回してからで間に合うので、まず1周してください。
+Claude Code でのインストールから最初の1サイクルを締めるまでを通します。既存のリポジトリに導入する想定で、途中で分岐はありません。プロファイルや設定を選ぶ判断は、ひととおり回してからで間に合うので、まず1周してください。
 
 ## 前提
 
@@ -135,6 +135,6 @@ hikyaku next
 
 - 承認が多い / 少ないと感じた → [プロファイル](configuration/profiles.md)
 - ブランチ名や PR タイトルを変えたい → [.hikyaku.config](configuration/config-file.md)
-- GitHub の issue と連動させたい → [外部システムへの投影](configuration/external.md)
+- サイクルごとに GitHub の issue を立てたい → [サイクルの GitHub issue](configuration/external.md)
 - 複数のサイクルを同時に回したい → [複数サイクルの並行運用](operations/multi-cycle.md)
 - エラーが出た → [トラブルシューティング](operations/troubleshooting.md)

@@ -515,11 +515,3 @@ export async function worktreePaths(cwd: string): Promise<string[]> {
     .map((line) => line.slice("worktree ".length).trim())
     .filter((path) => path !== "");
 }
-
-/** origin の URL。無ければ undefined */
-export async function originUrl(cwd: string): Promise<string | undefined> {
-  const result = await tryGit(cwd, ["remote", "get-url", "origin"]);
-  if (!result.ok) return undefined;
-  const url = result.stdout.trim();
-  return url === "" ? undefined : url;
-}

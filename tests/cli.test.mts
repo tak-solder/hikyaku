@@ -343,3 +343,39 @@ test("CLI: return.md があれば cycle status・next・cycle list が差し戻�
   assert.equal(resumed.returned, null);
   assert.equal(resumed.suggestion, "/hikyaku:builder 001-test");
 });
+
+test("CLI: external はサイクルの issue だけを扱い、close だけが閉じる", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", `${readFileSync(join(directory, ".hikyaku.config"), "utf8")}\n[external]\ntarget = "github"\ngithub_repo = "o/r"\n`);
+  // 参照が記録されていなければ空を返す
+  assert.equal(JSON.parse(succeeds(directory, "external", "ref", "build-01", "001", "--json")).line, "");
+
+  succeeds(directory, "cycle", "link", "001", "--external", "https://github.com/o/r/issues/12");
+  const ref = (phase: string): string => JSON.parse(succeeds(directory, "external", "ref", phase, "001", "--json")).line;
+  assert.equal(ref("plan"), "Refs #12");
+  assert.equal(ref("build-01"), "Refs #12", "ビルドの PR はサイクルの issue を閉じない");
+  assert.equal(ref("conductor"), "Refs #12");
+  assert.equal(ref("close"), "Closes #12");
+
+  const dry = JSON.parse(succeeds(directory, "external", "sync", "001", "--dry-run", "--json"));
+  assert.equal(dry.applied, false);
+  assert.match(dry.projection.body, /https:\/\/github\.com\/o\/r\/tree\/.*\/docs\/hikyaku\/cycles\/001-test/);
+  assert.doesNotMatch(dry.projection.body, /## ビルド/, "ビルドの一覧は載せない");
+
+  assert.equal(cli(directory, "external", "sync", "asana", "001").status, 1);
+  assert.equal(cli(directory, "tasklist", "link", "001", "--id", "1", "--issue", "https://github.com/o/r/issues/13").status, 1);
+});
+
+test("CLI: Asana の設定は移行先を示して止まる", (t) => {
+  const directory = workspace(t, true);
+  const root = readFileSync(join(directory, ".hikyaku.config"), "utf8");
+  write(directory, ".hikyaku.config", `${root}\n[external]\ntarget = "asana"\n`);
+  const result = cli(directory, "config", "001");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Asana への投影は v3 で廃止/);
+
+  write(directory, ".hikyaku.config", root);
+  const created = cli(directory, "cycle", "new", "other", "--profile", "standard", "--external", "asana", "--dry-run");
+  assert.equal(created.status, 1);
+  assert.match(created.stderr, /Asana への投影は v3 で廃止/);
+});

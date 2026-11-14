@@ -1,7 +1,5 @@
 # Hikyaku ドキュメント
 
-Codex での導入と起動は [Codex で使い始める](getting-started-codex.md) を参照してください。
-
 Hikyaku を自分のリポジトリで使うためのドキュメントです。プラグイン本体の開発については [AGENTS.md](../AGENTS.md) を参照してください。
 
 コマンド例に出てくる `hikyaku` は、シェルから CLI を叩くための関数です。定義方法は [実行方法](reference/cli.md#実行方法) にあります。Claude Code のスキル（`/hikyaku:planner` など）を使うだけなら設定は要りません。
@@ -29,7 +27,7 @@ Hikyaku がなぜこの形をしているのか（永続ドキュメントとサ
 - [プロファイル](configuration/profiles.md) — 承認ゲートとレビューの量をサイクルごとに選ぶ
 - [ドキュメントガイド](configuration/documents.md) — 永続ドキュメントの所在を宣言する
 - [知見の置き場](configuration/persistence.md) — 得た知見を残すか、どこに置くかの考え方
-- [外部システムへの投影](configuration/external.md) — GitHub / Asana へ片方向で投影する
+- [サイクルの GitHub issue](configuration/external.md) — サイクルごとに issue を起票し、CLOSE で閉じる
 - [予測ピークと見積もりのガイド](configuration/token-guide.md) — ビルドの大きさの見積もり方を、リポジトリの実績で補正する
 
 ## 運用する

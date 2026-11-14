@@ -44,7 +44,7 @@ export const PLANNER_STEPS: SkillSteps = {
       when: (ctx) => ctx.config.reviews.retrospective !== "skip",
       reason: () => "企画フェーズの最後の振り返り",
     },
-    { id: "pr", kind: "run", title: "親 issue と PR の作成", recordsPr: true },
+    { id: "pr", kind: "run", title: "サイクルの issue と PR の作成", recordsPr: true },
     publicationStep("planner"),
   ],
 };

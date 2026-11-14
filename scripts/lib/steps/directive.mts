@@ -13,7 +13,7 @@ import type { ContextBudget } from "../config.mts";
 import { HikyakuError } from "../errors.mts";
 import { pluginRoot } from "../paths.mts";
 import { readProgress, type StepResult } from "../progress.mts";
-import { formatTokens, measureCurrent, smallWindowNotice, type CurrentContext } from "../session.mts";
+import { formatTokens, measureCurrent, type CurrentContext } from "../session.mts";
 import { requirePhase, scopeFor } from "../stack.mts";
 import type { CycleContext } from "../workspace.mts";
 import { checkpointsOf, CHECKPOINT_LABELS, type Overrun } from "./checkpoints.mts";
@@ -251,8 +251,6 @@ export function buildDirective(opened: Opened, evaluation: Evaluation, options: 
   if (definition.checkpoint !== undefined && options.measure !== false) {
     const measured = measureCurrent(process.env);
     directive.context = checkContext(opened, definition.checkpoint, measured);
-    const notice = smallWindowNotice(process.env, measured);
-    if (notice !== undefined) directive.notices.push(notice);
   }
   if (definition.id === "review" && overruns.length > 0) directive.overruns = overruns;
   return directive;

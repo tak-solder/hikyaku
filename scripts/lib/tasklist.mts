@@ -13,7 +13,13 @@ import { HikyakuError } from "./errors.mts";
 import { findTableByHeaders, renderTable } from "./markdown.mts";
 import { formatK, parseTokenAmount } from "./tokens.mts";
 
-export const TASKLIST_HEADERS = ["buildID", "title", "予測ピーク", "dependencies", "issue", "PR"];
+export const TASKLIST_HEADERS = ["buildID", "title", "予測ピーク", "dependencies", "PR"];
+
+/**
+ * v3 のベータ版までの見出し（issue 列あり）。ビルドごとの外部起票を廃止したので列は使わない。
+ * 読めるようにし、書き込むときに列を落とす
+ */
+export const ISSUE_COLUMN_TASKLIST_HEADERS = ["buildID", "title", "予測ピーク", "dependencies", "issue", "PR"];
 
 /**
  * v2 の tasklist.md の見出し（3列目が BP）。読むことはできるが、BP は予測ピークではないので
@@ -27,7 +33,6 @@ export interface BuildRecord {
   /** architect 段階の予測ピーク（トークン） */
   peak: number | undefined;
   dependsOn: string[];
-  issue: string;
   pr: string;
 }
 
@@ -54,12 +59,18 @@ export function tasklistPath(cycleDirectory: string): string {
 
 /** v2 の見出し（BP 列）の tasklist.md か */
 export function isLegacyTasklist(source: string): boolean {
-  return findTableByHeaders(source, TASKLIST_HEADERS) === undefined && findTableByHeaders(source, LEGACY_TASKLIST_HEADERS) !== undefined;
+  return (
+    findTableByHeaders(source, TASKLIST_HEADERS) === undefined &&
+    findTableByHeaders(source, ISSUE_COLUMN_TASKLIST_HEADERS) === undefined &&
+    findTableByHeaders(source, LEGACY_TASKLIST_HEADERS) !== undefined
+  );
 }
 
 export function parseTasklist(source: string): BuildRecord[] {
   const legacy = isLegacyTasklist(source);
-  const table = findTableByHeaders(source, legacy ? LEGACY_TASKLIST_HEADERS : TASKLIST_HEADERS);
+  const table = legacy
+    ? findTableByHeaders(source, LEGACY_TASKLIST_HEADERS)
+    : (findTableByHeaders(source, TASKLIST_HEADERS) ?? findTableByHeaders(source, ISSUE_COLUMN_TASKLIST_HEADERS));
   if (!table) {
     throw new HikyakuError(
       "tasklist.md に想定するテーブルが見つかりません",
@@ -67,6 +78,8 @@ export function parseTasklist(source: string): BuildRecord[] {
     );
   }
 
+  // PR 列の位置。issue 列のある見出し（v2 と v3 のベータ版）では1つ右にある
+  const prColumn = table.headers[4] === "issue" ? 5 : 4;
   return table.rows
     .map((row) => {
       return {
@@ -77,8 +90,7 @@ export function parseTasklist(source: string): BuildRecord[] {
           .split(/[,、]/)
           .map((item) => normalizeBuildId(item))
           .filter((item) => item !== ""),
-        issue: cellText(row[4]),
-        pr: cellText(row[5]),
+        pr: cellText(row[prColumn]),
       };
     })
     .filter((record) => record.id !== "");
@@ -106,7 +118,6 @@ function toRow(build: BuildRecord): string[] {
     build.title,
     formatK(build.peak),
     build.dependsOn.length > 0 ? build.dependsOn.join(", ") : "—",
-    dash(build.issue),
     dash(build.pr),
   ];
 }
