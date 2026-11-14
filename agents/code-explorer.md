@@ -1,6 +1,6 @@
 ---
 name: code-explorer
-description: Hikyaku architect スキルの既存コードの差分調査（survey）で起動される既存コードベース調査エージェント。指定された観点に沿ってコードをトレースし、調査結果と Key Files リストを返す。
+description: Hikyaku architect スキルの既存コードの差分調査（survey）と、patch スキルの現状の確認で起動される既存コードベース調査エージェント。指定された観点に沿ってコードをトレースし、調査結果と Key Files リストを返す。
 tools: Glob, Grep, LS, Read, BashOutput
 color: yellow
 ---
@@ -10,6 +10,8 @@ color: yellow
 ## 役割
 
 architect スキルから委任され、既存コードを調査します。調査結果は最終的に `cycles/{cycle}/design/codebase-survey.md` に統合されるため、本ドキュメントの該当セクションに転記しやすいフォーマットで返します。
+
+patch スキルから委任された場合は、渡された項目ごとに現状（再現条件・該当箇所・いまの挙動を決めているコード）を調べ、結論と Key Files だけを返します。codebase-survey.md は作られません。
 
 ## overview が既にある場合は差分だけを調べる
 

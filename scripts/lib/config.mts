@@ -292,7 +292,7 @@ export const DEFAULT_PR_TITLE = "[hikyaku] {cycle}: {phase} {title}";
  * レビュアーのアサインをオフにできる単位。PR を作るスキルに対応する。
  * build は build-NN の全て、conductor は監督が作る最後の PR
  */
-export const REVIEWER_SKIP_TARGETS = ["init", "token-guide", "create", "plan", "architect", "build", "close", "conductor"] as const;
+export const REVIEWER_SKIP_TARGETS = ["init", "token-guide", "create", "plan", "architect", "build", "close", "conductor", "patch"] as const;
 export type ReviewerSkipTarget = (typeof REVIEWER_SKIP_TARGETS)[number];
 /** セッション名の既定。空文字にするとセッション名を変更しない */
 export const DEFAULT_SESSION_TITLE = "{cycle} {phase} {title}";

@@ -58,7 +58,7 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | `cycle list [--active]` | 走行中のサイクルを見渡したいとき。ビルド列は「マージ済み / 全体」で、手元で完了しマージ待ちのものは (+n) が付く |
 | `cycle status <cycle>` | 中断からの再開点を知りたいとき。ブランチを切り替えてから実行する。中断点は `HEAD` 基準。作業ツリーに `return.md` があれば「差し戻し中」と表示し、architect を案内する |
 | `tasklist read [<cycle>]` | ビルドの一覧と完了状況を見たいとき |
-| `config [<cycle>]` | 設定のマージ結果とプロファイルの展開結果を確認したいとき |
+| `config [<cycle>]` | 設定のマージ結果とプロファイルの展開結果を確認したいとき。`--no-cycle` で、選択済みのサイクルを参照せずルート設定だけを返す（サイクルに属さない patch 用） |
 
 ## 検証する
 
@@ -122,7 +122,7 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | `step hook stop` | Claude Code の Stop フックとして呼ばれる。手で実行するものではない |
 | `step lint` | ステップの定義と指示ファイルの対応を確かめるとき（プラグイン自身の CI 用） |
 
-`step next` は、作業単位のディレクトリの `progress.jsonl` と成果物から現在地を導き、次の1手を返します。返る1手は5種類です。`run` はステップを行うもので、読むべき指示ファイルと報告のコマンドが付きます。`gate` はユーザーに承認を求めるもの、`call` は build-manager などの内部スキルを呼ぶものです。`done` は手順をすべて終えたこと、`stop` は止まる理由を表します。止まるのは、v2 で作成したサイクル、builder で architect への差し戻し中のとき、記録が欠けている（成果物はあるのに一度も記録が無い）とき、それにスキルが定めた条件（init で初期化済みのときなど）です。何度呼んでも、同じ状態なら同じ1手が返ります。いま `step` に移っているのは init（`init`）・create-cycle（`create`）・planner（`plan`）・architect（`architect`）・builder（`build-NN`）・close-cycle（`close`）・token-guide（`token-guide`）と、内部スキルの build-manager と retrospective です。navigator と conductor は手順を持たず、`step where` と `conductor parse` で手順の位置を読む側です。
+`step next` は、作業単位のディレクトリの `progress.jsonl` と成果物から現在地を導き、次の1手を返します。返る1手は5種類です。`run` はステップを行うもので、読むべき指示ファイルと報告のコマンドが付きます。`gate` はユーザーに承認を求めるもの、`call` は build-manager などの内部スキルを呼ぶものです。`done` は手順をすべて終えたこと、`stop` は止まる理由を表します。止まるのは、v2 で作成したサイクル、builder で architect への差し戻し中のとき、記録が欠けている（成果物はあるのに一度も記録が無い）とき、それにスキルが定めた条件（init で初期化済みのときなど）です。何度呼んでも、同じ状態なら同じ1手が返ります。いま `step` に移っているのは init（`init`）・create-cycle（`create`）・planner（`plan`）・architect（`architect`）・builder（`build-NN`）・close-cycle（`close`）・token-guide（`token-guide`）・patch（`patch-YYYYMM-slug`）と、内部スキルの build-manager と retrospective です。navigator と conductor は手順を持たず、`step where` と `conductor parse` で手順の位置を読む側です。
 
 作業単位のディレクトリはフェーズで決まります。PLAN は `planning/`、ARCHITECT は `design/`、ビルドは `build-NN/`、CLOSE と create-cycle はサイクルのディレクトリ自身、init は HIKYAKU_ROOT 自身、token-guide は `token-guide/` です。`step` は `.hikyaku.config` から HIKYAKU_ROOT を解決するので、init の雛形を生成する前は使えません。create-cycle も同じで、`cycle new` でサイクルを作るまでは使えません。
 
@@ -138,12 +138,23 @@ build-manager や retrospective のような内部スキルは、`--skill` を�
 
 `step hook stop` は、プラグインが Claude Code の Stop フックとして登録しているコマンドです。スキルの転送ループの途中でセッションが止まろうとしたときに、1回だけ続きを促します。止めるのは、そのセッションが手順を進めていて（`progress.jsonl` にそのセッションの ID がある）、次の1手が `run` か `call` のときだけです。ゲートで承認を待つとき、手順を終えたとき、`stop` が返ったときは止めません。同じターンの2回目も止めないので、ステップの途中でユーザーに尋ねたり、ユーザーが中断を指示したりしたときは、そのまま終えられます。Hikyaku を使っていないリポジトリや、記録を読めないときも何もしません。
 
+## patch
+
+| コマンド | いつ使うか |
+|---|---|
+| `patch resolve [<slug>] [--cycle <cycle>]` | patch を始めるとき・再開するとき（patch が最初に呼ぶ）。作業単位の名前・ブランチ・切る元・記録の場所と、サイクルに属すなら PR 列が空のビルドを返す |
+| `patch prune --before <YYYYMM>` | サイクルに属さない patch の、PR を作った古い月の記録をまとめて消すとき |
+
+`patch resolve` はサイクルを推測しません。`--cycle` を渡したときだけそのサイクルに属し、現在のブランチや `.hikyaku.local` からは選びません。サイクルに属さない patch が、たまたま近くにあったサイクルの設定や統合ブランチで動くのを防ぐためです。現在のブランチが patch のブランチなら（ルートとサイクルのどちらの `[branch]` で名付けられていても）、その patch の再開として扱います。再開では記録の場所が正で、記録がまだ無ければ（記録を始める前に中断した）推測せずに `recordMissing` を返します。名前の重複は、記録・ローカルのブランチ・追跡参照・origin のブランチで確かめ、origin に届かなければそのことを返します。
+
+`patch prune` が消すのは `{HIKYAKU_ROOT}/patches/` の下だけで、サイクルに属す patch の記録はサイクルと一緒に残ります。PR を作った記録が無いものと、いま居るブランチの patch は消さずに一覧に出します。消したあとのコミットと PR は自分で行います。
+
 ## 予測ピーク
 
 | コマンド | いつ使うか |
 |---|---|
 | `tokens guide [<cycle>]` | 見積もりに使うガイド（プロジェクトか標準か）と、その版を確認したいとき |
-| `tokens estimate [<cycle>] --fixed <n> --reading <n> ...` | 成分ごとに見積もったトークンを合計し、予測ピークと判定を出すとき（build-manager / builder が呼ぶ） |
+| `tokens estimate [<cycle>] --fixed <n> --reading <n> ...` | 成分ごとに見積もったトークンを合計し、予測ピークと判定を出すとき（build-manager / builder / patch が呼ぶ）。サイクルに属さない patch は `--no-cycle` を付ける |
 | `tokens stamp` | ガイドの本文を変えたあと、版を上げるとき。ガイドが無ければ標準から作る |
 | `tokens session [<phase> [<cycle>]]` | 振り返りで、セッションのコンテキストのピークを実測するとき。過去のビルドのセッションを測るときも使う |
 | `tokens history [<cycle>]` | ガイドを補正する前に、ビルドごとの予測・実測・乖離・区切りでのコンテキストを見渡したいとき。`--group-by` でモデル・版・ホスト・ガイドの版ごとに分ける |
@@ -174,6 +185,8 @@ build-manager や retrospective のような内部スキルは、`--skill` を�
 
 取り込み済みかどうかは、祖先関係とデフォルトブランチの `PR` 列の両方で判定します。squash merge や rebase merge ではマージ済みでもブランチの先端が祖先になりません。祖先関係だけに頼ると、マージ済みのブランチをスタック元と誤判定して、存在しないブランチへ PR を向けることになります。
 
+patch（`patch-YYYYMM-slug`）は、サイクルに属さなければ `<cycle>` を省き、ルートの設定でテンプレートを展開します。サイクルを渡しても推測はせず、渡されなければ記録（`patches/{YYYYMM}/{slug}/`）のある進行中のサイクルに属すとみなします。ブランチは `{prefix}/patch/{YYYYMM}/{slug}` です。サイクルに属す patch を統合ブランチから切っていれば、`pr base` は conductor ブランチを返します。PR タイトルとセッション名の `{phase}` は `patch` になり、`--build-title` が `{title}` に入ります。
+
 `branch verify` / `pr title` / `session title` は対象サイクルの設定でテンプレートを展開します。`[branch]` / `[pr]` / `[session]` は[サイクルごとに変えられる](../configuration/config-file.md#サイクルごとに変える)ため、サイクルに属さない `init` と `token-guide` を除いてサイクルの特定が必要です。ID や slug で渡してもディレクトリ名に解決されるので、`002` からも `hikyaku/002-billing/plan` が返ります。
 
 ## レビュー
@@ -182,7 +195,7 @@ build-manager や retrospective のような内部スキルは、`--skill` を�
 |---|---|
 | `review action` | コード・セキュリティの指摘の妥当性を判断したあと、対応確認と再レビューの要否を設定から決めるとき |
 | `review resolve <kind> <phase> [<cycle>]` | レビューをどのプロバイダ・モデル・回数で、どう起動するか確かめるとき |
-| `review run <kind> <phase> [<cycle>]` | コードやセキュリティのレビューを別プロセスで実行するとき（builder が呼ぶ）。Codex で動かす doc-reviewer も同じ |
+| `review run <kind> <phase> [<cycle>]` | コードやセキュリティのレビューを別プロセスで実行するとき（builder と patch が呼ぶ）。Codex で動かす doc-reviewer も同じ |
 
 `<kind>` は `code` / `security` / `doc` です。プロバイダは `[review]` の設定で決まり、`provider = "auto"` はメインのセッションと同じ `claude` です（[.hikyaku.config](../configuration/config-file.md#review)）。
 

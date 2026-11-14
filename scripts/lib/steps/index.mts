@@ -15,6 +15,7 @@ import { CLOSE_CYCLE_STEPS } from "./close-cycle.mts";
 import { CREATE_CYCLE_STEPS } from "./create-cycle.mts";
 import type { SkillSteps } from "./engine.mts";
 import { INIT_STEPS } from "./init.mts";
+import { PATCH_STEPS } from "./patch.mts";
 import { PLANNER_STEPS } from "./planner.mts";
 import { RETROSPECTIVE_STEPS } from "./retrospective.mts";
 import { TOKEN_GUIDE_STEPS } from "./token-guide.mts";
@@ -29,6 +30,7 @@ export const SKILL_STEPS: SkillSteps[] = [
   CLOSE_CYCLE_STEPS,
   RETROSPECTIVE_STEPS,
   TOKEN_GUIDE_STEPS,
+  PATCH_STEPS,
 ];
 
 export function stepsOf(skill: string): SkillSteps | undefined {

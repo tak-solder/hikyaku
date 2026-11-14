@@ -3,6 +3,7 @@
 import { flagBoolean, flagString } from "../lib/args.mts";
 import { describeProvider, loadConfig } from "../lib/config.mts";
 import { DEFAULT_BRANCH_MARK, resolveUnsafeSplit } from "../lib/integrity.mts";
+import { HikyakuError } from "../lib/errors.mts";
 import { emit, warn } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { describeSource, openCycle, openCycleIfAny } from "../lib/workspace.mts";
@@ -10,7 +11,7 @@ import { describeSource, openCycle, openCycleIfAny } from "../lib/workspace.mts"
 register({
   name: "config",
   summary: "設定をマージし、対象サイクルの profile を展開して表示する",
-  usage: "hikyaku config [<cycle>] [--root <path>] [--profile <name>] [--require-cycle] [--json]",
+  usage: "hikyaku config [<cycle>] [--root <path>] [--profile <name>] [--require-cycle | --no-cycle] [--json]",
   details: [
     "設定は次の順にキー単位でマージされます:",
     "  1. リポジトリルート/.hikyaku.config（必須）",
@@ -26,6 +27,7 @@ register({
     "既存サイクルでの what-if は config <cycle> --profile <name> と明示してください。",
     "--require-cycle は作業開始用です。引数 → ブランチ → 栞 → 唯一の active の順で対象を必須解決し、",
     "未作成や未選択で複数候補があればエラーにします。--profile は解決したサイクルに適用します。",
+    "--no-cycle はサイクルに属さない patch 用です。選択済みのサイクルも参照せず、ルート設定を返します。",
     "",
     "profile は承認ゲートとレビューの既定値をまとめて与えます。",
     "個別キー（architecture_gate, plan_review, test_spec_review など）で上書きできます。",
@@ -40,6 +42,9 @@ register({
     "デフォルトブランチ（origin/HEAD）が分からなければ allowed: false に倒します。",
   ].join("\n"),
   run: ({ args, operands }) => {
+    if (flagBoolean(args, "require-cycle") && flagBoolean(args, "no-cycle")) {
+      throw new HikyakuError("--require-cycle と --no-cycle は同時に指定できません");
+    }
     const opened = flagBoolean(args, "require-cycle")
       ? openCycle(args, operands[0])
       : openCycleIfAny(args, operands[0]);

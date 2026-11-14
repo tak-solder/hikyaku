@@ -12,7 +12,7 @@
 
 スキル・エージェント・スクリプトを変えるときは、次の原則に沿っているかを確かめてください。理由の説明は [docs/concepts.md](docs/concepts.md) が正で、ここには「変更するときに何を守るか」だけを書きます。原則に反する変更が必要になったら、黙って例外を作らず、原則のほうを見直す提案としてユーザーに確認してください。
 
-1. **as-is と to-be を分ける。** 永続ドキュメントは実装済みの現実だけを表し、これから作るものはサイクルの `design-delta.md` に書きます。永続ドキュメントと `instructions.md` を書けるのは close-cycle だけです（ADR の追記は architect）。ほかのスキルに書き込みの手順を足さないでください。
+1. **as-is と to-be を分ける。** 永続ドキュメントは実装済みの現実だけを表し、これから作るものはサイクルの `design-delta.md` に書きます。永続ドキュメントと `instructions.md` を書けるのは close-cycle だけです（ADR の追記は architect）。例外はサイクルに属さない patch で、コードと同じ PR で直します（同じ PR でマージされるので、マージした時点で as-is が保たれる）。サイクルに属す patch は書かずに handoff.md に残します。ほかのスキルに書き込みの手順を足さないでください。
 2. **コピーではなくポインタを持たせる。** コード・diff・PR から復元できる情報を、文書やテンプレートに写させないでください。テンプレートに節を足すときは、その節を読むフェーズが具体的に決まっていて、ほかから復元できないことを確かめます。
 3. **知見の置き場は、読み込まれ方で選ぶ。** 読まれる頻度が、使われる頻度を上回る場所に載せません。重要度（害が成果物に残るなら高、セッションのコストなら中、すぐ直せるなら低）で残すものを絞り、機械で防ぐ → パス指定の rule → スキル → `conventions` → `overview` / `decisions` / `constraints` の順に当てはめます。低はどこにも書かせません。基準の正は `skills/close-cycle/references/persistence.md` です。
 4. **足すだけでなく、消す経路を持つ。** 文書に追記する手順を足すときは、その記述が古くなったり役に立たなくなったりしたときに、誰がどの根拠で消すかも決めてください。いまは振り返りの「役に立たなかった記述」と close-cycle の削除・置き換えが担っています。
@@ -45,6 +45,7 @@
 - スクリプトを変更したら `npm test` も通してください。CI の `check-scripts` はテスト本体・補助ファイルを型チェックし、単体・CLI 結合テストを実行します
 - 予測ピークの標準のガイド（`skills/build-manager/references/token-guide.md`）の本文を変えたら、先頭の `version` を上げて `hash` を本文に合わせてください。`tests/tokens.test.mts` が食い違いを検出し、CI（check-scripts）の `npm test` も同じテストを実行します
 - 書き込みを伴うコマンドには必ず `--dry-run` を用意してください。承認はスキル側が取ります
+- patch のブランチ名（`{prefix}{sep}patch{sep}{YYYYMM}{sep}{slug}`）と作業単位（`patches/{YYYYMM}/{slug}/`）の対応は `scripts/lib/branch.mts` と `scripts/lib/patch.mts` が正です。Stop フックは現在のブランチの patch だけを読むので、patch の記録を全件走査する処理を足さないでください（サイクルに属さない patch の記録はマージのたびに増えます）
 - 子として動くスキル（architect / builder / build-manager / close-cycle / retrospective）にユーザーへ尋ねる箇所を足したら、`（ask: <id>）` のタグを付け、`scripts/lib/conductor.mts` の `ASKS` にも同じ ID を足してください。ID の改名・削除も両方で行います。`node scripts/hikyaku.mts conductor lint` が食い違いを検出し、CI（check-scripts）も同じコマンドを実行します。タグの付け忘れは検出できません
 - 知見の重要度と置き場の基準は `skills/close-cycle/references/persistence.md` が唯一の正です。builder・retrospective・close-cycle の手順と `agents/doc-triager.md` には写さず、このファイルを読ませてください。利用者向けの説明は `docs/configuration/persistence.md` に置きます
 - handoff.md と retrospective.md の「永続化すること」「役に立たなかった記述」は、`scripts/lib/promotions.mts` が見出しと行頭を読みます。見出し・宛先・理由の語を変えるときは、テンプレート（`skills/builder/references/templates.md`・`skills/retrospective/steps/write.md`）と `persistence.md` とスクリプトを同じ PR で直してください

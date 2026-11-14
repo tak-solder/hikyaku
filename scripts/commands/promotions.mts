@@ -19,7 +19,8 @@ register({
   summary: "サイクルの記録から、永続化の候補と役に立たなかった記述を集める",
   usage: "hikyaku promotions [<cycle>] [--root <path>] [--json]",
   details: [
-    "読むのは、サイクルの design-delta.md・各ビルドの handoff.md・各フェーズの retrospective.md です。",
+    "読むのは、サイクルの design-delta.md・各ビルドの handoff.md・各フェーズの retrospective.md と、",
+    "サイクルに属す patch の handoff.md（patches/{YYYYMM}/{slug}/handoff.md）です。",
     `「${PROMOTE_HEADING}」と「${UNHELPFUL_HEADING}」の節の箇条書きを、宛先・場所ごとに束ねて返します。`,
     "design-delta.md の「永続ドキュメントの更新予定」は予定として並べます。",
     "",

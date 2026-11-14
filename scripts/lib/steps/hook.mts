@@ -17,7 +17,8 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { loadConfig } from "../config.mts";
+import { loadConfig, type ResolvedConfig } from "../config.mts";
+import { currentPatchPhase, patchUnitDirectory } from "../patch.mts";
 import { parseFinalText } from "../conductor.mts";
 import { cyclesPath, loadCycles } from "../cycles.mts";
 import { repoRoot } from "../paths.mts";
@@ -49,7 +50,7 @@ export function stopReason(input: StopInput): string | undefined {
 
   const config = loadConfig();
   const records = existsSync(cyclesPath(config.hikyakuRoot)) ? loadCycles(config.hikyakuRoot) : [];
-  const position = locateSession(config.hikyakuRoot, { records, explicit: false }, input.session_id);
+  const position = locateSession(config.hikyakuRoot, { records, explicit: false, patch: currentPatchUnit(config) }, input.session_id);
   if (position === undefined) return undefined;
 
   const { opened, directive } = directiveOf(position.unit);
@@ -63,4 +64,10 @@ export function stopReason(input: StopInput): string | undefined {
     "ユーザーへの問いで止まるところ、またはユーザーが中断や別の作業を指示したところなら、そのまま終えてかまいません（止めるのは1回だけです）。",
     "非対話で起動されている（conductor の子）なら、規約どおり最後にブロックを1つ出して終えてください。",
   ].join("\n");
+}
+
+/** 現在のブランチが patch のブランチなら、その作業単位（patches/{YYYYMM}/{slug}） */
+function currentPatchUnit(config: ResolvedConfig): string | undefined {
+  const phase = currentPatchPhase(config);
+  return phase === undefined ? undefined : patchUnitDirectory(phase);
 }

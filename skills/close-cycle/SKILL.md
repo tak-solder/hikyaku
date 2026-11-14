@@ -31,13 +31,16 @@ argument-hint: "[{cycle}]"
 | 置き場 | 書く人 |
 |---|---|
 | コード（lint・テスト・ヘルパー・その場のコメント）、パス指定の rule | builder（見つけたビルドの PR）。後続のビルドに間に合わせるため |
-| 永続ドキュメント（overview / decisions / constraints / conventions / glossary） | close-cycle だけ。ADR の追記は architect |
-| `{HIKYAKU_ROOT}/instructions.md`、スキル | close-cycle だけ |
+| 永続ドキュメント（overview / decisions / constraints / conventions / glossary） | close-cycle。ADR の追記は architect。サイクルに属さない patch は、コードと同じ PR で直す |
+| `{HIKYAKU_ROOT}/instructions.md`、スキル | close-cycle。サイクルに属さない patch は、コードと同じ PR で直す |
 | フック | close-cycle が別のブランチの PR にする |
 | 見積もりのガイド（`token-guide/guide.md`） | `/hikyaku:token-guide`。乖離が大きいサイクルでは close-cycle が呼ぶ |
 
-永続ドキュメントと `instructions.md` を close-cycle だけが書くのは、走行中の他サイクルの
-planner / architect が読むため。フェーズ途中で書き換えると前提が途中で変わる。
+永続ドキュメントと `instructions.md` をサイクルの中では close-cycle だけが書くのは、走行中の他サイクルの
+planner / architect が読むため。フェーズ途中で書き換えると前提が途中で変わる。サイクルに属さない patch が
+書けるのは、コードと同じ PR でマージされ、マージした時点で実装済みの現実になるから。サイクルに属す patch
+（統合ブランチ宛て、またはマージ後・CLOSE 前）は書かずに `patches/{YYYYMM}/{slug}/handoff.md` に残し、
+あなたがビルドの handoff.md と同じく昇格させる（`hikyaku promotions` が集める）。
 
 あなたは追加だけでなく、削除と置き換えも提案できる。ただし範囲は、このサイクルの記録（handoff・
 振り返り）に根拠があるものと、このサイクルのビルドが書いた rule に限る。根拠の無い記述の正否は、

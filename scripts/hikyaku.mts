@@ -39,6 +39,7 @@ import "./commands/reviewers.mts";
 import "./commands/pr-ready.mts";
 import "./commands/review.mts";
 import "./commands/step.mts";
+import "./commands/patch.mts";
 
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2));

@@ -192,7 +192,8 @@ export interface SecurityPromptInput {
   /** skills/builder/references/security-review.md の本文 */
   guide: string;
   baseRef: string;
-  buildDirectory: string;
+  /** 対象ビルドのディレクトリ。patch では undefined（plan.md も issue.md も無い） */
+  buildDirectory: string | undefined;
   triggers: string;
 }
 
@@ -203,7 +204,9 @@ export function securityPrompt(input: SecurityPromptInput): string {
     "",
     "## 今回の対象",
     "",
-    `- 対象ビルド: \`${input.buildDirectory}\`（plan.md と issue.md はここにある）`,
+    input.buildDirectory === undefined
+      ? "- 対象: patch（サイクルを要しない小さな変更）。変更の意図は PR の本文とコミットにある"
+      : `- 対象ビルド: \`${input.buildDirectory}\`（plan.md と issue.md はここにある）`,
     `- 差分の基準: \`${input.baseRef}\`。コミット済みの差分は \`git diff $(git merge-base ${input.baseRef} HEAD)..HEAD\` で確認する。\`origin/main\` などで代用しない`,
     "- 未コミットの変更と未追跡ファイルも `git status` / `git diff` / `git diff --cached` で確認する",
     "- このリポジトリが機微情報として扱うもの（[review.security] triggers）:",

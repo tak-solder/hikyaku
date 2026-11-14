@@ -169,7 +169,7 @@ PR タイトルは表示専用で解析されないため、テンプレート�
 
 `reviewers` には、PR を作る各スキルが PR を作った直後に、レビューを依頼する相手を書きます。人は login、チームは `org/team`、Copilot は `@copilot` で、1要素に1つずつ書きます。空（既定）なら何も依頼しません。依頼は `hikyaku pr request-reviewers` が行い、PR の作成者本人、すでに依頼した相手、すでにレビューした相手には依頼しません（GitHub は作成者本人を依頼先にできず、`gh` はレビュー済みの相手にも再依頼してしまうためです）。
 
-`reviewers_skip` には、アサインをオフにするスキルを `init` / `token-guide` / `create` / `plan` / `architect` / `build` / `close` / `conductor` のフェーズ名で並べます。`build` は全てのビルドの PR にあたり、`conductor` は監督が作る最後の PR にあたります。たとえば PLAN と ARCHITECT のドキュメントだけの PR にはレビューを求めず、BUILD の PR にだけ求めるなら、`reviewers_skip = ["init", "token-guide", "create", "plan", "architect", "close"]` と書きます。名前のタイプミスはエラーになります。この設定は [conductor] の `phase_reviewers` にも効きます。
+`reviewers_skip` には、アサインをオフにするスキルを `init` / `token-guide` / `create` / `plan` / `architect` / `build` / `close` / `conductor` / `patch` のフェーズ名で並べます。`build` は全てのビルドの PR にあたり、`conductor` は監督が作る最後の PR に、`patch` は全ての patch の PR にあたります。たとえば PLAN と ARCHITECT のドキュメントだけの PR にはレビューを求めず、BUILD の PR にだけ求めるなら、`reviewers_skip = ["init", "token-guide", "create", "plan", "architect", "close"]` と書きます。名前のタイプミスはエラーになります。この設定は [conductor] の `phase_reviewers` にも効きます。
 
 [conductor](../workflow/conductor.md) のフェーズの PR（conductor ブランチ向け）には、`reviewers` ではなく `[conductor] phase_reviewers` が使われます。向き先は PR の実際のマージ先から決まります。
 

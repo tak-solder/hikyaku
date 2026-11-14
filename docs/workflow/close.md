@@ -14,7 +14,7 @@
 
 ## 誰が何を書くか
 
-知見の置き場は読み込まれ方で選び、書く人は置き場で決まります（[知見の置き場](../configuration/persistence.md)）。コードとパス指定の rule は、見つけたビルドの builder がその PR で書きます。close-cycle が書くのは、永続ドキュメント、`{HIKYAKU_ROOT}/instructions.md`、スキルです。永続ドキュメントと `instructions.md` を書けるのは close-cycle だけで、例外は architect による ADR の追記です。走行中の他サイクルの planner や architect が読む文書なので、フェーズの途中で書き換えると前提が途中で変わります。
+知見の置き場は読み込まれ方で選び、書く人は置き場で決まります（[知見の置き場](../configuration/persistence.md)）。コードとパス指定の rule は、見つけたビルドの builder がその PR で書きます。close-cycle が書くのは、永続ドキュメント、`{HIKYAKU_ROOT}/instructions.md`、スキルです。サイクルの中で永続ドキュメントと `instructions.md` を書けるのは close-cycle だけで、例外は architect による ADR の追記です（サイクルに属さない [patch](patch.md) は、コードと同じ PR で直します）。走行中の他サイクルの planner や architect が読む文書なので、フェーズの途中で書き換えると前提が途中で変わります。
 
 ## 進み方
 
@@ -28,7 +28,7 @@ CLOSE 自身の振り返りは行いません。昇格の素材にするには�
 hikyaku promotions {cycle}
 ```
 
-候補はスクリプトが集めます。各ビルドの `handoff.md` と各フェーズの `retrospective.md` は、同じ見出しと行の形で「永続化すること」を書くので、集めて宛先ごとに束ねるところまでは機械的にできます。`design-delta.md` の「永続ドキュメントの更新予定」と、振り返りの「役に立たなかった記述」も併せて返ります。書式が崩れていた行は捨てられず、読めなかった行として返ります。
+候補はスクリプトが集めます。各ビルドの `handoff.md` と各フェーズの `retrospective.md`、そしてこのサイクルに属す [patch](patch.md) の `handoff.md` は、同じ見出しと行の形で「永続化すること」を書くので、集めて宛先ごとに束ねるところまでは機械的にできます。`design-delta.md` の「永続ドキュメントの更新予定」と、振り返りの「役に立たなかった記述」も併せて返ります。書式が崩れていた行は捨てられず、読めなかった行として返ります。
 
 候補はいつでも同じコマンドで再現できるので、承認の前にセッションが切れても、やり直しにはなりません。
 

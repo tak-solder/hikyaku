@@ -21,6 +21,9 @@
     ├── .hikyaku.local         # 最後に作業したサイクル（git 管理対象外）
     ├── .gitignore             # .hikyaku.local の1行だけ
     ├── progress.jsonl         # init の手順の進捗
+    ├── patches/               # サイクルに属さない patch の記録（patch prune で古い月を消せる）
+    │   └── {YYYYMM}/{slug}/
+    │       └── progress.jsonl #   patch の手順の進捗
     └── cycles/
         ├── 001-user-auth/
         │   ├── .hikyaku.config  # このサイクルだけの上書き（任意）
@@ -48,7 +51,7 @@
 
 `.gitignore` に包括パターンを書かないでください。close-cycle は別セッションで `handoff.md` と `retrospective.md` から候補を集めるため、まとめて除外すると読めなくなります。
 
-`instructions.md` はインストラクションの優先順位で SKILL.md より上位にあり、スキルの挙動を上書きするための正規の場所です。走行中の他サイクルも読むため、書き換えるのは close-cycle だけです。
+`instructions.md` はインストラクションの優先順位で SKILL.md より上位にあり、スキルの挙動を上書きするための正規の場所です。走行中の他サイクルも読むため、サイクルの中で書き換えるのは close-cycle だけです（サイクルに属さない patch は、コードと同じ PR で直します）。
 
 `token-guide/guide.md` を書き換えるのは `/hikyaku:token-guide` だけです。乖離が大きいサイクルでは close-cycle がこのスキルを呼び、変更は別のブランチの PR になります。ガイドはワークスペース全体の見積もりに効き、走行中のほかのサイクルの残りのビルドも補正後の版で見積もられます。各予測には見積もりに使った版が残るので、比較は版ごとに分けられます。構成と補正の手順は [予測ピークと見積もりのガイド](../configuration/token-guide.md) にあります。
 
@@ -58,6 +61,7 @@
 cycles/{NNN}-{slug}/
 ├── .hikyaku.config           # このサイクルだけの上書き（任意）
 ├── planning/
+│   ├── intake.md             # patch から引き継いだサイクルのみ（依頼・調べたこと・合意したこと）
 │   ├── questions.md          # 質問が発生した場合のみ
 │   ├── user-stories.md
 │   ├── progress.jsonl        # planner の手順の進捗
@@ -71,6 +75,9 @@ cycles/{NNN}-{slug}/
 ├── tasklist.md
 `progress.jsonl` は、フェーズの手順がどこまで進んだかの記録です。置き場所はフェーズで決まり、PLAN は `planning/`、ARCHITECT は `design/`、BUILD は `build-{NN}/`、CLOSE と create-cycle はサイクルのディレクトリ直下、init は HIKYAKU_ROOT 直下、token-guide は `token-guide/` です。CLOSE がサイクルの直下なのは、成果物がサイクルの外にあり、フェーズ専用のディレクトリを持たないためです。build-manager と振り返り（retrospective）の記録は、呼び出し元のフェーズと同じファイルに入ります。`hikyaku step report` が1手ごとに1行を追記し、成果物と一緒にコミットされます。現在地そのものは保存されず、`hikyaku step next` がこの記録と成果物から毎回導き直します。別のセッションや別のマシンから再開しても、同じ続きが返るのはこのためです。手で編集すると読めなくなるので、記録を直すときも `step report` を使います。
 ├── return.md                 # architect への差し戻し中のみ（差し戻し元のビルドのブランチだけにある）
+├── patches/{YYYYMM}/{slug}/  # このサイクルに属す patch
+│   ├── progress.jsonl        # patch の手順の進捗
+│   └── handoff.md            # 永続化すること（あるときだけ。close-cycle が昇格させる）
 └── build-{NN}/
     ├── issue.md              # architect が作成
     ├── questions.md          # 質問が発生した場合のみ
@@ -83,7 +90,9 @@ cycles/{NNN}-{slug}/
 
 ディレクトリ名は `{NNN}-{slug}` です。slug は英数字とハイフンに正規化されます（ブランチ名の解析を壊さないため）。`closed` になったサイクルのディレクトリも残します。PR 履歴から辿れることに価値があるためです。
 
-`handoff.md` と `retrospective.md` は、close-cycle が永続化の候補を集める元になります。どちらもコミット対象です。
+`handoff.md` と `retrospective.md` は、close-cycle が永続化の候補を集める元になります。どちらもコミット対象です。サイクルに属す patch の `handoff.md` も同じく候補の元になります。
+
+`patches/{YYYYMM}/{slug}/` は [patch](../workflow/patch.md) の作業単位です。サイクルに属さない patch は HIKYAKU_ROOT の下に、進行中のサイクルに属す patch はそのサイクルのディレクトリの下に置きます。依頼・合意・検証結果は PR の本文にあり、ここに残るのは手順の記録と、サイクルに属す patch の `handoff.md` だけです。
 
 `progress.jsonl` は、フェーズの手順がどこまで進んだかの記録です。置き場所はフェーズで決まり、PLAN は `planning/`、ARCHITECT は `design/`、BUILD は `build-{NN}/`、CLOSE と create-cycle はサイクルのディレクトリ直下、init は HIKYAKU_ROOT 直下、token-guide は `token-guide/` です。CLOSE がサイクルの直下なのは、成果物がサイクルの外にあり、フェーズ専用のディレクトリを持たないためです。build-manager と振り返り（retrospective）の記録は、呼び出し元のフェーズと同じファイルに入ります。`hikyaku step report` が1手ごとに1行を追記し、成果物と一緒にコミットされます。現在地そのものは保存されず、`hikyaku step next` がこの記録と成果物から毎回導き直します。別のセッションや別のマシンから再開しても、同じ続きが返るのはこのためです。手で編集すると読めなくなるので、記録を直すときも `step report` を使います。
 
@@ -137,5 +146,8 @@ buildID の採番は `max(既存) + 1` で、リナンバリングは行いま�
 | `architect` | `hikyaku/002-billing/architect` |
 | `build-NN` | `hikyaku/002-billing/build-01` |
 | `close` | `hikyaku/002-billing/close` |
+| `patch-YYYYMM-slug` | `hikyaku/patch/202611/list-sort`（サイクルの有無に関わらずこの形） |
+
+patch はサイクルより先に `patch{separator}` で見分けます。サイクル名は数字で始まるので重なりません。年月をブランチ名に含めるのは、ブランチ名から記録の場所（`patches/{YYYYMM}/{slug}/`）を一意に導くためです。
 
 フェーズは閉じた集合です。これがブランチ名の解析を成立させています（prefix を前から、フェーズを後ろから剥がせばサイクルが残るので、slug がハイフンを含んでいても破綻しません）。

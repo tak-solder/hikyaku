@@ -15,13 +15,18 @@
  *             （planning/・design/・build-NN/）を見る（Stop フック）。終えたサイクルは、CLOSE の
  *             手順が残っているときだけサイクルのディレクトリ直下を見る
  *
+ * patch の作業単位（patches/{YYYYMM}/{slug}/）は2階層下にある。サイクルに属さない patch は
+ * マージ後も記録が残って増え続けるので、all では現在のブランチの patch（Scope.patch）だけを見る。
+ * explicit では、渡したサイクルの patch をすべて見る（サイクルの中なので数が限られる）。
+ *
  * サイクルのディレクトリ直下に記録するのは create-cycle と close-cycle で、どちらも内部スキルを呼ばない。
  */
 
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "../args.mts";
-import { FIXED_PHASES, isCyclelessPhase, isPhase, type Phase } from "../branch.mts";
+import { FIXED_PHASES, isCyclelessPhase, isPatchPhase, isPhase, type Phase } from "../branch.mts";
+import { listPatchUnits, patchPhaseOf } from "../patch.mts";
 import { cycleDir, cycleDirName, type CycleRecord } from "../cycles.mts";
 import { PROGRESS_FILE, readProgress, RESTART, type ProgressEvent } from "../progress.mts";
 import { buildDirective, open, type Directive, type Opened } from "./directive.mts";
@@ -52,6 +57,8 @@ interface ProgressFile {
 export interface Scope {
   records: CycleRecord[];
   explicit: boolean;
+  /** all のとき、現在のブランチが指す patch の作業単位（patches/{YYYYMM}/{slug}）。無ければ見ない */
+  patch?: string | undefined;
 }
 
 /** サイクルのディレクトリ直下の記録で、CLOSE の手順が最後（PR のあとの followups）まで終わっていないか */
@@ -69,26 +76,31 @@ function progressFiles(hikyakuRoot: string, scope: Scope): ProgressFile[] {
     if (!existsSync(join(directory, PROGRESS_FILE))) return undefined;
     return { cycle, relative, directory, events: readProgress(directory) };
   };
-  const visit = (base: string, cycle: CycleRecord | undefined): void => {
+  const visit = (base: string, cycle: CycleRecord | undefined, patches: string[]): void => {
     const relatives = [""];
     if (existsSync(base)) {
       for (const entry of readdirSync(base, { withFileTypes: true })) {
         if (entry.isDirectory()) relatives.push(entry.name);
       }
     }
+    relatives.push(...patches);
     for (const relative of relatives) {
       const file = read(base, relative, cycle);
       if (file !== undefined) files.push(file);
     }
   };
   if (scope.explicit) {
-    for (const record of scope.records) visit(cycleDir(hikyakuRoot, record), record);
+    for (const record of scope.records) {
+      const directory = cycleDir(hikyakuRoot, record);
+      visit(directory, record, listPatchUnits(directory));
+    }
     return files;
   }
-  visit(hikyakuRoot, undefined);
+  const patches = scope.patch === undefined ? [] : [scope.patch];
+  visit(hikyakuRoot, undefined, patches);
   for (const record of scope.records) {
     if (record.status === "active") {
-      visit(cycleDir(hikyakuRoot, record), record);
+      visit(cycleDir(hikyakuRoot, record), record, patches);
       continue;
     }
     // 終えたサイクルは、CLOSE の手順（cycle close のあとの pr・followups）が残っているときだけ見る
@@ -113,9 +125,14 @@ function isCycleRoot(file: ProgressFile): boolean {
 
 /** そのスキルが、そのディレクトリを作業単位にするフェーズ。サイクルの有無も合わせる */
 function phaseOf(skill: SkillSteps, file: ProgressFile): Phase | undefined {
-  const candidates = [...FIXED_PHASES, file.relative].filter((value): value is Phase => isPhase(value));
+  const patch = patchPhaseOf(file.relative);
+  const candidates = [...FIXED_PHASES, file.relative, ...(patch === undefined ? [] : [patch])].filter(
+    (value): value is Phase => isPhase(value),
+  );
+  // patch はサイクルに属すことも属さないこともある
   return candidates.find(
-    (phase) => isCyclelessPhase(phase) === (file.cycle === undefined) && skill.unit?.(phase) === file.relative,
+    (phase) =>
+      (isPatchPhase(phase) || isCyclelessPhase(phase) === (file.cycle === undefined)) && skill.unit?.(phase) === file.relative,
   );
 }
 

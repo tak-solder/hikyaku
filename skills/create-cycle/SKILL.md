@@ -127,6 +127,11 @@ cycles.md には作成時の Hikyaku バージョンも記録される。ディ�
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {NNN}-{slug}
 ```
 
+- [ ] patch から引き継いだ場合（呼び出しで引き継ぎの内容を渡された）は、その内容を
+  `{HIKYAKU_ROOT}/cycles/{NNN}-{slug}/planning/intake.md` に書く（形は
+  `${CLAUDE_PLUGIN_ROOT}/skills/patch/references/templates.md` の「intake.md」）。cycles.md と一緒にコミットする。
+  planner はこれを企画の入力として読む
+
 → Step 4 へ。
 
 ### Step 4 以降: step に従って進める
