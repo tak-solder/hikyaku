@@ -48,7 +48,7 @@ AIエージェント協働開発ワークフロー。
             └── build-01/        # BUILD が作る
 ```
 
-永続ドキュメント（overview / decisions / constraints / learnings / conventions 等）は
+永続ドキュメント（overview / decisions / constraints / conventions 等）は
 HIKYAKU_ROOT の外にある。 所在は `document-guide.md` が宣言する。
 
 ### あなたの役割

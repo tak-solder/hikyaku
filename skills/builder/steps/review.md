@@ -84,7 +84,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run security build-{NN} 
 - [ ] 統合した指摘をユーザーに提示し、対応を決める（ask: review-findings）
   - 今修正する — 修正し、verify と同じ検証を通し、追加でコミットして、ラウンド n+1 のレビューへ
   - 新ビルド化して後で対応 — `/hikyaku:build-manager` を呼び出して新ビルドを追加する
-  - そのまま進める — 指摘を `handoff.md` の「意図的に残した未対応」に記録する
+  - そのまま進める — 指摘を `handoff.md` の「残したこと」に記録する
   - `autoFix` が true で2ラウンド目以降なら、確認を省いて「今修正する」として扱う。
     ただし「確度: 要確認」の懸念と、次の打ち切りに当たる場合は確認する
 - [ ] 次のラウンドへ進む前に、打ち切るか判定する

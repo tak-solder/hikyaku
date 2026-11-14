@@ -62,7 +62,7 @@ node --version
 - [Codex で使い始める](docs/getting-started-codex.md) — Codex への導入とスキルの起動
 - [概念と設計思想](docs/concepts.md) — 用語集と、この形になっている理由
 - [ワークフロー](docs/workflow/README.md) — 各フェーズで何が起き、どこで承認を求められるか
-- [設定](docs/configuration/config-file.md) — `.hikyaku.config` / [プロファイル](docs/configuration/profiles.md) / [ドキュメントガイド](docs/configuration/documents.md) / [外部連携](docs/configuration/external.md) / [予測ピークと見積もりのガイド](docs/configuration/token-guide.md)
+- [設定](docs/configuration/config-file.md) — `.hikyaku.config` / [プロファイル](docs/configuration/profiles.md) / [ドキュメントガイド](docs/configuration/documents.md) / [知見の置き場](docs/configuration/persistence.md) / [外部連携](docs/configuration/external.md) / [予測ピークと見積もりのガイド](docs/configuration/token-guide.md)
 - [運用](docs/operations/multi-cycle.md) — 並行運用 / [トラブルシューティング](docs/operations/troubleshooting.md) / [CI](docs/operations/ci.md)
 - [リファレンス](docs/reference/cli.md) — CLI / [ディレクトリ構造](docs/reference/directory-layout.md) / [内部スキルとエージェント](docs/reference/agents-and-skills.md)
 - [v2 → v3 移行ガイド](docs/migration/v2-to-v3.md) / [v1 → v2 移行ガイド](docs/migration/v1-to-v2.md)

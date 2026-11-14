@@ -58,6 +58,7 @@ import {
 } from "../lib/tokens.mts";
 import {
   collectPeakRecords,
+  guideReview,
   deviationOf,
   GROUP_KEYS,
   type GroupKey,
@@ -431,7 +432,7 @@ register({
     "開始時の固定分・区切りでのコンテキスト（progress.jsonl から）・呼び出し回数・コンパクション・",
     "差分の追加行数・モデル・見積もりに使ったガイドの版・Hikyaku の版を並べます。",
     "",
-    "ガイドを補正する素材です（close-cycle の昇格と /hikyaku:token-guide）。同じ成分を同じ向きに",
+    "ガイドを補正する素材です（/hikyaku:token-guide）。同じ成分を同じ向きに",
     "読み違え続けているなら、ガイドの見積もり方を直します。",
     "",
     "--group-by はモデル・Hikyaku の版・ホスト・ガイドの版ごとに分け、件数・予測と実測の平均・実測の範囲・",
@@ -475,7 +476,11 @@ register({
         ? undefined
         : groupRecords(records, groupBy).map((g) => ({ ...summarizeGroup(g.key, g.records), records: g.records.map(recordJson) }));
 
-    emit({ records: records.map(recordJson), groupBy: groupBy ?? null, groups: groups ?? null }, () => {
+    // 見直しを勧めるかは、サイクルを指定したときだけ出す（close-cycle が読む。全サイクルを混ぜた判定は
+    // token-guide の校正が自分で行う）
+    const review = filter === undefined ? undefined : guideReview(records);
+
+    emit({ records: records.map(recordJson), groupBy: groupBy ?? null, groups: groups ?? null, review: review ?? null }, () => {
       if (records.length === 0) return "予測ピークの振り返りを持つ retrospective.md はまだありません。";
       const lines: string[] = [];
       if (groupBy === undefined) {
@@ -495,6 +500,9 @@ register({
       if (all.paired > 0) {
         const under = records.filter((r) => (deviationOf(r) ?? 0) > 0).length;
         lines.push("", `乖離の平均 ${signedK(all.meanDeviation)}・比率の平均 ${ratio(all.meanRatio)}（${all.paired} 件、過小見積もり ${under} 件）`);
+      }
+      if (review !== undefined) {
+        lines.push("", `見積もりのガイドの見直し: ${review.needed ? "勧める" : "不要"}（${review.reason}）`);
       }
       lines.push("", "乖離の要因は各 retrospective.md の「乖離の要因」を読んでください。");
       return lines.join("\n");

@@ -45,3 +45,38 @@ BP と予測ピークは別の量で換算できないため、次のものは�
 - `/hikyaku:bp-guide` は `/hikyaku:token-guide` になり、ブランチのフェーズ名も `bp-guide` から `token-guide` に変わりました。`[pr] reviewers_skip` に `bp-guide` を書いていたら `token-guide` に直してください
 
 v2 で作成したサイクルの `tasklist.md`（`BP` 列）と `retrospective.md`（「BP見積もりの振り返り」）は、v3 では読み取りだけを行います。`tasklist.md` の更新はエラーで止まり、`tokens history` には並びません。
+
+## 永続ドキュメントの論理名の整理
+
+v3 では、永続ドキュメントの論理名を `overview` / `decisions` / `constraints` / `conventions` / `glossary` の5つに絞りました。`learnings` / `test-strategy` / `security-model` / `tech-stack` / `db-schema` / `interfaces` は廃止です。`document-guide.md` にこれらの行が残っていると、`hikyaku validate` と `hikyaku docs validate` がエラーにします。黙って無視すると、登録済みの文書が読む候補からも昇格先からも静かに消えるためです。
+
+廃止の理由は、置き場の決め方を変えたことにあります。v3 は知見を「いつ読み込まれる場所に置くか」で決め、一部のファイルにしか効かない注意はパス指定の rule に、機械で防げるものはコードに置きます（[知見の置き場](../configuration/persistence.md)）。落とし穴集を1つの文書に溜めると、たまにしか使わない知見のために毎セッションで一定のコンテキストを使います。
+
+行を消すだけにはしないでください。落とし穴集には、テストが通ってしまう類の、再発しても気づけない知見が混ざっています。一方で、既にコードで防がれているものや、他の文書と重複しているものも多く含まれます。項目ごとに振り分ける必要があります。
+
+振り分けは `/hikyaku:init` が手伝います。初期化済みのワークスペースで実行すると、廃止した論理名が残っていることを知らせ、移行の回を始めます。
+
+```
+/hikyaku:init
+```
+
+移行の回では、`doc-triager` エージェントが文書を項目ごとに読み、コードと突き合わせて、重要度と置き場を判定します。結果は「移すもの」と「消すもの」に分けて提示され、承認したものだけが書き込まれます。機械で防げるのに未対応の項目は、rule に仮置きしたうえで、何を入れれば防げるかが PR の本文に並びます。常時読み込まれる AGENTS.md や既存の rule も、希望すれば同じ手順で見直せます。
+
+廃止した論理名の中身の行き先は、おおむね次のとおりです。
+
+| 廃止した論理名 | 中身の行き先 |
+|---|---|
+| `learnings` | 重要度で振り分ける。機械で防ぐ、パス指定の rule、`constraints`、または書かない |
+| `test-strategy` | 全体に効く方針は `conventions`、テストのファイルだけに効く注意はパス指定の rule |
+| `security-model` | 設計を縛る条件は `constraints`、構造は `overview` |
+| `tech-stack` / `db-schema` / `interfaces` | 正はコード側。`overview` にポインタを書く。ファイルは残してもよいが、Hikyaku は読まない |
+
+## handoff と振り返りの形式
+
+v3 で作るサイクルでは、`handoff.md` と `retrospective.md` の形式が変わります。`handoff.md` は「後続ビルドが前提にすること」「残したこと」「永続化すること」の3節になり、`retrospective.md` は改善提案（R-N）とリポジトリ固有の学び（L-N）の代わりに、「永続化すること」と「役に立たなかった記述」を1件1行で書きます。close-cycle は `hikyaku promotions` でこれらを集めます。
+
+v2 の形式で書かれた `handoff.md` と `retrospective.md` からは、候補を集められません。進行中のサイクルを v2 のまま終えてから v3 に上げる、という冒頭の手順に従っていれば、対応は要りません。
+
+## close-cycle の変更
+
+close-cycle は自身の振り返りを行わなくなりました。昇格の候補は、サブエージェントによる抽出ではなく `hikyaku promotions` が集めます。追加に加えて、記述の削除と置き換えも提案します。見積もりのガイドの補正は close の PR には含まれなくなり、乖離が大きいサイクルで close-cycle が `/hikyaku:token-guide` を呼んで、別のブランチの PR にします。詳しくは [CLOSE](../workflow/close.md) を参照してください。

@@ -39,6 +39,16 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next init
 メッセージを伝えて終了する。それ以外は中断からの再開（雛形を生成した直後の中断を含む）なので、
 返った1手から Step 4 の転送ループで続ける。
 
+`stop` のメッセージが「v3 で廃止した論理名が残っています」と知らせていたら、移行が要る。
+ユーザーに伝えて同意を得たら、案内されたコマンドで移行の回を始め、Step 4 の転送ループで続ける。
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step restart init --round migrate --reason "v3 への移行"
+```
+
+移行の回では、廃止した論理名の文書（`learnings` など）の中身を、重要度と置き場で振り分ける
+（振り分け → 承認 → 書き込み → 索引 → PR）。判定は `doc-triager` エージェントに委任する。
+
 → Step 1 へ。
 
 ### Step 1: HIKYAKU_ROOT の決定
@@ -77,7 +87,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" init --root {HIKYAKU_ROOT}
 | `{HIKYAKU_ROOT}/.gitignore` | `.hikyaku.local` の1行だけ（既にあれば1行だけ追記する） |
 
 予測ピークの見積もりのガイド（`{HIKYAKU_ROOT}/token-guide/guide.md`）は生成しない。無ければプラグインの
-標準のガイドで見積もり、close-cycle の昇格や `/hikyaku:token-guide` で補正するときに作られる。
+標準のガイドで見積もり、`/hikyaku:token-guide` で補正するときに作られる。
 
 出た警告は、Step 4 の最初の手順（cleanup）で扱う。
 

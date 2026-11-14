@@ -14,18 +14,18 @@ architect のビルド分割ステップと、builder の実装中にスコー�
 
 ### retrospective
 
-セッション中にスキル外で受けた指示を分析し、2種類に分けて記録します。
+セッションの経験から、次の2つを取り出して記録します。
 
-| 種類 | 何か | 行き先 |
+| 節 | 何か | close-cycle の扱い |
 |---|---|---|
-| 改善提案（R-N） | 以後の取り決め。「次からこう書く / こう進める」 | close-cycle が `conventions` などの永続ドキュメントか `instructions.md` へ反映する |
-| リポジトリ固有の学び（L-N） | 踏んだ地雷。再現条件が明確な落とし穴 | close-cycle が `learnings` へ昇格させる |
+| 永続化すること | 以後に効く知見。ユーザーから受けたスキル外の指示が最重要の入力 | 重複を束ね、置き場ごとに反映する |
+| 役に立たなかった記述 | 読み込まれた記述のうち、古い・自明・無関係だったもの | 削除・置き換え・glob の見直しを提案する |
 
-軸は「提案か、事実か」です。再現条件が具体的に書けないものは L-N にしません（「なんとなく遅い」ではなく「N=1000 でタイムアウトする」）。`overview` や `constraints` に載る事実は `handoff.md` が担い、昇格の経路を二重に持ちません。
+どちらも1件1行で、`handoff.md` の「永続化すること」と同じ形で書きます。形が決まっているので、`hikyaku promotions` がサイクル全体の分を集められます。重要度が低の知見は書きません。重要度と置き場の考え方は [知見の置き場](../configuration/persistence.md) にあります。
 
-改善提案の分類先は `doc:{論理名}` / `workflow` / `記録のみ` の3つです。`doc:` の論理名は `document-guide.md` が正で、そこに無い論理名は使いません。Hikyaku の手順そのものに穴があると思える場合も、このリポジトリで埋めるなら `workflow`（= `instructions.md`）に落とします。
+Hikyaku の手順そのものに穴があると思える場合も、このリポジトリで埋めるなら `{HIKYAKU_ROOT}/instructions.md` 宛てに書きます。Hikyaku 自体の不具合と思われるものは報告として記録され、close の PR の本文に並びます。
 
-実装フェーズ（`build-{NN}`）では、これに加えて予測ピークと実測を記録します。architect 段階・builder 段階の予測と、`hikyaku tokens session` で実測したセッションのコンテキスト（ピーク・開始時の固定分・呼び出し回数・コンパクション回数・モデル・ホスト・Hikyaku の版）、`hikyaku tokens history build-NN` が PR の base から数えた差分（新規ファイル数・追加行数とその実装とテストの内訳）を並べ、1セッションで完結したかと、乖離の要因を成分ごとに残します。R-N でも L-N でもない事実の記録ですが、乖離の要因がこのリポジトリ固有の再現条件に落ちる場合は L-N としても書かれます。この節の形は固定で、`hikyaku tokens history` が読み、close-cycle と `/hikyaku:token-guide` が見積もりのガイドを補正する素材にします。
+実装フェーズ（`build-{NN}`）では、これに加えて予測ピークと実測を記録します。architect 段階・builder 段階の予測と、`hikyaku tokens session` で実測したセッションのコンテキスト（ピーク・開始時の固定分・呼び出し回数・コンパクション回数・モデル・ホスト・Hikyaku の版）、`hikyaku tokens history build-NN` が PR の base から数えた差分（新規ファイル数・追加行数とその実装とテストの内訳）を並べ、1セッションで完結したかと、乖離の要因を成分ごとに残します。永続化の候補ではなく、事実の記録です。この節の形は固定で、`hikyaku tokens history` が読みます。close-cycle はこの記録から見積もりのガイドの見直しが必要かを判定し、`/hikyaku:token-guide` がガイドを補正する素材にします。
 
 実装フェーズでは、G8 の提示・実装開始前・レビュー前の区切りで測ったコンテキスト（`progress.jsonl` の記録）も確かめます。目安を超えたまま継続した区切りがあれば、どこで膨らんだかを乖離の要因に書きます。値そのものは `retrospective.md` に書き写さず、`hikyaku tokens history` が `progress.jsonl` から読みます。
 
@@ -41,6 +41,9 @@ architect のビルド分割ステップと、builder の実装中にスコー�
 | `code-explorer` | architect | 既存コード調査。`overview` が渡されると差分調査に切り替わる |
 | `code-architect` | architect | 指定観点（Minimal / Clean / Pragmatic など）の単一設計案を返す |
 | `doc-reviewer` | planner / architect / build-manager / builder | 中間成果物の整合性・網羅性・曖昧さを証拠ベースで報告する |
+| `doc-triager` | init（移行の回） | 既存の文書を項目ごとに読み、コードと突き合わせて、重要度と置き場を判定する |
+
+`doc-reviewer` は plan のレビューで、`overview` / `decisions` / `constraints` の全文と plan を突き合わせます。builder は `issue.md` が指す節しか読まないので、architect の選び漏れや、選んだあとに他サイクルが足した記述を拾えるのはここだけです。
 
 `code-explorer` が返す Key Files は本セッション自身が読みます。要約だけで設計を進めると、規約やインターフェースの解像度が落ちるためです。
 
@@ -67,6 +70,7 @@ builder のコードレビューとセキュリティレビューは、Hikyaku �
 | `code-explorer` | 既存コードがあれば起動 | 同左 | 同左 | 同左 |
 | `code-architect` | 分岐がある判断で起動 | 同左 | 同左 | 同左 |
 | `doc-reviewer` | ✓ | ✗ | ✓ | ✓ |
+| `doc-triager` | 移行の回で起動 | 同左 | 同左 | 同左 |
 | コードレビュー | ✓ | ✓ | ✓ | ✓ |
 | セキュリティレビュー | 推奨時のみ確認 | 推奨時のみ確認 | 推奨時のみ確認 | 常に起動 |
 | `retrospective`（内部スキル） | auto | skip | auto | auto |

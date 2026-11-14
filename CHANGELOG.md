@@ -45,9 +45,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **`hikyaku tokens estimate [<cycle>] --fixed --reading --implementation --tests --unknown`**: 成分の予測を合計し、予測ピークと判定を返す。表と tasklist の値は k 単位で書くが丸めない（`450.4k`）ので、そのまま `--peak` に渡しても判定は変わらない。5成分すべてが必須（該当しなければ 0）。`--<成分>-basis` で根拠を添える。`--markdown` の表の最後の行に、見積もりに使ったガイドの版とハッシュが入る
 - **`hikyaku tokens guide [<cycle>]`**: 有効なガイド（プロジェクトの `{HIKYAKU_ROOT}/token-guide/guide.md` か、標準の `skills/build-manager/references/token-guide.md`）と、その版・ハッシュ・判定の帯を返す
 - **`hikyaku tokens stamp`**: プロジェクトのガイドの版を上げる。無ければ標準の本文をコピーして version 1・`based_on` 付きで作り、本文が変わっていれば version を上げて hash を合わせる。`--dry-run` あり
-- **見積もりのガイドの版**: ガイドの先頭に `version`・`based_on`・`hash`（本文のハッシュ）を持つ。hash が本文と合わないガイドは `validate`・`doctor`・ガイドを書き込むステップ（close-cycle の `write`・token-guide の `write` / `pr`）が止める
+- **見積もりのガイドの版**: ガイドの先頭に `version`・`based_on`・`hash`（本文のハッシュ）を持つ。hash が本文と合わないガイドは `validate`・`doctor`・ガイドを書き込むステップ（token-guide の `write` / `pr`）が止める
 - **token-guide スキル（`/hikyaku:token-guide [show|tune]`）**: サイクルをまたいでガイドを校正する（ブランチ → 収集 → 変更案 → 承認 → 書き込み → PR）。`step next token-guide` で進み、進捗は `token-guide/progress.jsonl` に記録する。Codex 用入口 `$hikyaku:token-guide`
-- close-cycle: 昇格先に見積もりのガイド（token-guide）を加えた。collect で `tokens history {cycle}` と各ビルドの「乖離の要因」を読み、複数のビルドに共通する偏りがあるときだけ補正を候補にし、G10 で承認を得て書き込む。ガイドが無ければ標準をコピーしてから補正する。ほかに走行中のサイクルがあっても補正は止めず、その残りのビルドが補正後の版で見積もられることを G10 で示す（予測の表に版が残るので、比較は版ごとに分けられる）
+- **知見の置き場**: 実装や振り返りで得た知見を、重要度（害が成果物に残るなら高、セッションのコストなら中、すぐ直せるなら低）で絞り、読み込まれ方で置き場を選ぶ。機械で防げるものはコード、一部のファイルにしか効かないものはパス指定の rule（`.claude/rules/`）、決まった手順はスキル、全体に効く取り決めは `conventions`、設計を縛る条件は `constraints`。低はどこにも書かない。基準は `skills/close-cycle/references/persistence.md` にあり、builder・retrospective・close-cycle・doc-triager が同じものを読む（[知見の置き場](docs/configuration/persistence.md)）
+- **`hikyaku promotions [<cycle>]`**: サイクルの `design-delta.md`・各ビルドの `handoff.md`・各フェーズの `retrospective.md` から、「永続化すること」と「役に立たなかった記述」を集め、宛先・場所ごとに束ねて返す。書式どおりに読めなかった行も捨てずに返す
+- **`hikyaku rules check`**: パス指定の rule ごとに、`paths` に一致する追跡ファイルの数・一致率・本文の文字数と、掛け合わせた読み込み量を返す。読み込み量が 2000 を超えた rule を知らせ、どのファイルにも一致しない rule があれば終了コード 2 で終わる。生成物（`[diff] exclude`）は分母から除く
+- **doc-triager エージェント**: 既存の文書を項目ごとに読み、コードと突き合わせて、重要度と置き場を判定する。init の移行の回から起動する
+- init: 移行の回（`hikyaku step restart init --round migrate`）を加えた。初期化済みのワークスペースで、v3 で廃止した論理名の文書を doc-triager が振り分け、承認を得て書き込み、PR にする（振り分け → 承認 → 書き込み → 索引 → PR）。廃止した論理名が残っていると、初期化済みで止まるときのメッセージが移行を案内する
+- close-cycle: 記述の削除と置き換えを提案できるようにした。範囲は、そのサイクルの記録（handoff・振り返り）に根拠があるものと、そのサイクルのビルドが書いた rule に限る。G10 では追加（`+`）・置き換え（`~`）・削除（`-`）を分けて提示し、PR の本文にも分けて書く
+- close-cycle: スキル（`.claude/skills/`）を置き場に加えた。同じ手順が2回以上出たときに候補にし、G10 の承認後に作る
+- close-cycle: PR を作ったあとの `followups` ステップを加えた。そのサイクルで予測ピークが同じ向きに 20% を超えて外れたビルドが2件以上あれば `/hikyaku:token-guide` を呼び、G10 でフックにすると決まった知見があれば動作を確かめてフックを書く（サイクルの記録にフックの候補があるときは、G10 の直後の `hooks` ステップで採るかを記録し、その記録で決める）。どちらも別のブランチの PR にし、採否はマージで決める。未マージの token-guide の PR があれば見送る。ほかに走行中のサイクルがあっても見直しは止めない（残りのビルドは補正後の版で見積もられ、予測の表に版が残るので比較は版ごとに分けられる）
+- `hikyaku tokens history <cycle>`: サイクルを指定すると、見積もりのガイドの見直しを勧めるか（`review`）を返す。実測の無いビルドと、ガイドの版が記録に無いビルドは判定から外す
+- token-guide: close-cycle から呼ばれる回（`--round auto`）を加えた。承認のゲートを置かず、採否を判断できる根拠（ビルドごとの予測・実測・比率、変更前後の文面）を PR の本文に載せる
 - **`[context] merge_below` / `split_above`**: 予測ピークの判定の帯（既定 `"300k"` / `"450k"`）。`merge_below` は `split_above` より小さくなければならない
 - **`hikyaku tokens session [<phase> [<cycle>]]`**: セッションのコンテキストを、ホストの記録（Claude Code のトランスクリプト、Codex の rollout）から実測する。ピーク・開始時の固定分・最新の値・API 呼び出し回数・出力トークンの合計・コンパクション回数・モデル・ホストとその版・ウィンドウ（Codex のみ）を返す。引数なしでは `CLAUDE_CODE_SESSION_ID` / `CODEX_THREAD_ID` で現在のセッションを測り、`<phase>` を渡すとそのブランチのセッションから、そのブランチでの API 呼び出しが最も多いものを本体として選ぶ（候補と、対象外にしたサブエージェント・guardian も出力する）。`--transcript <path>` で記録を直接指定できる。読めない・見つからないときは推測せず「計測不可」とその理由を返す（Codex のクラウドでは rollout が保存されないため計測不可）。予測ピークと突き合わせる実測（[#68](https://github.com/tak-solder/hikyaku/issues/68)）
 - **`[diff]` 設定**: `exclude`（生成物として数えないパスの glob）と `tests`（テストとして分けるパスの glob）。`tokens history build-NN` の差分の集計に使う。既定値はロックファイル・スナップショット・生成コードと、一般的なテストのパス。書いた配列は既定値を置き換える
@@ -68,8 +77,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - build-manager: 手順（読み込み → 変更の整理 → 予測ピークの見積もり → `--dry-run` → レビュー → G6 → 書き込み → 外部投影）を `step next {phase} --skill build-manager` の転送ループに置き換えた。呼び出し元（architect の `design/`、builder の `build-NN/`）の `progress.jsonl` に記録し、呼ばれるたびに最初の手順から始まる。呼び出し元が報告しないまま呼び直すときは `step restart {phase} --skill build-manager` で区切る。外部投影は `[external] target` が `none` 以外のときだけ返る。builder の分割の検討（`split`）の指示も、呼ばれた側がこのコマンドから始める形に直した
 - architect / build-manager: 各ステップの指示から、転送ループと定義が決めること（報告の仕方、有効になる条件、CLI が確かめる完了の条件）を除き、作業内容と判断基準に絞った。`call` の行は、指示ファイルを読み、呼んだスキルが `stop` で止まったら報告しない形にした。build-manager の `estimate` は、ガイドに沿って成分を見積もり、`tokens estimate` の表を issue.md の「予測ピーク」に貼り、判定に応じて分割（450k 超）か統合（300k 未満、推奨のみ）を検討する。450k 超で分割せずに済ませてよいのは、コンフリクトが避けられないときと、分割の一方がビルドとして成立しないときだけ
 - init: 雛形の生成（`hikyaku init`）より後の手順（警告と旧名ファイルの後始末 → 既存ドキュメントの登録 → AGENTS.md への索引の承認 → 書き込み → PR）を `step next init` の転送ループに置き換えた。doctor・HIKYAKU_ROOT の決定・v1 の移行・雛形の生成は、設定がまだ無いので SKILL.md に残した。v1 の移行の手順は `references/v1.md` に移した。進捗は `{HIKYAKU_ROOT}/progress.jsonl` に記録する。旧名のファイルが残っている、`document-guide.md` が検証を通らない、AGENTS.md の索引が guide と一致しない、のいずれかなら、該当するステップの完了を受け付けない。初期化済みかどうかは `step next init` が判定し（PR を添えて `pr` まで終えた、または init の記録が無く guide に登録がある）、雛形を生成した直後に中断した場合は続きから再開できる
-- close-cycle: Step 1 以降（振り返り → 素材の収集 → 昇格候補の整理 → G10 → 書き込み → サイクルの終了 → PR）を `step next close` の転送ループに置き換えた。進捗はサイクルのディレクトリ直下の `progress.jsonl` に入る。サイクルの終了は、`cycles.md` の status が `active` でなくなるまで完了にならない
-- retrospective: `step next <phase> <cycle> --skill retrospective` で進む内部スキルにした（確認 → 予測ピークの実測の収集 → 分析と分類 → 書き込み）。確認は `prompt` のとき、予測ピークの実測の収集（`peak-actual`）は `build-NN` のときだけ返る。`prompt` で実施しないと答えると、残りは対象外になって呼び出し元に戻る。書き込みは retrospective.md が無いと完了にならない。予測ピークの実測の収集では、`tokens session` でセッションのピークを、`tokens history build-NN` で差分と区切りでのコンテキストを測る
+- close-cycle: Step 1 以降（候補の収集 → 整理と G10 → 書き込み → サイクルの終了 → PR → 別の PR にするもの）を `step next close` の転送ループに置き換えた。進捗はサイクルのディレクトリ直下の `progress.jsonl` に入る。サイクルの終了は、`cycles.md` の status が `active` でなくなるまで完了にならない。候補の収集はサブエージェントによる抽出ではなく `hikyaku promotions` が行い、整理は G10 に統合した
+- retrospective: `step next <phase> <cycle> --skill retrospective` で進む内部スキルにした（確認 → 予測ピークの実測の収集 → 分析と仕分け → 書き込み）。確認は `prompt` のとき、予測ピークの実測の収集（`peak-actual`）は `build-NN` のときだけ返る。`prompt` で実施しないと答えると、残りは対象外になって呼び出し元に戻る。書き込みは retrospective.md が無いと完了にならない。予測ピークの実測の収集では、`tokens session` でセッションのピークを、`tokens history build-NN` で差分と区切りでのコンテキストを測る
 - builder: 振り返りの指示（`steps/retrospective.md`）を、呼ばれた retrospective が `step next --skill retrospective` で進む形にした。PR レビュー対応で振り返るときは、`step restart build-NN <cycle> --skill retrospective` で区切ってから呼ぶ
 - planner / close-cycle / retrospective: 各ステップの指示から、転送ループと定義が決めること（報告の仕方、有効になる条件、CLI が確かめる完了の条件）を除き、作業内容と判断基準に絞った。呼んだ retrospective が `stop` で止まったら、呼び出し元は振り返りのステップを報告せずに止まる。close-cycle の PR の `done` には `--pr` が必須
 - create-cycle: `cycle new` より後の手順（PLAN へ進むかの確認 → plan のブランチで planner へ、または単独で PR）を `step next create <cycle>` の転送ループに置き換えた。PLAN へ進まないときは `to-plan` を理由付きでスキップし、そのときだけ PR のステップが手順に入る。進捗はサイクルのディレクトリの `progress.jsonl` に記録する。サイクルを作るまでの手順と、planner から代行されたときの流れは変えていない
@@ -86,6 +95,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - doc-reviewer: `context: tasklist` / `plan` の BP 入力値の乖離の観点を、予測ピークの成分の乖離（読み込みと未知の領域の取りこぼしを優先して見る）に置き換えた
 - init: `bp-guide/` を生成しなくなった。生成する `.hikyaku.config` の雛形から `bp_max` を外し、`[context]` の雛形を加えた
 - validate: `bp-guide/` の検査を、`token-guide/guide.md` の版の宣言の検査に置き換えた
+- **永続ドキュメントの論理名を5つに絞った**: `overview` / `decisions` / `constraints` / `conventions`（必須）と `glossary`（任意）
+- **BUILD は `overview` / `decisions` / `constraints` を `issue.md` が指す節だけ読む**: `hikyaku context build-NN` はこの3つを候補に出さない。`conventions` は、AGENTS.md / CLAUDE.md 以外のファイルに登録されているときだけ候補に出す（自動では読み込まれないため）。architect（build-manager）が `issue.md` の「参照する設計ドキュメント」に、そのビルドに効く節へのポインタと理由を書く。ビルドを分割したときはポインタを引き継ぐ。選び漏れは、plan のレビューで doc-reviewer が `overview` / `decisions` / `constraints` の全文と突き合わせて拾う
+- builder: 機械で防げる知見（テスト・共通ヘルパー・設定・その場のコメント）はそのビルドの実装に含め、パス指定の rule もそのビルドの PR で書く。後続のビルドに間に合わせるため
+- **handoff.md を3節にした**: 「後続ビルドが前提にすること」「残したこと」「永続化すること」。実装内容の要約・公開インターフェース・環境変更の節は無くした（PR 本文・コード・diff が正）。昇格素材の4節は「永続化すること」にまとめ、宛先・重要度・文面を1件1行で書く
+- **retrospective.md の形式を変えた**: 改善提案（R-N）の6項目とリポジトリ固有の学び（L-N）を、handoff と同じ行の形の「永続化すること」に置き換えた。読み込まれた記述のうち役に立たなかったものを、理由（古い・自明・無関係）を付けて「役に立たなかった記述」に書く
+- `document-guide.md` の `repo` 管理: 「追記のみ」から、「形式には手を出さない。内容の追加・置き換え・削除は close-cycle が承認を得て行う」に改めた
+- 見積もりのガイドを書き換えるのは `/hikyaku:token-guide` だけにした。close-cycle は補正を昇格の候補にせず、乖離が大きいサイクルで token-guide を呼ぶ
+- 標準の見積もりのガイドを version 2 にした（「このリポジトリでの補正」の説明から close-cycle の昇格を外した。見積もり方は変えていない）
+- conductor: G10 の検証で、削除と置き換えの根拠がそのサイクルの記録にあることを確かめる。見積もりのガイドの見直しとフックの提案の PR は取り込まない
 
 ### Removed
 
@@ -93,11 +111,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `hikyaku bp guide / estimate / render / test / actual / history`（`hikyaku tokens` に置き換え）と、`{HIKYAKU_ROOT}/bp-guide/` の基準表（`rules.toml` / `README.md` / `cases.toml`）。CI の `bp test --builtin` も外した
 - `/hikyaku:bp-guide`（`/hikyaku:token-guide` に置き換え）。ブランチのフェーズ名 `bp-guide` と、`[pr] reviewers_skip` の `bp-guide` も `token-guide` になった
 - `step report` / `tasklist add` / `tasklist update` の `--bp`（`--peak` に置き換え）
+- 論理名 `learnings` / `test-strategy` / `security-model` / `tech-stack` / `db-schema` / `interfaces`。`document-guide.md` に行が残っていると `validate` がエラーにする
+- close-cycle 自身の振り返り（`close/retrospective.md`）と、close-cycle の `organize` ステップ（G10 に統合）
+- close-cycle による見積もりのガイドの補正（昇格先としての token-guide）
 
 ### Migration
 
 - **BP は予測ピークに置き換わり、換算できないので自動では移行しない。** リポジトリルートの `.hikyaku.config` の `bp_max` を削除する（閉じたサイクルの `.hikyaku.config` に残った `bp_max` / `[bp_actual]` は履歴として読み飛ばす。進行中のサイクルに残っていると、そのサイクルの `step`・`tokens estimate`・`tasklist` の書き込みが止まり、`validate` も知らせる）（分割の境目は `[context] split_above`、既定 450k）。`{HIKYAKU_ROOT}/bp-guide/README.md` にリポジトリ固有の数え方を書いていたら、`/hikyaku:token-guide` で見積もりのガイドに書き直してから `bp-guide/` を削除する。`[pr] reviewers_skip` の `bp-guide` は `token-guide` に直す（`docs/migration/v2-to-v3.md`）
-- 見積もりのガイドは、無ければ標準で動くので、置かなくてよい。close-cycle の昇格か `/hikyaku:token-guide` が補正するときに作られる
+- 見積もりのガイドは、無ければ標準で動くので、置かなくてよい。`/hikyaku:token-guide` が補正するときに作られる
+- **廃止した論理名の行が `document-guide.md` に残っていると `hikyaku validate` が失敗する。** 行を消すだけにせず、`/hikyaku:init` を実行して中身を振り分ける。落とし穴集には、再発しても気づけない知見（テストが通ってしまう類）が混ざっているため。手順は [v2 → v3 移行ガイド](docs/migration/v2-to-v3.md#永続ドキュメントの論理名の整理)
+- handoff.md と retrospective.md の形式が変わった。v2 の形式からは `hikyaku promotions` が候補を集められないが、進行中のサイクルを v2 のまま終えていれば対応は不要
+- パス指定の rule・スキル・フックは Claude Code の仕組みを使う。Codex 向けの読み替えは用意していない
+- フックは Hikyaku が直接は有効にしない。close-cycle が別のブランチの PR にするので、採るならマージする
 - **v2 で作成したサイクルは、v3 の各フェーズ（planner / architect / builder / close-cycle）では扱わない。** `step next` が止まり、v2 のまま終えるよう案内する。進行中のサイクルは v2 のプラグインで終えてから上げる（`docs/migration/v2-to-v3.md`）
 - `progress.jsonl` はコミット対象。`.gitignore` で除外しない。置き場所は `planning/`・`design/`・`build-NN/`、サイクルのディレクトリ直下（create-cycle・close-cycle）、HIKYAKU_ROOT 直下（init）、`token-guide/`（token-guide）
 - `[context]` は既定値のままで動くので、設定の変更は不要

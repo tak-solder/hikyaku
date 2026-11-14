@@ -9,7 +9,7 @@
 
 > 復元コスト ÷ 陳腐化速度
 
-- `db-schema` の全テーブル定義 — 復元コスト低（マイグレーションを読めばよい）／陳腐化速い → Hikyaku は作らない
+- 全テーブル定義・エンドポイント一覧・依存パッケージの版 — 復元コスト低（コードを読めばよい）／陳腐化速い → 登録しない
 - `overview` の責務・境界・データフロー — 復元コスト極高（全ファイルを読んで構造を推論）／陳腐化遅い → 作る価値がある
 
 コピーではなくポインタを持つ。「スキーマの正は `db/migrations/`」は腐らないが、
@@ -22,14 +22,19 @@
   - v1 から移行した場合は `{HIKYAKU_ROOT}/architecture/` も対象
   - AGENTS.md / CLAUDE.md にドキュメント規約が書かれていれば最優先で従う
 - [ ] 見つけたものを論理名に割り当て、ユーザーに提示して確認を得る
+  - 論理名は `overview` / `decisions` / `constraints` / `conventions` / `glossary` の5つ。当てはまらない文書
+    （スキーマや API の一覧、落とし穴集、技術選定の一覧）は登録しない。コードが正のものは `overview` から
+    ポインタで指せば足り、落とし穴はパス指定の rule（`.claude/rules/`）が受け皿になる
 
 ```
 既存の設計ドキュメントを検出しました。document-guide に登録しますか？
 
   decisions   → docs/adr/                 (repo 管理・既存ADR形式)
   conventions → AGENTS.md                 (repo 管理)
-  db-schema   → docs/db.md                (repo 管理・参考資料)
   overview    → 該当なし。未作成として登録し、初回の close-cycle で作成します
+
+  登録しないもの:
+  docs/db.md（テーブル定義）— 正はマイグレーション。overview からポインタで指します
 ```
 
 - [ ] `{HIKYAKU_ROOT}/document-guide.md` の管理列とパス列を埋める

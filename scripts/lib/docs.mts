@@ -37,9 +37,10 @@ export interface DocDefinition {
 /**
  * 永続ドキュメントの定義。
  *
- * tech-stack / db-schema / interfaces が optional なのは、これらの正がコード側
- * （lockfile / マイグレーション / OpenAPI）にあるため。Hikyaku は作らないが、
- * リポジトリにあれば俯瞰の手がかりとして読む。
+ * ここに並べるのは「選んで読む文書」だけ。置き場は読み込まれ方で決める:
+ * 一部のファイルにしか効かない知見はパス指定の rule、決まった手順はスキル、
+ * 機械で防げるものはコード（lint・テスト・ヘルパー・その場のコメント）に置く。
+ * 判定の基準は skills/close-cycle/references/persistence.md が正。
  */
 export const DOC_DEFINITIONS: DocDefinition[] = [
   {
@@ -57,19 +58,13 @@ export const DOC_DEFINITIONS: DocDefinition[] = [
   {
     name: "constraints",
     level: "required",
-    purpose: "性能・可用性・セキュリティ・互換性などの制約",
+    purpose: "設計を縛る条件（性能・可用性・セキュリティ・互換性・外部サービスの上限）",
     suggestedPath: "docs/constraints.md",
-  },
-  {
-    name: "learnings",
-    level: "required",
-    purpose: "再現条件が明確な落とし穴と回避策",
-    suggestedPath: "docs/learnings.md",
   },
   {
     name: "conventions",
     level: "required",
-    purpose: "コーディング規約。AI が自動で読む AGENTS.md が既定のマップ先",
+    purpose: "リポジトリ全体に効く取り決め。AI が自動で読む AGENTS.md が既定のマップ先",
     suggestedPath: "AGENTS.md",
   },
   {
@@ -78,37 +73,27 @@ export const DOC_DEFINITIONS: DocDefinition[] = [
     purpose: "ドメイン用語集。人間が権威を持って定義したものだけが価値を持つ",
     suggestedPath: "docs/glossary.md",
   },
-  {
-    name: "test-strategy",
-    level: "optional",
-    purpose: "テスト方針。conventions に含めても成立する",
-    suggestedPath: "docs/test-strategy.md",
-  },
-  {
-    name: "security-model",
-    level: "optional",
-    purpose: "認証認可方式・信頼境界。原則は constraints に統合し、肥大化時のみ分離",
-    suggestedPath: "docs/security-model.md",
-  },
-  {
-    name: "tech-stack",
-    level: "optional",
-    purpose: "参考。正は lockfile / マニフェスト",
-    suggestedPath: "docs/tech-stack.md",
-  },
-  {
-    name: "db-schema",
-    level: "optional",
-    purpose: "参考。正はマイグレーション",
-    suggestedPath: "docs/db-schema.md",
-  },
-  {
-    name: "interfaces",
-    level: "optional",
-    purpose: "参考。正は OpenAPI / 型定義",
-    suggestedPath: "docs/interfaces.md",
-  },
 ];
+
+/**
+ * v3 で廃止した論理名と、中身の行き先。
+ *
+ * 黙って無視すると、登録済みの文書が読む候補からも昇格先からも静かに消える。
+ * 未知の論理名と同じくエラーにし、行き先を添える。
+ */
+export const RETIRED_DOCS: Record<string, string> = {
+  learnings:
+    "落とし穴は重要度で振り分けます（機械で防ぐ / パス指定の rule / constraints / 書かない）",
+  "test-strategy": "全体に効く方針は conventions へ、テストのファイルだけに効く注意はパス指定の rule へ",
+  "security-model": "設計を縛る条件は constraints へ、構造は overview へ",
+  "tech-stack": "正は lockfile / マニフェスト。overview にポインタを1行書けば足ります",
+  "db-schema": "正はマイグレーション。overview にポインタを1行書けば足ります",
+  interfaces: "正は OpenAPI / 型定義。overview にポインタを1行書けば足ります",
+};
+
+/** 廃止した論理名が残っているときの案内 */
+export const RETIRED_HINT =
+  "行を消すだけにせず、/hikyaku:init を実行して中身を振り分けてください（再発しても気づけない知見が混ざっていることがあります）";
 
 export interface DocEntry {
   name: string;
@@ -207,9 +192,13 @@ export function validateGuide(entries: DocEntry[], repoRoot: string): GuideProbl
     seen.add(entry.name);
 
     if (!entry.definition) {
+      const retired = RETIRED_DOCS[entry.name];
       problems.push({
         entry: entry.name,
-        message: `未知の論理名です。使用できるのは: ${DOC_DEFINITIONS.map((d) => d.name).join(", ")}`,
+        message:
+          retired === undefined
+            ? `未知の論理名です。使用できるのは: ${DOC_DEFINITIONS.map((d) => d.name).join(", ")}`
+            : `v3 で廃止した論理名です。${retired}。${RETIRED_HINT}`,
       });
       continue;
     }

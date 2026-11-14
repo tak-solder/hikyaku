@@ -85,7 +85,9 @@ issue.md の本文は build-manager（LLM）が書きます。tasklist.md の行
 
 ## 参照する設計ドキュメント
 
-- （design-delta.md の該当箇所、永続ドキュメントの該当箇所）
+- `design/design-delta.md` の「（節）」
+- `constraints` の「（節）」— （このビルドの何を縛るか）
+- `decisions` の `{ADR のファイル名}` — （このビルドのどの実装がこの判断に従うか）
 
 ## マージ時点で残る危険
 
@@ -109,6 +111,13 @@ issue.md の本文は build-manager（LLM）が書きます。tasklist.md の行
 
 （split_above を超えたまま1ビルドにした場合だけ、その理由を書く）
 ```
+
+「参照する設計ドキュメント」は、builder が読む永続ドキュメントの範囲を決める。builder は
+`overview` / `decisions` / `constraints` の全文を読まず、ここが指す節だけを読む
+（`conventions` は、AGENTS.md に無ければ `hikyaku context` が builder に渡すので、ここで指さなくても読まれる）。本文は写さず、
+論理名と節（ADR はファイル名）で指し、このビルドに関係する理由を一言添える。写すと、設計から
+実装までの間に永続ドキュメントが変わったとき、古い写しが残る。該当する節が無ければ
+「永続ドキュメント: なし」と書く（選んだ結果として無いことを残す）。
 
 「予測ピーク」の表は build-manager が `tokens estimate` の出力を貼るもので、手で計算しません。
 表の最後の行は見積もりに使ったガイドの版で、消しません。builder は plan.md で成分を見直して
