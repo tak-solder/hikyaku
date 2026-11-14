@@ -212,7 +212,8 @@ test("architect: 振り返りと PR まで進むと done", (t) => {
   assert.equal(report(directory, "retrospective", "--result", "done").step, "pr");
   const noPr = cli(directory, "step", "report", "architect", "pr", "001", "--result", "done");
   assert.equal(noPr.status, 1, "PR を添えない done は受け付けない");
-  assert.equal(report(directory, "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/9").kind, "done");
+  assert.equal(report(directory, "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/9").step, "publish");
+  assert.equal(report(directory, "publish", "--result", "done").kind, "done");
 });
 
 test("build-manager: 外部投影は [external] target が none 以外のときだけ返る", (t) => {
@@ -255,7 +256,8 @@ function designed(t: Parameters<typeof workspace>[0]): string {
   succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--peak", "350k");
   report(directory, "build-split", "--result", "done");
   report(directory, "validate", "--result", "done");
-  assert.equal(report(directory, "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/9").kind, "done");
+  assert.equal(report(directory, "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/9").step, "publish");
+  assert.equal(report(directory, "publish", "--result", "done").kind, "done");
   return directory;
 }
 
@@ -327,6 +329,7 @@ test("architect: 追加設計の回は調査を行わず、設計を変えなけ
   succeeds(directory, "tasklist", "done", "001", "--id", "2", "--pr", "https://github.com/o/r/pull/2");
   assert.equal(next(directory).step, "pr");
   report(directory, "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/3");
+  report(directory, "publish", "--result", "done");
   assert.equal(next(directory).kind, "done");
 
   const status = JSON.parse(succeeds(directory, "step", "status", "architect", "001", "--json"));

@@ -8,6 +8,21 @@
 
 用語の定義は [docs/concepts.md](docs/concepts.md#用語) が唯一の正です。ここに表を複製しないでください。
 
+## 設計の原則（v3）
+
+スキル・エージェント・スクリプトを変えるときは、次の原則に沿っているかを確かめてください。理由の説明は [docs/concepts.md](docs/concepts.md) が正で、ここには「変更するときに何を守るか」だけを書きます。原則に反する変更が必要になったら、黙って例外を作らず、原則のほうを見直す提案としてユーザーに確認してください。
+
+1. **as-is と to-be を分ける。** 永続ドキュメントは実装済みの現実だけを表し、これから作るものはサイクルの `design-delta.md` に書きます。永続ドキュメントと `instructions.md` を書けるのは close-cycle だけです（ADR の追記は architect）。ほかのスキルに書き込みの手順を足さないでください。
+2. **コピーではなくポインタを持たせる。** コード・diff・PR から復元できる情報を、文書やテンプレートに写させないでください。テンプレートに節を足すときは、その節を読むフェーズが具体的に決まっていて、ほかから復元できないことを確かめます。
+3. **知見の置き場は、読み込まれ方で選ぶ。** 読まれる頻度が、使われる頻度を上回る場所に載せません。重要度（害が成果物に残るなら高、セッションのコストなら中、すぐ直せるなら低）で残すものを絞り、機械で防ぐ → パス指定の rule → スキル → `conventions` → `overview` / `decisions` / `constraints` の順に当てはめます。低はどこにも書かせません。基準の正は `skills/close-cycle/references/persistence.md` です。
+4. **足すだけでなく、消す経路を持つ。** 文書に追記する手順を足すときは、その記述が古くなったり役に立たなくなったりしたときに、誰がどの根拠で消すかも決めてください。いまは振り返りの「役に立たなかった記述」と close-cycle の削除・置き換えが担っています。
+5. **セッションごとに読む量を絞る。** 各フェーズは別のセッションで動き、引き継ぎはファイルで行います。全文を読むのは設計するフェーズで、実装するフェーズには必要な節へのポインタだけを渡します。大量に読む作業はサブエージェントに委任し、結論だけを返させます。ビルドの大きさは予測ピーク（メインセッションのコンテキストの予測）で判定します。
+6. **状態は保存せず、導出する。** 保存する状態は `cycles.md` の `status` だけです。フェーズ・着手可否・中断点は、ファイル・ブランチ・`tasklist.md` の PR 列・`progress.jsonl` の記録から毎回導きます。「現在地」や「完了」を表す列やファイルを足さないでください。
+7. **手順と判定はスクリプトが決め、LLM は判断と生成を担う。** 手順の並び・実行条件・完了の条件は `scripts/lib/steps/` の定義が唯一の正で、SKILL.md は `step next` の転送ループと原則だけを持ちます。数値の比較、集計、形式の検査、書式の決まった記録の収集を、指示文で LLM にやらせないでください。逆に、取捨選択・重複の判定・文面の作成をスクリプトに持たせません。
+8. **承認は「確認」と「同意」を分ける。** プロファイルで省けるのは確認だけです。要件の合意（G1）と、何を残し何を消すかの取捨選択（G10）は、どのプロファイルでも省きません。conductor は同意を省くのではなく、人間が範囲を確認したうえで監督に委任します。
+9. **採否を分けて判断したいものは、別のブランチの PR にする。** 見積もりのガイドの見直しやフックのように、ワークスペース全体や全セッションに効く変更は、フェーズの PR に混ぜません。必要かどうかをスクリプトが判定し、スキルが作業して別の PR にし、採るかどうかは人間がマージで決めます。この型に乗せるものには承認のゲートを置きません。
+10. **指示文は、いまのモデルに必要な分だけ書く。** 主な対象は Claude Opus 5.5 です。コードを正確に読め、報告も自然にまとまるので、念押しの繰り返しや、コードを読めば分かることの説明は足しません。指示を足す前に、その指示が無いと実際に何が起きたかを根拠にしてください。旧モデル向けの緩和策は、必要かを確かめてから残します。
+
 ## Agent Skills
 
 このリポジトリの開発用 Codex スキルは `.agents/skills/` に置きます。`$sync-codex-plugin <PR番号またはURL>` は、`main → codex-plugin` の差分を調べ、main由来の `update-for-codex` ブランチでCodex向けの修正・検証を行い、pushしてmain向けPRを作成・更新します。既存ブランチは原則引き継ぎます。Claude側の変更が必要なら停止してユーザーに確認し、codex-pluginへのpushやPRのマージは行いません。配布する Hikyaku のスキル（`skills/` と `codex/skills/`）とは別に管理します。
@@ -33,6 +48,8 @@
 - 予測ピークの標準のガイド（`skills/build-manager/references/token-guide.md`）の本文を変えたら、先頭の `version` を上げて `hash` を本文に合わせてください。`tests/tokens.test.mts` が食い違いを検出し、CI（check-scripts）の `npm test` も同じテストを実行します
 - 書き込みを伴うコマンドには必ず `--dry-run` を用意してください。承認はスキル側が取ります
 - 子として動くスキル（architect / builder / build-manager / close-cycle / retrospective）にユーザーへ尋ねる箇所を足したら、`（ask: <id>）` のタグを付け、`scripts/lib/conductor.mts` の `ASKS` にも同じ ID を足してください。ID の改名・削除も両方で行います。`node scripts/hikyaku.mts conductor lint` が食い違いを検出し、CI（check-scripts）も同じコマンドを実行します。タグの付け忘れは検出できません
+- 知見の重要度と置き場の基準は `skills/close-cycle/references/persistence.md` が唯一の正です。builder・retrospective・close-cycle の手順と `agents/doc-triager.md` には写さず、このファイルを読ませてください。利用者向けの説明は `docs/configuration/persistence.md` に置きます
+- handoff.md と retrospective.md の「永続化すること」「役に立たなかった記述」は、`scripts/lib/promotions.mts` が見出しと行頭を読みます。見出し・宛先・理由の語を変えるときは、テンプレート（`skills/builder/references/templates.md`・`skills/retrospective/steps/write.md`）と `persistence.md` とスクリプトを同じ PR で直してください
 - PR を作るスキルを足したら、PR を作った直後に `hikyaku pr request-reviewers <phase> [<cycle>] --pr <PR>` を呼ぶ手順を入れ、そのフェーズを `scripts/lib/config.mts` の `REVIEWER_SKIP_TARGETS` にも足してください（`[pr] reviewers_skip` でオフにできるようにするため）
 
 ## ドキュメント

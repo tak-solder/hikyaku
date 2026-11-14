@@ -108,3 +108,30 @@ test("tokens: 標準のガイドは版とハッシュの宣言を持ち、ハッ
     assert.ok(source.includes(`（\`${flag}\`）`), flag);
   }
 });
+
+test("tokens: 同じガイドの版で同じ向きに外れたビルドが複数あるときだけ、ガイドの見直しを勧める", async () => {
+  const { guideReview, emptyContext } = await import("../scripts/lib/tokens-history.mts");
+  const record = (build: string, builder: number, peak: number | undefined, guide = "標準 v1") => ({
+    cycle: "001-test", build, path: "", architect: undefined, builder, session: undefined, components: {},
+    guide, guideHash: undefined, context: { ...emptyContext(), peak }, diff: { newFiles: undefined, addedLines: undefined, implementationLines: undefined, testLines: undefined },
+    checkpoints: {},
+  });
+  assert.equal(guideReview([record("build-01", 300_000, 400_000)]).needed, false, "1件だけのぶれでは勧めない");
+  assert.equal(guideReview([record("build-01", 300_000, 400_000), record("build-02", 300_000, 200_000)]).needed, false, "向きが違えば勧めない");
+  const under = guideReview([record("build-01", 300_000, 400_000), record("build-02", 300_000, 380_000), record("build-03", 300_000, 310_000)]);
+  assert.equal(under.needed, true);
+  assert.deepEqual(under.under, ["build-01", "build-02"]);
+  assert.equal(
+    guideReview([record("build-01", 300_000, 400_000, "標準 v1"), record("build-02", 300_000, 400_000, "プロジェクト v2")]).needed,
+    false,
+    "ガイドの版が違えば混ぜない",
+  );
+  assert.equal(guideReview([record("build-01", 300_000, undefined)]).paired, 0);
+  // ガイドの版が記録に無いビルドは、同じ版とみなさず判定から外す
+  const versionless = (build: string, peak: number) => ({ ...record(build, 300_000, peak), guide: undefined });
+  const unknown = guideReview([versionless("build-01", 400_000), versionless("build-02", 400_000)]);
+  assert.equal(unknown.needed, false);
+  assert.deepEqual(unknown.unknownGuide, ["build-01", "build-02"]);
+  assert.match(unknown.reason, /版が記録に無い 2 件/);
+  assert.equal(guideReview([versionless("build-01", 400_000), record("build-02", 300_000, 400_000), record("build-03", 300_000, 400_000)]).needed, true);
+});

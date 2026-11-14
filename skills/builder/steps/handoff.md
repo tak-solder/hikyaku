@@ -1,11 +1,26 @@
 # handoff: 申し送りの作成
 
+- [ ] 実装で得た知見を、重要度と置き場で仕分ける
+  - 基準は `${CLAUDE_PLUGIN_ROOT}/skills/close-cycle/references/persistence.md`（[persistence.md](../../close-cycle/references/persistence.md)）。
+    まだ読んでいなければここで読む
+  - パス指定の rule にするものは、ここで書いてこのビルドの PR に含める（handoff に預けない）。
+    後続のビルドが同じものを踏まないようにするため
+  - 機械で防ぐ対策（テスト・共通ヘルパー・設定）は、実装の中で済ませてあるはずのもの。ここで
+    入れ忘れに気づいたら、コードレビューを通っていないコードを足さず、「残したこと」に書く
+    （rule に仮置きする）
+  - rule を書いたら広さと大きさを確かめる
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" rules check
+```
+
 - [ ] `cycles/{cycle}/build-{NN}/handoff.md` を作成する
   - テンプレートは `${CLAUDE_PLUGIN_ROOT}/skills/builder/references/templates.md`（[templates.md](../references/templates.md)）を参照
-  - 前半は後続ビルド向け: 実装内容の要約 / 公開インターフェース / 環境変更 / 意図的に残した未対応
-  - 後半は close-cycle 向けの昇格素材: overview への影響 / 新たな制約 / 踏んだ落とし穴 / 覆した設計判断とその理由
-  - 書かない: 実装の全詳細（コードが正）/ 一般的な進捗報告
+  - 後続ビルドが前提にすること: PR の diff を読んでも分からないことだけ
+  - 残したこと: 先送りした作業、そのまま進めた指摘、入れられなかった機械的な対策
+  - 永続化すること: close-cycle が反映する知見を、宛先と重要度を付けて1件1行で。書いた rule は `済` で控える
+  - 書かない: 実装内容の要約（PR 本文が正）/ 公開インターフェースの一覧（コードが正）/
+    環境変数やマイグレーションの一覧（diff が正）/ 重要度が低の知見
 
-handoff.md の後半は節ごとに昇格先が決まっている（overview・constraints・learnings・ADR）。
-どこに書くか迷う発見は、後から読む人が何を直すことになるかで節を選ぶと、close-cycle が
-仕分けし直さずに昇格させられる。あなたが永続ドキュメントを直接書き換えることはない。
+あなたが永続ドキュメント（overview / decisions / constraints / conventions）を直接書き換えることはない。
+rule とコードは永続ドキュメントではなく、このビルドの成果物として PR に含める。

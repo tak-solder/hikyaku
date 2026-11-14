@@ -10,7 +10,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" init --root {HIKYAKU_ROOT} --dr
 - [ ] v1 の除外設定（`retrospective.md` など）が `{HIKYAKU_ROOT}/.gitignore` に残っていると警告されたら、
   ユーザーに削除を提案する
   - `.gitignore` が除外するのは `.hikyaku.local`（最後に作業したサイクルを記録するローカル専用ファイル）だけ。
-    包括パターンは書かない。close-cycle は別セッションで `retrospective.md` を昇格素材として読むため、
+    包括パターンは書かない。close-cycle は別セッションで `handoff.md` と `retrospective.md` から候補を集めるため、
     まとめて除外すると読めなくなる
 - [ ] `{HIKYAKU_ROOT}/.hikyaku.config` があると警告されたら（v2.0 の初期実装が生成していた）、
   内容をリポジトリルートの `.hikyaku.config` へ移して削除するよう案内する

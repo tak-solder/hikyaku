@@ -17,6 +17,10 @@
  * 雛形の生成や init より前から存在しうるので、produces / evidence にすると
  * 「後ろのステップの成果物があるのに記録が無い」と読まれて止まる。
  *
+ * 移行の回（step restart init --round migrate）は、初期化済みのワークスペースで、v3 で廃止した
+ * 論理名（learnings など）の文書の中身を振り分ける。初期化の回とは別の手順（triage → 承認 →
+ * 書き込み → 索引 → PR）を返す。必要かどうかは、初期化済みで止まるときのメッセージで知らせる。
+ *
  * requires は完了したあとも毎回確かめるので、link のあとに guide を直して索引と食い違えば、
  * 現在地は link に戻る（guide と索引が食い違ったまま PR にはしない）。承認は自動では取り直させず、
  * guide の変更は Git の履歴とレビューで追う。
@@ -24,10 +28,35 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { INDEX_MARKER, loadGuide, RENAMED_FILES, renderIndexBlock, validateGuide, type DocEntry } from "../docs.mts";
+import { INDEX_MARKER, loadGuide, RENAMED_FILES, RETIRED_DOCS, renderIndexBlock, validateGuide, type DocEntry } from "../docs.mts";
 import { HikyakuError } from "../errors.mts";
 import { upsertMarkerBlock } from "../markdown.mts";
-import type { SkillSteps, StepContext } from "./engine.mts";
+import { currentEvents, currentRound, type SkillSteps, type StepContext } from "./engine.mts";
+
+/** 廃止した論理名の文書を振り分ける回 */
+const MIGRATE_ROUND = "migrate";
+
+function migrating(ctx: StepContext): boolean {
+  return currentRound(INIT_STEPS, ctx.events) === MIGRATE_ROUND;
+}
+
+/** document-guide.md に残っている、廃止した論理名 */
+function retiredEntries(ctx: StepContext): string[] {
+  const entries = guideEntries(ctx);
+  if (typeof entries === "string") return [];
+  return entries.filter((entry) => RETIRED_DOCS[entry.name] !== undefined).map((entry) => entry.name);
+}
+
+/** 初期化済みで止まるときに添える、移行の案内 */
+function migrationHint(ctx: StepContext): string[] {
+  const retired = retiredEntries(ctx);
+  if (retired.length === 0) return [];
+  return [
+    `document-guide.md に、v3 で廃止した論理名が残っています: ${retired.join(", ")}`,
+    "中身を振り分けるには、移行の回を始めてください:",
+    '  hikyaku step restart init --round migrate --reason "v3 への移行"',
+  ];
+}
 
 function guideEntries(ctx: StepContext): DocEntry[] | string {
   try {
@@ -41,8 +70,15 @@ function guideEntries(ctx: StepContext): DocEntry[] | string {
 function initialized(ctx: StepContext): string | undefined {
   // PR まで終えたら、以後 document-guide.md や AGENTS.md が変わっても手順に戻らない
   // （requires が満たされなくなって link に戻り、承認なしで索引を書き直すのを防ぐ）
-  if (ctx.events.some((event) => event.skill === "init" && event.step === "pr" && event.result === "done" && event.pr !== undefined)) {
-    return "このワークスペースは初期化済みです（init の手順をすべて終えています）。";
+  const prDone = (events: StepContext["events"]): boolean =>
+    events.some((event) => event.skill === "init" && event.step === "pr" && event.result === "done" && event.pr !== undefined);
+  if (migrating(ctx)) {
+    // 移行の回は、この回の PR まで終えたら止まる
+    if (!prDone(currentEvents(INIT_STEPS, ctx.events))) return undefined;
+    return ["移行は完了しています。", ...migrationHint(ctx)].join("\n");
+  }
+  if (prDone(ctx.events)) {
+    return ["このワークスペースは初期化済みです（init の手順をすべて終えています）。", ...migrationHint(ctx)].join("\n");
   }
   if (ctx.events.some((event) => event.skill === "init")) return undefined;
   const entries = guideEntries(ctx);
@@ -51,6 +87,7 @@ function initialized(ctx: StepContext): string | undefined {
   return [
     "このワークスペースは初期化済みです（document-guide.md に登録があり、init の記録がありません）。",
     "init はやり直しません。ドキュメントの登録を直すときは document-guide.md を編集し、hikyaku docs validate で確かめてください。",
+    ...migrationHint(ctx),
   ].join("\n");
 }
 
@@ -87,12 +124,24 @@ export const INIT_STEPS: SkillSteps = {
   skill: "init",
   unit: (phase) => (phase === "init" ? "" : undefined),
   stop: initialized,
+  rounds: [MIGRATE_ROUND],
   steps: [
-    { id: "cleanup", kind: "run", title: "雛形の警告と旧名ファイルの後始末", requires: renamedLeft },
+    { id: "cleanup", kind: "run", title: "雛形の警告と旧名ファイルの後始末", when: (ctx) => !migrating(ctx), requires: renamedLeft },
     {
       id: "register",
       kind: "run",
       title: "既存ドキュメントの検出と document-guide.md への登録",
+      when: (ctx) => !migrating(ctx),
+      requires: guideProblems,
+    },
+    // 移行の回: 振り分けの結果は会話の中で提示するので、ファイルに結びつけない
+    { id: "triage", kind: "run", title: "既存文書の振り分け（doc-triager）", when: migrating },
+    { id: "triage-approval", kind: "gate", title: "振り分けの承認", when: migrating },
+    {
+      id: "triage-write",
+      kind: "run",
+      title: "振り分けの書き込みと、document-guide.md の更新",
+      when: migrating,
       requires: guideProblems,
     },
     {

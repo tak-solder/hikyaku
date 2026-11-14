@@ -1,55 +1,50 @@
 ---
 name: retrospective
-description: "Hikyaku 振り返り: セッション中のスキル外指示を分析し、改善提案を分類・記録する内部スキル。各フェーズから呼び出される。モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。"
+description: "Hikyaku 振り返り: セッション中のスキル外指示と、役に立たなかった記述を記録する内部スキル。各フェーズから呼び出される。モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。"
 user-invocable: false
 argument-hint: "{cycle} {SUB_DIR}"
 ---
 
 # Hikyaku Retrospective
 
-セッション全体を振り返り、改善提案を分類・記録する。
+セッション全体を振り返り、以後に効く知見と、役に立たなかった記述を記録する。
 
-このスキルは hikyaku:planner / hikyaku:architect / hikyaku:builder / hikyaku:close-cycle からモデル呼び出しで使用される内部スキルです。
+このスキルは hikyaku:planner / hikyaku:architect / hikyaku:builder からモデル呼び出しで使用される内部スキルです。
 ユーザーが直接呼び出すことは想定していません。hikyaku ワークフロー以外のコンテキストから呼び出された場合は、その旨をユーザーに伝えて終了してください。
 
 ## 引数
 
 - `$ARGUMENTS[0]`: cycle — 対象サイクル（`{NNN}-{slug}`）
-- `$ARGUMENTS[1]`: SUB_DIR — 出力先サブディレクトリ（`planning`, `design`, `build-{NN}`, `close`）
+- `$ARGUMENTS[1]`: SUB_DIR — 出力先サブディレクトリ（`planning`, `design`, `build-{NN}`）
 
 HIKYAKU_ROOT は受け取らない。`.hikyaku.config` から解決される。
 
 出力先: `{HIKYAKU_ROOT}/cycles/$ARGUMENTS[0]/$ARGUMENTS[1]/retrospective.md`（step が `output` として返す）
 
-## 2種類を分けること
+## 何を記録するか
 
-振り返りには性質の異なる2種類が混ざる。分けて記録する。
+振り返りは、このセッションの経験から次の2つを取り出して記録する。どちらも close-cycle が
+`hikyaku promotions` で集めるので、見出しと行の形を変えない。
 
-| 種類 | 何か | 行き先 |
+| 節 | 何か | close-cycle の扱い |
 |---|---|---|
-| 改善提案（R-N） | 以後の取り決め。「次からこう書く / こう進める」 | close-cycle が `conventions` などの永続ドキュメントか `instructions.md` へ反映する |
-| リポジトリ固有の学び（L-N） | 踏んだ地雷。再現条件が明確な落とし穴 | close-cycle が `learnings` へ昇格させる |
+| 永続化すること | 以後に効く知見。ユーザーから受けたスキル外の指示が最重要の入力 | 重複を束ね、置き場ごとに反映する |
+| 役に立たなかった記述 | 読み込まれた・読んだ記述のうち、古い・自明・無関係だったもの | 削除・置き換え・glob の見直しを提案する |
 
-軸は「提案か、事実か」。提案は R-N、踏んだ地雷は L-N。R-N に `doc:learnings` は
-指定しない（落とし穴は L-N で書く）。
+重要度と置き場の基準、行の書式は
+`${CLAUDE_PLUGIN_ROOT}/skills/close-cycle/references/persistence.md`（[persistence.md](../close-cycle/references/persistence.md)）が正。
+ここには写さない。要点だけ挙げる。
 
-L-N には、再現条件（「なんとなく遅い」ではなく「N=1000 でタイムアウトする」）と、どのビルドで
-いつ判明したかを書く。書けないもの、一般的なプログラミング知識、「気をつける」だけの曖昧な注意は
-L-N にしない。close-cycle がそのまま `learnings` へ昇格させるので、曖昧なものを入れると
-永続ドキュメントが濁る。
+- 重要度が低（すぐ失敗して、すぐ直せる）の知見は書かない。永続化の置き場は、読むたびにコンテキストを使う
+- 機械で防げるもの・パス指定の rule にするものは、builder がビルドの PR で片づけている。振り返りで
+  新たに気づいたものだけを書く
+- 「役に立たなかった記述」は使った本人にしか書けない証言。ただし「今回は使わなかった」だけでは書かない
 
-retrospective.md はコミット対象で、close-cycle が素材として読む。両方の節が無いと、
-素材収集で拾うものが無くなる。
+retrospective.md はコミット対象。
 
-実装フェーズ（`build-{NN}`）ではこれに加えて、予測ピークと実測を並べて記録する。
-予測と実測を並べた事実の記録で、R-N でも L-N でもない（ステップ peak-actual と write）。
-close-cycle がこの記録と乖離の要因を読み、見積もりのガイドの補正を昇格の候補にする。
-
-## 事実の昇格は handoff.md が担う
-
-`overview` / `constraints` に載るような事実（新しい制約が判明した、責務が動いた）は
-`handoff.md` に書く。振り返りで扱うのは提案（R-N）と落とし穴（L-N）だけで、
-昇格の経路を二重に持たない。
+実装フェーズ（`build-{NN}`）ではこれに加えて、予測ピークと実測を並べて記録する
+（ステップ peak-actual と write）。close-cycle は実測の乖離を見て、見積もりのガイドの見直しが
+必要かを判定する。
 
 ## 作業ステップ: step に従って進める
 
@@ -59,7 +54,7 @@ close-cycle がこの記録と乖離の要因を読み、見積もりのガイ�
 
 呼び出し元の directive の「呼ばれたスキルの手順」（`callNext`）にあるコマンドで始める。
 無ければ SUB_DIR をフェーズに読み替えて呼ぶ（`planning` → `plan`、`design` → `architect`、
-`build-{NN}` → `build-{NN}`、`close` → `close`）。
+`build-{NN}` → `build-{NN}`）。
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next {phase} $ARGUMENTS[0] --skill retrospective
@@ -91,10 +86,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next {phase} $ARGUMENTS[0]
 
 - スキルの手順通りに進んだ部分は書かない。差分だけを記録する
 - 「スキル外で受けた指示」が最重要のインプット。ユーザーが追加で指示したことは、スキルに欠けている情報の証拠
-- 具体案は、そのまま適用できるレベルの具体性で書く
-- 改善提案がなければ「改善提案なし」と記載する
-- 同じ提案が前のフェーズの retrospective.md にもあれば、その旨を書く。
-  言われた回数は優先度そのものなので、close-cycle が束ねるときの材料になる
+- 文面は、そのまま置き場に書けるレベルの具体性で書く
+- 該当が無ければ、節に「なし」と書く（節は省かない）
+- 同じ知見が前のフェーズの retrospective.md や handoff.md にもあれば、重ねて書いてよい。
+  close-cycle が束ね、挙がった回数を根拠にする
 - 実測は集計コマンドの出力をそのまま書く。予測に寄せて丸めない。
   乖離が残っていることが次のサイクルの材料になるのであって、揃った表に価値は無い
 - セッションの実測は `tokens session` の値だけを、差分の集計は `tokens history build-{NN}` の値だけを書く。

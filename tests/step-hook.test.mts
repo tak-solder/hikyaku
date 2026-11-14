@@ -170,9 +170,7 @@ const PR = ["--pr", "https://github.com/o/r/pull/1"];
 
 test("conductor parse / step hook: cycle close のあとも CLOSE の手順を探し、正しく終えた子を誤判定しない", (t) => {
   const directory = workspace(t, true);
-  configure(directory, 'retrospective = "skip"');
   reportAs(t, directory, "close", "collect", "--result", "done");
-  reportAs(t, directory, "close", "organize", "--result", "done");
   reportAs(t, directory, "close", "G10", "--result", "approved", "--input", "OK");
   reportAs(t, directory, "close", "write", "--result", "done");
   succeeds(directory, "cycle", "close", "001", "--summary", "テスト");
@@ -184,6 +182,10 @@ test("conductor parse / step hook: cycle close のあとも CLOSE の手順を�
   assert.match(blocked?.reason ?? "", /close-cycle close/);
 
   reportAs(t, directory, "close", "pr", "--result", "done", ...PR);
+  reportAs(t, directory, "close", "publish", "--result", "done");
+  // PR のあとの followups が残っていれば、まだ止める
+  assert.match(hook(directory, { session_id: SESSION })?.reason ?? "", /close-cycle close/);
+  reportAs(t, directory, "close", "followups", "--result", "done");
   assert.equal(hook(directory, { session_id: SESSION }), undefined);
   const done = parse(directory, "<hikyaku-done next=\"\">\nPR を作りました\n</hikyaku-done>");
   assert.deepEqual(done.stepProblems, []);
@@ -235,24 +237,6 @@ test("step where: 対象サイクルの作業単位だけを並べ、init と to
   assert.deepEqual(output.units.map((unit: { directive: { skill: string } }) => unit.directive.skill), ["builder"]);
 });
 
-test("step where / step hook: close-cycle の最初の振り返りの途中も、close-cycle の作業単位として読む", (t) => {
-  const directory = workspace(t, true);
-  reportAs(t, directory, "create", "to-plan", "--result", "done");
-  reportAs(t, directory, "close", "analyze", "--skill", "retrospective", "--result", "done");
-
-  const blocked = hook(directory, { session_id: SESSION });
-  assert.equal(blocked?.decision, "block");
-  assert.match(blocked?.reason ?? "", /retrospective close/);
-
-  const output = JSON.parse(succeeds(directory, "step", "where", "001", "--json"));
-  const units = output.units as { directive: { skill: string; unit: string; kind: string; step?: string } }[];
-  const create = units.find((unit) => unit.directive.unit === "create");
-  assert.equal(create?.directive.kind, "done", "同じファイルの create-cycle は振り返りに引きずられない");
-  const close = units.find((unit) => unit.directive.unit === "close");
-  assert.equal(close?.directive.skill, "retrospective");
-  assert.equal(close?.directive.step, "write");
-});
-
 test("step hook stop: 手順を終えたあとに呼び直した振り返り（PR レビュー対応）の途中も引き止める", (t) => {
   const directory = workspace(t, true);
   configure(directory, 'retrospective = "skip"');
@@ -260,6 +244,7 @@ test("step hook stop: 手順を終えたあとに呼び直した振り返り（P
   for (const step of ["inputs", "scope", "user-stories", "review"]) reportAs(t, directory, "plan", step, "--result", "done");
   reportAs(t, directory, "plan", "G1", "--result", "approved", "--input", "OK");
   reportAs(t, directory, "plan", "pr", "--result", "done", ...PR);
+  reportAs(t, directory, "plan", "publish", "--result", "done");
   assert.equal(hook(directory, { session_id: SESSION }), undefined, "planner は終えている");
 
   const config = join(directory, ".hikyaku.config");

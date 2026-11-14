@@ -12,7 +12,6 @@
 | overview       | repo   | `docs/overview.md` | システムの責務・境界とデータフロー      |
 | decisions      | repo   | `docs/adr/`        | AD-N 形式。既存の連番を継続する         |
 | constraints    | 未作成 | —                  | 性能・可用性・セキュリティ・互換性の制約 |
-| learnings      | 未作成 | —                  | 再現条件が明確な落とし穴と回避策         |
 | conventions    | repo   | `AGENTS.md`        | コーディング規約                        |
 | glossary       | 対象外 | —                  | ドメイン用語は overview 内で定義している |
 ```
@@ -24,7 +23,7 @@
 | 管理 | Hikyaku の振る舞い |
 |---|---|
 | `hikyaku` | テンプレートに従う。書く/書かない・振る舞い・形式のすべてを適用する |
-| `repo` | 既存形式が正。追記のみで、形式には手を出さない。既存記述の削除・整理もしない |
+| `repo` | 既存形式が正。形式には手を出さない。内容の追加・置き換え・削除は、close-cycle が承認を得て行う |
 | `未作成` | 次に必要になったとき Hikyaku が作成する |
 | `対象外` | 意図的に持たない。理由を概要欄に書く |
 
@@ -34,27 +33,23 @@
 
 ## 論理名
 
-必須の5つは、`未作成` や `対象外` であっても行が必要です。行が無いと `hikyaku validate` が検出します。
+必須の4つは、`未作成` や `対象外` であっても行が必要です。行が無いと `hikyaku validate` が検出します。
 
 | 論理名 | 採用 | 内容 | 既定の作成先 |
 |---|---|---|---|
 | `overview` | 必須 | システムの責務・境界・データフローと、正がどこにあるかのポインタ | `docs/overview.md` |
 | `decisions` | 必須 | 設計判断（ADR）。コードから復元できない唯一の情報 | `docs/adr/` |
-| `constraints` | 必須 | 性能・可用性・セキュリティ・互換性などの制約 | `docs/constraints.md` |
-| `learnings` | 必須 | 再現条件が明確な落とし穴と回避策 | `docs/learnings.md` |
-| `conventions` | 必須 | コーディング規約 | `AGENTS.md` |
+| `constraints` | 必須 | 設計を縛る条件。性能・可用性・セキュリティ・互換性・外部サービスの上限 | `docs/constraints.md` |
+| `conventions` | 必須 | リポジトリ全体に効く取り決め | `AGENTS.md` |
 | `glossary` | 任意 | ドメイン用語集 | `docs/glossary.md` |
-| `test-strategy` | 任意 | テスト方針。conventions に含めても成立する | `docs/test-strategy.md` |
-| `security-model` | 任意 | 認証認可方式・信頼境界。原則は constraints に統合し、肥大化時のみ分離 | `docs/security-model.md` |
-| `tech-stack` | 任意 | 参考。正は lockfile / マニフェスト | `docs/tech-stack.md` |
-| `db-schema` | 任意 | 参考。正はマイグレーション | `docs/db-schema.md` |
-| `interfaces` | 任意 | 参考。正は OpenAPI / 型定義 | `docs/interfaces.md` |
 
-`tech-stack` / `db-schema` / `interfaces` を Hikyaku が作ることはありません。これらの正はコード側にあり、写せば必ず腐るためです。リポジトリにあれば俯瞰の手がかりとして読みますが、コードと矛盾したら常にコードを正とします。
+論理名は増やせません。未知の論理名は `hikyaku validate` がエラーにします。
 
-表に無い論理名は、管理が `repo` の行でだけ使えます。運用手順書や PRD のように、この表のどれにも当てはまらないリポジトリ固有の永続ドキュメントを載せるための方法です。Hikyaku はその中身を知らないため、作成も形式の決定もしません。`hikyaku context` は plan・architect・build-NN の候補に含め、今回のスコープに関係するかは概要欄で判断させます。概要欄には何のドキュメントかを書いてください。`hikyaku validate` はパスの実在だけを確かめ、`hikyaku docs link` は AGENTS.md の索引にも載せます。
+ここに並ぶのは「選んで読む文書」だけです。一部のファイルにしか効かない注意はパス指定の rule に、決まった手順はスキルに、機械で防げるものはコードに置きます（[知見の置き場](persistence.md)）。落とし穴集（`learnings`）を持たないのはこのためです。たまにしか使わない知見を1つの文書に溜めると、毎セッションで一定のコンテキストを使います。
 
-管理が `hikyaku`・`未作成`・`対象外` の行で表に無い論理名を使うと、`hikyaku validate` がエラーにします。`hikyaku` と `未作成` は Hikyaku が形式を決めて作る前提で、表に無い論理名では作れないためです。振り返りの `doc:` 分類は、`document-guide.md` に登録された論理名だけを昇格先にできます。
+テスト方針は `conventions` か、テストのファイルに絞った rule に書きます。認証認可や信頼境界は、設計を縛る条件として `constraints` に、構造として `overview` に書きます。技術スタック・DB スキーマ・API の一覧は登録しません。正はコード側（lockfile、マイグレーション、OpenAPI や型定義）にあり、写せば必ず腐るためです。`overview` から「正はここ」とポインタで指せば足ります。
+
+v2 までの `learnings` / `test-strategy` / `security-model` / `tech-stack` / `db-schema` / `interfaces` は v3 で廃止しました。行が残っていると `hikyaku validate` がエラーにします。中身の振り分けは `/hikyaku:init` が手伝います（[v2 → v3 移行ガイド](../migration/v2-to-v3.md#永続ドキュメントの論理名の整理)）。
 
 ## 何を書き、何を書かないか
 

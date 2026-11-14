@@ -297,8 +297,11 @@ test("step: 振り返りを PR 前に終え、PR 列と URL が揃うまで完�
   const misplaced = cli(directory, "step", "report", "build-01", "handoff", "001", "--result", "done", "--pr", "1");
   assert.equal(misplaced.status, 1);
   assert.match(misplaced.stderr, /--pr を添えられません/);
-  assert.equal(report(directory, "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1").kind, "done");
-  assert.equal(events(directory).at(-1)?.["pr"], "https://github.com/o/r/pull/1");
+  assert.equal(report(directory, "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1").step, "publish");
+  assert.equal(next(directory).step, "publish", "PR の URL があっても公開の処理が残っている");
+  assert.equal(report(directory, "publish", "--result", "failed", "--reason", "Ready にできなかった").step, "publish", "失敗を報告しても公開は未完了のまま");
+  assert.equal(report(directory, "publish", "--result", "done").kind, "done", "公開を再実行してから完了になる");
+  assert.equal(events(directory).findLast((e) => e["step"] === "pr")?.["pr"], "https://github.com/o/r/pull/1");
 });
 
 test("engine: PR を作るステップは、記録に PR の無い done を完了とみなさない", () => {

@@ -42,7 +42,7 @@ register({
     "/hikyaku:init スキルの役割です（対話が必要なため）。",
     "",
     "予測ピークの見積もりのガイド（token-guide/guide.md）は生成しません。無ければプラグインの",
-    "標準のガイドで見積もり、補正するとき（close-cycle の昇格か /hikyaku:token-guide）に作られます。",
+    "標準のガイドで見積もり、補正するとき（/hikyaku:token-guide）に作られます。",
     "",
     "設定を置ける場所はリポジトリルートとサイクルディレクトリの2箇所だけです。",
     "{HIKYAKU_ROOT}/.hikyaku.config は作りません（読み込まれません）。",

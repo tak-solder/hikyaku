@@ -132,24 +132,6 @@ test("CLI: validate は正常時 0、不整合は JSON と終了コード 2、�
   assert.ok(readFileSync(join(directory, tasklist), "utf8").includes("基盤"));
 });
 
-test("CLI: 既定に無い論理名は repo 管理でだけ受け付け、context の候補に含める", (t) => {
-  const directory = workspace(t, true);
-  const guide = "docs/hikyaku/document-guide.md";
-  const original = readFileSync(join(directory, guide), "utf8");
-  write(directory, "docs/observability.md");
-  write(directory, guide, `${original.trimEnd()}\n| observability | repo | \`docs/observability.md\` | 運用確認の手順書 |\n`);
-  assert.equal(JSON.parse(succeeds(directory, "validate", "--json")).ok, true);
-  const architect = JSON.parse(succeeds(directory, "context", "architect", "001", "--json"));
-  assert.ok(architect.suggestions.some((s: { ref: string; summary: string }) => s.ref === "observability" && s.summary === "運用確認の手順書"));
-  const close = JSON.parse(succeeds(directory, "context", "close", "001", "--json"));
-  assert.ok(!close.suggestions.some((s: { ref: string }) => s.ref === "observability"));
-
-  write(directory, guide, `${original.trimEnd()}\n| prd | 未作成 | — | プロダクト要求 |\n`);
-  const invalid = cli(directory, "validate", "--json");
-  assert.equal(invalid.status, 2);
-  assert.match(invalid.stdout, /既定に無い論理名は管理を repo にしてください/);
-});
-
 test("CLI: validate は番号付きの受け入れ基準がビルドに割り当てられているかを検査する", (t) => {
   const directory = workspace(t, true);
   const cycle = "docs/hikyaku/cycles/001-test";

@@ -19,7 +19,31 @@ argument-hint: "[{cycle}]"
 /hikyaku:close-cycle   → 永続ドキュメントへ昇格し、サイクルを closed に
 ```
 
-## あなたの役割
+### ディレクトリ構造
+
+```
+リポジトリルート/
+├── .hikyaku.config            # 設定のベース（必須）。hikyaku_root もここ
+└── {HIKYAKU_ROOT}/
+    ├── document-guide.md      # 永続ドキュメントの所在（必須）
+    ├── cycles.md              # サイクル索引（必須）
+    ├── instructions.md        # ワークフロー独自の指示（任意）
+    ├── .hikyaku.local         # 最後に作業したサイクル（git 管理対象外）
+    └── cycles/
+        └── {NNN}-{slug}/
+            ├── .hikyaku.config  # サイクル固有の上書き（任意）
+            ├── planning/        # ← あなたが作る
+            │   ├── questions.md
+            │   └── user-stories.md
+            ├── design/          # ARCHITECT が作る
+            ├── tasklist.md      # ARCHITECT が作る
+            └── build-01/        # BUILD が作る
+```
+
+永続ドキュメント（overview / decisions / constraints / conventions 等）は
+HIKYAKU_ROOT の外にある。 所在は `document-guide.md` が宣言する。
+
+### あなたの役割
 
 ユーザーは既にチケットや企画メモを持っている。あなたの仕事は、それを読み込んで
 次の設計フェーズ（ARCHITECT）が作業を開始できる形に構造化すること。成果物は
@@ -46,7 +70,6 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json
 `.hikyaku.config` から解決されるので、引数では受け取らない。
 
 出力の `cycle` と `cycleSource` を、作業対象としてユーザーに1行で示す。
-以降のゲートとレビューの有無は、出力の `gates` / `reviews` で決める。
 
 ここで次のエラーが出た場合は代行する。
 
@@ -69,9 +92,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {cycle}
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context plan {cycle}
 ```
 
-企画で読む既定の永続ドキュメントは `constraints`（確定済みの非機能要件を再度質問しないため）と
-`glossary`（語を既存の定義に揃えるため）。`repo` 管理の独自ドキュメントも候補に含まれるので、
-概要欄を見て、今回のスコープに関係するものだけを読む。
+企画では永続ドキュメントをほとんど読まない。実装済みの現実を前提に置く場面では
+ないため、返るのは `constraints`（確定済みの非機能要件を再度質問しないため）と
+`glossary`（語を既存の定義に揃えるため）だけ。
 
 インストラクションは次の優先順で適用する。上位が下位と矛盾する場合は上位を優先する。
 

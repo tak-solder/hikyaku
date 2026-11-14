@@ -17,7 +17,7 @@
 import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import { isCyclelessPhase, isPhase, type Phase } from "../lib/branch.mts";
-import { isCustomEntry, loadGuide, type DocEntry } from "../lib/docs.mts";
+import { loadGuide, type DocEntry } from "../lib/docs.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { emit, table } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
@@ -44,6 +44,15 @@ interface Suggestion {
  *
  * planner に overview を入れていないのは、企画が「何を作るか」の合意であって
  * 実装済みの現実を前提に置く場面ではないため。制約だけは再質問を避けるために読む。
+ *
+ * build-NN は overview / decisions / constraints を候補に出さない。どの節がそのビルドに効くかは、全文を読んで
+ * 設計した architect が issue.md の「参照する設計ドキュメント」でポインタとして渡す。
+ * 候補に並べると、実装のセッションが設計時と同じ量を読み直すことになる。選び漏れは
+ * plan のレビュー（doc-reviewer）が全文と突き合わせて拾う。
+ *
+ * conventions だけは別に扱う。コードを1行書くたびに効く取り決めなので、節を選んで渡すものではない。
+ * AGENTS.md / CLAUDE.md に登録されていればホストが自動で読み込むので候補に出さず、それ以外の
+ * ファイル（docs/conventions.md など）に登録されていれば、自動では読み込まれないので候補に出す。
  */
 const DOC_REASONS: Record<string, Record<string, string>> = {
   plan: {
@@ -52,31 +61,22 @@ const DOC_REASONS: Record<string, Record<string, string>> = {
   },
   architect: {
     overview: "実装済みの現実。既存コード調査の差分の基準になる",
-    constraints: "既に確定している非機能要件。再度質問しないため",
+    constraints: "設計を縛る条件。再度質問しないため",
     decisions: "過去の設計判断。採用理由とトレードオフを把握し、覆さないため",
-    learnings: "既知の落とし穴",
-    conventions: "規約",
-    "security-model": "認証認可・信頼境界に触れる設計のため",
-    "test-strategy": "テスト方針",
+    conventions: "リポジトリ全体に効く取り決め",
     glossary: "ドメイン用語",
-    "tech-stack": "参考。コードと矛盾したらコードが正",
-    "db-schema": "参考。正はマイグレーション",
-    interfaces: "参考。正は OpenAPI / 型定義",
   },
   close: {
     overview: "昇格先。責務・境界・データフローの変化を反映する",
-    learnings: "昇格先。再現条件が明確な落とし穴",
-    constraints: "昇格先。実装中に判明した制約",
-    conventions: "昇格先。以後の書き方・進め方の取り決め",
+    constraints: "昇格先。実装中に判明した、設計を縛る条件",
+    conventions: "昇格先。リポジトリ全体に効く取り決め",
     decisions: "ADR の status を accepted → implemented に更新する",
+    glossary: "昇格先。このサイクルで定まった用語",
   },
 };
 
-/** build-NN は architect と同じ集合を読む。理由だけ実装視点に寄せる */
 const BUILD_DOC_REASONS: Record<string, string> = {
-  ...DOC_REASONS["architect"],
-  overview: "実装済みの現実。他サイクルの成果も含む",
-  decisions: "過去の設計判断。実装中に覆さない（覆すなら handoff に記録する）",
+  conventions: "リポジトリ全体に効く取り決め。AGENTS.md / CLAUDE.md に無く、自動では読み込まれない",
 };
 
 function docReasons(phase: Phase): Record<string, string> {
@@ -84,15 +84,12 @@ function docReasons(phase: Phase): Record<string, string> {
   return DOC_REASONS[phase] ?? {};
 }
 
-/** リポジトリ固有の永続ドキュメントは中身を Hikyaku が知らないので、概要欄で要否を判断させる */
-const CUSTOM_DOC_REASON = "リポジトリ固有の永続ドキュメント。今回のスコープに関係するかは概要欄で判断する";
+/** ホストがセッションの開始時に自動で読み込むファイル（リポジトリルートからの相対パス） */
+const AUTO_LOADED = ["AGENTS.md", "CLAUDE.md", ".claude/CLAUDE.md"];
 
-/**
- * リポジトリ固有の永続ドキュメント（既定に無い論理名）を候補に含めるフェーズ。
- * close は昇格先が決まっているため含めない（振り返りが doc: で指したときだけ書き込む）
- */
-function includesCustomDocs(phase: Phase): boolean {
-  return phase === "plan" || phase === "architect" || phase.startsWith("build-");
+/** そのパスの文書を、ホストが自動で読み込むか */
+export function isAutoLoaded(path: string | undefined): boolean {
+  return path !== undefined && AUTO_LOADED.includes(path.replace(/^\.\//, ""));
 }
 
 /** そのフェーズで読むサイクル成果物。[サイクルディレクトリからの相対パス, 理由] */
@@ -158,11 +155,12 @@ register({
     "",
     "永続ドキュメントの所在は document-guide.md が正です。管理が「対象外」の",
     "ものは候補にも未作成にも出しません（意図的に持たないため）。",
-    "既定に無い論理名（repo 管理のリポジトリ固有ドキュメント）は、plan / architect /",
-    "build-NN の候補に含めます。",
     "",
-    "build-NN では、tasklist.md の依存グラフから先行ビルドの handoff.md を",
-    "辿ります。手で辿ると漏れるためです。",
+    "build-NN では overview / decisions / constraints を候補に出しません。そのビルドに効く節は、",
+    "architect が issue.md の「参照する設計ドキュメント」で指します。conventions は、AGENTS.md /",
+    "CLAUDE.md 以外のファイルに登録されているときだけ候補に出します（自動では読み込まれないため）。",
+    "tasklist.md の依存グラフから先行ビルドの handoff.md は辿ります。",
+    "手で辿ると漏れるためです。",
     "",
     "パスはすべてリポジトリルートからの相対です。--json はサブエージェントへの",
     "委任プロンプトに流し込む用途を想定しています（概要欄で絞る仕組みが",
@@ -200,7 +198,7 @@ register({
         origin: "doc",
         path,
         ownership: entry.ownership,
-        reason: docReasons(phase)[entry.name] ?? CUSTOM_DOC_REASON,
+        reason: docReasons(phase)[entry.name] as string,
         summary: entry.summary,
       });
     }
@@ -264,11 +262,10 @@ register({
 /** そのフェーズが読む論理名のうち、「対象外」でないものを guide の並びで返す */
 function docEntriesFor(entries: DocEntry[], phase: Phase): DocEntry[] {
   const reasons = docReasons(phase);
-  return entries.filter(
-    (e) =>
-      (reasons[e.name] !== undefined || (isCustomEntry(e) && includesCustomDocs(phase))) &&
-      e.ownership !== "対象外",
-  );
+  const candidates = entries.filter((e) => reasons[e.name] !== undefined && e.ownership !== "対象外");
+  if (!phase.startsWith("build-")) return candidates;
+  // build-NN: 自動で読み込まれる文書と、まだ無い文書は出さない（未作成を知らせても実装では使えない）
+  return candidates.filter((e) => e.path !== undefined && !isAutoLoaded(e.path));
 }
 
 function render(
@@ -304,6 +301,10 @@ function render(
     lines.push(`未作成: ${missing.join(", ")}`, "");
   }
 
-  lines.push("概要欄を見て、今回のスコープに関係するものだけを読んでください。");
+  lines.push(
+    phase.startsWith("build-")
+      ? "overview / decisions / constraints は、issue.md の「参照する設計ドキュメント」が指す節だけを読んでください。"
+      : "概要欄を見て、今回のスコープに関係するものだけを読んでください。",
+  );
   return lines.join("\n");
 }

@@ -21,7 +21,7 @@
 - **PR 作成後のレビュアーのアサイン（`pr request-reviewers`）が失敗しても、gate にしない。** PR は作成済みなので
   止まらず、失敗の内容を done の本文に書く
 - **PR を Ready for Review にしない（`gh pr ready` を実行しない）。** `[pr] auto_ready` に関わらず、
-  スキルが Ready にする手順は飛ばし、PR は Draft のまま done で終える。Ready にするのは、取り込む前の
+  `pr ready` は実行元の環境変数で切り替えを省く。publish の手順は省略せず、PR は Draft のまま done で終える。Ready にするのは、取り込む前の
   監督の役目
 
 `step next` が `gate` を返したら、それが尋ねる箇所です。gate ブロックの `id` には、1手の「問いの ID」を

@@ -143,10 +143,12 @@ separator = "/"
 ```toml
 [pr]
 title = "[hikyaku] {cycle}: {phase} {title}"
-reviewers = []        # PR を作った直後にレビューを依頼する相手
+reviewers = []        # PR の公開時にレビューを依頼する相手
 reviewers_skip = []   # アサインをオフにするスキル
-auto_ready = true     # Draft で作った PR を、フェーズの完了時に Ready for Review にする
+auto_ready = true    # フェーズの完了時に Ready for Review にする
 ```
+
+planner / architect / builder / close-cycle と conductor の統合 PR は Draft で作成します。`auto_ready` は公開時に Ready へ切り替えるかを決める設定です。false なら確認後に自分で `gh pr ready <PR>` を実行します。conductor の子は Draft のまま返し、監督が取り込むフェーズの PR は設定に関わらず Ready にします。CLOSE の PR は取り込まないので、監督も `auto_ready` に従います。
 
 PR タイトルは表示専用で解析されないため、テンプレートは自由に組み立てられます。
 
@@ -164,8 +166,6 @@ PR タイトルは表示専用で解析されないため、テンプレート�
 `reviewers` には、PR を作る各スキルが PR を作った直後に、レビューを依頼する相手を書きます。人は login、チームは `org/team`、Copilot は `@copilot` で、1要素に1つずつ書きます。空（既定）なら何も依頼しません。依頼は `hikyaku pr request-reviewers` が行い、PR の作成者本人、すでに依頼した相手、すでにレビューした相手には依頼しません（GitHub は作成者本人を依頼先にできず、`gh` はレビュー済みの相手にも再依頼してしまうためです）。
 
 `reviewers_skip` には、アサインをオフにするスキルを `init` / `token-guide` / `create` / `plan` / `architect` / `build` / `close` / `conductor` のフェーズ名で並べます。`build` は全てのビルドの PR にあたり、`conductor` は監督が作る最後の PR にあたります。たとえば PLAN と ARCHITECT のドキュメントだけの PR にはレビューを求めず、BUILD の PR にだけ求めるなら、`reviewers_skip = ["init", "token-guide", "create", "plan", "architect", "close"]` と書きます。名前のタイプミスはエラーになります。この設定は [conductor] の `phase_reviewers` にも効きます。
-
-planner・architect・builder・close-cycle の PR と conductor の最後の PR は、常に Draft で作られます。builder は Draft のうちに `tasklist.md` の完了記録を push するので、完了記録がそろう前の PR がレビューに出ることはありません。`auto_ready` が true（既定）なら、各フェーズの完了時に Ready for Review に切り替えます。`false` にすると Draft のまま残すので、内容を確認してから自分で Ready にしてください。conductor の子セッションはこの設定に関わらず PR を Ready にせず、監督が取り込む前に Ready にします。conductor の最後の PR（デフォルトブランチ向け）と CLOSE の PR には、この設定が効きます。CLOSE の PR は子が Draft のまま渡し、監督がこの設定に従って Ready にします。Draft の PR で CI を走らせるかどうかは、各リポジトリの CI の設定で決まります。
 
 [conductor](../workflow/conductor.md) のフェーズの PR（conductor ブランチ向け）には、`reviewers` ではなく `[conductor] phase_reviewers` が使われます。向き先は PR の実際のマージ先から決まります。
 
@@ -186,7 +186,7 @@ title = "{cycle} {phase} {title}"
 [review]
 provider = "auto"   # auto | claude | codex
 max_rounds = 1      # 0 は無制限。未設定ならプロファイルの既定
-auto_fix = false   # max_rounds = 0 の2回目以降の確認を省くか
+auto_fix = false
 timeout = 30        # レビューのプロセス1回あたりの上限（分）
 
 [review.provider_for]  # メインのセッションのプロバイダ → レビューの実行先
@@ -227,9 +227,7 @@ effort = "high"
 
 `model` と `effort` はプロバイダごとのテーブルに書きます。モデル名もエフォートの値もプロバイダ間で互換性がないので、`provider` だけを切り替えても、もう一方の値が渡らないようにしてあります。値は `[review.<種類>.<プロバイダ>]`、`[review.<プロバイダ>]`、プロバイダの既定の順に決まり、空文字はキーが無いのと同じです。Claude の `effort` は `low` / `medium` / `high` / `xhigh` / `max` のどれかで、それ以外はエラーになります。Codex の `effort` は使える値がモデルによって変わるため、検証せずにそのまま渡します。
 
-`max_rounds` はコードとセキュリティのレビューを何回まで回すかです。未設定のときは [プロファイル](profiles.md#レビュー) の既定に従います。`1` なら、妥当で承認済みスコープ内の指摘を追加確認なしで修正し、検証後は再レビューせずに進めます。`2` 以上なら、最終回までは妥当な指摘の自動修正と再レビューを続け、最終回に未解決の指摘がある場合だけ対応を確認します。途中で同じ指摘が繰り返されても、対応確認は最終回まで挟みません。指摘が解消すれば上限より前でも終了します。自動修正できない指摘は、1回設定では理由を申し送りに残し、2回以上では最終回の確認まで保留します。設計の前提が崩れた場合は、回数に関わらず設計方針を確認します。
-
-`max_rounds = 0` は無制限です。この場合は従来どおり初回に対応を確認し、`auto_fix = true` なら2回目以降の確認を省いて直します。確度の低い懸念と、同じ指摘が繰り返されて打ち切る場面では確認します。`auto_fix` は無制限の場合にだけ適用され、`max_rounds` が1以上なら値に関わらず上記の手順で進みます。ドキュメントのレビューは1回だけで、`[review.doc]` には `max_rounds` と `auto_fix` を書けません。
+`max_rounds` はコードとセキュリティのレビューを何回まで回すかです。`1` なら妥当な指摘を修正して再レビューせずに終え、`n` なら途中は自動修正し、最終回に未解決の指摘があるときだけ対応を確認します。`0` は無制限で、初回は対応を確認し、`auto_fix = true` のときだけ2回目以降の確認を省きます。確度の低い懸念や、同じ指摘を繰り返して打ち切る場面では確認します。回数の既定は [プロファイル](profiles.md#レビュー) に従い、対応と再レビューの要否は `hikyaku review action` が解決します。ドキュメントのレビューは1回だけで、`[review.doc]` には `max_rounds` と `auto_fix` を書けません。
 
 組み込みのレビュー機能には指示文を渡せないため、plan.md のスコープから外れていないかは builder 自身が確かめます。また Claude の `/security-review` は origin のデフォルトブランチとの差分しか見ないので、スタックしたビルドや origin/HEAD が無いリポジトリでは使いません。その場合と Codex のセキュリティレビューでは、観点を書いた指示文を渡す形に切り替わります。どの形で起動されるかは `hikyaku review resolve` で確認できます。
 
@@ -331,7 +329,6 @@ review = "400k"
 
 ```toml
 [conductor]
-provider = "claude"  # 子の CLI。claude / codex
 escalate = []        # 既定では監督が答える問いのうち、人間に上げるものの ID
 delegate = []        # 既定では人間に上げる問いのうち、監督に任せるものの ID
 allowed_tools = []   # 子セッションに許可するツール（既定に追加される）
@@ -339,41 +336,25 @@ budget_per_run = 0   # 子の呼び出し1回ごとの費用の上限（USD）�
 require_approval = false  # true なら、PR を conductor ブランチに取り込む条件に承認（Approve）を加える
 phase_reviewers = []      # conductor ブランチ向けのフェーズの PR にアサインするレビュアー
 review_timeout = 15       # レビューの依頼や CI を待つ上限（分）。0 なら待たずにその場で判定する
+# model = "sonnet"   # 子のモデル（全フェーズの既定）。未指定なら Claude Code の既定
 
-[conductor.claude]
-# model = "sonnet"   # Claude の子の既定モデル。未指定なら CLI の既定
-
-[conductor.claude.models]   # Claude のフェーズごとの上書き
+[conductor.models]   # フェーズごとのモデル。model より優先する
 # architect = "opus"
 # builder = "sonnet"
 # close-cycle = "sonnet"
-
-[conductor.codex]
-# model = "<Codex で利用できるモデル名>"
-
-[conductor.codex.models]    # Codex のフェーズごとの上書き
-# architect = "<Codex で利用できるモデル名>"
 ```
 
 [conductor](../workflow/conductor.md) で子セッションを動かすときの設定です。使わないなら書く必要はありません。
 
 `escalate` と `delegate` には問いの ID（`G8`、`review-findings` など）を並べます。使える ID と現在の振り分けは `hikyaku conductor asks <cycle>` で確認できます。表に無い ID や、同じ ID を両方に書いた場合はエラーになります。サイクルの中止（`abandon`）と ID の無い問い（`other`）は常に人間に上げるので、`delegate` には書けません。
 
-クラウド環境ではレビューと同じ `detectCloudEnv()` の判定を使い、`CLAUDE_CODE_REMOTE=true` なら Claude、`CODEX_ENVIRONMENT_ID` が空でなければ Codex に固定します。この判定は `provider` の明示指定より優先し、両方が該当するときは Claude を選びます。クラウドでない場合は `provider`、未指定なら `claude` を使います。`conductor asks` は実際の CLI と選択元（`providerSource`）を示します。
-
-`provider = "codex"` はクラウドでない環境で Codex CLI を子として使います。Codex は承認なし・`workspace-write` サンドボックスで動きます。`allowed_tools` は空配列、`budget_per_run` は 0 のみ受け付け、Claude のツール許可や費用上限には対応しません。実行環境の制限は [conductor](../workflow/conductor.md#codex-を子セッションに使う) を参照してください。
-
-Claude の `allowed_tools` は `--allowedTools` に渡す書式で書きます（`"Bash(npm test:*)"` など）。子はこの設定を起動のたびに読むので、作業ツリーで一時的に足すのではなくコミットしておいてください。
+`allowed_tools` は `--allowedTools` に渡す書式で書きます（`"Bash(npm test:*)"` など）。子はこの設定を起動のたびに読むので、作業ツリーで一時的に足すのではなくコミットしておいてください。
 
 `phase_reviewers` には、conductor ブランチに向かうフェーズの PR にアサインするレビュアーを書きます。Copilot のような Bot を入れておくと、取り込みの前にレビューが付くのを待てます。人間のレビュアーを入れると、レビューが付くまで取り込みが止まるので、フェーズごとの確認が重くなります。`review_timeout` を超えても依頼が残っていれば、監督は人間に確認します。
 
 `require_approval` を `true` にすると、監督がフェーズの PR を取り込む条件に、1人以上の承認があり、変更の要求が残っていないことが加わります。承認の有無は、レビュアーごとに承認・変更の要求・取り下げのうち最新のもので判定します。コメントだけのレビューは判定を変えません。子の PR はあなたの `gh` の認証で作られるので、承認できるのはあなた以外のレビュアーです。
 
-モデルは `[conductor.claude]` / `[conductor.codex]` の `model` に、フェーズごとの上書きは `[conductor.claude.models]` / `[conductor.codex.models]` に書きます。選択したプロバイダの値だけを CLI の `--model` に渡します。未指定なら、その CLI の既定モデルを使います。`models` のキーは `architect` / `builder` / `close-cycle` だけで、それ以外や、テーブル以外の値はエラーになります。プロバイダ別テーブルの未知のキーや不正な値は、未選択のプロバイダでも検査します。
-
-旧形式の `[conductor] model` と `[conductor.models]` も使えます。旧形式は、設定で明示した `provider`（未指定なら `claude`）に属するものとして扱います。クラウド判定で別のプロバイダに切り替わった場合、旧形式のモデルは渡しません。優先順位は、選択したプロバイダのフェーズ別モデル、プロバイダの既定モデル、旧形式のフェーズ別モデル、旧形式の既定モデルです。ルートとサイクルの設定は、プロバイダ別モデルもキーごとにマージされます。
-
-効くのは子のセッション本体だけです。Claude の子の中で起動されるサブエージェントは、環境変数 `CLAUDE_CODE_SUBAGENT_MODEL` を設定していればそのモデルで、していなければ子のセッションと同じモデルで動きます。ただし cycle-scanner だけは haiku に固定しています。
+`model` と `[conductor.models]` の値は、`claude --model` に渡すモデル名（`opus` / `sonnet` のような別名か、正式なモデル名）です。`[conductor.models]` のキーは `architect` / `builder` / `close-cycle` だけで、それ以外はエラーになります。`models = "opus"` のようにテーブル以外で書いた場合もエラーになります。効くのは子のセッション本体だけです。子の中で起動されるサブエージェントは、環境変数 `CLAUDE_CODE_SUBAGENT_MODEL` を設定していればそのモデルで、していなければ子のセッションと同じモデルで動きます。ただし cycle-scanner だけは haiku に固定しています。
 
 配列はキー単位で上書きされます。サイクル設定に `escalate` を書くと、ルートの `escalate` に足されるのではなく置き換わります。
 

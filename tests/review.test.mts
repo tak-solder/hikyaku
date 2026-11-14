@@ -446,3 +446,26 @@ test("review run: 同じラウンドの再実行で、前回の Codex の出力�
   assert.match(second.stderr, /codex が結果を書き出しませんでした/);
   assert.equal(readFileSync(output, "utf8"), "");
 });
+
+test("review action: 有限回は途中を自動修正し最終回だけ確認、無制限は設定と重複に従う", async () => {
+  const { reviewAction } = await import("../scripts/lib/review.mts");
+  const base = { round: 1, maxRounds: 2, autoFix: false, hasFindings: true, uncertain: false, repeated: false };
+  assert.deepEqual(reviewAction({ ...base, hasFindings: false }), { action: "done", nextRound: null, deferUncertain: false });
+  assert.deepEqual(reviewAction({ ...base, maxRounds: 1, uncertain: true }), { action: "fix", nextRound: null, deferUncertain: true });
+  assert.deepEqual(reviewAction({ ...base, repeated: true }), { action: "fix", nextRound: 2, deferUncertain: false });
+  assert.deepEqual(reviewAction({ ...base, hasFindings: false, uncertain: true }), { action: "review", nextRound: 2, deferUncertain: true });
+  assert.deepEqual(reviewAction({ ...base, round: 2 }), { action: "confirm", nextRound: null, deferUncertain: false });
+  assert.equal(reviewAction({ ...base, maxRounds: 0 }).action, "confirm");
+  assert.equal(reviewAction({ ...base, maxRounds: 0, round: 2, autoFix: true }).action, "fix");
+  assert.equal(reviewAction({ ...base, maxRounds: 0, round: 2, autoFix: true, uncertain: true }).action, "confirm");
+  assert.equal(reviewAction({ ...base, maxRounds: 0, repeated: true }).nextRound, null);
+});
+
+test("CLI: review action は設定から対応を決め、余分な引数と上限外のラウンドを拒否する", (t) => {
+  const directory = workspace(t, true);
+  const run = (...args: string[]) => cli(directory, "review", "action", "code", "build-01", "001", ...args, "--json");
+  assert.equal(JSON.parse(run("--round", "1", "--has-findings").stdout).nextRound, 2);
+  assert.equal(JSON.parse(run("--round", "2", "--has-findings").stdout).action, "confirm");
+  assert.equal(run("--round", "3", "--has-findings").status, 1);
+  assert.equal(run("--round", "1", "--has-finding").status, 1);
+});

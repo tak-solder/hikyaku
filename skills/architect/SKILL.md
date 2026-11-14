@@ -22,7 +22,7 @@ argument-hint: "[{cycle}] [build-{NN} | add {指摘}]"
 
 ### 最も重要な制約: 永続ドキュメントを書き換えない
 
-永続ドキュメント（overview / constraints / learnings / conventions 等）は
+永続ドキュメント（overview / decisions / constraints / conventions 等）は
 「実装済みの現実（as-is）」を表す。あなたが作るのは「これから作るもの（to-be）」で、
 それは `design-delta.md` に書く。
 
@@ -77,7 +77,6 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json
 `.hikyaku.config` から解決されるので、引数では受け取らない。
 
 出力の `cycle` と `cycleSource` を、作業対象としてユーザーに1行で示す。
-以降のゲートとレビューの有無は、出力の `gates` / `reviews` で決める。
 `unsafeSplit.allowed` が true なら、その `message` も1行で示す（このサイクルでは原則を外せることを、
 分割の前にユーザーが知っておくため）。
 
@@ -106,8 +105,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context architect {cycle}
 - `decisions` は採用理由とトレードオフを把握する。覆す場合は ADR の追記（`adr`）で新エントリとして記録し、既存エントリは書き換えない
 
 `repo` 管理のドキュメントは既存形式が正。参考として読むが、形式には手を出さない。
-`tech-stack` / `db-schema` / `interfaces` は俯瞰の手がかりとして読むが、
-コードと矛盾したら常にコードを正とする（勝手に直さず、codebase-survey.md に記録する）。
+永続ドキュメントがコードと矛盾したら常にコードを正とする（勝手に直さず、codebase-survey.md に記録する）。
 
 - [ ] ブランチを作成し、命名規則どおりか確認する（差し戻しからの再設計・指摘からの追加設計では、
   それぞれの手順のブランチの決め方に従う）

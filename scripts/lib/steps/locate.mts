@@ -15,9 +15,7 @@
  *             （planning/・design/・build-NN/）を見る（Stop フック）。終えたサイクルは、CLOSE の
  *             手順が残っているときだけサイクルのディレクトリ直下を見る
  *
- * サイクルのディレクトリ直下に記録する内部スキル（retrospective）は close-cycle が呼んだもの。
- * create-cycle は内部スキルを呼ばず、close-cycle は最初に振り返りを呼ぶので、その間は
- * close-cycle 自身の記録がまだ無い。
+ * サイクルのディレクトリ直下に記録するのは create-cycle と close-cycle で、どちらも内部スキルを呼ばない。
  */
 
 import { existsSync, readdirSync } from "node:fs";
@@ -56,12 +54,12 @@ export interface Scope {
   explicit: boolean;
 }
 
-/** サイクルのディレクトリ直下の記録で、CLOSE の手順（振り返りを含む）が PR まで終わっていないか */
+/** サイクルのディレクトリ直下の記録で、CLOSE の手順が最後（PR のあとの followups）まで終わっていないか */
 function closeUnfinished(events: ProgressEvent[]): boolean {
-  const started = events.some((event) => event.skill === "close-cycle" || stepsOf(event.skill)?.internal === true);
+  const started = events.some((event) => event.skill === "close-cycle");
   if (!started) return false;
   const last = [...events].reverse().find((event) => event.skill === "close-cycle" && event.result !== RESTART);
-  return !(last?.step === "pr" && last.result === "done" && last.pr !== undefined);
+  return !(last?.step === "followups" && (last.result === "done" || last.result === "skipped"));
 }
 
 function progressFiles(hikyakuRoot: string, scope: Scope): ProgressFile[] {
@@ -93,7 +91,7 @@ function progressFiles(hikyakuRoot: string, scope: Scope): ProgressFile[] {
       visit(cycleDir(hikyakuRoot, record), record);
       continue;
     }
-    // 終えたサイクルは、CLOSE の手順（cycle close のあとの pr）が残っているときだけ見る
+    // 終えたサイクルは、CLOSE の手順（cycle close のあとの pr・followups）が残っているときだけ見る
     const root = read(cycleDir(hikyakuRoot, record), "", record);
     if (root !== undefined && closeUnfinished(root.events)) files.push(root);
   }
@@ -139,8 +137,7 @@ function unitOf(file: ProgressFile, skillName: string): FoundUnit | undefined {
 /**
  * 記録のある作業単位を一覧する。1つのファイルに複数のスキルの記録があれば
  * （サイクルのディレクトリ直下の create-cycle と close-cycle）、スキルごとに分ける。
- * 内部スキルの記録は、呼び出し元の作業単位に含まれる（呼び出し元の記録がまだ無くても、
- * 呼び出し元の作業単位として並べる。close-cycle の最初の振り返りの途中など）
+ * 内部スキルの記録は、呼び出し元の作業単位に含まれる
  */
 export function findUnits(hikyakuRoot: string, scope: Scope): FoundUnit[] {
   const units: FoundUnit[] = [];

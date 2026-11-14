@@ -8,6 +8,9 @@
 - [ ] `/hikyaku:build-manager {cycle}` を呼び出す
   - 伝える情報: 各ビルドのタイトル・スコープ・依存関係・参照すべき設計ドキュメント・
     design-delta.md の移行の段階
+  - 参照すべき設計ドキュメントは、ビルドごとに、永続ドキュメント（`overview` / `decisions` /
+    `constraints`）のどの節がそのビルドに効くかまで伝える。builder は全文を読まず、issue.md が指す節だけを
+    読む。全文を読んで設計したあなたが選ばないと、builder は制約を知らないまま実装する
   - build-manager が予測ピークの見積もり、tasklist の更新、issue.md の作成、承認（G6）までを行う
 - [ ] 値 `round` に応じて、build-manager に伝える操作を変える
   - `return`（差し戻しからの再設計）: 影響を受けるビルドは、追加よりも更新で扱う。差し戻し元の issue.md・予測ピーク・

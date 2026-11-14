@@ -21,13 +21,26 @@ argument-hint: "[{cycle}] [{buildID}]"
 
 ### 最も重要な制約: 永続ドキュメントを書き換えない
 
-永続ドキュメント（overview / constraints / learnings / decisions 等）を書けるのは
+永続ドキュメント（overview / decisions / constraints / conventions 等）を書けるのは
 close-cycle だけ。あなたは読むだけで、一切書き換えない。
 
-実装中に設計とのズレや新たに判明した制約があれば、`handoff.md` に記録する。
+実装中に設計とのズレや新たに判明した制約があれば、`handoff.md` の「永続化すること」に記録する。
 close-cycle がそれを素材として昇格させる。
 
 これにより、あなたのコンテキストは実装だけに集中できる。
+
+### 実装で得た知見は、置き場を選んでその場で片づける
+
+落とし穴や失敗の回避策は、見つけたビルドが最もよく知っている。後続のビルドが同じものを踏まないよう、
+このビルドの PR の中で片づける。重要度と置き場の基準は
+`${CLAUDE_PLUGIN_ROOT}/skills/close-cycle/references/persistence.md`（[persistence.md](../close-cycle/references/persistence.md)）が正。
+
+| 知見 | あなたがすること |
+|---|---|
+| 機械で防げる（lint・テスト・共通ヘルパー・設定・その場のコメント） | このビルドで直す。スコープを超えるなら rule に仮置きし、handoff の「残したこと」に書く |
+| 一部のファイル群を触るときだけ効く | パス指定の rule（`.claude/rules/`）をこのビルドの PR に含めて書く |
+| それ以外（スキル・`workflow`・`conventions`・`overview` / `decisions` / `constraints`・フック） | handoff の「永続化すること」に書く。close-cycle が反映する |
+| 重要度が低（すぐ失敗して、すぐ直せる） | どこにも書かない |
 
 ### 守る原則: マージした時点で本番データを壊さない
 
@@ -56,7 +69,6 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json
 `.hikyaku.config` から解決されるので、引数では受け取らない。
 
 出力の `cycle` と `cycleSource` を、作業対象としてユーザーに1行で示す。
-以降のゲートとレビューの有無は、出力の `gates` / `reviews` で決める。
 
 - [ ] 対象サイクルを記録する（次回から尋ねられずに済む）
 
@@ -92,21 +104,29 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle}
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context build-{NN} {cycle}
 ```
 
-返るものは3層に分かれている。どの層の話をしているかを意識して読む。
+返るのは次の層。`overview` / `decisions` / `constraints` は含まれない。
 
 | 層 | 何を表すか |
 |---|---|
-| 永続 | 実装済みの現実（他サイクルの成果も含む） |
+| 永続（`conventions` だけ） | リポジトリ全体に効く取り決め。AGENTS.md / CLAUDE.md 以外のファイルに登録されているときだけ返る（自動では読み込まれないため）。返ったら全体を読む |
 | サイクル | このサイクルが作ろうとしている差分 |
 | ビルド | 同一サイクル内の先行ビルドの実績（依存ビルドの `handoff.md`） |
 
 依存ビルドの `handoff.md` は `context` が tasklist.md の依存グラフから辿る。
 自分で辿らない。直接依存する分だけが返るので、全ビルド分を読むことにはならない。
 
-- [ ] 概要欄を見て、今回のビルドに関係するものだけを読む
+`overview` / `decisions` / `constraints`（実装済みの現実）は、`issue.md` の「参照する設計ドキュメント」が指す節だけを読む。
+どの節がこのビルドに効くかは、全文を読んで設計した architect が選んでいる。全文を読み直さない。
+選び漏れは plan のレビューが全文と突き合わせて拾う。実装中に指されていない制約や判断に
+関わりそうだと感じたら、`document-guide.md`（または AGENTS.md の索引）から所在を引いて、
+その節を読んでよい。
+
+- [ ] 今回のビルドに関係するものを読む
   - `issue.md`（対象ビルドの定義）と `design-delta.md` は必ず読む
-  - `decisions` は採用理由とトレードオフを把握し、実装中に判断を覆さない
-  - 覆す必要が生じた場合は、覆した ADR・理由・影響範囲を `handoff.md` に記録する
+  - `conventions` が返っていれば必ず読む。コードを書くたびに効く取り決めで、節を選んで読むものではない
+  - `issue.md` が指す永続ドキュメントの節を読む。`decisions` は採用理由とトレードオフを把握し、
+    実装中に判断を覆さない
+  - 覆す必要が生じた場合は、覆した ADR・理由・影響範囲を `handoff.md` の「永続化すること」に記録する
     （ADR 自体の更新は close-cycle が行う。あなたは永続ドキュメントを書き換えない）
   - 設計どおりでは要件を満たせないと分かった場合は、自分で設計を変えない。
     下の「architect への差し戻し」に従う
@@ -180,7 +200,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title build-{NN} {cycle
 
 ### Step 3 以降: step に従って進める
 
-ここから先の手順（plan → レビュー → G8 → 実装 → 検証 → コードレビュー → handoff → 振り返り → PR）は、
+ここから先の手順（plan → レビュー → G8 → 実装 → 検証 → コードレビュー → handoff → 振り返り → PR → 公開）は、
 `step next` が設定と進捗から1手ずつ返す。**手順を自分で組み立てない。** どのレビューが有効か、
 どのゲートがあるかは step が決める。
 

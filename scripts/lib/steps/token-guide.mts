@@ -7,12 +7,12 @@
  * 作業単位は {HIKYAKU_ROOT}/token-guide/ で、progress.jsonl もそこに置く。ガイドを
  * 作る前はディレクトリが無いが、最初の報告で作られる。
  *
- * サイクルごとの小さな補正は close-cycle の昇格（G10）で行う。このスキルはサイクルを
- * またいだ校正（モデルの世代が変わったとき、ガイドを書き直すとき）を担う。前の回の記録は
+ * ガイドを書き換えるのはこのスキルだけ。人が呼ぶほか、close-cycle がサイクルの乖離を見て
+ * 自動で呼ぶ（--round auto。承認のゲートを置かず、採否は PR のマージで決める）。前の回の記録は
  * PR と一緒にデフォルトブランチへ入るので、次の回の step next は done を返す。
  * そのときは step restart で区切って新しい回を始める（前の回の記録は残る）。
  *
- * 完了の条件は produces ではなく requires で書く。guide.md は前の回や close-cycle が
+ * 完了の条件は produces ではなく requires で書く。guide.md は前の回が
  * 作っているので、produces にすると「記録が欠けている」と読まれて止まる。
  *
  * write と pr では、ガイドの版の宣言が本文と合っていることを確かめる（本文を変えたのに
@@ -22,7 +22,17 @@
 
 import { existsSync } from "node:fs";
 import { projectGuidePath, TOKEN_GUIDE_DIR, TOKEN_GUIDE_FILE, tokenGuideProblems } from "../tokens.mts";
-import { currentEvents, type SkillSteps, type StepContext } from "./engine.mts";
+import { currentEvents, currentRound, type SkillSteps, type StepContext } from "./engine.mts";
+
+/**
+ * close-cycle が、サイクルの乖離を見て呼んだ回。変更の採否は PR のマージで決めるので、
+ * 承認のゲートを置かない（根拠は PR の本文に載せる）
+ */
+const AUTO_ROUND = "auto";
+
+function auto(ctx: StepContext): boolean {
+  return currentRound(TOKEN_GUIDE_STEPS, ctx.events) === AUTO_ROUND;
+}
 
 /** 今回の回（最後の step restart より後）の、そのステップの最後の記録 */
 function latestThisRound(ctx: StepContext, step: string): string | undefined {
@@ -56,11 +66,12 @@ function proposed(ctx: StepContext): boolean {
 export const TOKEN_GUIDE_STEPS: SkillSteps = {
   skill: "token-guide",
   unit: (phase) => (phase === "token-guide" ? TOKEN_GUIDE_DIR : undefined),
+  rounds: [AUTO_ROUND],
   steps: [
     { id: "start", kind: "run", title: "回の開始とブランチの確認" },
     { id: "collect", kind: "run", title: "予測と実測の収集", skippable: true },
     { id: "propose", kind: "run", title: "ガイドの変更案の作成", when: collected, skippable: true },
-    { id: "approve", kind: "gate", title: "ガイドの変更の承認", when: proposed },
+    { id: "approve", kind: "gate", title: "ガイドの変更の承認", when: (ctx) => proposed(ctx) && !auto(ctx) },
     { id: "write", kind: "run", title: "ガイドの書き込みと版の更新", when: proposed, requires: guideWritten },
     { id: "pr", kind: "run", title: "コミットと PR", recordsPr: true, requires: guideConsistent },
   ],

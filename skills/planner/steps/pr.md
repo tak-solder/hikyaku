@@ -27,24 +27,7 @@ GitHub MCP ツールで適用し、`cycle link {cycle} --external {URL}` で記�
 
 - [ ] `done` を報告し（`--pr` に PR の URL）、progress.jsonl をコミット & push する
 
-`done` の報告後も、Ready への切り替えとレビュアーのアサインまで行ってから完了の案内へ進む。
 
-- [ ] `config` 出力の `pr.autoReady`（`[pr] auto_ready`、既定 true）が true なら、PR を Ready for Review にする
-
-```bash
-gh pr ready {PR の URL}
-```
-
-  - true なら省略しない。false なら Draft のまま残し、完了の案内で「確認後に `gh pr ready {PR の URL}` で Ready にする」と伝える。**false のときに自分の判断で Ready にしない**
-  - 失敗したら、Draft のままであることと再実行のコマンドを完了の案内で伝える
-
-- [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers plan {cycle} --pr {PR の URL}
-```
-
-  失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
 
 このフェーズの PR はドキュメントのみで、速やかにマージすることを想定している。
 デフォルトブランチに入っていない情報は他サイクルから見えないため。

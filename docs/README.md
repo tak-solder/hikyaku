@@ -28,6 +28,7 @@ Hikyaku がなぜこの形をしているのか（永続ドキュメントとサ
 - [.hikyaku.config](configuration/config-file.md) — 設定キーの一覧と、サイクル単位の上書き
 - [プロファイル](configuration/profiles.md) — 承認ゲートとレビューの量をサイクルごとに選ぶ
 - [ドキュメントガイド](configuration/documents.md) — 永続ドキュメントの所在を宣言する
+- [知見の置き場](configuration/persistence.md) — 得た知見を残すか、どこに置くかの考え方
 - [外部システムへの投影](configuration/external.md) — GitHub / Asana へ片方向で投影する
 - [予測ピークと見積もりのガイド](configuration/token-guide.md) — ビルドの大きさの見積もり方を、リポジトリの実績で補正する
 

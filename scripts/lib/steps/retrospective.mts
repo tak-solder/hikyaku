@@ -1,7 +1,7 @@
 /**
  * retrospective（内部スキル）のステップ。
  *
- * 呼び出し元（planner / architect / builder / close-cycle）の call で呼ばれ、
+ * 呼び出し元（planner / architect / builder）の call で呼ばれ、
  * `step next <phase> <cycle> --skill retrospective` で進む。記録は呼び出し元と同じ
  * progress.jsonl に入り、呼び出し元が最後に報告したあとの記録だけが今回の呼び出しの分になる。
  * 呼び出し元が報告しないまま呼び直すとき（builder の PR レビュー対応）は、
@@ -9,7 +9,7 @@
  *
  * 並びは SKILL.md の Step 1〜6 と同じ。Step 0（設定の確認）は step が行い、Step 2
  * （フェーズの判定）は出力先を args で渡すので、ステップにしない。Step 4（会話履歴の分析）と
- * Step 5（改善提案の分類）は、分析した内容をそのまま分類するので1つにまとめる。
+ * Step 5（知見の仕分け）は、分析した内容をそのまま仕分けるので1つにまとめる。
  */
 
 import { existsSync } from "node:fs";
@@ -22,7 +22,6 @@ const SKILL = "retrospective";
 export function retrospectiveDirectory(phase: string): string | undefined {
   if (phase === "plan") return "planning";
   if (phase === "architect") return "design";
-  if (phase === "close") return "close";
   if (phase.startsWith("build-")) return phase;
   return undefined;
 }
@@ -69,7 +68,7 @@ export const RETROSPECTIVE_STEPS: SkillSteps = {
       title: "予測ピークの実測と差分の集計",
       when: (ctx) => active(ctx) && ctx.unit.startsWith("build-"),
     },
-    { id: "analyze", kind: "run", title: "会話履歴の分析と改善提案の分類", when: active },
+    { id: "analyze", kind: "run", title: "会話履歴の分析と、知見の仕分け", when: active },
     {
       // PR レビュー対応の追記モードでは書く前から retrospective.md がある。前の呼び出しで
       // write を記録していれば、記録の欠けとは数えられない（engine の orphans）
