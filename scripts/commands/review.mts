@@ -326,8 +326,9 @@ register({
   details: [
     "指摘の妥当性と重複は呼び出し元が判断し、妥当かつスコープ内の指摘があれば --has-findings を渡します。",
     "自動修正できない懸念（スコープ外を含む）は --uncertain、繰り返した指摘は --repeated で渡します。",
-    "action は done / fix / review / confirm。nextRound が null なら、修正後の再レビューは行いません。",
-    "deferUncertain が true なら、自動修正できない懸念は保留し、最後まで残ったものを申し送ります。",
+    "action は done / fix / confirm。nextRound が null なら、修正後の再レビューは行いません。",
+    "有限回で自動修正できる指摘が無ければ、懸念だけで同じ差分を再レビューしません。",
+    "deferUncertain が true なら懸念を保留し、nextRound が null なら PR・完了案内で参照先を伝えます。",
   ].join("\n"),
   run: ({ args, operands }) => {
     const kind = requireKind(operands[0]);

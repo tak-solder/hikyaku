@@ -66,6 +66,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- `config` と `tokens` の任意の設定参照は、ブランチ・栞で未選択ならルート設定を使う。サイクルを省略した `--profile` の確認には既存サイクルの上書きを混ぜず、既存サイクルの what-if は引数で明示する。フェーズの作業開始は `config --require-cycle` を使い、`resolveCycle` の選択規則・未作成時の作成案内を維持した
+- 有限回のレビューで修正対象がなく懸念だけが残るとき、同じ差分の再レビューを省く。残る懸念は handoff の「残したこと」に置き、PR 本文・完了案内にはその節へのリンクと要点を示す（監督の統合 PR でも引き継ぐ）
+- `publicationStep` は呼び出し元がスキル名を明示し、そのスキルの最後の restart より後の PR だけを参照する
 - main から依存グラフの推移的簡約・状態の色分け、tasklist の厳密な引数検査、CLI 呼び出しと重複した指示文の整理を取り込んだ。tasklist の入力と表示は BP ではなく `--peak` / 予測ピークを使う
 - `review action` がレビュー回数に応じた自動修正・対応確認・再レビューの要否を返す。指摘の妥当性と重複は LLM が判断する
 - builder の振り返りを PR 作成前に移し、成果物の push をまとめた。planner / architect / builder / close-cycle は Draft PR を作り、作成後の `publish` ステップで公開とレビュアー依頼を終える。close-cycle の別 PR を作る followups は公開後に維持する
@@ -123,6 +126,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Migration
 
+- サイクルを省略する設定参照では、active が1件だけという理由でサイクル設定を重ねない。既存サイクルの設定を使う場合は、サイクルを明示するか、ブランチ・`cycle use` で選択する
 - 自分で確認してから Ready にする場合は `[pr] auto_ready = false` にする。conductor が取り込むフェーズの PR は、監督が設定に関わらず Ready にする。公開は再実行でき、既に Ready の PR に重ねて切り替えない
 
 

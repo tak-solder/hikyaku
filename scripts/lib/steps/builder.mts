@@ -111,6 +111,6 @@ export const BUILDER_STEPS: SkillSteps = {
       reason: () => "PR 作成前の振り返り",
     },
     { id: "pr", kind: "run", title: "PR の作成と完了の記録", evidence: prRecorded, recordsPr: true },
-    publicationStep(),
+    publicationStep("builder"),
   ],
 };

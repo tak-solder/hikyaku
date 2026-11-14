@@ -45,7 +45,7 @@ PLAN を終えたサイクルを、ARCHITECT から最後のビルドまで進�
 - [ ] 設定と対象サイクルを解決する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --require-cycle --json
 ```
 
 - 未初期化（`.hikyaku.config` が無い等）なら、`/hikyaku:init` を先に実行するよう伝えて**終了**する
@@ -319,6 +319,9 @@ git push origin --delete {フェーズのブランチ}
 最後のビルドを conductor ブランチに取り込んだら、CLOSE には進まない。close-cycle は全ビルドが
 デフォルトブランチにマージされていることを前提にしている（未マージの実装を永続ドキュメントに
 書くと、永続ドキュメントとサイクルドキュメントを分けた意味が無くなる）。
+
+以下の PR 作成・更新では、ビルドが残した「確度: 要確認」の懸念があれば、handoff の該当節への
+コミット固定リンクと要点を本文に反映し、完了の案内にも含める。懸念の全文は転記しない。
 
 - [ ] **作る前に、同じ向き（conductor ブランチ → デフォルトブランチ）で開いている PR が既に無いかを確かめる**。
   監督が Step 4 の直後に落ちて再実行されると、状態導出は `building` のまま（デフォルトブランチにはまだ

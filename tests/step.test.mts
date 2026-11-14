@@ -4,9 +4,25 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import type { ProgressEvent } from "../scripts/lib/progress.mts";
 import { currentRound, evaluate, type SkillSteps, type StepContext } from "../scripts/lib/steps/engine.mts";
+import { publicationStep } from "../scripts/lib/steps/publication.mts";
 import { cli, cliWith, succeeds, temporaryDirectory, workspace, write } from "./helpers.mts";
 
 const BUILD = "docs/hikyaku/cycles/001-test/build-01";
+
+test("publication: 明示したスキルの今回の PR だけを使い、restart 前の PR は拾わない", () => {
+  const events: ProgressEvent[] = [
+    { at: "2026-11-14T00:00:00Z", skill: "builder", step: "pr", result: "done", pr: "old" },
+    { at: "2026-11-14T00:01:00Z", skill: "builder", step: "*", result: "restart" },
+    { at: "2026-11-14T00:02:00Z", skill: "architect", step: "pr", result: "done", pr: "other-skill" },
+  ];
+  const ctx: StepContext = { config: {} as StepContext["config"], cycle: undefined,
+    unit: "arbitrary-unit", unitDirectory: "/unused", events };
+  const definition = publicationStep("builder");
+  assert.equal(definition.args?.(ctx)["pr"], undefined);
+  events.push({ at: "2026-11-14T00:03:00Z", skill: "builder", step: "pr", result: "done", pr: "current" });
+  assert.equal(definition.args?.(ctx)["pr"], "current", "unit 名からスキルを推測しない");
+  assert.equal(publicationStep("architect").args?.(ctx)["pr"], "other-skill");
+});
 
 /** サイクル 001 にビルド 1 を登録し、issue.md まで置いた状態 */
 function built(t: TestContext): string {

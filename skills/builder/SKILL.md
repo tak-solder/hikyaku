@@ -60,7 +60,7 @@ close-cycle がそれを素材として昇格させる。
 - [ ] 設定と対象サイクルを解決する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --require-cycle --json
 ```
 
 `$ARGUMENTS[0]` のサイクルを渡す。省略時は CLI が現在のブランチ → `.hikyaku.local` →
@@ -252,6 +252,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run doc build-{NN} {cycl
 明確な不整合・網羅漏れは反映する。主観的な指摘は無視してよい。
 
 ### 完了の案内
+
+「確度: 要確認」の懸念が残る場合は、要点と handoff.md の「残したこと」へのリンクも伝える。
+conductor の子は done ブロックの本文に含める。
 
 `done` が返ったら、次の状況を案内する。`overruns` があれば、まだ伝えていない超過もここで伝える。
 

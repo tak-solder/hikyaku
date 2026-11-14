@@ -5,7 +5,7 @@
 - [ ] 設定を解決する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --require-cycle --json
 ```
 
 `unsafeSplit`（安全でない分割を許すか）を取得する。予測ピークの判定の帯は `peakBands` にあり、

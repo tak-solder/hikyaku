@@ -45,6 +45,6 @@ export const PLANNER_STEPS: SkillSteps = {
       reason: () => "企画フェーズの最後の振り返り",
     },
     { id: "pr", kind: "run", title: "親 issue と PR の作成", recordsPr: true },
-    publicationStep(),
+    publicationStep("planner"),
   ],
 };

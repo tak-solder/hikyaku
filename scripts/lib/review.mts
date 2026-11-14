@@ -284,13 +284,14 @@ export function parseCodexResult(fileContent: string | undefined): ReviewOutcome
 export function reviewAction(input: {
   round: number; maxRounds: number; autoFix: boolean;
   hasFindings: boolean; uncertain: boolean; repeated: boolean;
-}): { action: "done" | "fix" | "review" | "confirm"; nextRound: number | null; deferUncertain: boolean } {
+}): { action: "done" | "fix" | "confirm"; nextRound: number | null; deferUncertain: boolean } {
   const { round, maxRounds, autoFix, hasFindings, uncertain, repeated } = input;
   if (!hasFindings && !uncertain) return { action: "done", nextRound: null, deferUncertain: false };
+  if (maxRounds > 0 && !hasFindings) return { action: "done", nextRound: null, deferUncertain: uncertain };
   if (maxRounds === 1) return { action: hasFindings ? "fix" : "done", nextRound: null, deferUncertain: uncertain };
   if (maxRounds > 1) {
     if (round === maxRounds) return { action: "confirm", nextRound: null, deferUncertain: false };
-    return { action: hasFindings ? "fix" : "review", nextRound: round + 1, deferUncertain: uncertain };
+    return { action: "fix", nextRound: round + 1, deferUncertain: uncertain };
   }
   if (repeated) return { action: "confirm", nextRound: null, deferUncertain: false };
   return { action: round > 1 && autoFix && !uncertain ? "fix" : "confirm", nextRound: round + 1, deferUncertain: false };

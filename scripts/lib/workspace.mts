@@ -79,22 +79,8 @@ export function resolveCycle(
     return context(hikyakuRoot, record, "explicit");
   }
 
-  // 2. 現在のブランチ。close フェーズもあるので status は問わない
-  if (options.branchNaming && options.currentBranch !== undefined) {
-    const record = matchBranch(records, options.currentBranch, options.branchNaming);
-    if (record) return context(hikyakuRoot, record, "branch");
-  }
-
-  // 3. ローカルの栞。指す先が active でなければ黙って捨てる。
-  // ここは active に限って引く（栞の曖昧さでエラーにはしない。無効なら捨てて次へ）
-  const localKey = options.local?.();
-  if (localKey !== undefined) {
-    const key = localKey;
-    const record = records.find(
-      (r) => r.status === "active" && (r.id === key || r.slug === key || cycleDirName(r) === key),
-    );
-    if (record) return context(hikyakuRoot, record, "local");
-  }
+  const selected = selectedCycle(hikyakuRoot, records, options);
+  if (selected) return selected;
 
   const active = records.filter((r) => r.status === "active");
   if (active.length === 1) return context(hikyakuRoot, active[0] as CycleRecord, "single-active");
@@ -116,6 +102,28 @@ export function resolveCycle(
       "選んだサイクルは hikyaku cycle use で記録すると、次回から尋ねずに済みます。",
     ].join("\n"),
   );
+}
+
+/** ブランチか栞で選択済みのサイクル。未選択なら undefined（件数からは選ばない）。 */
+function selectedCycle(hikyakuRoot: string, records: CycleRecord[], options: ResolveOptions): CycleContext | undefined {
+  // 現在のブランチ。close フェーズもあるので status は問わない
+  if (options.branchNaming && options.currentBranch !== undefined) {
+    const record = matchBranch(records, options.currentBranch, options.branchNaming);
+    if (record) return context(hikyakuRoot, record, "branch");
+  }
+
+  // ローカルの栞。指す先が active でなければ黙って捨てる。
+  // ここは active に限って引く（栞の曖昧さでエラーにはしない。無効なら捨てて次へ）
+  const localKey = options.local?.();
+  if (localKey !== undefined) {
+    const key = localKey;
+    const record = records.find(
+      (r) => r.status === "active" && (r.id === key || r.slug === key || cycleDirName(r) === key),
+    );
+    if (record) return context(hikyakuRoot, record, "local");
+  }
+
+  return undefined;
 }
 
 /**
@@ -192,7 +200,12 @@ export interface OpenedCycle {
 export function openCycle(args: ParsedArgs, key: string | undefined): OpenedCycle {
   const root = flagString(args, "root");
   const base = loadConfig({ root });
-  const ctx = resolveCycle(base.hikyakuRoot, key, {
+  const ctx = resolveCycle(base.hikyakuRoot, key, resolutionOptions(base));
+  return openContext(args, ctx);
+}
+
+function resolutionOptions(base: ResolvedConfig): ResolveOptions {
+  return {
     branchNaming: (record) => cycleBranchNaming(base, cycleDir(base.hikyakuRoot, record)),
     currentBranch: currentBranch(base.repoRoot),
     local: () => {
@@ -204,21 +217,27 @@ export function openCycle(args: ParsedArgs, key: string | undefined): OpenedCycl
         return undefined;
       }
     },
-  });
+  };
+}
+
+function openContext(args: ParsedArgs, ctx: CycleContext): OpenedCycle {
   const config = loadConfig({
-    root,
+    root: flagString(args, "root"),
     cycleDir: ctx.directory,
     profileOverride: flagString(args, "profile") ?? (ctx.record.profile || undefined),
   });
   return { config, context: ctx };
 }
 
-/** サイクルがまだ1つも無い場合だけ undefined を返す（init / create-cycle 用） */
+/** 設定表示などの任意選択。未選択と、サイクルを省略した profile 確認はルート設定を使う。 */
 export function openCycleIfAny(args: ParsedArgs, key: string | undefined): OpenedCycle | undefined {
+  if (key !== undefined) return openCycle(args, key);
+  if (flagString(args, "profile") !== undefined) return undefined;
   const base = loadConfig({ root: flagString(args, "root") });
   const path = cyclesPath(base.hikyakuRoot);
-  if (!existsSync(path) || loadCycles(base.hikyakuRoot).length === 0) return undefined;
-  return openCycle(args, key);
+  if (!existsSync(path)) return undefined;
+  const selected = selectedCycle(base.hikyakuRoot, loadCycles(base.hikyakuRoot), resolutionOptions(base));
+  return selected === undefined ? undefined : openContext(args, selected);
 }
 
 export function writeTasklist(context: CycleContext, builds: BuildRecord[]): void {

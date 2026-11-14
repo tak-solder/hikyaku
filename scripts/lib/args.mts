@@ -18,6 +18,7 @@ const BOOLEAN_FLAGS = new Set([
   "verbose",
   "no-fetch",
   "for-merge",
+  "require-cycle",
   "has-findings",
   "uncertain",
   "repeated",

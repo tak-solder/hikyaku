@@ -66,7 +66,7 @@ export const CLOSE_CYCLE_STEPS: SkillSteps = {
     { id: "write", kind: "run", title: "承認された内容の書き込みと検証" },
     { id: "close", kind: "run", title: "サイクルの終了（cycle close）", evidence: cycleClosed },
     { id: "pr", kind: "run", title: "PR の作成", recordsPr: true },
-    publicationStep(),
+    publicationStep("close-cycle"),
     {
       id: "followups",
       kind: "run",

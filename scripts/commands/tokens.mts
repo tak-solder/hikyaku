@@ -75,7 +75,7 @@ const COMMON_FLAGS = new Set(["json", "root", "profile", "help", "version", "dry
 /** サイクルが決まればそのサイクルの設定から。無ければルート設定 */
 function configFor(args: ParsedArgs, operand: string | undefined): ResolvedConfig {
   const opened = openCycleIfAny(args, operand);
-  return opened ? opened.config : loadConfig({ root: flagString(args, "root") });
+  return opened ? opened.config : loadConfig({ root: flagString(args, "root"), profileOverride: flagString(args, "profile") });
 }
 
 function guideSource(config: ResolvedConfig, kind: "project" | "standard", path: string): string {
@@ -89,6 +89,8 @@ register({
   details: [
     `{HIKYAKU_ROOT}/${TOKEN_GUIDE_DIR}/${TOKEN_GUIDE_FILE} があればそれが、無ければプラグインの標準のガイドが有効です。`,
     "プロジェクトのガイドは標準を置き換えます（足し合わせません）。見積もりの前に、ここで示したパスを読んでください。",
+    "サイクルを省略した設定参照は、ブランチか栞で選択済みならそのサイクル、未選択ならルートです。",
+    "サイクルを省略して --profile を指定すると、既存のサイクルを参照せずルート設定に当てます。",
     "",
     "ガイドは先頭に version（版）と hash（本文のハッシュ）を持ちます。本文を変えたら",
     "hikyaku tokens stamp で版を上げてください。hash が本文と合わなければ、ここと validate が知らせます。",

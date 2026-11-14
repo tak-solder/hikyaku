@@ -220,6 +220,6 @@ export const ARCHITECT_STEPS: SkillSteps = {
       recordsPr: true,
       args: (ctx) => ({ designChoiceGate: ctx.config.gates.designChoice, round: roundOf(ctx) }),
     },
-    publicationStep((ctx) => roundOf(ctx) !== "return"),
+    publicationStep("architect", (ctx) => roundOf(ctx) !== "return"),
   ],
 };
