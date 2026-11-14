@@ -27,6 +27,7 @@ import {
   parseClaudeResult,
   parseCodexResult,
   planReview,
+  reviewAction,
   securityPrompt,
   stripFrontmatter,
   type ReviewInvocation,
@@ -313,6 +314,36 @@ register({
     emit({ ...plan, round, dryRun, commandLine, output: outputPath, seconds, result: outcome.text }, () =>
       [`${plan.kind} のレビュー（${plan.provider}・ラウンド ${round}・${seconds} 秒）: ${outputPath}`, "", outcome.text].join("\n"),
     );
+  },
+});
+
+register({
+  name: "review action",
+  summary: "レビュー指摘への対応確認と、再レビューの要否を返す",
+  usage: "hikyaku review action <code|security> <phase> [<cycle>] --round <n> [--has-findings] [--uncertain] [--repeated] [--json]",
+  options: ["round", "has-findings", "uncertain", "repeated"],
+  maxOperands: 3,
+  details: [
+    "指摘の妥当性と重複は呼び出し元が判断し、妥当かつスコープ内の指摘があれば --has-findings を渡します。",
+    "自動修正できない懸念（スコープ外を含む）は --uncertain、繰り返した指摘は --repeated で渡します。",
+    "action は done / fix / confirm。nextRound が null なら、修正後の再レビューは行いません。",
+    "有限回で自動修正できる指摘が無ければ、懸念だけで同じ差分を再レビューしません。",
+    "deferUncertain が true なら懸念を保留し、nextRound が null なら PR・完了案内で参照先を伝えます。",
+  ].join("\n"),
+  run: ({ args, operands }) => {
+    const kind = requireKind(operands[0]);
+    if (kind === "doc") throw new HikyakuError("review action は code / security の指摘への対応に使います");
+    const phase = requirePhase(operands[1]);
+    const { config } = scopeFor(args, phase, operands[2]);
+    const settings = config.review[kind];
+    const round = flagInteger(args, "round");
+    if (round === undefined || round < 1 || (settings.maxRounds > 0 && round > settings.maxRounds)) {
+      throw new HikyakuError("--round は 1 以上で max_rounds 以下の整数を指定してください（max_rounds = 0 は上限なし）");
+    }
+    const decision = reviewAction({ round, ...settings,
+      hasFindings: flagBoolean(args, "has-findings"), uncertain: flagBoolean(args, "uncertain"), repeated: flagBoolean(args, "repeated"),
+    });
+    emit(decision, () => `対応: ${decision.action} / 次のレビュー: ${decision.nextRound ?? "なし"} / 懸念を保留: ${decision.deferUncertain}`);
   },
 });
 

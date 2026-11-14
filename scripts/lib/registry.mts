@@ -5,7 +5,7 @@
  * これにより SKILL.md から引数リファレンスを追い出せる。
  */
 
-import type { ParsedArgs } from "./args.mts";
+import { GLOBAL_FLAGS, type ParsedArgs } from "./args.mts";
 import { HikyakuError } from "./errors.mts";
 
 export interface CommandContext {
@@ -23,6 +23,14 @@ export interface Command {
   details?: string;
   /** 書き込みを伴うか（--dry-run に対応すべきコマンド） */
   writes?: boolean;
+  /**
+   * 受け付けるオプション（グローバルオプション以外、-- を除いた名前）。
+   * 宣言したコマンドでは、ここに無いオプションと maxOperands を超える位置引数を
+   * 実行前に拒否する。指定したつもりの値が黙って落ちたまま書き込みが成功するのを防ぐ
+   */
+  options?: readonly string[];
+  /** 受け付ける位置引数の最大数（options を宣言したときだけ使う。既定 0） */
+  maxOperands?: number;
   run: (ctx: CommandContext) => void | Promise<void>;
 }
 
@@ -61,6 +69,35 @@ export function resolveCommand(positional: string[]): { command: Command; operan
     );
   }
   throw new HikyakuError(`不明なコマンドです: ${positional.join(" ")}`, "hikyaku help で一覧を表示します。");
+}
+
+/**
+ * options を宣言したコマンドについて、不明なオプションと余分な位置引数を拒否する。
+ *
+ * parseArgs は知らないオプションも受け取るため、ここで弾かないと
+ * "--deps 1,2"（空白を含む1引数）や --depz のタイプミスが黙って無視される。
+ */
+export function assertArguments(command: Command, args: ParsedArgs, operands: string[]): void {
+  const options = command.options;
+  if (options === undefined) return;
+
+  for (const flag of args.flags.keys()) {
+    if (GLOBAL_FLAGS.has(flag) || options.includes(flag)) continue;
+    const joined = /^(\S+)\s+(.+)$/.exec(flag);
+    const hint =
+      joined && (GLOBAL_FLAGS.has(joined[1] as string) || options.includes(joined[1] as string))
+        ? `オプションと値が1つの引数で渡されています。--${joined[1]} と ${joined[2]} を別の引数に分けるか、--${joined[1]}=${joined[2]} の形で渡してください。`
+        : `使用できるオプション: ${options.length === 0 ? "（グローバルオプションのみ）" : options.map((o) => `--${o}`).join(" ")}`;
+    throw new HikyakuError(`不明なオプションです: --${flag}`, `${hint}\n使い方: ${command.usage}`);
+  }
+
+  const maxOperands = command.maxOperands ?? 0;
+  if (operands.length > maxOperands) {
+    throw new HikyakuError(
+      `余分な引数があります: ${operands.slice(maxOperands).map((o) => JSON.stringify(o)).join(" ")}`,
+      `使い方: ${command.usage}`,
+    );
+  }
 }
 
 function namespaceOf(prefix: string): Command[] {

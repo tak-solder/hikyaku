@@ -22,6 +22,7 @@
  * （最後のステップが条件付きだと、記録だけからは手順を終えたかが分からなくなる）。
  */
 
+import { publicationStep } from "./publication.mts";
 import { collectPromotions } from "../promotions.mts";
 import { collectPeakRecords, guideReview } from "../tokens-history.mts";
 import { currentEvents, type SkillSteps, type StepContext } from "./engine.mts";
@@ -65,6 +66,7 @@ export const CLOSE_CYCLE_STEPS: SkillSteps = {
     { id: "write", kind: "run", title: "承認された内容の書き込みと検証" },
     { id: "close", kind: "run", title: "サイクルの終了（cycle close）", evidence: cycleClosed },
     { id: "pr", kind: "run", title: "PR の作成", recordsPr: true },
+    publicationStep("close-cycle"),
     {
       id: "followups",
       kind: "run",

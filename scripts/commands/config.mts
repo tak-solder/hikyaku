@@ -1,16 +1,16 @@
 /** config — 解決済みの設定を出力する */
 
-import { flagString } from "../lib/args.mts";
+import { flagBoolean, flagString } from "../lib/args.mts";
 import { describeProviderRules, loadConfig } from "../lib/config.mts";
 import { DEFAULT_BRANCH_MARK, resolveUnsafeSplit } from "../lib/integrity.mts";
 import { emit, warn } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
-import { describeSource, openCycleIfAny } from "../lib/workspace.mts";
+import { describeSource, openCycle, openCycleIfAny } from "../lib/workspace.mts";
 
 register({
   name: "config",
   summary: "設定をマージし、対象サイクルの profile を展開して表示する",
-  usage: "hikyaku config [<cycle>] [--root <path>] [--profile <name>] [--json]",
+  usage: "hikyaku config [<cycle>] [--root <path>] [--profile <name>] [--require-cycle] [--json]",
   details: [
     "設定は次の順にキー単位でマージされます:",
     "  1. リポジトリルート/.hikyaku.config（必須）",
@@ -19,10 +19,13 @@ register({
     "サイクル側で上書きできないのは hikyaku_root と profile だけです",
     "（前者はワークスペースの所在そのもの、後者は cycles.md が唯一の正）。",
     "",
-    "サイクルを省略した場合は、現在のブランチ → .hikyaku.local → 唯一の進行中サイクル",
-    "の順に対象を決めます。決められなければ候補を挙げてエラーにするので、",
-    "ユーザーに尋ねてから指定し直してください。サイクルがまだ1つも無いときは",
-    "リポジトリルートの設定だけを返します（init / create-cycle 用）。",
+    "サイクルを省略した場合は、現在のブランチ → .hikyaku.local の順で選択済みのサイクルを使い、",
+    "未選択ならリポジトリルートの設定を返します。進行中サイクルの件数からは選びません。",
+    "サイクルを省略して --profile を指定すると、選択済みのサイクルも参照せず、",
+    "ルート設定に profile を当てた結果を返します（新しいサイクルの profile 確認用）。",
+    "既存サイクルでの what-if は config <cycle> --profile <name> と明示してください。",
+    "--require-cycle は作業開始用です。引数 → ブランチ → 栞 → 唯一の active の順で対象を必須解決し、",
+    "未作成や未選択で複数候補があればエラーにします。--profile は解決したサイクルに適用します。",
     "",
     "profile は承認ゲートとレビューの既定値をまとめて与えます。",
     "個別キー（architecture_gate, plan_review, test_spec_review など）で上書きできます。",
@@ -37,7 +40,9 @@ register({
     "デフォルトブランチ（origin/HEAD）が分からなければ allowed: false に倒します。",
   ].join("\n"),
   run: ({ args, operands }) => {
-    const opened = openCycleIfAny(args, operands[0]);
+    const opened = flagBoolean(args, "require-cycle")
+      ? openCycle(args, operands[0])
+      : openCycleIfAny(args, operands[0]);
     const config = opened
       ? opened.config
       : loadConfig({

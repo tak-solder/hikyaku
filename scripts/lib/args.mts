@@ -17,8 +17,16 @@ const BOOLEAN_FLAGS = new Set([
   "all",
   "verbose",
   "no-fetch",
+  "for-merge",
+  "require-cycle",
+  "has-findings",
+  "uncertain",
+  "repeated",
   "ref",
 ]);
+
+/** すべてのコマンドが受け付けるグローバルオプション */
+export const GLOBAL_FLAGS: ReadonlySet<string> = new Set(["json", "root", "profile", "help", "version", "dry-run"]);
 
 export interface ParsedArgs {
   positional: string[];

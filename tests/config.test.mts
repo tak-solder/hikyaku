@@ -40,6 +40,58 @@ test("設定: --profile の what-if は保存された profile を書き換え�
   assert.deepEqual(snapshot(directory), before);
 });
 
+test("設定: 作成前の profile 確認は既存サイクルを参照せず、通常の作業選択は厳密に解決する", (t) => {
+  const empty = workspace(t);
+  assert.equal(JSON.parse(succeeds(empty, "config", "--json")).cycle, undefined);
+  const missing = cli(empty, "config", "--require-cycle", "--json");
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /サイクルがまだありません/);
+  const directory = workspace(t, true);
+  const config = (...args: string[]) => JSON.parse(succeeds(directory, "config", ...args, "--json"));
+  write(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config", "[review]\nmax_rounds = 5\n");
+  assert.equal(config().cycle, undefined, "1件だけでも設定表示はサイクルを選ばない");
+  assert.equal(config("--profile", "express").review.code.maxRounds, 1);
+  assert.equal(config("--require-cycle").cycleSource, "single-active");
+  assert.equal(config("--require-cycle", "--profile", "express").review.code.maxRounds, 5);
+  assert.equal(JSON.parse(succeeds(directory, "tasklist", "read", "--json")).cycle, "001-test", "作業では唯一の active を引き続き使う");
+
+  succeeds(directory, "cycle", "new", "other", "--profile", "standard");
+  write(directory, "docs/hikyaku/cycles/002-other/.hikyaku.config", "[review]\nmax_rounds = 9\n");
+  assert.equal(config().cycle, undefined, "複数 active でも設定表示は止まらない");
+  const ambiguous = cli(directory, "config", "--require-cycle", "--json");
+  assert.equal(ambiguous.status, 1);
+  assert.match(ambiguous.stderr, /対象サイクルを決められません/);
+  assert.equal(cli(directory, "tasklist", "read").status, 1, "作業で曖昧なサイクルは推測しない");
+  succeeds(directory, "cycle", "use", "002");
+  assert.equal(config().review.code.maxRounds, 9, "通常表示は栞のサイクルを使う");
+  const preview = config("--profile", "express");
+  assert.equal(preview.cycle, undefined);
+  assert.equal(preview.review.code.maxRounds, 1);
+  assert.deepEqual(preview.sources, [join(directory, ".hikyaku.config")]);
+  assert.equal(config("--require-cycle", "002").cycleSource, "explicit", "真偽値フラグは後続サイクルを消費しない");
+  assert.equal(config("002", "--profile", "express").review.code.maxRounds, 9, "明示したサイクルの上書きは保持する");
+  assert.equal(cli(directory, "config", "missing", "--profile", "express").status, 1);
+});
+
+test("設定: ブランチを栞より優先し、profile 単独の確認は両方を参照しない", (t) => {
+  const directory = workspace(t, true);
+  succeeds(directory, "cycle", "new", "other", "--profile", "standard");
+  write(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config", "[review]\nmax_rounds = 5\n[context]\nsplit_above = '600k'\n");
+  succeeds(directory, "cycle", "use", "002");
+  write(directory, ".git/HEAD", "ref: refs/heads/hikyaku/001-test/plan\n");
+  const config = JSON.parse(succeeds(directory, "config", "--json"));
+  assert.equal(config.cycle, "001-test");
+  assert.equal(config.cycleSource, "branch");
+  assert.equal(config.review.code.maxRounds, 5);
+  assert.equal(JSON.parse(succeeds(directory, "config", "--profile", "express", "--json")).review.code.maxRounds, 1);
+  assert.equal(JSON.parse(succeeds(directory, "tokens", "guide", "--json")).bands.splitAbove, 600_000);
+  assert.equal(JSON.parse(succeeds(directory, "tokens", "guide", "--profile", "express", "--json")).bands.splitAbove, 450_000);
+
+  write(directory, ".git/HEAD", "ref: refs/heads/main\n");
+  succeeds(directory, "cycle", "close", "002", "--summary", "test");
+  assert.equal(JSON.parse(succeeds(directory, "config", "--json")).cycle, undefined, "closed の栞は参照しない");
+});
+
 for (const content of [
   'hikyaku_root = "other"',
   'profile = "economy"',

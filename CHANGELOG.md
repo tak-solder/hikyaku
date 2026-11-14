@@ -66,6 +66,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- `config` と `tokens` の任意の設定参照は、ブランチ・栞で未選択ならルート設定を使う。サイクルを省略した `--profile` の確認には既存サイクルの上書きを混ぜず、既存サイクルの what-if は引数で明示する。フェーズの作業開始は `config --require-cycle` を使い、`resolveCycle` の選択規則・未作成時の作成案内を維持した
+- 有限回のレビューで修正対象がなく懸念だけが残るとき、同じ差分の再レビューを省く。残る懸念は handoff の「残したこと」に置き、PR 本文・完了案内にはその節へのリンクと要点を示す（監督の統合 PR でも引き継ぐ）
+- `publicationStep` は呼び出し元がスキル名を明示し、そのスキルの最後の restart より後の PR だけを参照する
+- main から依存グラフの推移的簡約・状態の色分け、tasklist の厳密な引数検査、CLI 呼び出しと重複した指示文の整理を取り込んだ。tasklist の入力と表示は BP ではなく `--peak` / 予測ピークを使う
+- `review action` がレビュー回数に応じた自動修正・対応確認・再レビューの要否を返す。指摘の妥当性と重複は LLM が判断する
+- builder の振り返りを PR 作成前に移し、成果物の push をまとめた。planner / architect / builder / close-cycle は Draft PR を作り、作成後の `publish` ステップで公開とレビュアー依頼を終える。close-cycle の別 PR を作る followups は公開後に維持する
+- `pr ready` が `[pr] auto_ready`（既定 true）と実行元から Ready への切り替えを決める。conductor の子は Draft のまま返し、監督が取り込む前に `--for-merge` で公開する。公開の失敗は手順の完了として扱わない。PR の URL は状態確認・公開・再実行の案内まで保持し、既定リポジトリの同番号の PR に操作対象が変わらないようにした
+
+
 - builder: Step 3 以降（plan → レビュー → G8 → 実装 → 検証 → コードレビュー → handoff → PR → 振り返り）を `step next` の転送ループに置き換えた。手順の順序・ゲート・承認は変えていない。各ステップの指示は `skills/builder/steps/<step>.md` に分け、実行するステップの指示だけを読む。SKILL.md は約 35KB から約 16KB になった。差し戻しと PR レビュー対応の手順は `references/return.md` / `references/pr-feedback.md` に移した
 - builder: G7 / G8 の承認は、差し戻すか前のステップを報告し直すまで有効。承認後の成果物の変更では自動で無効にならず、変更は Git の履歴で追う。前のステップを報告し直すと、そこから後ろはやり直しになる
 - builder: `plan` の `done` には見積もり直した予測ピーク（`--peak`。`380k` のように書ける）が、`pr` の `done` には PR の URL か番号（`--pr`）が必須。`step next` が `stop` を返す状態（差し戻し中など）では、`step report` も受け付けない
@@ -116,6 +125,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - close-cycle による見積もりのガイドの補正（昇格先としての token-guide）
 
 ### Migration
+
+- サイクルを省略する設定参照では、active が1件だけという理由でサイクル設定を重ねない。既存サイクルの設定を使う場合は、サイクルを明示するか、ブランチ・`cycle use` で選択する
+- 自分で確認してから Ready にする場合は `[pr] auto_ready = false` にする。conductor が取り込むフェーズの PR は、監督が設定に関わらず Ready にする。公開は再実行でき、既に Ready の PR に重ねて切り替えない
+
 
 - **BP は予測ピークに置き換わり、換算できないので自動では移行しない。** リポジトリルートの `.hikyaku.config` の `bp_max` を削除する（閉じたサイクルの `.hikyaku.config` に残った `bp_max` / `[bp_actual]` は履歴として読み飛ばす。進行中のサイクルに残っていると、そのサイクルの `step`・`tokens estimate`・`tasklist` の書き込みが止まり、`validate` も知らせる）（分割の境目は `[context] split_above`、既定 450k）。`{HIKYAKU_ROOT}/bp-guide/README.md` にリポジトリ固有の数え方を書いていたら、`/hikyaku:token-guide` で見積もりのガイドに書き直してから `bp-guide/` を削除する。`[pr] reviewers_skip` の `bp-guide` は `token-guide` に直す（`docs/migration/v2-to-v3.md`）
 - 見積もりのガイドは、無ければ標準で動くので、置かなくてよい。`/hikyaku:token-guide` が補正するときに作られる

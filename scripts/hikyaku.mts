@@ -16,7 +16,7 @@ import { flagBoolean, parseArgs } from "./lib/args.mts";
 import { EXIT_ERROR, EXIT_OK, EXIT_VALIDATION, HikyakuError, ValidationError } from "./lib/errors.mts";
 import { isJsonMode, setJsonMode } from "./lib/output.mts";
 import { pluginVersion } from "./lib/paths.mts";
-import { renderCommandHelp, renderOverview, resolveCommand } from "./lib/registry.mts";
+import { assertArguments, renderCommandHelp, renderOverview, resolveCommand } from "./lib/registry.mts";
 
 // コマンドの登録（import の副作用で register される）
 import "./commands/meta.mts";
@@ -36,6 +36,7 @@ import "./commands/naming.mts";
 import "./commands/tokens.mts";
 import "./commands/conductor.mts";
 import "./commands/reviewers.mts";
+import "./commands/pr-ready.mts";
 import "./commands/review.mts";
 import "./commands/step.mts";
 
@@ -66,6 +67,7 @@ async function main(): Promise<number> {
     return EXIT_OK;
   }
 
+  assertArguments(command, args, operands);
   await command.run({ args, operands });
   return EXIT_OK;
 }

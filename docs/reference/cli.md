@@ -108,6 +108,9 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 
 ビルドの分割に専用コマンドはありません。「元ビルドの `update` + 新ビルドの `add`」で表現します。
 
+`tasklist` のコマンドは、受け付けないオプションと余分な位置引数をエラー（終了コード 1）にして書き込みません。シェルの関数から `--deps 1,2` が1つの引数で渡ったときや、オプション名のタイプミスで依存が黙って落ちると、依存グラフが壊れたまま着手可能なビルドが増えるためです。`add` と `update` は、追加・更新したビルドの予測ピークと依存を出力の見出しにも表示します。
+
+
 ## 手順
 
 | コマンド | いつ使うか |
@@ -163,6 +166,7 @@ build-manager や retrospective のような内部スキルは、`--skill` を�
 | `pr title <phase> [<cycle>]` | PR タイトルを生成するとき |
 | `pr base <phase> [<cycle>]` | PR のマージ先を決めるとき。PR を作る直前。`--ref` でローカルに解決できる ref（レビューの差分基準）を返す |
 | `session title <phase> [<cycle>]` | セッション名を生成するとき |
+| `pr ready` | 設定と実行元に従って Draft PR を公開するとき。conductor は取り込み前の公開にも使う |
 | `pr request-reviewers <phase> [<cycle>] --pr <PR>` | PR を作った直後に、設定のレビュアーをアサインするとき（通常は各スキルが呼ぶ） |
 
 `branch verify` は生成と検証を兼ねています。名前を生成するだけのコマンドを別に持つと、生成しただけで確認しないまま作業する余地が残るためです。
@@ -177,6 +181,7 @@ build-manager や retrospective のような内部スキルは、`--skill` を�
 
 | コマンド | いつ使うか |
 |---|---|
+| `review action` | コード・セキュリティの指摘の妥当性を判断したあと、対応確認と再レビューの要否を設定から決めるとき |
 | `review resolve <kind> <phase> [<cycle>] --self <provider>` | レビューをどのプロバイダ・モデル・回数で、どう起動するか確かめるとき |
 | `review run <kind> <phase> [<cycle>] --self <provider>` | コードやセキュリティのレビューを別プロセスで実行するとき（builder が呼ぶ）。別プロバイダの doc-reviewer も同じ |
 

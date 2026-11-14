@@ -4,9 +4,25 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import type { ProgressEvent } from "../scripts/lib/progress.mts";
 import { currentRound, evaluate, type SkillSteps, type StepContext } from "../scripts/lib/steps/engine.mts";
+import { publicationStep } from "../scripts/lib/steps/publication.mts";
 import { cli, cliWith, succeeds, temporaryDirectory, workspace, write } from "./helpers.mts";
 
 const BUILD = "docs/hikyaku/cycles/001-test/build-01";
+
+test("publication: 明示したスキルの今回の PR だけを使い、restart 前の PR は拾わない", () => {
+  const events: ProgressEvent[] = [
+    { at: "2026-11-14T00:00:00Z", skill: "builder", step: "pr", result: "done", pr: "old" },
+    { at: "2026-11-14T00:01:00Z", skill: "builder", step: "*", result: "restart" },
+    { at: "2026-11-14T00:02:00Z", skill: "architect", step: "pr", result: "done", pr: "other-skill" },
+  ];
+  const ctx: StepContext = { config: {} as StepContext["config"], cycle: undefined,
+    unit: "arbitrary-unit", unitDirectory: "/unused", events };
+  const definition = publicationStep("builder");
+  assert.equal(definition.args?.(ctx)["pr"], undefined);
+  events.push({ at: "2026-11-14T00:03:00Z", skill: "builder", step: "pr", result: "done", pr: "current" });
+  assert.equal(definition.args?.(ctx)["pr"], "current", "unit 名からスキルを推測しない");
+  assert.equal(publicationStep("architect").args?.(ctx)["pr"], "other-skill");
+});
 
 /** サイクル 001 にビルド 1 を登録し、issue.md まで置いた状態 */
 function built(t: TestContext): string {
@@ -266,16 +282,24 @@ test("step: plan の done には見積もり直した予測ピークが必須（
   assert.equal(report(directory, "plan-review", "--result", "done").step, "test-spec");
 });
 
-test("step: PR 列が埋まるまで pr は完了にならず、最後まで進むと done", (t) => {
+test("step: 振り返りを PR 前に終え、PR 列と URL が揃うまで完了にしない", (t) => {
   const directory = built(t);
-  configure(directory, 'retrospective = "skip"');
+  configure(directory, 'retrospective = "auto"');
   upToG8(directory);
   report(directory, "G8", "--result", "approved");
   report(directory, "implement", "--result", "done");
   report(directory, "verify", "--result", "done");
   report(directory, "review", "--result", "done");
   write(directory, `${BUILD}/handoff.md`);
-  report(directory, "handoff", "--result", "done");
+  assert.equal(report(directory, "handoff", "--result", "done").step, "retrospective");
+  const premature = cli(directory, "step", "report", "build-01", "pr", "001", "--result", "done", "--pr", "1");
+  assert.equal(premature.status, 1, "振り返り前に PR 作成を完了できない");
+  assert.match(premature.stderr, /現在地のステップ（retrospective）/);
+  report(directory, "peak-actual", "--skill", "retrospective", "--result", "done");
+  report(directory, "analyze", "--skill", "retrospective", "--result", "done");
+  write(directory, `${BUILD}/retrospective.md`, "# 振り返り\n");
+  assert.equal(report(directory, "write", "--skill", "retrospective", "--result", "done").kind, "done");
+  assert.equal(report(directory, "retrospective", "--result", "done").step, "pr");
   const early = cli(directory, "step", "report", "build-01", "pr", "001", "--result", "done", "--pr", "https://github.com/o/r/pull/1");
   assert.equal(early.status, 1);
   succeeds(directory, "tasklist", "done", "001", "--id", "1", "--pr", "https://github.com/o/r/pull/1");
@@ -289,8 +313,11 @@ test("step: PR 列が埋まるまで pr は完了にならず、最後まで進�
   const misplaced = cli(directory, "step", "report", "build-01", "handoff", "001", "--result", "done", "--pr", "1");
   assert.equal(misplaced.status, 1);
   assert.match(misplaced.stderr, /--pr を添えられません/);
-  assert.equal(report(directory, "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1").kind, "done");
-  assert.equal(events(directory).at(-1)?.["pr"], "https://github.com/o/r/pull/1");
+  assert.equal(report(directory, "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1").step, "publish");
+  assert.equal(next(directory).step, "publish", "PR の URL があっても公開の処理が残っている");
+  assert.equal(report(directory, "publish", "--result", "failed", "--reason", "Ready にできなかった").step, "publish", "失敗を報告しても公開は未完了のまま");
+  assert.equal(report(directory, "publish", "--result", "done").kind, "done", "公開を再実行してから完了になる");
+  assert.equal(events(directory).findLast((e) => e["step"] === "pr")?.["pr"], "https://github.com/o/r/pull/1");
 });
 
 test("engine: PR を作るステップは、記録に PR の無い done を完了とみなさない", () => {

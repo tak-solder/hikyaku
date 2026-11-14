@@ -23,7 +23,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve security build-{
 
 `--self` にはメインのセッションのプロバイダを渡す（`provider = "auto"` と `provider_for` の解決に使う）。
 `enabled` は `code_review` / `security_review` の値、`maxRounds` は回数の上限（0 は無制限）、
-`autoFix` は2ラウンド目以降の確認を省くかどうか。`base.ref` が差分の基準で、
+対応確認と再レビューの要否は `review action` で解決する。`base.ref` が差分の基準で、
 スタックしていればスタック元になる。**デフォルトブランチを決め打ちしない。**
 
 - [ ] `code` の `enabled` が true なら（全プロファイル）、code のレビューを行う
@@ -35,18 +35,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve security build-{
 | `on`（thorough） | 常に起動する |
 | `recommended`（express / economy / standard） | 判定基準に該当する場合のみ、起動するか確認する |
 
-`recommended` の場合、対象ビルドの `issue.md` と実際の diff を見て、
-`[review.security].triggers` に該当するか判定する。`config --json` の
-`security.triggers` に基準が入っている（未設定なら既定の3カテゴリ）。
-
-```
-- 個人情報・秘密情報を扱う（氏名/住所/連絡先/生年月日、パスワード、トークン、APIキー）
-- 認証・認可（ログイン、セッション、権限判定、アクセス制御）
-- 決済（支払い、カード情報、請求、返金）
-```
-
-該当する場合は判定根拠を一行で示して確認する。ヒューリスティックである以上
-外れるので、ユーザーが上書きできる形にする。
+`recommended` の場合、対象ビルドの `issue.md` と実際の diff が、`config --json` の
+`security.triggers` の基準に該当するか判定する。該当する場合は判定根拠を一行で示して確認する。
+外れることがあるので、ユーザーが上書きできる形にする。
 
 ```
 このビルドは「認証・認可」に該当する変更を含みます（auth/session.ts の権限判定を変更）。
@@ -80,16 +71,27 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run security build-{NN} 
     同じプロバイダが同じ指摘を2回出力することもある
   - 「確度が低い懸念」は「確度: 要確認」ラベルを保持したまま別枠で提示する
   - 2ラウンド目以降は、前のラウンドの出力（返ったパスと同じディレクトリの `round-{n-1}-*.md`）と比べる
-- [ ] 指摘が0件なら、パスとして `done` を報告する
-- [ ] 統合した指摘をユーザーに提示し、対応を決める（ask: review-findings）
-  - 今修正する — 修正し、verify と同じ検証を通し、追加でコミットして、ラウンド n+1 のレビューへ
-  - 新ビルド化して後で対応 — `/hikyaku:build-manager` を呼び出して新ビルドを追加する
-  - そのまま進める — 指摘を `handoff.md` の「残したこと」に記録する
-  - `autoFix` が true で2ラウンド目以降なら、確認を省いて「今修正する」として扱う。
-    ただし「確度: 要確認」の懸念と、次の打ち切りに当たる場合は確認する
-- [ ] 次のラウンドへ進む前に、打ち切るか判定する
-  - `maxRounds` が 0 でなく、n が `maxRounds` に達した — 残った指摘を示して対応を決める（ask: review-findings）。
-    選べるのは「修正して再レビューせずに進める」「新ビルド化」「そのまま進める」
-  - 前のラウンドと同じ指摘が繰り返された — 修正しても解消していない。`maxRounds` が 0（無制限）でも
-    打ち切り、その指摘を示して対応を決める（ask: review-findings）
-- [ ] 残った指摘すべてで「新ビルド化」か「そのまま進める」を選んだら、パスとして `done` を報告する
+- [ ] 統合した指摘をコード・承認済み仕様・スコープに照らして判断する。不採用の指摘には理由を残す。
+  前ラウンドの保留も確認し、未解決なら今回の指摘に含める
+- [ ] 有効な種類ごとに、対応と次のラウンドを解決する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review action {code|security} build-{NN} {cycle} --round {n} {判定したフラグ} --json
+```
+
+妥当かつ承認済みスコープ内の指摘には `--has-findings`、自動修正できない懸念には `--uncertain`、
+前回から繰り返した指摘には `--repeated` を添える。妥当性・重複は自分で判断し、回数の比較は CLI に任せる。
+
+| action | すること |
+|---|---|
+| `done` | その種類のレビューを終える |
+| `fix` | 妥当な指摘を修正し、verify と同じ検証を通してコミットする |
+| `confirm` | 未解決の指摘を提示して対応を決める（ask: review-findings）。修正、新ビルド化、そのまま進める、から選ぶ |
+
+- `deferUncertain` が true なら、自動修正できない懸念を保留する。`nextRound` があるあいだは次のレビューにも含める。
+  `nextRound` が null なら、その種類のレビューを終え、handoff の「残したこと」に「確度: 要確認」と理由を残す。
+  PR 本文と完了の案内では、その節へのリンクと要点を伝える（全文やチェックリストを転記しない）
+- 修正して継続するときは、`nextRound` があればそのラウンドで再レビューし、無ければその種類を終える。
+  全指摘を新ビルド化するか、そのまま進めると決めた場合も、その種類を終える
+- 両方のレビューを終えたら `done` を報告する。保留・不採用・意図的に残した指摘は理由とともに handoff に残す
+- 設計の前提が崩れた場合は、SKILL.md の「architect への差し戻し」に従う

@@ -20,6 +20,7 @@
  * 消すだけで差し戻しを解決できてしまうため。
  */
 
+import { publicationStep } from "./publication.mts";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { loadCycles } from "../cycles.mts";
@@ -219,5 +220,6 @@ export const ARCHITECT_STEPS: SkillSteps = {
       recordsPr: true,
       args: (ctx) => ({ designChoiceGate: ctx.config.gates.designChoice, round: roundOf(ctx) }),
     },
+    publicationStep("architect", (ctx) => roundOf(ctx) !== "return"),
   ],
 };

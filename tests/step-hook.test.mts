@@ -182,6 +182,7 @@ test("conductor parse / step hook: cycle close のあとも CLOSE の手順を�
   assert.match(blocked?.reason ?? "", /close-cycle close/);
 
   reportAs(t, directory, "close", "pr", "--result", "done", ...PR);
+  reportAs(t, directory, "close", "publish", "--result", "done");
   // PR のあとの followups が残っていれば、まだ止める
   assert.match(hook(directory, { session_id: SESSION })?.reason ?? "", /close-cycle close/);
   reportAs(t, directory, "close", "followups", "--result", "done");
@@ -243,6 +244,7 @@ test("step hook stop: 手順を終えたあとに呼び直した振り返り（P
   for (const step of ["inputs", "scope", "user-stories", "review"]) reportAs(t, directory, "plan", step, "--result", "done");
   reportAs(t, directory, "plan", "G1", "--result", "approved", "--input", "OK");
   reportAs(t, directory, "plan", "pr", "--result", "done", ...PR);
+  reportAs(t, directory, "plan", "publish", "--result", "done");
   assert.equal(hook(directory, { session_id: SESSION }), undefined, "planner は終えている");
 
   const config = join(directory, ".hikyaku.config");

@@ -87,14 +87,15 @@ test("planner: planning/ に記録し、user-stories → レビュー → G1 →
   assert.equal(report(directory, "plan", "retrospective", "--result", "done").step, "pr");
   const noPr = cli(directory, "step", "report", "plan", "pr", "001", "--result", "done");
   assert.equal(noPr.status, 1, "PR を添えない done は受け付けない");
-  assert.equal(report(directory, "plan", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1").kind, "done");
+  assert.equal(report(directory, "plan", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1").step, "publish");
+  assert.equal(report(directory, "plan", "publish", "--result", "done").kind, "done");
 
   const log = events(join(directory, PLANNING, "progress.jsonl"));
   assert.deepEqual(
     log.map((event) => `${String(event["skill"])}:${String(event["step"])}`),
     [
       "planner:inputs", "planner:scope", "planner:user-stories", "planner:review", "planner:G1",
-      "retrospective:analyze", "retrospective:write", "planner:retrospective", "planner:pr",
+      "retrospective:analyze", "retrospective:write", "planner:retrospective", "planner:pr", "planner:publish",
     ],
   );
 });
@@ -229,7 +230,8 @@ test("close-cycle: サイクル直下に記録し、収集 → G10 → 書き込
   assert.equal(early.status, 1, "cycle close の前は終了を受け付けない");
   succeeds(directory, "cycle", "close", "001", "--summary", "テスト");
   assert.equal(report(directory, "close", "close", "--result", "done").step, "pr");
-  const followups = report(directory, "close", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1");
+  assert.equal(report(directory, "close", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1").step, "publish");
+  const followups = report(directory, "close", "publish", "--result", "done");
   assert.equal(followups.step, "followups");
   assert.deepEqual(followups.args, { guideReview: false, guideReviewReason: "予測と実測の両方があるビルドがありません", hooks: false });
   assert.equal(report(directory, "close", "followups", "--result", "done").kind, "done");
@@ -266,7 +268,8 @@ function toFollowups(directory: string): Directive {
   report(directory, "close", "write", "--result", "done");
   succeeds(directory, "cycle", "close", "001", "--summary", "テスト");
   report(directory, "close", "close", "--result", "done");
-  return report(directory, "close", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1");
+  report(directory, "close", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1");
+  return report(directory, "close", "publish", "--result", "done");
 }
 
 test("close-cycle: フックの候補があれば G10 の決定を記録し、採ると決まったときだけ followups がフックを作る", (t) => {

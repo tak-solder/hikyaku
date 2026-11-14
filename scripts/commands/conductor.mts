@@ -209,7 +209,7 @@ register({
       "--output-format",
       "json",
     ];
-    const command = `${argv.map(shellQuote).join(" ")} < /dev/null > ${shellQuote(out)}`;
+    const command = `HIKYAKU_CONDUCTOR_CHILD=1 ${argv.map(shellQuote).join(" ")} < /dev/null > ${shellQuote(out)}`;
 
     emit(
       {

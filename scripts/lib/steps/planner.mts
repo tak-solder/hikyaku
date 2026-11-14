@@ -8,6 +8,7 @@
  * 作業単位はサイクルの planning/。成果物（user-stories.md）と同じ場所に progress.jsonl を置く。
  */
 
+import { publicationStep } from "./publication.mts";
 import type { SkillSteps } from "./engine.mts";
 
 export const PLANNER_STEPS: SkillSteps = {
@@ -44,5 +45,6 @@ export const PLANNER_STEPS: SkillSteps = {
       reason: () => "企画フェーズの最後の振り返り",
     },
     { id: "pr", kind: "run", title: "親 issue と PR の作成", recordsPr: true },
+    publicationStep("planner"),
   ],
 };

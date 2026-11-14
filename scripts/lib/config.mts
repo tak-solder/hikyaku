@@ -133,7 +133,7 @@ export interface ReviewKindSettings {
   providers: ReviewProviderRule[];
   /** 1 = 1回だけ / n = パスするまで最大 n 回 / 0 = 無制限 */
   maxRounds: number;
-  /** 2ラウンド目以降、指摘への対応を確認せずに直すか */
+  /** 無制限の2ラウンド目以降、指摘への対応を確認せずに直すか */
   autoFix: boolean;
   /** [review.<kind>.<provider>] → [review.<provider>] の順に重ねた値 */
   models: Record<ReviewProvider, ReviewModelSettings>;
@@ -340,7 +340,7 @@ export interface ResolvedConfig {
   gates: Gates;
   reviews: Reviews;
   branch: BranchNaming;
-  pr: { title: string; reviewers: string[]; reviewersSkip: ReviewerSkipTarget[] };
+  pr: { title: string; reviewers: string[]; reviewersSkip: ReviewerSkipTarget[]; autoReady: boolean };
   /** セッション名のテンプレート。空文字なら変更しない */
   session: { title: string };
   security: { triggers: string };
@@ -1264,6 +1264,7 @@ function finalize(
       title: readString(readTable(merged, "pr"), "title", "[pr]") ?? DEFAULT_PR_TITLE,
       reviewers: readReviewers(readTable(merged, "pr"), "reviewers", "[pr]"),
       reviewersSkip: readReviewerSkip(readTable(merged, "pr")),
+      autoReady: readBoolean(readTable(merged, "pr"), "auto_ready", "[pr]") ?? true,
     },
     session: {
       title:

@@ -45,7 +45,7 @@ PLAN を終えたサイクルを、ARCHITECT から最後のビルドまで進�
 - [ ] 設定と対象サイクルを解決する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --require-cycle --json
 ```
 
 - 未初期化（`.hikyaku.config` が無い等）なら、`/hikyaku:init` を先に実行するよう伝えて**終了**する
@@ -221,6 +221,14 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {phase} {cycle
 
 - [ ] 「検証の義務」のうち、そのフェーズの done に当たるものを行う
 - [ ] 問題があれば人間に上げる（自分で直さない）
+- [ ] 子の architect / builder の PR を取り込む前に、監督として公開する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr ready {architect|build-NN} {cycle} --pr {PR} --for-merge
+```
+
+  失敗したら取り込まず、エラーを人間に示して止まる。公開後の `check-pr` で Draft に戻っていたら、
+  再び Ready にせず、その検証結果を人間に上げる。
 - [ ] 子が PR を作っていれば（architect / builder）、取り込む前にその PR を検証する。レビューや CI を待つので、
   **Bash の `run_in_background` で実行する**（`timeout` は最大値にする）
 
@@ -312,6 +320,9 @@ git push origin --delete {フェーズのブランチ}
 デフォルトブランチにマージされていることを前提にしている（未マージの実装を永続ドキュメントに
 書くと、永続ドキュメントとサイクルドキュメントを分けた意味が無くなる）。
 
+以下の PR 作成・更新では、ビルドが残した「確度: 要確認」の懸念があれば、handoff の該当節への
+コミット固定リンクと要点を本文に反映し、完了の案内にも含める。懸念の全文は転記しない。
+
 - [ ] **作る前に、同じ向き（conductor ブランチ → デフォルトブランチ）で開いている PR が既に無いかを確かめる**。
   監督が Step 4 の直後に落ちて再実行されると、状態導出は `building` のまま（デフォルトブランチにはまだ
   ビルドの PR 列が入っていない）で、同じ Step 4 に戻ってくるため。PR が重複して作られたり、作成に
@@ -325,11 +336,17 @@ gh pr list --head {conductor ブランチ} --base {baseBranch} --state open --js
   - **見つかったら、PR を作らない。** 「最後の PR が既にあるとき」へ進む
   - 見つからなければ、次の手順で作る（閉じられた PR や、マージ済みの PR は対象にしない）
 - [ ] conductor ブランチ → デフォルトブランチの PR を作る
-  - タイトルは `hikyaku pr title conductor {cycle}` で生成する
+  - タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title conductor {cycle}` で生成する
+  - `gh pr create --draft` で作る。Draft に対応していない場合だけ通常の PR で作り、その旨を案内する
   - 本文に、取り込んだフェーズの PR を順に並べ、それぞれで**監督が判断した同意ゲート**を1行ずつ示す
     （人間がレビューで確認するため）
-  - 外部連携が有効なら、各ビルドの `hikyaku external ref build-NN {cycle}` の行を本文の末尾に入れる。
+  - 外部連携が有効なら、各ビルドの `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref build-NN {cycle}` の行を本文の末尾に入れる。
     conductor ブランチへのマージではクローズキーワードが効かないため、ここでまとめて閉じる
+- [ ] 設定に従って公開する（失敗したら、再実行のコマンドと Draft のままであることを案内する）
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr ready conductor {cycle} --pr {PR}
+```
 - [ ] この PR にレビュアーをアサインする（`[pr] reviewers` が空、または `[pr] reviewers_skip` に
   `conductor` があれば何もしない）。人間がレビューする PR なので、待たない
 
@@ -340,6 +357,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers conductor 
   案内して**終了**する
 
 #### 最後の PR が既にあるとき
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr ready conductor {cycle} --pr {PR}
+```
 
 監督が落ちて再実行された場合と、最後の PR に付いた指摘へビルドを足して対応する場合に来る。
 
@@ -366,9 +387,14 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch architect {cyc
 
 ### Step 5: 完了
 
-close-cycle の子が done になったら、`cycle status` が `closed` であることを確認し、
-CLOSE の PR を示して終了する。子が別のブランチで作った PR（見積もりのガイドの見直し・フックの提案）が
-あれば併せて示す。どちらも採否は人間がマージで決めるもので、監督は取り込まない。
+close-cycle の子が done になったら、`cycle status` が `closed` であることを確認する。
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr ready close {cycle} --pr {CLOSE の PR}
+```
+
+失敗したら再実行のコマンドを示す。CLOSE の PR と、子が別のブランチで作った PR（見積もりのガイドの
+見直し・フックの提案）があれば併せて示して終了する。監督はどれも取り込まない。
 
 ## 問いへの答え方
 
@@ -385,7 +411,7 @@ CLOSE の PR を示して終了する。子が別のブランチで作った PR�
 | `G2` / `G4` / `G7` | 成果物を読み、承認観点（スキルが示すもの）に沿って承認するか差し戻す |
 | `retrospective` | 実施する |
 | `docs-link` | `--dry-run` の差分がマーカーで囲まれた索引ブロックの中だけなら承認する |
-| `G6` | 分割・依存が design-delta と矛盾せず、各ビルドの予測ピークが `split_above` 以下（超えるなら issue.md に許容する理由がある）なら承認する。「マージ時点で残る危険」を書いたビルドがあれば、`hikyaku config {cycle} --json` の `unsafeSplit.allowed` が true であることも確かめる |
+| `G6` | 分割・依存が design-delta と矛盾せず、各ビルドの予測ピークが `split_above` 以下（超えるなら issue.md に許容する理由がある）なら承認する。「マージ時点で残る危険」を書いたビルドがあれば、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json` の `unsafeSplit.allowed` が true であることも確かめる |
 | `G8` | 「検証の義務」の G8 を行い、満たしていれば承認する |
 | `G10` | 「検証の義務」の G10 を行い、除外すべき候補を外して承認する |
 | `questions` | 成果物から導けるものだけ答える。導けないものは人間に上げる |

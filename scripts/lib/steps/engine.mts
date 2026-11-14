@@ -246,7 +246,7 @@ export function evaluate(skill: SkillSteps, ctx: StepContext): Evaluation {
  * 最後に報告したあとも今回の分とする（呼び出し元は、内部スキルが戻ってから call を報告する）。
  * 呼び出し元が報告しないまま呼び直すときは、内部スキルの側で step restart する
  */
-export function startOf(skill: SkillSteps, events: ProgressEvent[]): number {
+export function startOf(skill: Pick<SkillSteps, "skill" | "internal">, events: ProgressEvent[]): number {
   const restart = lastIndexOf(events, (event) => event.skill === skill.skill && event.result === RESTART);
   const caller = skill.internal === true ? lastIndexOf(events, (event) => event.skill !== skill.skill) : -1;
   return Math.max(restart, caller);
@@ -260,7 +260,7 @@ function lastIndexOf(events: ProgressEvent[], matches: (event: ProgressEvent) =>
 }
 
 /** 今回の回で有効な記録（そのスキルの手順が始まった位置より後） */
-export function currentEvents(skill: SkillSteps, events: ProgressEvent[]): ProgressEvent[] {
+export function currentEvents(skill: Pick<SkillSteps, "skill" | "internal">, events: ProgressEvent[]): ProgressEvent[] {
   return events.slice(startOf(skill, events) + 1);
 }
 

@@ -100,4 +100,4 @@ close の PR を作ったあと、次の2つは別のブランチの PR にな�
 
 ## 終わり方
 
-PR を作って完了です。別の PR を作った場合はその URL も案内されます。次のサイクルは `/hikyaku:create-cycle` から始めます。
+PR は Draft で作り、公開のステップで設定に従って Ready にします。別の PR を作った場合はその URL も案内されます。次のサイクルは `/hikyaku:create-cycle` から始めます。

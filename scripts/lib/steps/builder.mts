@@ -7,6 +7,7 @@
  * ブランチを決めるまでは現在地を導出できない。
  */
 
+import { publicationStep } from "./publication.mts";
 import { readReturn, RETURN_FILE } from "../phase.mts";
 import { buildDirName, loadTasklist, normalizeBuildId } from "../tasklist.mts";
 import { formatK } from "../tokens.mts";
@@ -101,14 +102,15 @@ export const BUILDER_STEPS: SkillSteps = {
       args: (ctx) => ({ codeReview: ctx.config.reviews.code, securityReview: ctx.config.reviews.security }),
     },
     { id: "handoff", kind: "run", title: "handoff.md の作成", produces: ["handoff.md"] },
-    { id: "pr", kind: "run", title: "PR の作成と完了の記録", evidence: prRecorded, recordsPr: true },
     {
       id: "retrospective",
       kind: "call",
       title: "振り返り",
       call: "retrospective",
       when: (ctx) => ctx.config.reviews.retrospective !== "skip",
-      reason: () => "ビルドの最後の振り返り",
+      reason: () => "PR 作成前の振り返り",
     },
+    { id: "pr", kind: "run", title: "PR の作成と完了の記録", evidence: prRecorded, recordsPr: true },
+    publicationStep("builder"),
   ],
 };
