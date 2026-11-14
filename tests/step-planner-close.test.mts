@@ -231,7 +231,7 @@ test("close-cycle: サイクル直下に記録し、収集 → G10 → 書き込
   assert.equal(report(directory, "close", "close", "--result", "done").step, "pr");
   const followups = report(directory, "close", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1");
   assert.equal(followups.step, "followups");
-  assert.deepEqual(followups.args, { guideReview: false, guideReviewReason: "予測と実測の両方があるビルドがありません", hookCandidates: false });
+  assert.deepEqual(followups.args, { guideReview: false, guideReviewReason: "予測と実測の両方があるビルドがありません", hooks: false });
   assert.equal(report(directory, "close", "followups", "--result", "done").kind, "done");
 
   assert.ok(existsSync(join(directory, CYCLE, "progress.jsonl")));
@@ -255,14 +255,31 @@ test("close-cycle: G10 で差し戻すと答えが返り、collect をやり直�
   assert.equal(report(directory, "close", "collect", "--result", "done").step, "G10");
 });
 
-test("close-cycle: followups の指示に、フックの候補の有無を添える", (t) => {
-  const directory = workspace(t, true);
+/** フックの候補があるサイクルを、G10 の承認まで進める */
+function withHookCandidate(directory: string): Directive {
   write(directory, `${CYCLE}/build-01/handoff.md`, "# 申し送り\n\n## 永続化すること\n\n- `hook` [高]: .env の編集を止める（2回起きた）\n");
   report(directory, "close", "collect", "--result", "done");
-  report(directory, "close", "G10", "--result", "approved", "--input", "OK");
+  return report(directory, "close", "G10", "--result", "approved", "--input", "OK");
+}
+
+function toFollowups(directory: string): Directive {
   report(directory, "close", "write", "--result", "done");
   succeeds(directory, "cycle", "close", "001", "--summary", "テスト");
   report(directory, "close", "close", "--result", "done");
-  const followups = report(directory, "close", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1");
-  assert.equal(followups.args?.["hookCandidates"], true);
+  return report(directory, "close", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1");
+}
+
+test("close-cycle: フックの候補があれば G10 の決定を記録し、採ると決まったときだけ followups がフックを作る", (t) => {
+  const directory = workspace(t, true);
+  const decision = withHookCandidate(directory);
+  assert.equal(decision.step, "hooks", "候補があれば、G10 のあとに採るかを記録する");
+  assert.equal(report(directory, "close", "hooks", "--result", "done").step, "write");
+  assert.equal(toFollowups(directory).args?.["hooks"], true);
+});
+
+test("close-cycle: G10 でフックを却下したら、候補が記録に残っていても followups はフックを作らない", (t) => {
+  const directory = workspace(t, true);
+  withHookCandidate(directory);
+  assert.equal(report(directory, "close", "hooks", "--result", "skipped", "--reason", "G10 で却下").step, "write");
+  assert.equal(toFollowups(directory).args?.["hooks"], false);
 });

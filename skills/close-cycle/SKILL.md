@@ -128,7 +128,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title close {cycle}
 
 ### Step 1 以降: step に従って進める
 
-ここから先の手順（候補の収集 → 整理と G10 → 書き込み → サイクルの終了 → PR → 別の PR にするもの）は、
+ここから先の手順（候補の収集 → 整理と G10 →（フックの候補があれば、採るかの記録）→ 書き込み → サイクルの終了 → PR → 別の PR にするもの）は、
 `step next` が設定と進捗から1手ずつ返す。**手順を自分で組み立てない。**
 
 ```bash

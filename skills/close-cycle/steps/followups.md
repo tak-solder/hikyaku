@@ -6,7 +6,7 @@ close の PR に混ぜると採否を分けて判断できなくなるものを�
 | 値 | 意味 |
 |---|---|
 | `guideReview` | このサイクルの予測と実測から、見積もりのガイドの見直しを勧めるか（理由は `guideReviewReason`） |
-| `hookCandidates` | サイクルの記録に、フックにする候補があるか |
+| `hooks` | G10 でフックを採ると決まったか（hooks ステップの記録から） |
 
 どちらも該当しなければ、何もせず `done` を報告する。
 
@@ -48,9 +48,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step restart token-guide --roun
 git switch {close のブランチ}
 ```
 
-## フックの提案（`hookCandidates` が true で、G10 で採ると決まったとき）
+## フックの提案（`hooks` が true のとき）
 
-G10 でフックにしないと決まっていれば、何もしない。
+G10 で採ると決まったフックだけを書く。却下された候補は書かない。
 
 フックは、設定を誤ると全セッション（conductor の子セッションも含む）を止める。そのため close の PR に
 混ぜず、動作を確かめたうえで別の PR にする。**フックの設定はファイルを書き換えた時点でこのセッションにも

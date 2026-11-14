@@ -269,6 +269,8 @@ export interface GuideReview {
   under: string[];
   /** 過大見積もりのビルド */
   over: string[];
+  /** 見積もりに使ったガイドの版が記録に無く、判定から外したビルド */
+  unknownGuide: string[];
   reason: string;
 }
 
@@ -277,10 +279,13 @@ export interface GuideReview {
  *
  * 1件だけのぶれでは勧めない。同じ向きに外れたビルドが複数あるときだけ勧める。ガイドの版が
  * 途中で変わっていたら版ごとに数える（直す前と後を混ぜると、直した効果が見えなくなる）。
- * 実測の無いビルドは数えない。
+ * 実測の無いビルドは数えない。ガイドの版が記録に無いビルドも数えない（版が分からないものを
+ * 同じ版とみなすと、別の版で見積もったビルドの外れを足し合わせてしまう）。
  */
 export function guideReview(records: PeakRecord[]): GuideReview {
-  const paired = records.filter((r) => ratioOf(r) !== undefined);
+  const measured = records.filter((r) => ratioOf(r) !== undefined);
+  const unknownGuide = measured.filter((r) => r.guide === undefined).map((r) => r.build);
+  const paired = measured.filter((r) => r.guide !== undefined);
   const under: string[] = [];
   const over: string[] = [];
   let needed = false;
@@ -292,13 +297,16 @@ export function guideReview(records: PeakRecord[]): GuideReview {
     if (groupUnder.length >= GUIDE_REVIEW_MIN_BUILDS || groupOver.length >= GUIDE_REVIEW_MIN_BUILDS) needed = true;
   }
   const percent = Math.round(GUIDE_REVIEW_TOLERANCE * 100);
-  const reason =
+  const excluded = unknownGuide.length === 0 ? "" : `。ガイドの版が記録に無い ${unknownGuide.length} 件は判定から外しました`;
+  const base =
     paired.length === 0
-      ? "予測と実測の両方があるビルドがありません"
+      ? measured.length === 0
+        ? "予測と実測の両方があるビルドがありません"
+        : "ガイドの版が分かるビルドがありません"
       : needed
         ? `同じガイドの版で、同じ向きに ${percent}% を超えて外れたビルドが ${GUIDE_REVIEW_MIN_BUILDS} 件以上あります（過小 ${under.length} 件 / 過大 ${over.length} 件）`
         : `同じ向きに ${percent}% を超えて外れたビルドは ${GUIDE_REVIEW_MIN_BUILDS} 件未満です（過小 ${under.length} 件 / 過大 ${over.length} 件）`;
-  return { needed, paired: paired.length, under, over, reason };
+  return { needed, paired: paired.length, under, over, unknownGuide, reason: `${base}${excluded}` };
 }
 
 export type GroupKey = "model" | "hikyaku" | "host" | "guide";

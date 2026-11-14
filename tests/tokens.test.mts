@@ -127,4 +127,11 @@ test("tokens: 同じガイドの版で同じ向きに外れたビルドが複数
     "ガイドの版が違えば混ぜない",
   );
   assert.equal(guideReview([record("build-01", 300_000, undefined)]).paired, 0);
+  // ガイドの版が記録に無いビルドは、同じ版とみなさず判定から外す
+  const versionless = (build: string, peak: number) => ({ ...record(build, 300_000, peak), guide: undefined });
+  const unknown = guideReview([versionless("build-01", 400_000), versionless("build-02", 400_000)]);
+  assert.equal(unknown.needed, false);
+  assert.deepEqual(unknown.unknownGuide, ["build-01", "build-02"]);
+  assert.match(unknown.reason, /版が記録に無い 2 件/);
+  assert.equal(guideReview([versionless("build-01", 400_000), record("build-02", 300_000, 400_000), record("build-03", 300_000, 400_000)]).needed, true);
 });
