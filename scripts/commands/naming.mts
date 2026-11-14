@@ -1,12 +1,12 @@
 /** branch name / branch verify / pr title / session title — 命名規則の適用 */
 
 import { flagBoolean, flagString } from "../lib/args.mts";
-import { branchName, parseBranch, renderPrTitle } from "../lib/branch.mts";
+import { branchName, isPatchPhase, parseBranch, renderPrTitle, type Phase } from "../lib/branch.mts";
 import { ValidationError } from "../lib/errors.mts";
 import { currentBranch, defaultBranch, listRemoteBranches } from "../lib/git.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
-import { requirePhase, resolvePrBase, scopeFor, stackParent } from "../lib/stack.mts";
+import { integrationBranch, requirePhase, resolvePrBase, scopeFor, stackParent } from "../lib/stack.mts";
 
 register({
   name: "branch verify",
@@ -16,6 +16,8 @@ register({
     "  {prefix}{separator}{cycle}{separator}{phase}",
     "",
     "init と token-guide はサイクルに属さないため {prefix}{separator}{phase} になります。",
+    "patch（patch-YYYYMM-slug）はサイクルの有無に関わらず {prefix}{separator}patch{separator}YYYYMM{separator}slug です。",
+    "進行中のサイクルの patch では、startPoint がブランチを切る元（統合ブランチ）を示します。",
     "",
     "**生成と検証を兼ねます。** 不一致のときは期待するブランチ名と切り替えコマンドを",
     "返すので、ブランチの作成にもこのコマンドを使ってください。名前を生成するだけの",
@@ -72,8 +74,11 @@ register({
     const ok = actual === expected;
 
     const base = config.baseBranch ?? defaultBranch(config.repoRoot);
+    // patch はサイクルの統合ブランチから切る（未マージの conductor ブランチがあればそれ）
+    const startPoint =
+      isPatchPhase(phase) && context !== undefined ? await integrationBranch(config, context, base, { fetch: false }) : base;
     // base が分からなければ true/false のどちらとも言えない。推測せず null で返す
-    const onBaseBranch = base === undefined || actual === undefined ? null : actual === base;
+    const onBaseBranch = startPoint === undefined || actual === undefined ? null : actual === startPoint;
 
     // ここは毎フェーズの冒頭とコミット直前に走るので fetch しない。
     // PR の base として正なのは pr base（そちらは必要なら追跡参照を更新する）
@@ -89,6 +94,7 @@ register({
         cycle,
         parsed,
         baseBranch: base ?? null,
+        startPoint: startPoint ?? null,
         onBaseBranch,
         stackedOn: stacked?.name ?? null,
         prBase: prBase ?? null,
@@ -107,9 +113,12 @@ register({
         "",
       ];
 
+      if (startPoint !== base) lines.splice(3, 0, `切る元（統合ブランチ）: ${startPoint ?? "(特定できません)"}`);
       if (onBaseBranch === true) {
         lines.push(
-          "デフォルトブランチに居ます。まだこのフェーズのブランチを切っていないだけなので、",
+          startPoint === base
+            ? "デフォルトブランチに居ます。まだこのフェーズのブランチを切っていないだけなので、"
+            : "統合ブランチに居ます。まだこのフェーズのブランチを切っていないだけなので、",
           "期待する名前で作成してください。",
           "",
           `作成: git switch -c ${expected}`,
@@ -156,9 +165,9 @@ register({
     "  {cycle}       002-billing",
     "  {cycle_id}    002",
     "  {cycle_name}  billing",
-    "  {phase}       init / token-guide / create / plan / architect / build-01 / close",
+    "  {phase}       init / token-guide / create / plan / architect / build-01 / close / patch",
     "  {build_id}    01（builder のみ）",
-    "  {title}       --build-title の値（他フェーズでは空）",
+    "  {title}       --build-title の値（builder と patch。他フェーズでは空）",
     "",
     "空になった変数は前後の区切り文字ごと詰めます。init のようにサイクルを持たない",
     "フェーズで \"[hikyaku] : init\" のような出力にならないようにするためです。",
@@ -171,7 +180,7 @@ register({
     const buildId = /^build-(\d+)$/.exec(phase)?.[1];
     const title = renderPrTitle(config.pr.title, {
       cycle,
-      phase,
+      phase: phaseLabel(phase),
       buildId,
       title: flagString(args, "build-title"),
     });
@@ -294,10 +303,15 @@ register({
     const buildId = /^build-(\d+)$/.exec(phase)?.[1];
     const title = renderPrTitle(config.session.title, {
       cycle,
-      phase,
+      phase: phaseLabel(phase),
       buildId,
       title: flagString(args, "build-title"),
     });
     emit({ title, phase, cycle }, () => title);
   },
 });
+
+/** タイトルに出すフェーズ名。patch は年月と slug を落とす（{title} に依頼の要約が入るため） */
+function phaseLabel(phase: Phase): string {
+  return isPatchPhase(phase) ? "patch" : phase;
+}

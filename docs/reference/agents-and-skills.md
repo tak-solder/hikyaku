@@ -38,7 +38,7 @@ Hikyaku の手順そのものに穴があると思える場合も、このリポ
 | エージェント | 呼ぶ側 | 役割 |
 |---|---|---|
 | `cycle-scanner` | architect | 走行中の他サイクルの設計差分を読み、重複を報告する（軽量モデル） |
-| `code-explorer` | architect | 既存コード調査。`overview` が渡されると差分調査に切り替わる |
+| `code-explorer` | architect / patch | 既存コード調査。`overview` が渡されると差分調査に切り替わる。patch では項目ごとの現状を調べる |
 | `code-architect` | architect | 指定観点（Minimal / Clean / Pragmatic など）の単一設計案を返す |
 | `doc-reviewer` | planner / architect / build-manager / builder | 中間成果物の整合性・網羅性・曖昧さを証拠ベースで報告する |
 | `doc-triager` | init（移行の回） | 既存の文書を項目ごとに読み、コードと突き合わせて、重要度と置き場を判定する |
@@ -53,7 +53,7 @@ Hikyaku の手順そのものに穴があると思える場合も、このリポ
 
 ## コードとセキュリティのレビュー
 
-builder のコードレビューとセキュリティレビューは、Hikyaku のエージェントではなく、Claude Code と Codex に組み込みのレビュー機能が行います。起動は `hikyaku review run` が受け持ち、2つのレビューは並列に動いて、指摘は builder が統合します。同じ箇所への重複は1件に束ねられ、セキュリティの指摘が優先されます。
+builder と patch のコードレビューとセキュリティレビューは、Hikyaku のエージェントではなく、Claude Code と Codex に組み込みのレビュー機能が行います。起動は `hikyaku review run` が受け持ち、2つのレビューは並列に動いて、指摘は builder が統合します。同じ箇所への重複は1件に束ねられ、セキュリティの指摘が優先されます。
 
 | レビュー | Claude | Codex |
 |---|---|---|

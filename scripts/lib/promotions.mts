@@ -13,6 +13,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DOC_DEFINITIONS } from "./docs.mts";
+import { listPatchUnits } from "./patch.mts";
 
 export const PROMOTE_HEADING = "永続化すること";
 export const UNHELPFUL_HEADING = "役に立たなかった記述";
@@ -178,6 +179,8 @@ export function promotionSources(cycleDirectory: string): string[] {
     push(`${build}/handoff.md`);
     push(`${build}/retrospective.md`);
   }
+  // サイクルに属す patch（統合ブランチ宛て・CLOSE 前）は、永続化するものを handoff.md に残す
+  for (const unit of listPatchUnits(cycleDirectory)) push(`${unit}/handoff.md`);
   return found;
 }
 

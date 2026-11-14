@@ -35,7 +35,7 @@ import {
   type ReviewPlan,
 } from "../lib/review.mts";
 import { requirePhase, resolvePrBase, scopeFor, type Scope } from "../lib/stack.mts";
-import type { Phase } from "../lib/branch.mts";
+import { isPatchPhase, type Phase } from "../lib/branch.mts";
 
 function requireKind(raw: string | undefined): ReviewKind {
   if (raw === undefined || !(REVIEW_KINDS as string[]).includes(raw)) {
@@ -73,8 +73,8 @@ async function resolve(args: ParsedArgs, operands: string[]): Promise<Resolved &
   const kind = requireKind(operands[0]);
   const phase = requirePhase(operands[1]);
   const self = requireSelf(args);
-  if (kind !== "doc" && !phase.startsWith("build-")) {
-    throw new HikyakuError(`${kind} のレビューはビルド（build-NN）でだけ実行します: ${phase}`);
+  if (kind !== "doc" && !phase.startsWith("build-") && !isPatchPhase(phase)) {
+    throw new HikyakuError(`${kind} のレビューはビルド（build-NN）と patch でだけ実行します: ${phase}`);
   }
   const scope = scopeFor(args, phase, operands[2]);
   const { config } = scope;
@@ -239,9 +239,10 @@ register({
     const resolved = await resolve(args, operands);
     const { plan, scope, phase } = resolved;
     const { config } = scope;
-    const cycle = scope.cycle;
-    if (cycle === undefined || scope.context === undefined) {
-      throw new HikyakuError("レビューはサイクルの中で実行します");
+    // サイクルに属さない patch の出力は .git/hikyaku/reviews/patch/<phase>/ に置く
+    const cycle = scope.cycle ?? (isPatchPhase(phase) ? "patch" : undefined);
+    if (cycle === undefined) {
+      throw new HikyakuError("レビューはサイクルの中か patch で実行します");
     }
     if (plan.mode === "agent") {
       throw new HikyakuError(
@@ -368,7 +369,7 @@ function buildPrompt(args: ParsedArgs, resolved: Resolved, config: ResolvedConfi
   return securityPrompt({
     guide: readFileSync(guidePath, "utf8"),
     baseRef: resolved.base?.ref ?? resolved.base?.name ?? "",
-    buildDirectory: join(scope.context?.directory ?? "", phase),
+    buildDirectory: isPatchPhase(phase) ? undefined : join(scope.context?.directory ?? "", phase),
     triggers: config.security.triggers,
   });
 }

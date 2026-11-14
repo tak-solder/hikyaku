@@ -107,6 +107,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step where {cycle} --json
 | `build-NN` | `/hikyaku:builder {cycle} {NN}` |
 | `close` | `/hikyaku:close-cycle {cycle}` |
 | `create` | `/hikyaku:create-cycle {cycle}`（作成済みのサイクルの手順の再開。PLAN へ進むかの確認か、単独で終える PR） |
+| `patch-YYYYMM-slug` | `/hikyaku:patch`（そのサイクルに属す patch の再開。patch のブランチ `{prefix}/patch/YYYYMM/slug` で起動する） |
 
 `directive.skill` は、内部スキルを呼んでいる最中なら `build-manager` / `retrospective` になる。どちらも
 呼び出し元のスキルの中で再開するので、`directive.unit` から呼び出し元を引く（例: `architect` の

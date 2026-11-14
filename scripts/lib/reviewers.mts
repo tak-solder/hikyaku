@@ -5,12 +5,14 @@
  * CLI が担い、スキルは結果に従って依頼するだけにする。
  */
 
+import { isPatchPhase } from "./branch.mts";
 import { REVIEWER_SKIP_TARGETS, type ReviewerSkipTarget } from "./config.mts";
 
 /** フェーズ名を、アサインをオフにできる単位に直す。build-NN は build */
 export function skipTargetOf(phase: string): ReviewerSkipTarget | undefined {
   if (/^build-\d+$/.test(phase)) return "build";
-  return phase !== "build" && (REVIEWER_SKIP_TARGETS as readonly string[]).includes(phase)
+  if (isPatchPhase(phase)) return "patch";
+  return phase !== "build" && phase !== "patch" && (REVIEWER_SKIP_TARGETS as readonly string[]).includes(phase)
     ? (phase as ReviewerSkipTarget)
     : undefined;
 }

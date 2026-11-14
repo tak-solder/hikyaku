@@ -172,6 +172,7 @@ register({
 
 const ESTIMATE_FLAGS = new Set([
   "markdown",
+  "no-cycle",
   ...COMPONENTS.map((c) => c.key),
   ...COMPONENTS.map((c) => `${c.key}-basis`),
 ]);
@@ -199,7 +200,7 @@ register({
   name: "tokens estimate",
   summary: "成分ごとの予測を合計し、予測ピークと判定を返す",
   usage:
-    "hikyaku tokens estimate [<cycle>] --fixed <n> --reading <n> --implementation <n> --tests <n> --unknown <n> [--<成分>-basis <根拠>]... [--markdown] [--json]",
+    "hikyaku tokens estimate [<cycle> | --no-cycle] --fixed <n> --reading <n> --implementation <n> --tests <n> --unknown <n> [--<成分>-basis <根拠>]... [--markdown] [--json]",
   details: [
     "ビルドのメインセッションのコンテキストが、どこまで膨らむか（予測ピーク）を返します。",
     "成分の値はガイド（hikyaku tokens guide）に沿って見積もり、このコマンドは合計と判定だけを行います。",

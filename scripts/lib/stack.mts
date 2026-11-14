@@ -7,8 +7,10 @@
  */
 
 import { flagString, type ParsedArgs } from "./args.mts";
-import { isCyclelessPhase, isPhase, parseBranch, type Phase } from "./branch.mts";
+import { isCyclelessPhase, isPatchPhase, isPhase, parseBranch, type Phase } from "./branch.mts";
 import { loadConfig, type ResolvedConfig } from "./config.mts";
+import { cycleDirName } from "./cycles.mts";
+import { patchCycleOf } from "./patch.mts";
 import { HikyakuError } from "./errors.mts";
 import {
   defaultBranch,
@@ -26,13 +28,13 @@ export function requirePhase(raw: string | undefined): Phase {
   if (raw === undefined) {
     throw new HikyakuError(
       "フェーズを指定してください",
-      "使用できる値: init | token-guide | create | plan | architect | build-NN | close | conductor",
+      "使用できる値: init | token-guide | create | plan | architect | build-NN | close | conductor | patch-YYYYMM-slug",
     );
   }
   if (!isPhase(raw)) {
     throw new HikyakuError(
       `フェーズの値が不正です: ${raw}`,
-      "使用できる値: init | token-guide | create | plan | architect | build-NN（NN は2桁以上の数字）| close | conductor",
+      "使用できる値: init | token-guide | create | plan | architect | build-NN（NN は2桁以上の数字）| close | conductor | patch-YYYYMM-slug（slug は英小文字・数字・ハイフン）",
     );
   }
   return raw;
@@ -56,6 +58,7 @@ export interface Scope {
  * 解決を通す副次的な効果（`002` から `002-billing` のブランチ名が出る）。
  */
 export function scopeFor(args: ParsedArgs, phase: Phase, operand: string | undefined): Scope {
+  if (isPatchPhase(phase)) return patchScope(args, phase, operand);
   if (isCyclelessPhase(phase)) {
     return {
       config: loadConfig({ root: flagString(args, "root") }),
@@ -64,6 +67,30 @@ export function scopeFor(args: ParsedArgs, phase: Phase, operand: string | undef
     };
   }
   const opened = openCycle(args, operand);
+  return { config: opened.config, cycle: opened.context.name, context: opened.context };
+}
+
+/**
+ * patch の対象。サイクルは推測しない（現在のブランチや .hikyaku.local から決めると、
+ * サイクルに属さない patch が近くのサイクルに紛れ込む）。明示されたサイクルか、
+ * そのディレクトリを持つ進行中のサイクルに属し、どちらも無ければサイクルに属さない
+ */
+function patchScope(args: ParsedArgs, phase: Phase, operand: string | undefined): Scope {
+  const root = flagString(args, "root");
+  let key = operand;
+  if (key === undefined) {
+    const base = loadConfig({ root });
+    const record = patchCycleOf(base.hikyakuRoot, phase);
+    if (record === undefined) return { config: base, cycle: undefined, context: undefined };
+    key = cycleDirName(record);
+  }
+  const opened = openCycle(args, key);
+  if (opened.context.record.status !== "active") {
+    throw new HikyakuError(
+      `サイクル ${opened.context.name} は ${opened.context.record.status} です`,
+      "終えたサイクルの後の小さな変更は、サイクルを指定せずに patch として進めてください。",
+    );
+  }
   return { config: opened.config, cycle: opened.context.name, context: opened.context };
 }
 
@@ -152,6 +179,39 @@ export async function stackParent(
     return nearest;
   }
   return conductor;
+}
+
+/**
+ * サイクルの統合ブランチ。まだ base に取り込まれていない conductor ブランチがあればそれ、
+ * 無ければ base（サイクルの base_branch か、デフォルトブランチ）。
+ *
+ * patch がどこからブランチを切るかに使う。統合ブランチから切れば、PR の base は
+ * stackParent が同じ conductor ブランチを導く（pr base と食い違わない）。
+ */
+export async function integrationBranch(
+  config: ResolvedConfig,
+  context: CycleContext,
+  base: string | undefined,
+  options: { fetch: boolean },
+): Promise<string | undefined> {
+  const views = await resolveViews(config, context, { fetch: options.fetch });
+  const conductor = (await listKnownBranches(config.repoRoot)).find((branch) => {
+    const parsed = parseBranch(config.branch, branch.name);
+    return parsed?.cycle === context.name && parsed.phase === "conductor";
+  });
+  if (conductor === undefined) return base;
+  const baseRefs: string[] = [];
+  if (base !== undefined) {
+    for (const ref of [`origin/${base}`, base]) {
+      if ((await localSha(config.repoRoot, ref)) !== undefined) baseRefs.push(ref);
+    }
+  }
+  if (views.mergedIds !== undefined && views.mergedIds.size > 0) {
+    for (const baseRef of baseRefs) {
+      if (await isAncestor(config.repoRoot, conductor.ref, baseRef)) return base;
+    }
+  }
+  return conductor.name;
 }
 
 /**

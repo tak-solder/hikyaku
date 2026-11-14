@@ -1,7 +1,7 @@
 /** サイクルの解決とファイル書き込みの共通処理 */
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { flagString, type ParsedArgs } from "./args.mts";
+import { flagBoolean, flagString, type ParsedArgs } from "./args.mts";
 import { parseBranch, type BranchNaming } from "./branch.mts";
 import { cycleBranchNaming, loadConfig, type ResolvedConfig } from "./config.mts";
 import {
@@ -229,8 +229,16 @@ function openContext(args: ParsedArgs, ctx: CycleContext): OpenedCycle {
   return { config, context: ctx };
 }
 
-/** 設定表示などの任意選択。未選択と、サイクルを省略した profile 確認はルート設定を使う。 */
+/**
+ * 設定表示などの任意選択。未選択と、サイクルを省略した profile 確認はルート設定を使う。
+ * --no-cycle なら、現在のブランチや .hikyaku.local からも選ばずにルート設定を使う
+ * （サイクルに属さない patch が、近くのサイクルの設定で動かないため）
+ */
 export function openCycleIfAny(args: ParsedArgs, key: string | undefined): OpenedCycle | undefined {
+  if (flagBoolean(args, "no-cycle")) {
+    if (key !== undefined) throw new HikyakuError("--no-cycle とサイクルは同時に指定できません");
+    return undefined;
+  }
   if (key !== undefined) return openCycle(args, key);
   if (flagString(args, "profile") !== undefined) return undefined;
   const base = loadConfig({ root: flagString(args, "root") });
