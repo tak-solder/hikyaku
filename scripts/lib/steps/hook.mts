@@ -17,10 +17,8 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { isPatchPhase, parseBranch } from "../branch.mts";
 import { loadConfig, type ResolvedConfig } from "../config.mts";
-import { currentBranch } from "../git.mts";
-import { patchUnitDirectory } from "../patch.mts";
+import { currentPatchPhase, patchUnitDirectory } from "../patch.mts";
 import { parseFinalText } from "../conductor.mts";
 import { cyclesPath, loadCycles } from "../cycles.mts";
 import { repoRoot } from "../paths.mts";
@@ -70,7 +68,6 @@ export function stopReason(input: StopInput): string | undefined {
 
 /** 現在のブランチが patch のブランチなら、その作業単位（patches/{YYYYMM}/{slug}） */
 function currentPatchUnit(config: ResolvedConfig): string | undefined {
-  const branch = currentBranch(config.repoRoot);
-  const parsed = branch === undefined ? undefined : parseBranch(config.branch, branch);
-  return parsed !== undefined && isPatchPhase(parsed.phase) ? patchUnitDirectory(parsed.phase) : undefined;
+  const phase = currentPatchPhase(config);
+  return phase === undefined ? undefined : patchUnitDirectory(phase);
 }

@@ -24,7 +24,7 @@ import { HikyakuError } from "../lib/errors.mts";
 import { emit, table } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { buildDirName, normalizeBuildId, type BuildRecord } from "../lib/tasklist.mts";
-import { openCycle, type CycleContext } from "../lib/workspace.mts";
+import { openCycle } from "../lib/workspace.mts";
 
 interface Suggestion {
   /** 論理名（永続ドキュメント）またはファイル名 */
@@ -205,45 +205,17 @@ register({
     }
     const phase = rawPhase;
 
-    if (isPatchPhase(phase)) {
-      const scope = scopeFor(args, phase, operands[1]);
-      emitPatchContext(scope.config, scope.context, phase);
-      return;
-    }
-
-    const { config, context: ctx } = openCycle(args, operands[1]);
-    const suggestions: Suggestion[] = [];
-    const missing: string[] = [];
-
-    for (const entry of docEntriesFor(loadGuide(config.hikyakuRoot), phase)) {
-      const path = entry.path;
-      if (path === undefined || !existsSync(join(config.repoRoot, path))) {
-        missing.push(entry.name);
-        continue;
-      }
-      suggestions.push({
-        ref: entry.name,
-        origin: "doc",
-        path,
-        ownership: entry.ownership,
-        reason: docReasons(phase)[entry.name] as string,
-        summary: entry.summary,
-      });
-    }
-
-    const cycleRel = relative(config.repoRoot, ctx.directory);
-    const pushIfPresent = (
-      origin: Suggestion["origin"],
-      rel: string,
-      reason: string,
-    ): void => {
-      if (!existsSync(join(ctx.directory, rel))) return;
-      suggestions.push({ ref: rel, origin, path: join(cycleRel, rel), reason });
+    // patch はサイクルに属さないことがある（ctx が undefined）。それ以外のフェーズは必ずサイクルを開く
+    const { config, context: ctx } = isPatchPhase(phase) ? scopeFor(args, phase, operands[1]) : openCycle(args, operands[1]);
+    const { suggestions, missing } = collectDocSuggestions(config, phase);
+    const pushIfPresent = (origin: Suggestion["origin"], rel: string, reason: string): void => {
+      if (ctx === undefined || !existsSync(join(ctx.directory, rel))) return;
+      suggestions.push({ ref: rel, origin, path: join(relative(config.repoRoot, ctx.directory), rel), reason });
     };
 
     for (const [rel, reason] of cycleArtifacts(phase)) pushIfPresent("cycle", rel, reason);
 
-    if (phase.startsWith("build-")) {
+    if (ctx !== undefined && phase.startsWith("build-")) {
       const id = normalizeBuildId(phase.slice("build-".length));
       // 番号のタイプミスで、それらしい候補が返って成功するのを防ぐ。
       // tasklist に無いビルドは存在しないビルドで、読むものも決められない
@@ -261,7 +233,7 @@ register({
       }
     }
 
-    if (phase === "close") {
+    if (ctx !== undefined && phase === "close") {
       for (const build of ctx.builds) {
         pushIfPresent(
           "build",
@@ -273,8 +245,8 @@ register({
 
     pushInstructions(config, suggestions);
 
-    emit({ cycle: ctx.name, phase, suggestions, missingDocs: missing }, () =>
-      render(ctx.name, phase, suggestions, missing),
+    emit({ cycle: ctx?.name ?? null, phase, suggestions, missingDocs: missing }, () =>
+      render(ctx?.name ?? "（サイクルに属さない）", phase, suggestions, missing),
     );
   },
 });
@@ -291,42 +263,34 @@ function pushInstructions(config: ResolvedConfig, suggestions: Suggestion[]): vo
   }
 }
 
-/** patch の候補。サイクルに属さなければ永続ドキュメントとワークフローの指示だけ */
-function emitPatchContext(config: ResolvedConfig, ctx: CycleContext | undefined, phase: Phase): void {
+/** そのフェーズで読む永続ドキュメントの候補と、未作成の論理名 */
+function collectDocSuggestions(config: ResolvedConfig, phase: Phase): { suggestions: Suggestion[]; missing: string[] } {
   const suggestions: Suggestion[] = [];
   const missing: string[] = [];
   for (const entry of docEntriesFor(loadGuide(config.hikyakuRoot), phase)) {
-    // conventions は、ホストが自動で読み込むなら候補に出さない（build-NN と同じ）
-    if (entry.name === "conventions" && isAutoLoaded(entry.path)) continue;
-    if (entry.path === undefined || !existsSync(join(config.repoRoot, entry.path))) {
+    const path = entry.path;
+    if (path === undefined || !existsSync(join(config.repoRoot, path))) {
       missing.push(entry.name);
       continue;
     }
     suggestions.push({
       ref: entry.name,
       origin: "doc",
-      path: entry.path,
+      path,
       ownership: entry.ownership,
       reason: docReasons(phase)[entry.name] as string,
       summary: entry.summary,
     });
   }
-  if (ctx !== undefined) {
-    const cycleRel = relative(config.repoRoot, ctx.directory);
-    for (const [rel, reason] of cycleArtifacts(phase)) {
-      if (existsSync(join(ctx.directory, rel))) suggestions.push({ ref: rel, origin: "cycle", path: join(cycleRel, rel), reason });
-    }
-  }
-  pushInstructions(config, suggestions);
-  emit({ cycle: ctx?.name ?? null, phase, suggestions, missingDocs: missing }, () =>
-    render(ctx?.name ?? "（サイクルに属さない）", phase, suggestions, missing),
-  );
+  return { suggestions, missing };
 }
 
 /** そのフェーズが読む論理名のうち、「対象外」でないものを guide の並びで返す */
 function docEntriesFor(entries: DocEntry[], phase: Phase): DocEntry[] {
   const reasons = docReasons(phase);
   const candidates = entries.filter((e) => reasons[e.name] !== undefined && e.ownership !== "対象外");
+  // patch: conventions は、ホストが自動で読み込むなら候補に出さない（build-NN と同じ理由）
+  if (isPatchPhase(phase)) return candidates.filter((e) => e.name !== "conventions" || !isAutoLoaded(e.path));
   if (!phase.startsWith("build-")) return candidates;
   // build-NN: 自動で読み込まれる文書と、まだ無い文書は出さない（未作成を知らせても実装では使えない）
   return candidates.filter((e) => e.path !== undefined && !isAutoLoaded(e.path));

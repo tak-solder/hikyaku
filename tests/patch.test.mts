@@ -92,11 +92,21 @@ test("CLI: patch resolve は同じ月の同じ slug の記録があれば confli
   assert.equal(resumed["conflict"], null);
 });
 
+/** conductor ブランチで build-01 を完了させる（PR 列を埋めてコミットする） */
+function conductorWithBuild(directory: string): void {
+  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--peak", "350k");
+  git(directory, "add", "-A");
+  git(directory, "commit", "-q", "-m", "architect");
+  git(directory, "switch", "-q", "-c", "hikyaku/001-test/conductor");
+  succeeds(directory, "tasklist", "done", "001", "--id", "1", "--pr", "https://github.com/o/r/pull/9");
+  git(directory, "add", "-A");
+  git(directory, "commit", "-q", "-m", "build-01");
+  git(directory, "switch", "-q", "main");
+}
+
 test("CLI: 統合ブランチ（未マージの conductor ブランチ）から切った patch は、そこへ PR を向ける", (t) => {
   const directory = committed(t);
-  git(directory, "switch", "-q", "-c", "hikyaku/001-test/conductor");
-  git(directory, "commit", "-q", "--allow-empty", "-m", "builds");
-  git(directory, "switch", "-q", "main");
+  conductorWithBuild(directory);
 
   assert.equal(json(directory, "patch", "resolve", "list-sort", "--cycle", "001")["startPoint"], "hikyaku/001-test/conductor");
 
@@ -109,6 +119,77 @@ test("CLI: 統合ブランチ（未マージの conductor ブランチ）から�
   assert.equal(json(directory, "pr", "base", PHASE, "001", "--no-fetch")["base"], "hikyaku/001-test/conductor");
   // サイクルに属さない patch はデフォルトブランチへ向く
   assert.equal(json(directory, "pr", "base", PHASE, "--no-fetch")["base"], "main");
+});
+
+test("CLI: squash merge で取り込んだ conductor ブランチは、切る元にしない", (t) => {
+  const directory = committed(t);
+  conductorWithBuild(directory);
+  git(directory, "merge", "-q", "--squash", "hikyaku/001-test/conductor");
+  git(directory, "commit", "-q", "-m", "squash conductor");
+  const resolved = json(directory, "patch", "resolve", "list-sort", "--cycle", "001");
+  assert.equal(resolved["startPoint"], "main", "conductor で完了したビルドがすべて main にあれば取り込み済み");
+});
+
+test("CLI: 追跡参照しか無い conductor ブランチは、切る元の ref を origin/ で返し、作成コマンドもそこから切る", (t) => {
+  const directory = committed(t);
+  conductorWithBuild(directory);
+  const remote = temporaryDirectory(t);
+  git(remote, "init", "-q", "--bare");
+  git(directory, "remote", "add", "origin", remote);
+  git(directory, "push", "-q", "origin", "main", "hikyaku/001-test/conductor");
+  git(directory, "fetch", "-q", "origin");
+  git(directory, "branch", "-q", "-D", "hikyaku/001-test/conductor");
+
+  const resolved = json(directory, "patch", "resolve", "list-sort", "--cycle", "001");
+  assert.equal(resolved["startPoint"], "hikyaku/001-test/conductor");
+  assert.equal(resolved["startPointRef"], "origin/hikyaku/001-test/conductor");
+
+  const verify = cli(directory, "branch", "verify", PHASE, "001");
+  assert.equal(verify.status, 2);
+  assert.match(verify.stdout, new RegExp(`git switch -c hikyaku/patch/${MONTH}/list-sort origin/hikyaku/001-test/conductor`));
+});
+
+test("CLI: patch resolve は、ローカルにしか無い同名のブランチも重複として返す", (t) => {
+  const directory = committed(t);
+  git(directory, "branch", `hikyaku/patch/${MONTH}/list-sort`);
+  const resolved = json(directory, "patch", "resolve", "list-sort");
+  assert.match(String(resolved["conflict"]), /同じ名前のブランチ/);
+  assert.notEqual(resolved["remoteUnavailable"], null, "origin が無ければ確かめられなかったことを返す");
+});
+
+test("CLI: 再開で記録が無ければ recordMissing を返し、--cycle と記録の場所が食い違えば止める", (t) => {
+  const directory = committed(t);
+  git(directory, "switch", "-q", "-c", `hikyaku/patch/${MONTH}/list-sort`);
+  const missing = json(directory, "patch", "resolve");
+  assert.equal(missing["resume"], true);
+  assert.equal(missing["recordMissing"], true);
+
+  write(directory, `${ROOT_UNIT}/progress.jsonl`, "");
+  assert.equal(json(directory, "patch", "resolve")["recordMissing"], false);
+  const mismatch = cli(directory, "patch", "resolve", "--cycle", "001");
+  assert.equal(mismatch.status, 1);
+  assert.match(mismatch.stderr, /サイクルに属さない patch/);
+});
+
+test("CLI: サイクルの [branch] を上書きしていても、再開と Stop フックが patch のブランチを読む", (t) => {
+  const directory = committed(t);
+  write(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config", '[branch]\nprefix = "cyc"\n');
+  git(directory, "add", "-A");
+  git(directory, "commit", "-q", "-m", "cycle config");
+  const created = json(directory, "patch", "resolve", "list-sort", "--cycle", "001");
+  assert.equal(created["branch"], `cyc/patch/${MONTH}/list-sort`);
+
+  git(directory, "switch", "-q", "-c", created["branch"]);
+  const env = { CLAUDE_CODE_SESSION_ID: SESSION, CLAUDE_CONFIG_DIR: temporaryDirectory(t) };
+  assert.equal(cliWith(directory, env, "step", "report", PHASE, "start", "001", "--result", "done").status, 0);
+  const resumed = json(directory, "patch", "resolve");
+  assert.equal(resumed["resume"], true);
+  assert.equal(resumed["cycle"], "001-test");
+
+  const input = JSON.stringify({ hook_event_name: "Stop", cwd: directory, session_id: SESSION, stop_hook_active: false });
+  const hooked = cliInput(directory, input, {}, "step", "hook", "stop");
+  assert.equal(hooked.status, 0, hooked.stderr);
+  assert.match(hooked.stdout, /survey/);
 });
 
 test("CLI: サイクルに属さない patch の手順は、合意・Draft PR・実装・公開まで進み、永続化が無ければ P2 を出さない", (t) => {
@@ -208,7 +289,7 @@ test("CLI: Stop フックは、現在のブランチの patch の手順が途中
   assert.equal(hook(), "", "patch のブランチに居なければ、マージ済みの patch の記録は読まない");
 });
 
-test("CLI: patch prune は、手順を終えた古い月の記録だけを消す", (t) => {
+test("CLI: patch prune は、PR を作った古い月の記録を消し、PR の無いものといま居るブランチの patch は残す", (t) => {
   const directory = committed(t);
   const done = (step: string, extra: Record<string, unknown> = {}) =>
     JSON.stringify({ at: "2026-01-01T00:00:00.000Z", skill: "patch", step, result: "done", ...extra });
@@ -219,14 +300,21 @@ test("CLI: patch prune は、手順を終えた古い月の記録だけを消す
   write(directory, "docs/hikyaku/patches/202601/finished/progress.jsonl", `${finished.join("\n")}\n`);
   write(directory, "docs/hikyaku/patches/202601/halfway/progress.jsonl", `${done("start")}\n`);
   write(directory, "docs/hikyaku/patches/202605/recent/progress.jsonl", `${finished.join("\n")}\n`);
+  // 公開の記録を push する前にマージされた（pr までしか記録が無い）
+  write(directory, "docs/hikyaku/patches/202601/merged-early/progress.jsonl", `${finished.slice(0, 7).join("\n")}\n`);
+  // いま居るブランチの patch
+  write(directory, "docs/hikyaku/patches/202601/working/progress.jsonl", `${finished.join("\n")}\n`);
+  git(directory, "switch", "-q", "-c", "hikyaku/patch/202601/working");
 
   const dry = json(directory, "patch", "prune", "--before", "202603", "--dry-run");
-  assert.deepEqual(dry["removed"], ["docs/hikyaku/patches/202601/finished"]);
+  assert.deepEqual(dry["removed"], ["docs/hikyaku/patches/202601/finished", "docs/hikyaku/patches/202601/merged-early"]);
   assert.ok(existsSync(join(directory, "docs/hikyaku/patches/202601/finished")), "--dry-run は消さない");
 
   json(directory, "patch", "prune", "--before", "202603");
   assert.ok(!existsSync(join(directory, "docs/hikyaku/patches/202601/finished")));
-  assert.ok(existsSync(join(directory, "docs/hikyaku/patches/202601/halfway")), "途中のものは残す");
+  assert.ok(existsSync(join(directory, "docs/hikyaku/patches/202601/halfway")), "PR の記録が無いものは残す");
+  assert.ok(existsSync(join(directory, "docs/hikyaku/patches/202601/working")), "いま居るブランチの patch は残す");
+  assert.ok(!existsSync(join(directory, "docs/hikyaku/patches/202601/merged-early")));
   assert.ok(existsSync(join(directory, "docs/hikyaku/patches/202605/recent")), "--before より後の月は残す");
 });
 
@@ -248,5 +336,6 @@ test("CLI: review resolve code は patch でも差分の基準を返し、config
   assert.equal(resolved["base"]["name"], "main");
   assert.equal(json(directory, "config", "--no-cycle")["cycle"], undefined);
   assert.equal(json(directory, "config")["cycle"], "001-test");
+  assert.equal(cli(directory, "config", "--require-cycle", "--no-cycle").status, 1);
   assert.match(readFileSync(join(directory, ".hikyaku.config"), "utf8"), /base_branch/);
 });

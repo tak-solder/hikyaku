@@ -12,9 +12,11 @@
 
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { parsePatchPhase, type Phase } from "./branch.mts";
+import { isPatchPhase, parseBranch, parsePatchPhase, type BranchNaming, type Phase } from "./branch.mts";
+import { cycleBranchNaming, type ResolvedConfig } from "./config.mts";
 import { cycleDir, cycleDirName, cyclesPath, loadCycles, type CycleRecord } from "./cycles.mts";
 import { HikyakuError } from "./errors.mts";
+import { currentBranch } from "./git.mts";
 
 export const PATCHES_DIR = "patches";
 
@@ -68,4 +70,34 @@ export function patchCycleOf(hikyakuRoot: string, phase: string): CycleRecord | 
 /** 今日の年月（YYYYMM）。新しい patch の名前に使う */
 export function currentMonth(now: Date = new Date()): string {
   return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * 現在のブランチが patch のブランチなら、そのフェーズ。
+ *
+ * ブランチ名はルートの [branch] で読み、読めなければ進行中の各サイクルの [branch] でも読む。
+ * サイクルに属す patch のブランチは、そのサイクルの [branch] の上書きで名付けられるため
+ */
+export function currentPatchPhase(config: ResolvedConfig): Phase | undefined {
+  const branch = currentBranch(config.repoRoot);
+  if (branch === undefined) return undefined;
+  const namings: BranchNaming[] = [config.branch];
+  if (existsSync(cyclesPath(config.hikyakuRoot))) {
+    for (const record of loadCycles(config.hikyakuRoot)) {
+      if (record.status === "active") namings.push(cycleBranchNaming(config, cycleDir(config.hikyakuRoot, record)));
+    }
+  }
+  for (const naming of namings) {
+    const parsed = parseBranch(naming, branch);
+    if (parsed !== undefined && isPatchPhase(parsed.phase)) return parsed.phase;
+  }
+  return undefined;
+}
+
+/** その patch の記録のディレクトリが、HIKYAKU_ROOT か進行中のサイクルのどこかにあるか */
+export function patchRecordExists(hikyakuRoot: string, phase: string): boolean {
+  const relative = patchUnitDirectory(phase);
+  if (relative === undefined) return false;
+  if (existsSync(join(hikyakuRoot, relative))) return true;
+  return patchCycleOf(hikyakuRoot, phase) !== undefined;
 }

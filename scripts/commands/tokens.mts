@@ -85,7 +85,7 @@ function guideSource(config: ResolvedConfig, kind: "project" | "standard", path:
 register({
   name: "tokens guide",
   summary: "予測ピークの見積もりに使うガイド（プロジェクトか標準か）と、その版を示す",
-  usage: "hikyaku tokens guide [<cycle>] [--root <path>] [--json]",
+  usage: "hikyaku tokens guide [<cycle> | --no-cycle] [--root <path>] [--json]",
   details: [
     `{HIKYAKU_ROOT}/${TOKEN_GUIDE_DIR}/${TOKEN_GUIDE_FILE} があればそれが、無ければプラグインの標準のガイドが有効です。`,
     "プロジェクトのガイドは標準を置き換えます（足し合わせません）。見積もりの前に、ここで示したパスを読んでください。",

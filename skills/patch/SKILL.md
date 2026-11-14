@@ -62,8 +62,12 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config --no-cycle --json
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" patch resolve {slug} [--cycle {cycle}] --json
 ```
 
-  - `resume: true` なら、現在のブランチの patch の再開。slug と `--cycle` は無視され、記録から決まる
-  - `conflict` があれば別の slug で解決し直す
+  - `resume: true` なら、現在のブランチの patch の再開。slug は無視される。属すサイクルは記録の場所が正で、
+    `--cycle` を渡さなければ記録から決まる（渡して食い違えばエラー）
+  - `recordMissing: true` なら、記録を始める前に中断している。サイクルに属すかは記録から分からないので、
+    推測せずユーザーに確かめ、属すなら `--cycle {cycle}` を付けて解決し直す
+  - `conflict` があれば別の slug で解決し直す。`remoteUnavailable` があれば、origin のブランチとの重複を
+    確かめられなかったことを伝える
   - `pendingBuilds` が空でなければ、PR 列が空のビルドが残っていることを伝え、patch で進めるかを確かめる。
     残りのビルドで扱うべき内容なら `/hikyaku:builder {cycle}` を案内して終える
   - 出力の `phase`（`patch-YYYYMM-slug`）を以降の `{phase}` に使う
@@ -71,19 +75,20 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" patch resolve {slug} [--cycle {
 - [ ] ブランチを決める
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify {phase} {cycle}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify {phase} {cycle} --json
 ```
 
 | 状況 | 対応 |
 |---|---|
 | `ok: true` | そのまま続ける |
-| `ok: false` かつ `onBaseBranch: true`（切る元の `startPoint` に居る） | `expected` の名前でブランチを作成して続ける |
+| `ok: false` かつ `onBaseBranch: true`（切る元の `startPoint` に居る） | `expected` の名前でブランチを作成して続ける（`git switch -c {expected} {startPointRef}`） |
 | `ok: false` かつ `onBaseBranch` が `false` / `null` | ユーザーに尋ねる（下記） |
 
 3つ目は、現在のブランチが実行環境に割り当てられたものだと分かっていても、**自分で決めずに
 必ず尋ねる。** 次の3つを、どれが妥当かの示唆を添えずに提示する。
 
-1. Hikyaku の規則に従う — `startPoint` から `expected` の名前でブランチを作成する（`git switch -c {expected} {startPoint}`）
+1. Hikyaku の規則に従う — `startPoint` から `expected` の名前でブランチを作成する（`git switch -c {expected} {startPointRef}`。
+   `startPointRef` は追跡参照しか無いときに `origin/...` になる。現在の HEAD から切らない）
 2. 現在のブランチで作業する
 3. 別のブランチを指定する
 

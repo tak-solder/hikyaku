@@ -35,9 +35,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **patch スキル（`/hikyaku:patch [--cycle {cycle}] {依頼}`）**: サイクルを作らずに、小さな変更（バグ修正・軽い仕様変更・改善、QA のフィードバックを複数件まとめてでもよい）を、依頼のすり合わせから実装・検証・コードレビュー・PR まで1セッションで進める。手順は start → survey → scope（予測ピークの見積もり）→ fit（patch で進めるかの判定）→ P1（対応方針の合意）→ pr（Draft PR に依頼と合意を書く）→ implement → verify → review → persist（知見の仕分け）→ P2 / write（永続ドキュメントの承認と書き込み）→ publish。作業管理の文書は作らず、依頼・合意・検証結果は PR の本文に集める。`disable-model-invocation: true` で、明示的に起動したときだけ動く（[#93](https://github.com/tak-solder/hikyaku/issues/93)）
 - **patch の作業単位**: フェーズ `patch-YYYYMM-slug`、ブランチ `{prefix}/patch/{YYYYMM}/{slug}`、記録 `patches/{YYYYMM}/{slug}/progress.jsonl`。サイクルに属さなければ HIKYAKU_ROOT の下、進行中のサイクルに属せばそのサイクルのディレクトリの下に置く
 - **承認ゲート P1 / P2**: patch の対応方針の合意と、永続ドキュメントの更新の承認。どちらもプロファイルの管轄外
-- **`hikyaku patch resolve [<slug>] [--cycle <cycle>]`**: patch の作業単位・ブランチ・切る元（統合ブランチ）・記録の場所・PR 列が空のビルド・名前の重複を返す。サイクルは推測せず、`--cycle` のときだけ属す。patch のブランチに居れば再開として扱う
-- **`hikyaku patch prune --before <YYYYMM>`**: サイクルに属さない patch のうち、手順を終えた古い月の記録を消す
-- **`--no-cycle`**（`config` / `tokens guide` / `tokens estimate`）: 選択済みのサイクルを参照せず、ルート設定で動く
+- **`hikyaku patch resolve [<slug>] [--cycle <cycle>]`**: patch の作業単位・ブランチ・切る元（統合ブランチとローカルで解決できる ref）・記録の場所・PR 列が空のビルド・名前の重複（記録・ローカル・追跡参照・origin）を返す。サイクルは推測せず、`--cycle` のときだけ属す。patch のブランチに居れば再開として扱い、記録の場所を正とする（記録がまだ無ければ `recordMissing`）。統合ブランチは、conductor ブランチで完了したビルドがデフォルトブランチに無いうちだけ conductor ブランチとする（squash merge で取り込んだあとも誤らない）
+- **`hikyaku patch prune --before <YYYYMM>`**: サイクルに属さない patch のうち、PR を作った古い月の記録を消す（いま居るブランチの patch は残す）
+- **`--no-cycle`**（`config` / `tokens guide` / `tokens estimate`）: 選択済みのサイクルを参照せず、ルート設定で動く。`config` で `--require-cycle` と同時に指定するとエラー
 - `[pr] reviewers_skip` に `patch` を指定できる
 - **`hikyaku step next / report / status / lint`**: フェーズの中の手順を、設定と進捗から1手ずつ返す。`step next` は `run`（ステップを行う）・`gate`（承認を求める）・`call`（内部スキルを呼ぶ）・`done`・`stop` のどれか1つを、読むべき指示ファイルと報告のコマンドを添えて返す。`step report` は結果を記録して次の1手を返す。現在地は保存せず、作業単位のディレクトリの `progress.jsonl` と成果物から毎回導出する（[#50](https://github.com/tak-solder/hikyaku/issues/50)）
 - **`hikyaku step restart`**: 同じ作業単位で、スキルの手順を最初から回し直す区切りを記録する。これより前の記録は現在地の導出に使わない（architect の追加設計、内部スキルの呼び直し）。`--round` で回の種類（スキルが定義した値だけ）を記録でき、スキルの定義はその値で手順を変える
@@ -76,7 +76,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **永続ドキュメントを書けるスキルの例外に、サイクルに属さない patch を加えた。** コードと同じ PR で、P2 の承認を得て永続ドキュメント・`instructions.md`・スキルを直す（同じ PR でマージされるので、マージ時点で as-is が保たれる）。進行中のサイクルに属す patch は書かず、`patches/{YYYYMM}/{slug}/handoff.md` の「永続化すること」に残す
 - close-cycle: `hikyaku promotions` が、サイクルに属す patch の handoff.md も候補として集める
 - create-cycle: patch から引き継いだときは `planning/intake.md` に依頼・調べたこと・合意したことを書く。planner と `context plan` はこれを企画の入力として読む
-- `branch verify` / `pr base` / `pr title` / `session title` / `context` / `review resolve` / `review run` / `review action` / `step` が patch のフェーズを受け付ける。サイクルに属す patch を統合ブランチ（未マージの conductor ブランチ）から切れば、`pr base` はそこを返す。`branch verify` は patch の切る元を `startPoint` で返す
+- `branch verify` / `pr base` / `pr title` / `session title` / `context` / `review resolve` / `review run` / `review action` / `step` が patch のフェーズを受け付ける。サイクルに属す patch を統合ブランチ（未マージの conductor ブランチ）から切れば、`pr base` はそこを返す。`branch verify` は patch の切る元を `startPoint` / `startPointRef` で返し、作成コマンドも切る元から作る形で案内する
 - Stop フックは、patch については現在のブランチの patch の記録だけを読む（サイクルに属さない patch の記録が増えても、走査の量が増えない）
 - code-explorer: patch の現状の確認でも委任される
 - `config` と `tokens` の任意の設定参照は、ブランチ・栞で未選択ならルート設定を使う。サイクルを省略した `--profile` の確認には既存サイクルの上書きを混ぜず、既存サイクルの what-if は引数で明示する。フェーズの作業開始は `config --require-cycle` を使い、`resolveCycle` の選択規則・未作成時の作成案内を維持した

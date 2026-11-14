@@ -6,7 +6,7 @@ import { ValidationError } from "../lib/errors.mts";
 import { currentBranch, defaultBranch, listRemoteBranches } from "../lib/git.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
-import { integrationBranch, requirePhase, resolvePrBase, scopeFor, stackParent } from "../lib/stack.mts";
+import { integrationBranch, requirePhase, resolvableRef, resolvePrBase, scopeFor, stackInputs, stackParent } from "../lib/stack.mts";
 
 register({
   name: "branch verify",
@@ -74,15 +74,20 @@ register({
     const ok = actual === expected;
 
     const base = config.baseBranch ?? defaultBranch(config.repoRoot);
+    // ここは毎フェーズの冒頭とコミット直前に走るので fetch しない。
+    // PR の base として正なのは pr base（そちらは必要なら追跡参照を更新する）
+    // 判定の材料（tasklist の断面とブランチの一覧）は1回だけ集め、統合ブランチとスタック元で共有する
+    const inputs = context === undefined ? undefined : await stackInputs(config, context, base, { fetch: false });
     // patch はサイクルの統合ブランチから切る（未マージの conductor ブランチがあればそれ）
-    const startPoint =
-      isPatchPhase(phase) && context !== undefined ? await integrationBranch(config, context, base, { fetch: false }) : base;
+    const start =
+      isPatchPhase(phase) && context !== undefined && inputs !== undefined
+        ? await integrationBranch(config, context, base, { fetch: false, inputs })
+        : { name: base, ref: base === undefined ? undefined : await resolvableRef(config.repoRoot, base) };
+    const startPoint = start.name;
     // base が分からなければ true/false のどちらとも言えない。推測せず null で返す
     const onBaseBranch = startPoint === undefined || actual === undefined ? null : actual === startPoint;
 
-    // ここは毎フェーズの冒頭とコミット直前に走るので fetch しない。
-    // PR の base として正なのは pr base（そちらは必要なら追跡参照を更新する）
-    const stacked = await stackParent(config, context, phase, base, { fetch: false });
+    const stacked = await stackParent(config, context, phase, base, { fetch: false, ...(inputs === undefined ? {} : { inputs }) });
     const prBase = stacked?.name ?? base;
 
     emit(
@@ -95,6 +100,7 @@ register({
         parsed,
         baseBranch: base ?? null,
         startPoint: startPoint ?? null,
+        startPointRef: start.ref ?? null,
         onBaseBranch,
         stackedOn: stacked?.name ?? null,
         prBase: prBase ?? null,
@@ -132,7 +138,10 @@ register({
           : `現在のブランチは ${parsed.cycle ?? "-"} の ${parsed.phase} を指しています。`,
         "",
         "hikyaku の規則に従ったブランチで作業してください",
-        `git switch ${expected} || git switch -c ${expected}`,
+        // patch は切る元が決まっている（統合ブランチかデフォルトブランチ）。いまの HEAD から切らない
+        isPatchPhase(phase) && start.ref !== undefined
+          ? `git switch ${expected} || git switch -c ${expected} ${start.ref}`
+          : `git switch ${expected} || git switch -c ${expected}`,
       );
 
       if (parsed !== undefined && cycle !== undefined && parsed.cycle === cycle && actual !== undefined) {

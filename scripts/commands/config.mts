@@ -3,6 +3,7 @@
 import { flagBoolean, flagString } from "../lib/args.mts";
 import { describeProviderRules, loadConfig } from "../lib/config.mts";
 import { DEFAULT_BRANCH_MARK, resolveUnsafeSplit } from "../lib/integrity.mts";
+import { HikyakuError } from "../lib/errors.mts";
 import { emit, warn } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { describeSource, openCycle, openCycleIfAny } from "../lib/workspace.mts";
@@ -41,6 +42,9 @@ register({
     "デフォルトブランチ（origin/HEAD）が分からなければ allowed: false に倒します。",
   ].join("\n"),
   run: ({ args, operands }) => {
+    if (flagBoolean(args, "require-cycle") && flagBoolean(args, "no-cycle")) {
+      throw new HikyakuError("--require-cycle と --no-cycle は同時に指定できません");
+    }
     const opened = flagBoolean(args, "require-cycle")
       ? openCycle(args, operands[0])
       : openCycleIfAny(args, operands[0]);
