@@ -5,6 +5,8 @@ import { join, relative } from "node:path";
 import { flagBoolean, flagList, flagString, type ParsedArgs } from "../lib/args.mts";
 import { branchName } from "../lib/branch.mts";
 import {
+  checkExternalTarget,
+  EXTERNAL_TARGETS,
   loadConfig,
   PROFILE_NAMES,
   type AskKey,
@@ -75,19 +77,14 @@ function readDecided(args: ParsedArgs): Decided {
     );
   }
 
-  const target = flagString(args, "external");
-  if (target === "asana") {
-    throw new HikyakuError("Asana への投影は v3 で廃止しました", "使用できる値: none | github");
-  }
+  const rawTarget = flagString(args, "external");
   if (args.flags.has("external-project")) {
-    throw new HikyakuError("--external-project は v3 で廃止しました", "Asana への投影は廃止しました。使用できる --external の値: none | github");
-  }
-  if (target !== undefined && target !== "none" && target !== "github") {
     throw new HikyakuError(
-      `--external の値が不正です: ${target}`,
-      "使用できる値: none | github",
+      "--external-project は v3 で廃止しました",
+      `Asana への投影は廃止しました。使用できる --external の値: ${EXTERNAL_TARGETS.join(" | ")}`,
     );
   }
+  const target = rawTarget === undefined ? undefined : checkExternalTarget(rawTarget, "--external");
 
   return {
     baseBranch: flagString(args, "base-branch"),
@@ -190,7 +187,7 @@ const ASK_FLAGS: Record<AskKey, string> = {
   "branch.separator": "--branch-separator <text>",
   "pr.title": "--pr-title <template>",
   "session.title": "--session-title <template>",
-  "external.target": "--external <none|github> [--external-repo <owner/repo>]",
+  "external.target": `--external <${EXTERNAL_TARGETS.join("|")}> [--external-repo <owner/repo>]`,
 };
 
 register({
@@ -200,7 +197,7 @@ register({
     "hikyaku cycle new <slug> --profile <name> [--ticket <ref>] [--depends 001,002]\n" +
     "                           [--base-branch <name>] [--branch-prefix <text>] [--branch-separator <text>]\n" +
     "                           [--pr-title <template>] [--session-title <template>]\n" +
-    "                           [--external <none|github>] [--external-repo <owner/repo>] [--dry-run]",
+    `                           [--external <${EXTERNAL_TARGETS.join("|")}>] [--external-repo <owner/repo>] [--dry-run]`,
   writes: true,
   details: [
     "--profile は必須です。サイクルの進め方は作成時に明示的に選ぶ必要があります",

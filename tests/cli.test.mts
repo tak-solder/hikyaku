@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { pluginVersion } from "../scripts/lib/paths.mts";
-import { cli, repository, snapshot, succeeds, workspace, write } from "./helpers.mts";
+import { cli, repository, snapshot, succeeds, testEnvironment, workspace, write } from "./helpers.mts";
+import { githubRepositoryOf } from "../scripts/lib/github.mts";
 
 const tasklist = "docs/hikyaku/cycles/001-test/tasklist.md";
 
@@ -357,10 +359,19 @@ test("CLI: external はサイクルの issue だけを扱い、close だけが�
   assert.equal(ref("conductor"), "Refs #12");
   assert.equal(ref("close"), "Closes #12");
 
+  // origin が GitHub でなければ、サイクルの在り処はリポジトリ相対パスにする（github_repo からは作らない）
+  const local = JSON.parse(succeeds(directory, "external", "sync", "001", "--dry-run", "--json"));
+  assert.equal(local.applied, false);
+  assert.match(local.projection.body, /\*\*サイクル\*\*: docs\/hikyaku\/cycles\/001-test$/m);
+  assert.doesNotMatch(local.projection.body, /## ビルド/, "ビルドの一覧は載せない");
+  assert.doesNotMatch(local.projection.body, /次回の同期/, "同期し続けるビューのようには書かない");
+
+  // 起票先（github_repo）が別のリポジトリでも、リンクはサイクルのファイルがある origin を指す
+  const remote = spawnSync("git", ["remote", "add", "origin", "git@github.com:acme/app.git"], { cwd: directory, env: testEnvironment() });
+  assert.equal(remote.status, 0);
   const dry = JSON.parse(succeeds(directory, "external", "sync", "001", "--dry-run", "--json"));
-  assert.equal(dry.applied, false);
-  assert.match(dry.projection.body, /https:\/\/github\.com\/o\/r\/tree\/.*\/docs\/hikyaku\/cycles\/001-test/);
-  assert.doesNotMatch(dry.projection.body, /## ビルド/, "ビルドの一覧は載せない");
+  assert.match(dry.projection.body, /https:\/\/github\.com\/acme\/app\/tree\/.*\/docs\/hikyaku\/cycles\/001-test/);
+  assert.doesNotMatch(dry.projection.body, /github\.com\/o\/r/);
 
   assert.equal(cli(directory, "external", "sync", "asana", "001").status, 1);
   assert.equal(cli(directory, "tasklist", "link", "001", "--id", "1", "--issue", "https://github.com/o/r/issues/13").status, 1);
@@ -378,4 +389,36 @@ test("CLI: Asana の設定は移行先を示して止まる", (t) => {
   const created = cli(directory, "cycle", "new", "other", "--profile", "standard", "--external", "asana", "--dry-run");
   assert.equal(created.status, 1);
   assert.match(created.stderr, /Asana への投影は v3 で廃止/);
+});
+
+test("github: リモートの URL から owner/repo を取り出し、GitHub 以外は undefined", () => {
+  assert.equal(githubRepositoryOf("https://github.com/acme/app.git"), "acme/app");
+  assert.equal(githubRepositoryOf("https://x-access-token:t@github.com/acme/app"), "acme/app");
+  assert.equal(githubRepositoryOf("git@github.com:acme/app.git"), "acme/app");
+  assert.equal(githubRepositoryOf("ssh://git@github.com/acme/app.git"), "acme/app");
+  assert.equal(githubRepositoryOf("https://gitlab.com/acme/app.git"), undefined);
+  assert.equal(githubRepositoryOf("http://127.0.0.1:8080/git/acme/app"), undefined);
+  assert.equal(githubRepositoryOf(undefined), undefined);
+});
+
+test("CLI: 進行中のサイクルの設定に残った廃止キーは、review と external でも止まる", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", `${readFileSync(join(directory, ".hikyaku.config"), "utf8")}\n[external]\ntarget = "github"\n`);
+  const cycleConfig = "docs/hikyaku/cycles/001-test/.hikyaku.config";
+
+  // ルートの github に戻って起票しない
+  write(directory, cycleConfig, '[external]\ntarget = "asana"\n');
+  for (const args of [["external", "sync", "001", "--dry-run"], ["external", "ref", "plan", "001"]]) {
+    const result = cli(directory, ...args);
+    assert.equal(result.status, 1, args.join(" "));
+    assert.match(result.stderr, /Asana への投影は v3 で廃止/, args.join(" "));
+  }
+
+  // 黙って claude で動かさない
+  write(directory, cycleConfig, '[review.provider_for]\nclaude = "codex"\n');
+  const review = cli(directory, "review", "resolve", "doc", "plan", "001");
+  assert.equal(review.status, 1);
+  assert.match(review.stderr, /provider_for は v3 で廃止/);
+  // 読むだけの操作は止めない
+  assert.equal(cli(directory, "cycle", "status", "001").status, 0);
 });

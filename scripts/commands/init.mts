@@ -3,7 +3,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { flagBoolean, flagString } from "../lib/args.mts";
-import { ASK_KEYS, PROFILE_NAMES } from "../lib/config.mts";
+import { ASK_KEYS, EXTERNAL_TARGETS, PROFILE_NAMES } from "../lib/config.mts";
 import { LOCAL_FILE } from "../lib/local.mts";
 import { cyclesPath, renderCyclesFile } from "../lib/cycles.mts";
 import { guidePath } from "../lib/docs.mts";
@@ -291,7 +291,7 @@ function renderRepoConfig(hikyakuRoot: string): string {
     "",
     "# サイクルごとに GitHub issue を1つ起票し、CLOSE の PR で閉じます。マスターは常にファイル側です。",
     "[external]",
-    '# target = "none"        # none | github',
+    `# target = "none"        # ${EXTERNAL_TARGETS.join(" | ")}`,
     '# github_repo = "owner/repo"',
     "",
     "# ビルドの大きさは、メインセッションのコンテキストの予測ピーク（トークン）で判定します。",

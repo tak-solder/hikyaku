@@ -1,7 +1,7 @@
 /** config — 解決済みの設定を出力する */
 
 import { flagBoolean, flagString } from "../lib/args.mts";
-import { describeProviderRules, loadConfig } from "../lib/config.mts";
+import { describeProvider, loadConfig } from "../lib/config.mts";
 import { DEFAULT_BRANCH_MARK, resolveUnsafeSplit } from "../lib/integrity.mts";
 import { emit, warn } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
@@ -98,7 +98,7 @@ register({
               return model === undefined && effort === undefined ? "" : `  ${provider}: ${[model, effort].filter(Boolean).join(" / ")}`;
             })
             .join("");
-          return `  ${kind.padEnd(9)}${describeProviderRules(settings.providers)}${rounds}${models}`;
+          return `  ${kind.padEnd(9)}${describeProvider(settings.provider)}${rounds}${models}`;
         }),
         "",
         `branch       ${config.branch.prefix}${config.branch.separator}{cycle}${config.branch.separator}{phase}`,

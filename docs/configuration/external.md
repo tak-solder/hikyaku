@@ -1,6 +1,6 @@
 # サイクルの GitHub issue
 
-`[external] target = "github"` を設定すると、Hikyaku はサイクルごとに GitHub の issue を1つ起票し、そのサイクルのすべての PR からこの issue を参照します。issue は CLOSE の PR のマージで閉じます。
+`[external] target = "github"` を設定すると、Hikyaku はサイクルごとに GitHub の issue を1つ起票し、そのサイクルのすべての PR からこの issue を参照します。CLOSE の PR には `Closes` が入るので、その PR がデフォルトブランチにマージされると issue が閉じます。`base_branch` をデフォルトブランチ以外にしているサイクルでは GitHub が閉じないので、手で閉じてください。
 
 ```toml
 [external]
@@ -14,7 +14,9 @@ github_repo = "owner/repo"
 
 ## いつ起票されるか
 
-PLAN の PR を作る直前に、planner が1回だけ起票します。その時点なら user-stories があって issue の要約として成立し、以降のすべての PR がこの issue を参照できます。本文はサイクルの要約・profile・チケット・サイクルのディレクトリへのリンクです。
+PLAN の PR を作る直前に、planner が1回だけ起票します。その時点なら user-stories があって issue の要約として成立し、以降のすべての PR がこの issue を参照できます。本文はサイクルの要約・profile・チケット・サイクルのディレクトリへのリンクです。起票したあとは、ビルドが進んでも本文を更新しません。
+
+サイクルのディレクトリへのリンクは、`origin` のリポジトリから作ります。`github_repo` は issue の起票先なので、サイクルのファイルがあるリポジトリとは限らないためです。`origin` が GitHub でなければ、リポジトリ相対のパスを書きます。リンク先のファイルは PLAN の PR がマージされるまで開けません。
 
 作成した issue の参照は `cycles.md` の外部列に自動で記録されます。この変更は PLAN の PR でデフォルトブランチに入るので、並行して動くほかのセッションからも見えます。手で書き写す運用は必ず抜けるため、記録はスクリプトが行います。
 
@@ -49,4 +51,6 @@ hikyaku cycle link 002-billing --external {issueのURL}
 hikyaku external sync 002-billing --dry-run
 ```
 
-既に参照が記録されていれば、その issue のタイトルと本文を更新します。通常はスキルが呼ぶので、手で実行するのは起票が抜けたときの復旧くらいです。
+既に参照が記録されていれば、その issue のタイトルと本文を更新します。GitHub 側で本文を編集していた場合、その編集は上書きされます。通常はスキルが呼ぶので、手で実行するのは起票が抜けたときの復旧くらいです。
+
+進行中のサイクルの `.hikyaku.config` に廃止したキー（`target = "asana"` など）が残っていると、`external sync` と `external ref` はエラーで止まります。ルートの設定に戻って起票し直すことはしません。

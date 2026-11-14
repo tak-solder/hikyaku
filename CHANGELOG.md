@@ -113,9 +113,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - 見積もりのガイドを書き換えるのは `/hikyaku:token-guide` だけにした。close-cycle は補正を昇格の候補にせず、乖離が大きいサイクルで token-guide を呼ぶ
 - 標準の見積もりのガイドを version 2 にした（「このリポジトリでの補正」の説明から close-cycle の昇格を外した。見積もり方は変えていない）
 - conductor: G10 の検証で、削除と置き換えの根拠がそのサイクルの記録にあることを確かめる。見積もりのガイドの見直しとフックの提案の PR は取り込まない
-- **外部連携はサイクルごとの GitHub issue だけになった。** planner が PLAN の PR の直前に1回だけ起票し（`external sync`）、各フェーズの PR は `Refs`、close-cycle の PR は `Closes` で参照する。本文は要約・profile・チケット・サイクルのディレクトリへのリンクで、ビルドの一覧と進捗は載せない（正は `tasklist.md`）。conductor の最後の PR も `Refs` を入れるだけで、ビルドの issue をまとめて閉じる処理は無くなった
+- **外部連携はサイクルごとの GitHub issue だけになった。** planner が PLAN の PR の直前に1回だけ起票し（`external sync`）、各フェーズの PR は `Refs`、close-cycle の PR は `Closes` で参照する。本文は要約・profile・チケット・サイクルのディレクトリへのリンクで、ビルドの一覧と進捗は載せない（正は `tasklist.md`）。リンクは `origin` のリポジトリから作る（`github_repo` は起票先で、サイクルのファイルがあるリポジトリとは限らないため）。conductor の最後の PR も `Refs` を入れるだけで、ビルドの issue をまとめて閉じる処理は無くなった
 - **`tasklist.md` の列から `issue` を外した**（`buildID` / `title` / `予測ピーク` / `dependencies` / `PR`）。`issue` 列のある既存の tasklist.md も読め、`tasklist` のコマンドで書き込むと列が落ちる
 - review: メインのセッションは常に Claude Code として扱う。`provider = "auto"` は `claude` と同じ。Claude Code のクラウド環境（`CLAUDE_CODE_REMOTE=true`）では引き続き `claude` に固定する
+- `hikyaku config --json` の `review.<種類>.providers`（優先順の規則の列）を `provider`（決まった値と出所）にした。`hikyaku config` の表示も、使われるプロバイダだけを出す
+- 進行中のサイクルの設定に廃止したキー（`provider_for`・`target = "asana"`）が残っていると、`review resolve` / `review run`・`external sync` / `external ref` も止まる。黙ってルートの設定に戻って動かさないため
 - `hikyaku tokens session` の出力と retrospective.md の「セッションの実測」表から「ウィンドウ」を外した（記録していたのは Codex だけだった）。表に「ウィンドウ」の行がある既存の retrospective.md も `tokens history` で読める
 
 ### Removed
@@ -153,6 +155,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **Codex で Hikyaku を使っていた場合**: v3 には Codex 用のプラグインが無い。進行中のサイクルは v2 のまま終える。レビューを Codex で行いたいときは `[review] provider = "codex"`（種類ごとなら `[review.<種類>] provider`）を書き、codex の CLI を PATH に入れてログインしておく（`docs/migration/v2-to-v3.md#codex-のホスト対応の廃止`）
 - `[review.provider_for]` / `[review.<種類>.provider_for]` はエラーになる。`claude = "codex"` は `provider = "codex"` に書き換え、`codex` の行だけなら削除する。閉じたサイクルの設定に残っているものは読み飛ばす
 - `review resolve` / `review run` の `--self` と `tokens session` の `--host` はエラーになる。独自のスクリプトから呼んでいれば外す
+- `hikyaku config --json` の `review.<種類>.providers` を読んでいる独自のツールは、`review.<種類>.provider`（`{ source, provider }`）を読むよう直す
 - `[external] target = "asana"` と `asana_project_gid` はエラーになる。`"github"` か `"none"` にし、`asana_project_gid` を削除する。閉じたサイクルの設定に残っているものは読み飛ばす
 - 起票済みのビルドの issue（子 issue）は Hikyaku からは閉じなくなる。不要なら GitHub 側で閉じる。`tasklist.md` の `issue` 列は、次に `tasklist` のコマンドで書き込んだときに落ちる（`docs/migration/v2-to-v3.md#ビルドごとの外部起票の廃止`）
 

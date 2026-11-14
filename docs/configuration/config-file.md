@@ -227,7 +227,7 @@ Hikyaku のスキルを動かすメインのセッションは Claude Code で�
 
 組み込みのレビュー機能には指示文を渡せないため、plan.md のスコープから外れていないかは builder 自身が確かめます。また Claude の `/security-review` は origin のデフォルトブランチとの差分しか見ないので、スタックしたビルドや origin/HEAD が無いリポジトリでは使いません。その場合と Codex のセキュリティレビューでは、観点を書いた指示文を渡す形に切り替わります。どの形で起動されるかは `hikyaku review resolve` で確認できます。
 
-未知のキーやテーブル名はエラーになります。v3 のベータ版まであった `[review.provider_for]` は、移行先を示すエラーになります（[v2 から v3 への移行](../migration/v2-to-v3.md)）。
+未知のキーやテーブル名はエラーになります。v3 のベータ版まであった `[review.provider_for]` は、移行先を示すエラーになります（[v2 から v3 への移行](../migration/v2-to-v3.md)）。進行中のサイクルの設定に残っていれば、`review resolve` / `review run` も止まります。
 
 Claude Code のクラウド環境には codex の CLI がありません。そのため環境変数 `CLAUDE_CODE_REMOTE` が `true` のときはプロバイダを `claude` に固定します。この判定は設定ファイルにも `HIKYAKU_REVIEW_PROVIDER` にも優先するので、`provider = "codex"` のままクラウド環境で動かしても、レビューは Claude で行われます。
 

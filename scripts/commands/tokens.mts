@@ -24,10 +24,10 @@ import {
   collectBranchSessions,
   describeMissingCurrent,
   formatTokens,
-  HOST_LABELS,
+  CURRENT_SESSION_VARIABLE,
+  HOST_LABEL,
   hostLabel,
   lookupCurrent,
-  pickCurrent,
   readMeasure,
   renderSessionMarkdown,
   SELECTION_RULE,
@@ -567,26 +567,26 @@ async function measureSession(args: ParsedArgs, operands: string[]): Promise<Ses
     if (measure === undefined) {
       return { ...base, reason: `API 呼び出しの記録を読み取れません: ${transcript}` };
     }
-    const lookups = lookupCurrent(env);
-    const isCurrent = lookups.some((lookup) => lookup.path !== undefined && resolve(lookup.path) === resolve(transcript));
+    const currentPath = lookupCurrent(env)?.path;
+    const isCurrent = currentPath !== undefined && resolve(currentPath) === resolve(transcript);
     return { ...base, measure, note: "指定したファイル", isCurrent };
   }
 
-  const lookups = lookupCurrent(env);
-  const current = pickCurrent(lookups);
-  const currentMeasure = current?.path === undefined ? undefined : readMeasure(current.path);
+  const lookup = lookupCurrent(env);
+  const currentPath = lookup?.path;
+  const currentMeasure = currentPath === undefined ? undefined : readMeasure(currentPath);
 
   if (operands[0] === undefined) {
-    if (current === undefined) {
+    if (currentPath === undefined) {
       return {
-        mode: "current", branch: undefined, measure: undefined, reason: describeMissingCurrent(env, lookups),
+        mode: "current", branch: undefined, measure: undefined, reason: describeMissingCurrent(env, lookup),
         selection: undefined, note: undefined, candidates: [], isCurrent: true,
       };
     }
     return {
       mode: "current", branch: undefined, measure: currentMeasure,
-      reason: currentMeasure === undefined ? `API 呼び出しの記録がまだありません: ${current.path}` : undefined,
-      selection: `${current.variable} で特定した現在のセッション`, note: "現在のセッション",
+      reason: currentMeasure === undefined ? `API 呼び出しの記録がまだありません: ${currentPath}` : undefined,
+      selection: `${CURRENT_SESSION_VARIABLE} で特定した現在のセッション`, note: "現在のセッション",
       candidates: [], isCurrent: true,
     };
   }
@@ -607,7 +607,7 @@ async function measureSession(args: ParsedArgs, operands: string[]): Promise<Ses
   const selected = selectMain(candidates);
   if (selected === undefined) {
     const hints = [`ブランチ ${branch} のセッションが見つかりません`];
-    if (lookups.length > 0 && current === undefined) hints.push(describeMissingCurrent(env, lookups));
+    if (lookup !== undefined && currentPath === undefined) hints.push(describeMissingCurrent(env, lookup));
     return {
       mode: "branch", branch, measure: undefined, reason: hints.join("。"), selection: SELECTION_RULE,
       note: undefined, candidates, isCurrent: false,
@@ -716,7 +716,7 @@ register({
               result.candidates.map((c) => [
                 c.measure === m ? "✓" : "",
                 (c.measure.sessionId ?? basename(c.measure.path)).slice(0, 8),
-                HOST_LABELS[c.measure.host],
+                HOST_LABEL,
                 String(c.branchCalls),
                 String(c.measure.calls),
                 formatTokens(c.measure.peak),

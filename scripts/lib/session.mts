@@ -16,9 +16,13 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, sep } from "node:path";
 
+/** 記録のホスト。v3 で Codex の計測を外したので Claude Code だけ */
 export type SessionHost = "claude-code";
 
-export const HOST_LABELS: Record<SessionHost, string> = { "claude-code": "Claude Code" };
+export const HOST_LABEL = "Claude Code";
+
+/** 現在のセッションを特定する環境変数 */
+export const CURRENT_SESSION_VARIABLE = "CLAUDE_CODE_SESSION_ID";
 
 export interface SessionMeasure {
   host: SessionHost;
@@ -258,32 +262,23 @@ export function readMeasure(path: string): SessionMeasure | undefined {
 // 現在のセッション
 
 export interface CurrentLookup {
-  host: SessionHost;
-  variable: string;
   id: string;
+  /** トランスクリプトのパス。見つからなければ undefined */
   path: string | undefined;
 }
 
-/** 環境変数から現在のセッションの記録を探す */
-export function lookupCurrent(env: Env): CurrentLookup[] {
-  const claudeId = asString(env["CLAUDE_CODE_SESSION_ID"]);
-  if (claudeId === undefined) return [];
-  return [{ host: "claude-code", variable: "CLAUDE_CODE_SESSION_ID", id: claudeId, path: findClaudeTranscript(env, claudeId) }];
+/** 環境変数から現在のセッションの記録を探す。変数が無ければ undefined */
+export function lookupCurrent(env: Env): CurrentLookup | undefined {
+  const id = asString(env[CURRENT_SESSION_VARIABLE]);
+  return id === undefined ? undefined : { id, path: findClaudeTranscript(env, id) };
 }
 
-/** 記録が見つかった現在のセッション */
-export function pickCurrent(lookups: CurrentLookup[]): CurrentLookup | undefined {
-  return lookups.find((lookup) => lookup.path !== undefined);
-}
-
-/** 現在のセッションが見つからないときの理由。推測で埋めないために文で返す */
-export function describeMissingCurrent(env: Env, lookups: CurrentLookup[]): string {
-  if (lookups.length === 0) {
-    return "現在のセッションを特定できません（CLAUDE_CODE_SESSION_ID が設定されていません）。--transcript <path> で指定できます";
+/** 現在のセッションの記録が見つからないときの理由。推測で埋めないために文で返す */
+export function describeMissingCurrent(env: Env, lookup: CurrentLookup | undefined): string {
+  if (lookup === undefined) {
+    return `現在のセッションを特定できません（${CURRENT_SESSION_VARIABLE} が設定されていません）。--transcript <path> で指定できます`;
   }
-  return lookups
-    .map((lookup) => `Claude Code のトランスクリプトが見つかりません: ${join(claudeConfigDir(env), "projects", "*", `${lookup.id}.jsonl`)}`)
-    .join("。");
+  return `Claude Code のトランスクリプトが見つかりません: ${join(claudeConfigDir(env), "projects", "*", `${lookup.id}.jsonl`)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -364,7 +359,7 @@ export function formatTokens(value: number | undefined): string {
 }
 
 export function hostLabel(measure: Pick<SessionMeasure, "host" | "hostVersion">): string {
-  return [HOST_LABELS[measure.host], measure.hostVersion].filter(Boolean).join(" ");
+  return [HOST_LABEL, measure.hostVersion].filter(Boolean).join(" ");
 }
 
 export interface SessionTableInput {
@@ -418,17 +413,16 @@ export interface CurrentContext {
 
 /** 現在のセッションのコンテキストを測る。読めなければ推測せず理由を返す */
 export function measureCurrent(env: Env): CurrentContext {
-  const lookups = lookupCurrent(env);
-  const current = pickCurrent(lookups);
-  const sessionId = current?.id ?? lookups[0]?.id;
-  if (current === undefined) {
-    return { sessionId, tokens: undefined, model: undefined, reason: describeMissingCurrent(env, lookups) };
+  const lookup = lookupCurrent(env);
+  const sessionId = lookup?.id;
+  if (lookup?.path === undefined) {
+    return { sessionId, tokens: undefined, model: undefined, reason: describeMissingCurrent(env, lookup) };
   }
-  const measure = readMeasure(current.path as string);
+  const measure = readMeasure(lookup.path);
   if (measure === undefined) {
     return {
       sessionId, tokens: undefined, model: undefined,
-      reason: `API 呼び出しの記録がまだありません: ${current.path}`,
+      reason: `API 呼び出しの記録がまだありません: ${lookup.path}`,
     };
   }
   return { sessionId, tokens: measure.latest, model: measure.model, reason: undefined };

@@ -5,7 +5,7 @@ import { writeFileSync } from "node:fs";
 import { promisify } from "node:util";
 import { flagBoolean } from "../lib/args.mts";
 import { isPhase, type Phase } from "../lib/branch.mts";
-import { type ExternalTarget, type ResolvedConfig } from "../lib/config.mts";
+import { assertCurrentConfig, checkExternalTarget, EXTERNAL_TARGETS, type ExternalTarget, type ResolvedConfig } from "../lib/config.mts";
 import { cyclesPath, loadCycles, renderCyclesFile } from "../lib/cycles.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { emit, warn } from "../lib/output.mts";
@@ -13,16 +13,16 @@ import { repoRelative } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
 import { formatRef, refNumber, refUrl } from "../lib/refs.mts";
 import { openCycle, type CycleContext } from "../lib/workspace.mts";
+import { originUrl } from "../lib/git.mts";
+import { githubRepositoryOf } from "../lib/github.mts";
 
 const run = promisify(execFile);
 
 const FOOTER = [
   "---",
-  "この issue は Hikyaku がリポジトリから自動生成しています（片方向投影）。",
-  "**編集はリポジトリ側で行ってください。** ここでの編集は次回の同期で失われます。",
+  "この issue は Hikyaku が PLAN の時点のリポジトリから生成しました（片方向投影）。ビルドの進捗はここに反映されません。",
+  "**正はリポジトリ側です。** `hikyaku external sync` で起票し直すと、ここでの編集は上書きされます。",
 ];
-
-const TARGETS: ExternalTarget[] = ["none", "github"];
 
 /** サイクルの issue に載せる内容 */
 interface Projection {
@@ -32,14 +32,15 @@ interface Projection {
   existing: string;
 }
 
-/** サイクルのディレクトリの在り処。GitHub なら tree URL、それ以外はリポジトリ相対パス */
-function cycleLocation(config: ResolvedConfig, cycleName: string): string {
+/**
+ * サイクルのディレクトリの在り処。origin が GitHub なら tree URL、それ以外はリポジトリ相対パス。
+ * github_repo（issue の起票先）からは作らない。サイクルのファイルがあるのは origin で、
+ * 起票先は別のリポジトリでありうるため。base_branch が無ければ HEAD（GitHub がデフォルトブランチに解決する）
+ */
+function cycleLocation(config: ResolvedConfig, cycleName: string, filesRepository: string | undefined): string {
   const relative = `${repoRelative(config.repoRoot, config.hikyakuRoot)}/cycles/${cycleName}`;
-  if (config.external.githubRepo !== undefined) {
-    const ref = config.baseBranch ?? "HEAD";
-    return `https://github.com/${config.external.githubRepo}/tree/${ref}/${relative}`;
-  }
-  return relative;
+  if (filesRepository === undefined) return relative;
+  return `https://github.com/${filesRepository}/tree/${config.baseBranch ?? "HEAD"}/${relative}`;
 }
 
 /**
@@ -48,16 +49,16 @@ function cycleLocation(config: ResolvedConfig, cycleName: string): string {
  * ビルドの一覧と進捗は載せない。ビルドごとに同期しないので、載せると古い表示が残り続ける。
  * 進捗の正は tasklist.md の PR 列で、ここからはサイクルのディレクトリへのリンクだけを張る。
  */
-function renderBody(config: ResolvedConfig, ctx: CycleContext): string {
+function renderBody(config: ResolvedConfig, ctx: CycleContext, filesRepository: string | undefined): string {
   return [
     ctx.record.summary === "" ? "" : `${ctx.record.summary}\n`,
     `**profile**: ${ctx.record.profile || "—"}`,
     ctx.record.ticket === "" ? "" : `**チケット**: ${ctx.record.ticket}`,
     "",
-    `**サイクル**: ${cycleLocation(config, ctx.name)}`,
+    `**サイクル**: ${cycleLocation(config, ctx.name, filesRepository)}`,
     "",
-    "要件は `planning/user-stories.md`、ビルドの一覧と進捗は `tasklist.md` にあります。",
-    "この issue は CLOSE の PR のマージで閉じます。",
+    "要件は `planning/user-stories.md`、ビルドの一覧と進捗は `tasklist.md` にあります（PLAN の PR がマージされると開けます）。",
+    "CLOSE の PR が `Closes` でこの issue を参照します。",
     "",
     ...FOOTER,
   ]
@@ -65,10 +66,11 @@ function renderBody(config: ResolvedConfig, ctx: CycleContext): string {
     .join("\n");
 }
 
-function projectionOf(config: ResolvedConfig, ctx: CycleContext): Projection {
+async function projectionOf(config: ResolvedConfig, ctx: CycleContext): Promise<Projection> {
+  const filesRepository = githubRepositoryOf(await originUrl(config.repoRoot));
   return {
     title: `[${ctx.name}] ${ctx.record.summary || ctx.record.slug}`,
-    body: renderBody(config, ctx),
+    body: renderBody(config, ctx, filesRepository),
     existing: ctx.record.external,
   };
 }
@@ -117,13 +119,13 @@ register({
   ].join("\n"),
   run: async ({ args, operands }) => {
     const explicit = operands[0];
-    if (explicit === "asana") {
-      throw new HikyakuError("Asana への投影は v3 で廃止しました", "使用できる値: none | github");
-    }
-    const isTarget = explicit !== undefined && (TARGETS as string[]).includes(explicit);
+    if (explicit === "asana") checkExternalTarget(explicit, "target");
+    const isTarget = explicit !== undefined && (EXTERNAL_TARGETS as readonly string[]).includes(explicit);
     const cycleKey = isTarget ? operands[1] : explicit;
 
     const { config, context: ctx } = openCycle(args, cycleKey);
+    // サイクル設定に廃止したキー（target = "asana" など）が残っていれば、ルートの設定に戻って起票しない
+    assertCurrentConfig(config);
     const target = (isTarget ? explicit : config.external.target) as ExternalTarget;
 
     if (target === "none") {
@@ -133,7 +135,7 @@ register({
       return;
     }
 
-    const projection = projectionOf(config, ctx);
+    const projection = await projectionOf(config, ctx);
     const dryRun = flagBoolean(args, "dry-run");
     const gh = !dryRun && (await hasGh(config.repoRoot));
 
@@ -162,7 +164,7 @@ register({
       return;
     }
 
-    let action: "created" | "updated" | "failed";
+    let action: "created" | "updated";
     let ref = projection.existing;
     try {
       const number = refNumber(projection.existing);
@@ -233,6 +235,7 @@ register({
     }
     const phase: Phase = phaseRaw;
     const { config, context: ctx } = openCycle(args, operands[1]);
+    assertCurrentConfig(config);
 
     const reference = ctx.record.external;
     const number = refNumber(reference);

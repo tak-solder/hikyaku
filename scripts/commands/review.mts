@@ -7,6 +7,7 @@ import { flagBoolean, flagInteger, flagList, flagString, type ParsedArgs } from 
 import {
   REVIEW_KINDS,
   REVIEW_PROVIDER_ENV,
+  assertCurrentConfig,
   cloudEnvLabel,
   type ResolvedConfig,
   type ReviewKind,
@@ -75,6 +76,8 @@ async function resolve(args: ParsedArgs, operands: string[]): Promise<Resolved &
   }
   const scope = scopeFor(args, phase, operands[2]);
   const { config } = scope;
+  // サイクル設定に廃止したキー（provider_for など）が残っていれば、黙って別のプロバイダで動かさない
+  assertCurrentConfig(config);
 
   let base: Resolved["base"];
   let security: Resolved["security"];

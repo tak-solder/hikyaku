@@ -18,14 +18,11 @@ import { cli, succeeds, temporaryDirectory, testEnvironment, workspace, write } 
 const cliPath = fileURLToPath(new URL("../scripts/hikyaku.mts", import.meta.url));
 
 function settings(
-  overrides: Partial<ReviewKindSettings> & { provider?: ReviewProviderChoice } = {},
+  overrides: Omit<Partial<ReviewKindSettings>, "provider"> & { provider?: ReviewProviderChoice } = {},
 ): ReviewKindSettings {
   const { provider, ...rest } = overrides;
   return {
-    providers: [
-      ...(provider === undefined ? [] : [{ source: "review" as const, provider }]),
-      { source: "default", provider: "auto" },
-    ],
+    provider: provider === undefined ? { source: "default", provider: "auto" } : { source: "review", provider },
     maxRounds: 1,
     autoFix: false,
     models: { claude: {}, codex: {} },
@@ -44,7 +41,7 @@ test("レビュー設定: profile ごとの max_rounds が既定になり、[rev
   const directory = workspace(t, true);
   const standard = reviewConfig(directory) as { code: ReviewKindSettings; doc: ReviewKindSettings; timeoutMinutes: number };
   assert.equal(standard.code.maxRounds, 2);
-  assert.deepEqual(standard.code.providers, [{ source: "default", provider: "auto" }]);
+  assert.deepEqual(standard.code.provider, { source: "default", provider: "auto" });
   assert.equal(standard.code.autoFix, false);
   assert.equal(standard.doc.maxRounds, 1);
   assert.equal(standard.timeoutMinutes, 30);
@@ -87,12 +84,12 @@ test("レビュー設定: モデルとエフォートは種類×プロバイダ 
       "",
     ].join("\n"),
   ) as Record<"code" | "security" | "doc", ReviewKindSettings>;
-  assert.deepEqual(review.code.providers[0], { source: "kind", provider: "claude" });
+  assert.deepEqual(review.code.provider, { source: "kind", provider: "claude" });
   assert.deepEqual(review.code.models.claude, { model: "opus", effort: "max" });
-  assert.deepEqual(review.security.providers[0], { source: "review", provider: "codex" });
+  assert.deepEqual(review.security.provider, { source: "review", provider: "codex" });
   // Codex の effort はモデル依存なので検証しない
   assert.deepEqual(review.security.models.codex, { effort: "ultra" });
-  assert.deepEqual(review.doc.providers[0], { source: "kind", provider: "auto" });
+  assert.deepEqual(review.doc.provider, { source: "kind", provider: "auto" });
   assert.deepEqual(review.doc.models.codex, { model: "gpt-a", effort: "ultra" });
 });
 
@@ -349,12 +346,29 @@ test("クラウド環境: claude に固定し、HIKYAKU_REVIEW_PROVIDER と設�
   assert.deepEqual([JSON.parse(claude.stdout).provider, JSON.parse(claude.stdout).providerSource], ["claude", "cloud"]);
   const config = runEnv(directory, { CLAUDE_CODE_REMOTE: "true" }, "config", "001");
   assert.match(config.stdout, /code +claude（クラウド環境（CLAUDE_CODE_REMOTE））/);
+  // 決まったプロバイダだけを表示し、使われない候補を並べない
+  assert.doesNotMatch(config.stdout, / > /);
+  assert.match(runEnv(directory, {}, "config", "001").stdout, /code +codex +回数/);
 
   // CLAUDE_CODE_REMOTE は true のときだけクラウド環境とみなす。CODEX_ENVIRONMENT_ID はもう見ない
   for (const env of [{ CLAUDE_CODE_REMOTE: "false" }, { CLAUDE_CODE_REMOTE: "" }, { CODEX_ENVIRONMENT_ID: "env-123" }]) {
     const result = runEnv(directory, env, "review", "resolve", "code", "build-01", "--no-fetch", "--json");
     assert.deepEqual([JSON.parse(result.stdout).provider, JSON.parse(result.stdout).providerSource], ["codex", "review"], JSON.stringify(env));
   }
+});
+
+test("review run: クラウド環境で claude を起動できないときは、環境変数での切り替えを案内しない", (t) => {
+  const directory = buildBranch(t, '[review.code]\nprovider = "codex"\n');
+  // claude の無い PATH（git だけは使えるようにする）
+  const bin = temporaryDirectory(t);
+  const result = runEnv(
+    directory,
+    { CLAUDE_CODE_REMOTE: "true", PATH: `${bin}${delimiter}/usr/bin${delimiter}/bin` },
+    "review", "run", "code", "build-01", "--no-fetch",
+  );
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /claude を起動できません/);
+  assert.doesNotMatch(result.stderr, /HIKYAKU_REVIEW_PROVIDER/, "クラウド環境では環境変数で切り替えても効かない");
 });
 
 test("review: --self は廃止したことを伝えて止まる", (t) => {

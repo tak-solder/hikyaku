@@ -42,7 +42,16 @@ export type ProfileName = "express" | "economy" | "standard" | "thorough";
 export type SecurityReviewMode = "off" | "recommended" | "on";
 export type RetrospectiveMode = "skip" | "prompt" | "auto";
 export type ValidateMode = "manual" | "phase" | "step";
-export type ExternalTarget = "none" | "github";
+export const EXTERNAL_TARGETS = ["none", "github"] as const;
+export type ExternalTarget = (typeof EXTERNAL_TARGETS)[number];
+
+/** [external] target・--external に値が渡されたときの検査。Asana は廃止を伝える */
+export function checkExternalTarget(value: string, where: string): ExternalTarget {
+  const hint = `使用できる値: ${EXTERNAL_TARGETS.join(" | ")}`;
+  if (value === "asana") throw new HikyakuError(`${where}: Asana への投影は v3 で廃止しました`, hint);
+  if (!(EXTERNAL_TARGETS as readonly string[]).includes(value)) throw new HikyakuError(`${where} の値が不正です: ${value}`, hint);
+  return value as ExternalTarget;
+}
 
 export const PROFILE_NAMES: ProfileName[] = ["express", "economy", "standard", "thorough"];
 
@@ -112,14 +121,16 @@ export interface ReviewModelSettings {
 /** provider の値がどこから来たか。設定ファイルと違う結果になったときに理由を示すため */
 export type ReviewProviderSource = "cloud" | "env" | "kind" | "review" | "default";
 
-/** provider を決める規則の1段。優先順に並べ、最初の段で決まる */
-export type ReviewProviderRule =
+/**
+ * 設定から決まった provider と、その出所。
+ * クラウド環境 → 環境変数 → [review.<kind>] → [review] → 既定（auto）の順に、最初に値があったもの
+ */
+export type ReviewProviderSetting =
   | { source: "cloud"; provider: ReviewProvider }
   | { source: "env" | "kind" | "review" | "default"; provider: ReviewProviderChoice };
 
 export interface ReviewKindSettings {
-  /** 優先順に並んだ規則。最後は必ず default（auto） */
-  providers: ReviewProviderRule[];
+  provider: ReviewProviderSetting;
   /** 1 = 1回だけ / n = パスするまで最大 n 回 / 0 = 無制限 */
   maxRounds: number;
   /** 無制限の2ラウンド目以降、指摘への対応を確認せずに直すか */
@@ -673,11 +684,11 @@ function readReview(
       name === "doc" ? `使用できるキー: ${allowed.join(" | ")}（ドキュメントのレビューは1回だけで、回数は設定できません）` : undefined,
     );
     return {
-      providers: providerRules([
+      provider: firstProvider([
         cloud === undefined ? undefined : { source: "cloud", provider: cloud.provider },
         envProvider === undefined ? undefined : { source: "env", provider: envProvider },
-        ruleOf("kind", readEnum(kindTable, "provider", providers, kindWhere)),
-        ruleOf("review", configured),
+        settingOf("kind", readEnum(kindTable, "provider", providers, kindWhere)),
+        settingOf("review", configured),
       ]),
       maxRounds: name === "doc" ? 1 : (readMaxRounds(kindTable, kindWhere) ?? baseRounds),
       autoFix: name === "doc" ? false : (readBoolean(kindTable, "auto_fix", kindWhere) ?? baseAutoFix),
@@ -698,22 +709,19 @@ function readReview(
   return { timeoutMinutes: timeout, code: kind("code"), security: kind("security"), doc: kind("doc") };
 }
 
-function ruleOf(source: "kind" | "review", provider: ReviewProviderChoice | undefined): ReviewProviderRule | undefined {
+function settingOf(source: "kind" | "review", provider: ReviewProviderChoice | undefined): ReviewProviderSetting | undefined {
   return provider === undefined ? undefined : { source, provider };
 }
 
-function providerRules(rules: (ReviewProviderRule | undefined)[]): ReviewProviderRule[] {
-  return [...rules.filter((rule): rule is ReviewProviderRule => rule !== undefined), { source: "default", provider: "auto" }];
+/** 優先順に並べた候補のうち、最初に値があったもの。どれも無ければ既定の auto */
+function firstProvider(candidates: (ReviewProviderSetting | undefined)[]): ReviewProviderSetting {
+  return candidates.find((candidate) => candidate !== undefined) ?? { source: "default", provider: "auto" };
 }
 
-/** 規則の列を1行で表す（config の表示用）。左ほど優先 */
-export function describeProviderRules(rules: ReviewProviderRule[]): string {
-  return rules
-    .map((rule) => {
-      if (rule.source === "cloud") return `${rule.provider}（${cloudEnvLabel(rule.provider)}）`;
-      return rule.source === "env" ? `${rule.provider}（環境変数 ${REVIEW_PROVIDER_ENV}）` : rule.provider;
-    })
-    .join(" > ");
+/** provider を1行で表す（config の表示用）。設定ファイル以外から来たときは出所を添える */
+export function describeProvider(setting: ReviewProviderSetting): string {
+  if (setting.source === "cloud") return `${setting.provider}（${cloudEnvLabel(setting.provider)}）`;
+  return setting.source === "env" ? `${setting.provider}（環境変数 ${REVIEW_PROVIDER_ENV}）` : setting.provider;
 }
 
 export interface ResolvedReviewProvider {
@@ -721,11 +729,10 @@ export interface ResolvedReviewProvider {
   source: ReviewProviderSource;
 }
 
-/** 規則の列の先頭で決める。auto はメインのセッションと同じ（claude） */
+/** auto をメインのセッションのプロバイダ（claude）に解決する */
 export function resolveReviewProvider(settings: ReviewKindSettings): ResolvedReviewProvider {
-  const [rule] = settings.providers;
-  if (rule === undefined) return { provider: MAIN_PROVIDER, source: "default" };
-  return { provider: rule.provider === "auto" ? MAIN_PROVIDER : rule.provider, source: rule.source };
+  const { provider, source } = settings.provider;
+  return { provider: provider === "auto" ? MAIN_PROVIDER : provider, source };
 }
 
 function checkEnum<T extends string>(
@@ -982,7 +989,7 @@ function retiredKeyErrors(table: TomlTable, where: string): HikyakuError[] {
       `${where}: Asana への投影は v3 で廃止しました`,
       [
         "外部システムへの投影は、サイクルごとの GitHub issue の作成とクローズだけになりました。",
-        '[external] target を "github" か "none" にし、asana_project_gid を削除してください（docs/migration/v2-to-v3.md）。',
+        `[external] target を ${EXTERNAL_TARGETS.map((target) => `"${target}"`).join(" か ")} にし、asana_project_gid を削除してください（docs/migration/v2-to-v3.md）。`,
       ].join("\n"),
     ));
   }
@@ -1267,7 +1274,7 @@ function finalize(
     },
     review: readReview(reviewTable, preset.reviewRounds),
     external: {
-      target: readEnum(externalTable, "target", ["none", "github"], "[external]") ?? "none",
+      target: readEnum(externalTable, "target", [...EXTERNAL_TARGETS], "[external]") ?? "none",
       githubRepo: readString(externalTable, "github_repo", "[external]"),
     },
     conductor: readConductor(readTable(merged, "conductor")),
