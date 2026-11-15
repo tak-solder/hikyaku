@@ -7,3 +7,4 @@
 {"at":"2026-11-15T14:32:33.978Z","skill":"retrospective","step":"analyze","result":"done","context":132833,"session":"998f30cb-a36f-41fb-bf74-5dcaad56ba55","hikyaku":"3.0.0"}
 {"at":"2026-11-15T14:32:50.541Z","skill":"retrospective","step":"write","result":"done","context":136856,"session":"998f30cb-a36f-41fb-bf74-5dcaad56ba55","hikyaku":"3.0.0"}
 {"at":"2026-11-15T14:32:55.230Z","skill":"planner","step":"retrospective","result":"done","context":137034,"session":"998f30cb-a36f-41fb-bf74-5dcaad56ba55","hikyaku":"3.0.0"}
+{"at":"2026-11-15T14:34:22.553Z","skill":"planner","step":"pr","result":"done","pr":"https://github.com/tak-solder/hikyaku/pull/105","context":141681,"session":"998f30cb-a36f-41fb-bf74-5dcaad56ba55","hikyaku":"3.0.0"}
