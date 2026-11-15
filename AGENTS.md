@@ -118,3 +118,13 @@
 ├── skills/<name>/SKILL.md     # 各スキル定義。インストール後は /hikyaku:<name> で呼び出される
 └── docs/                      # 利用ドキュメント
 ```
+
+<!-- hikyaku:docs:begin -->
+## 設計ドキュメント
+
+- conventions: `AGENTS.md` — リポジトリ全体に効く取り決め（設計の原則 v3・スクリプト規約・ドキュメントの役割・バージョン運用）
+- glossary: `docs/concepts.md` — 「用語」節だけが対象の用語集。AGENTS.md が唯一の正と宣言している。ほかの節は利用者向けの説明なので、Hikyaku は追記しない
+
+この一覧は Hikyaku が document-guide.md から生成しています（`hikyaku docs link`）。
+編集は document-guide.md 側で行ってください。
+<!-- hikyaku:docs:end -->
