@@ -150,7 +150,7 @@ test("touchedPaths: バッククォートで囲んだパスと glob を拾う", 
 });
 
 test("touchedPaths: 空白・URL・オプション・プレースホルダを含む語は、パスの形でも拾わない", () => {
-  const markdown = "`cat src/a.ts` `https://example.com/a/b.md` `--paths=src/a/**` `area:<name>` `merge_gate` `[app]`";
+  const markdown = "`cat src/a.ts` `https://example.com/a/b.md` `--paths=src/a/**` `area:<name>` `merge_gate` `[app]` `3.0.0` `v1.2`";
   assert.deepEqual(touchedPaths(markdown), []);
 });
 
@@ -336,6 +336,7 @@ test("effectiveDeclaration: 基準の ref も origin/HEAD も無ければ、作�
   assert.equal(effective.declaration?.axes.impact, "medium");
   assert.equal(effective.notices.length, 2);
   assert.ok(effective.notices.some((notice) => notice.includes("release")));
+  assert.equal(effective.incomplete, true, "作業ツリーの宣言だけで決まったことを、判定が同意に倒せるように返す");
 });
 
 test("effectiveDeclaration: merge-base が無ければ、その基準は読めない扱い", (t) => {

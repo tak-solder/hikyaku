@@ -177,7 +177,7 @@ function describeDeclaration(config: ResolvedConfig): string[] {
   const effective = effectiveDeclaration(config);
   const lines = ["[app]（アプリケーションの状況。この版では検査と表示だけで、ゲートの判定にはまだ使わない）:"];
   if (app === undefined) {
-    lines.push("  宣言なし（上限を設けない）");
+    lines.push(effective.declaration === undefined ? "  宣言なし（上限を設けない）" : "  作業ツリーには宣言なし（基準の宣言で上限が決まる）");
   } else {
     lines.push(
       `  exposure / data / impact  ${app.axes.exposure} / ${app.axes.data} / ${app.axes.impact}`,

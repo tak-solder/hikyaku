@@ -33,7 +33,6 @@ import {
 import { loadGuide } from "./docs.mts";
 import { defaultBranch, gitSync } from "./git.mts";
 import { expandBraces, ruleGlobToRegExp } from "./rules.mts";
-import { defaultBaseOf } from "./stack.mts";
 import { parseToml, type TomlTable } from "./toml.mts";
 
 /** 害の重さ（persistence.md の重要度の高・中を流用する） */
@@ -220,6 +219,8 @@ export function touchedPaths(markdown: string): string[] {
     if (token === "" || /\s/.test(token)) continue;
     if (token.startsWith("-") || token.includes("://")) continue;
     if (/[$<>()|=:"']/.test(token)) continue;
+    // 版の番号（3.0.0・v1.2）は拡張子で終わる形でもパスではない
+    if (/^v?\d+(\.\d+)+$/.test(token)) continue;
     if (!(token.includes("/") || token.includes("*") || /\.[A-Za-z0-9]+$/.test(token))) continue;
     const path = token.replace(/^\.\//, "");
     if (!found.includes(path)) found.push(path);
@@ -274,12 +275,16 @@ function readBaseline(config: ResolvedConfig, branch: string): Baseline {
   if (ref === undefined) return miss(`${branch} も origin/${branch} もありません`);
   const commit = gitSync(config.repoRoot, ["merge-base", "HEAD", ref])?.trim();
   if (commit === undefined || commit === "") return miss(`HEAD と ${ref} に共通の祖先がありません`, ref);
-  if (gitSync(config.repoRoot, ["cat-file", "-e", `${commit}:${CONFIG_FILE}`]) === undefined) {
+  // ls-tree は、ファイルが無ければ空を返して成功し、git が失敗したときだけ失敗する（cat-file -e は両方で失敗し、
+  // git の失敗を「設定ファイルが無い」と読んで基準の宣言を落としてしまう）
+  const listed = gitSync(config.repoRoot, ["ls-tree", "--name-only", commit, "--", CONFIG_FILE]);
+  if (listed === undefined) return { ...miss(`${ref} の ${CONFIG_FILE} の有無を確かめられません`, ref, commit), unreadableDeclaration: true };
+  if (listed.trim() === "") {
     // 基準にまだ設定ファイルが無い: 宣言なしとして読めた
     return { branch, ref, commit, declaration: undefined, unavailable: undefined };
   }
   const source = gitSync(config.repoRoot, ["show", `${commit}:${CONFIG_FILE}`]);
-  if (source === undefined) return miss(`${ref} の ${CONFIG_FILE} を読めません`, ref, commit);
+  if (source === undefined) return { ...miss(`${ref} の ${CONFIG_FILE} を読めません`, ref, commit), unreadableDeclaration: true };
   try {
     const table = parseToml(source);
     const app = table["app"];
@@ -313,7 +318,8 @@ export function effectiveDeclaration(config: ResolvedConfig): EffectiveDeclarati
   } else {
     branches.push(fallback);
   }
-  const base = defaultBaseOf(config);
+  // stack.mts の defaultBaseOf と同じ（base_branch か、デフォルトブランチ）。デフォルトブランチを読み直さない
+  const base = config.baseBranch ?? fallback;
   if (base !== undefined && !branches.includes(base)) branches.push(base);
 
   const baselines = branches.map((branch) => readBaseline(config, branch));
@@ -325,8 +331,14 @@ export function effectiveDeclaration(config: ResolvedConfig): EffectiveDeclarati
     }
     declaration = strictest(declaration, baseline.declaration);
   }
+  // 厳しさの分からない基準がある: 設定ファイルはあるのに宣言を読めなかったか、作業ツリーが宣言しているのに
+  // 基準を1つも読めなかった（作業ツリーの宣言だけで、セッションが自分の上限を緩められる）
+  const noneReadable = baselines.every((baseline) => baseline.unavailable !== undefined);
   const result: EffectiveDeclaration = {
-    declaration, baselines, notices, incomplete: baselines.some((baseline) => baseline.unreadableDeclaration === true),
+    declaration,
+    baselines,
+    notices,
+    incomplete: baselines.some((baseline) => baseline.unreadableDeclaration === true) || (noneReadable && config.app !== undefined),
   };
   effectiveCache.set(config, result);
   return result;
@@ -352,12 +364,8 @@ export function repositoryFiles(config: ResolvedConfig): string[] {
  * 追跡外のファイル。基準を1つも読めなければ decisions のファイルすべて（多めに拾う側に倒す）
  */
 export function cycleAdrs(config: ResolvedConfig): string[] {
-  let location: string | undefined;
-  try {
-    location = loadGuide(config.hikyakuRoot).find((entry) => entry.name === "decisions")?.path;
-  } catch {
-    return [];
-  }
+  // document-guide.md を読めなければエラーのまま返す（空を返すと「ADR に触れていない」と読まれる）
+  const location = loadGuide(config.hikyakuRoot).find((entry) => entry.name === "decisions")?.path;
   if (location === undefined) return [];
   const commits = effectiveDeclaration(config).baselines.flatMap((baseline) =>
     baseline.unavailable === undefined && baseline.commit !== undefined ? [baseline.commit] : []);
