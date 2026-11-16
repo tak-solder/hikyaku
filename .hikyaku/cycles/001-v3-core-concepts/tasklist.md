@@ -12,7 +12,7 @@
 | 1       | 承認の種類の基盤（エンジン・G1・conductor の同意）              | 360k       | —                                             | [#109](https://github.com/tak-solder/hikyaku/pull/109) |
 | 2       | アプリケーションの状況の宣言と、AI に任せてよい害の上限の計算   | 420k       | 1                                             | [#110](https://github.com/tak-solder/hikyaku/pull/110) |
 | 3       | 未決事項と決定の記録（ledger の中核）                           | 355k       | —                                             | [#111](https://github.com/tak-solder/hikyaku/pull/111) |
-| 4       | 異議と、各フェーズが未決事項を記録する手順                      | 365k       | 1, 3                                          | —                                                      |
+| 4       | 異議と、各フェーズが未決事項を記録する手順                      | 365k       | 1, 3                                          | [#112](https://github.com/tak-solder/hikyaku/pull/112) |
 | 5       | 宣言の変更の見直し・記録のテンプレート・ポインタの検査          | 330k       | 2, 3                                          | —                                                      |
 | 6       | 事後同意（PR を作る直前の同意ゲート）                           | 395k       | 2, 4, 9, 15                                   | —                                                      |
 | 7       | conductor の走りきりと、監督は安全側にだけ倒すこと              | 395k       | 6, 9                                          | —                                                      |
@@ -49,7 +49,7 @@ graph TD
   b03 --> b04
   b02 --> b05
   b03 --> b05
-  b04 -.-> b06
+  b04 --> b06
   b09 -.-> b06
   b15 -.-> b06
   b06 -.-> b07
@@ -65,10 +65,10 @@ graph TD
   classDef merged fill:#fbefff,stroke:#8250df,color:#6639ba
   classDef ready fill:#dafbe1,stroke:#1a7f37,color:#116329
   classDef blocked fill:#f6f8fa,stroke:#8c959f,color:#57606a
-  class b01,b02,b03 merged
-  class b04,b05,b08,b09,b13,b15 ready
+  class b01,b02,b03,b04 merged
+  class b05,b08,b09,b13,b15 ready
   class b06,b07,b10,b11,b12,b14 blocked
-  linkStyle 5,6,7,8,9,10,11,12,13,14,15,16 stroke:#8c959f,stroke-dasharray:5 5
+  linkStyle 6,7,8,9,10,11,12,13,14,15,16 stroke:#8c959f,stroke-dasharray:5 5
 ```
 
 紫: 完了（merged） / 緑: 着手可能（ready） / グレー: 待機中（blocked）。点線は先行ビルドが未完了の依存
