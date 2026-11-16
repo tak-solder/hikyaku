@@ -14,7 +14,9 @@
   - その作業単位・そのステップ（`OpenRecord.step`）の、害が高（`harm: "高"`）の `objection` のうち、決定が無いか、最新の決定が「`accepts` 付きの `consented`」でも `decided` でもないもの
   - 中の異議は対象にしない（記録だけで進む）
 - `export function latestOpenAt(unitDirectory: string, matches: (record: OpenRecord) => boolean): string | undefined`
-  - その作業単位のディレクトリの `decisions.jsonl` だけを読み、条件に合う事項の最新の `at` を返す。読めなければ `undefined`（手順の位置を読む経路を記録の壊れで止めない。壊れは `step next` の notices が「未決事項の記録を読めません」で知らせる）
+  - その作業単位のディレクトリの `decisions.jsonl` だけを読み、条件に合う事項の最新の `at` を返す
+  - 読めなければ `UNREADABLE_AT`（空文字。どの記録よりも前）を返し、きっかけがあった側に倒す。壊れた記録で、ユーザーに固定した同意のゲートを黙って消さないため（plan-review の指摘）。例外は投げない（壊れは `step next` の notices が知らせる）
+  - build-03 の「手順の位置だけを読む経路（Stop フック・step where・conductor parse）は記録を読まない」を、この1ファイルに限って改める。design-delta が delegation の判定を未決事項の記録に置いているため。handoff の「永続化すること」に反映する
 
 ### `scripts/commands/ledger.mts`（`ledger object` を追加）
 
@@ -38,12 +40,15 @@ hikyaku ledger object <phase> [<cycle>] --summary <text> --basis <text> --loses 
 ### `scripts/lib/steps/builder.mts` / `architect.mts` / `planner.mts`
 
 - builder: 先頭に `{ id: "delegation", kind: "gate", interrupt: 最新の design-conflict の事項の at, consent: now（委任の前提が崩れた出来事のあと）, ask: "delegation" }`
+  - 手順（return.md）は「design-conflict を記録 → `step next` → delegation」の順なので、差し戻すときも return.md を書く前に builder の delegation の承認が残る。再設計のあと builder に戻っても、同じ出来事でもう一度は出ない
+  - （解釈）差し戻すと、return.md の作成という別の出来事として architect の再設計の回の先頭でもう一度尋ねる（US-14.2 が2つの出来事を挙げているため。1つにまとめない）
 - architect: 先頭に `{ id: "delegation", kind: "gate", when: roundOf === "return", consent: now, ask: "delegation" }`。再設計の回の最初のステップなので、通常の並びのゲートで足りる
 - planner の G1: `args: (ctx) => ({ profile: ctx.config.profile })`
 
 ### `scripts/lib/steps/directive.mts`
 
 - `Directive.objection?: { guide: string[]; pointers: string[]; command: string }` — サイクルに属す作業単位の gate にだけ載せる
+  - （解釈）サイクルに属さない patch の P1・P2 には載せない。未決事項の記録はサイクルの中だけで使え（ADR pending-items-ledger・user-stories のスコープ外）、記録できない異議を唱えさせないため
   - `guide`: スクリプトが固定する短い指示（宣言・記録と食い違うときだけ異を唱える／根拠と失うものを示す／好みの違いには唱えない／害の重さは persistence.md の重要度／高ならユーザーが受け入れることを自分の言葉で書くまで承認を報告しない）
   - `pointers`: `hikyaku config` の宣言（`[app]`・`[[app.areas]]`・`[boundaries]`）、document-guide.md の `constraints`・`decisions` のパス（登録されていて未作成・対象外でないもの）、`cycles/{cycle}/tasklist.md`（予測ピーク）、`hikyaku ledger list {cycle}`（受け入れ・決定の記録）
   - `command`: `ledger object` の呼び方
@@ -60,7 +65,19 @@ hikyaku ledger object <phase> [<cycle>] --summary <text> --basis <text> --loses 
 ### 指示ファイル
 
 - 新規: `skills/architect/steps/delegation.md`・`skills/builder/steps/delegation.md`（`（ask: delegation）`）
-- `ledger open` の差し込み: `skills/planner/steps/user-stories.md`（未回答の質問）、`skills/architect/steps/adr.md`・`design-delta.md`（暫定の設計判断）、`skills/build-manager/steps/G6.md`（G6 での受け入れ）、`skills/builder/steps/handoff.md`・`references/templates.md`（「残したこと」は ID のポインタ）、`skills/builder/references/return.md`（design-conflict の記録と delegation）、`skills/patch/steps/persist.md`（サイクルに属す patch）、`skills/close-cycle/steps/collect.md`・`G10.md`（`close` 期限の事項を示して決定を記録）
+- `ledger open` の差し込み: `skills/planner/steps/user-stories.md`（未回答の質問）、`skills/architect/steps/adr.md`・`design-delta.md`（暫定の設計判断）、`skills/build-manager/steps/G6.md`（G6 での受け入れ）、`skills/builder/steps/handoff.md`・`references/templates.md`（「残したこと」は ID のポインタ）、`skills/builder/steps/review.md`・`pr.md`（「確度: 要確認」は事項にし、PR 本文には ID と要点）、`skills/builder/references/return.md`（design-conflict の記録と delegation）、`skills/patch/steps/persist.md`（サイクルに属す patch）、`skills/close-cycle/steps/collect.md`・`G10.md`（`close` 期限の事項を示して決定を記録）
+- 記録する側ごとの「いつ・誰が」と、決めるときの決め手（build-03 の「`--by ai:<phase>` は同じフェーズだけ」に沿う）
+
+| 記録する側 | type | --who | --when | 決めるとき |
+|---|---|---|---|---|
+| planner（未回答の質問） | question | user | gate:G1 か phase:architect | ユーザーが答えたら `--by user` |
+| architect（暫定の設計判断） | provisional | user、または確かめるビルドの `ai:build-NN` | gate:G4・merge@build-NN・phase:build-NN | ユーザーなら `--by user`。`ai:build-NN` はそのビルドが `--by ai:build-NN` で確定する |
+| build-manager（G6 での受け入れ） | risk | user | merge | G6 の答えで、すぐに `--by user --decision consented --accepts` |
+| builder（残したこと） | question / provisional | user | merge・close・phase:build-NN | ユーザー（G10 で示された答えなど）が `--by user` |
+| builder（design-conflict） | question | 対話は user、conductor の子は supervisor | now | 選択肢の答えで、who と同じ決め手かユーザー |
+| patch（サイクルに属す） | question / provisional | user | merge か close | `--by user` |
+| close-cycle | — | — | — | `close` 期限の事項を G10 で示し、ユーザーの答えを `--by user --input` で記録する。AI の別フェーズの事項も `--by user` で決める（付け替えない） |
+| conductor（監督の判断） | provisional | supervisor | now | 同じ回答で `--by supervisor` |
 - `skills/planner/steps/G1.md`: プロファイルの確認を1行出す
 - `skills/conductor/references/headless-protocol.md`: 監督の判断の記録先を `decisions.jsonl`（`ledger open --who supervisor` と `ledger decide --by supervisor`）に改める
 - `skills/builder/SKILL.md` の完了の案内: 「残したこと」へのリンクを、事項の ID に合わせる
@@ -76,14 +93,15 @@ hikyaku ledger object <phase> [<cycle>] --summary <text> --basis <text> --loses 
 | 段階 | 予測ピーク |
 |------|------------|
 | architectフェーズ段階 | 365k |
-| builderフェーズ段階 | 365k |
+| builderフェーズ段階 | 395k |
 
 **読むファイル**
 
 - `design/design-delta.md` の 1節（委任の前提が崩れた出来事）・2節、ADR `20261116-pending-items-ledger.md`
 - `scripts/lib/ledger.mts`・`scripts/commands/ledger.mts`・`scripts/lib/steps/engine.mts`・`directive.mts`・`builder.mts`・`architect.mts`・`planner.mts`・`build-manager.mts`・`close-cycle.mts`・`patch.mts`・`scripts/commands/step.mts`・`scripts/lib/conductor.mts`（ASKS）
-- 指示ファイル（上の一覧）と `docs/workflow/` の各フェーズ・`docs/reference/cli.md`
-- `tests/ledger.test.mts`・`tests/step-architect.test.mts`・`tests/step-planner-close.test.mts`・`tests/step-consent.test.mts` の該当箇所
+- `scripts/lib/steps/locate.mts`（`directiveOf`。evaluate の呼び出し元）・`index.mts`、`scripts/lib/docs.mts`（`loadGuide`）
+- 指示ファイル（上の一覧。`skills/builder/steps/review.md`・`pr.md` を含む）と `docs/workflow/` の各フェーズ・`docs/reference/cli.md`
+- `tests/ledger.test.mts`・`tests/step-architect.test.mts`・`tests/step-planner-close.test.mts`・`tests/step-consent.test.mts`・`tests/step.test.mts`・`tests/step-hook.test.mts`・`tests/conductor.test.mts` の該当箇所
 
 **作成するファイル**
 
@@ -96,11 +114,11 @@ hikyaku ledger object <phase> [<cycle>] --summary <text> --basis <text> --loses 
 | 成分 | 予測 | 根拠 |
 |------|------|------|
 | 固定費 | 90k | — |
-| 読み込み | 110k | このセッションで読んだ ledger.mts・commands/ledger.mts・engine.mts・directive.mts・commands/step.mts・steps/*.mts・conductor.mts の ASKS・design-delta・ADR・各指示ファイル（約 100k）に、これから読む docs/workflow の各フェーズ・cli.md・templates の残り・テスト（step-architect / step-planner-close / ledger）の該当箇所 |
-| 実装 | 80k | ledger object と unacceptedObjections、engine の割り込みゲート、directive の異議の指示とポインタ、step report の高の異議の検査、architect・builder の delegation、G1 の profile、ASKS、指示文の差し込み約12ファイル、docs 6〜7ファイル、CHANGELOG |
-| テスト | 55k | ledger object の CLI、ゲートの承認の拒否、delegation の出現（builder 割り込み・architect 再設計の回）、G1 の args、directive の異議、resolveAsk、記録する側の指示ファイルと planner・builder の結合テスト。npm test は1回約4分 |
-| 未知の領域 | 30k | 割り込みゲートが既存の engine の評価（floor・orphans・publication）と干渉しないかの確認、ledger と steps の循環 import |
-| **予測ピーク** | **365k** | 狙いの帯（300k〜450k） |
+| 読み込み | 130k | 読んだ ledger.mts・commands/ledger.mts・engine.mts・directive.mts・commands/step.mts・steps/*.mts・conductor.mts の ASKS・design-delta・ADR・各指示ファイル（約 100k）に、locate.mts・index.mts・docs.mts、builder の review.md・pr.md、docs/workflow の各フェーズ・cli.md、既存テスト（step / step-hook / conductor / step-architect / step-planner-close / ledger）の該当箇所 |
+| 実装 | 80k | ledger object と unacceptedObjections・latestOpenAt、engine の割り込みゲート、directive の異議の指示とポインタ、step report の高の異議の検査、architect・builder の delegation、G1 の profile、ASKS、指示文の差し込み約14ファイル、docs 6〜7ファイル、CHANGELOG |
+| テスト | 55k | ledger object の CLI、ゲートの承認の拒否、delegation の出現（builder 割り込み・architect 再設計の回・記録が壊れたとき）、G1 の args、directive の異議、resolveAsk、記録する側の指示ファイルと planner・builder の結合テスト。npm test は1回約4分 |
+| 未知の領域 | 40k | 全スキルの評価に効く evaluate を変えたことによる既存テストの修正ループ、割り込みゲートと floor・orphans・publication の干渉、ledger と steps の循環 import |
+| **予測ピーク** | **395k** | 狙いの帯（300k〜450k） |
 | ガイド | 標準 v2 | 03897ac0 |
 
 ## 実装ステップ
