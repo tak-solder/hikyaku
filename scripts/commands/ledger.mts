@@ -28,6 +28,7 @@ import {
   type Decision,
   type DecideRecord,
   type ItemType,
+  type CycleTimeline,
   type Ledger,
   type OpenRecord,
 } from "../lib/ledger.mts";
@@ -36,7 +37,7 @@ import { pluginVersion } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
 import { open, type Opened } from "../lib/steps/directive.mts";
 import { evaluate } from "../lib/steps/engine.mts";
-import { stepsOf } from "../lib/steps/index.mts";
+import { directiveOf, type FoundUnit } from "../lib/steps/locate.mts";
 import type { Harm } from "../lib/risk.mts";
 import { openCycle, type CycleContext } from "../lib/workspace.mts";
 
@@ -58,24 +59,24 @@ function openUnit(args: ParsedArgs, phase: string | undefined, cycle: string | u
   return { ...opened, cycle: opened.ctx.cycle };
 }
 
-/** その単位の現在のステップ。内部スキルを呼んでいる最中（最後の記録が内部スキル）なら呼ばれた側のステップ */
-function currentStep(args: ParsedArgs, opened: Opened): { step: string | undefined; off: Set<string> } {
+/**
+ * その単位の現在のステップ。内部スキルを呼んでいる最中なら呼ばれた側のステップ（判定は Stop フック・
+ * step where と同じ directiveOf に任せる）。外れたゲート（off）も返す
+ */
+function currentStep(args: ParsedArgs, opened: Opened & { cycle: CycleContext }): { step: string | undefined; off: Set<string> } {
   const evaluation = evaluate(opened.skill, opened.ctx);
   const off = new Set(evaluation.steps.filter((step) => step.status === "off").map((step) => step.definition.id));
-  const last = [...opened.ctx.events].reverse().find((event) => event.result !== "restart");
-  const internal = last === undefined ? undefined : stepsOf(last.skill);
-  if (internal?.internal === true) {
-    const inner = open(withSkill(args, internal.skill), opened.phase, opened.ctx.cycle?.name);
-    const current = evaluate(inner.skill, inner.ctx).current;
-    if (current !== undefined) return { step: current.definition.id, off };
-  }
-  return { step: evaluation.current?.definition.id, off };
-}
-
-function withSkill(args: ParsedArgs, skill: string): ParsedArgs {
-  const flags = new Map(args.flags);
-  flags.set("skill", skill);
-  return { positional: args.positional, flags };
+  const unit: FoundUnit = {
+    phase: opened.phase,
+    cycle: opened.cycle.name,
+    skill: opened.skill,
+    directory: opened.ctx.unitDirectory,
+    cycleRoot: opened.phase === "close" || opened.phase === "create",
+    events: opened.ctx.events,
+  };
+  const root = flagString(args, "root");
+  const { directive } = directiveOf(unit, root === undefined ? {} : { root });
+  return { step: directive.step, off };
 }
 
 function meta(): { session?: string; hikyaku: string } {
@@ -235,9 +236,13 @@ register({
   },
 });
 
-function loadCycleLedger(args: ParsedArgs, key: string | undefined): { context: CycleContext; ledger: Ledger } {
+function loadCycleLedger(args: ParsedArgs, key: string | undefined): { context: CycleContext; ledger: Ledger; timeline: CycleTimeline } {
   const opened = openCycle(args, key);
-  return { context: opened.context, ledger: readLedger(opened.context.directory) };
+  return {
+    context: opened.context,
+    ledger: readLedger(opened.context.directory),
+    timeline: cycleTimeline(opened.config, opened.context),
+  };
 }
 
 register({
@@ -252,8 +257,8 @@ register({
   options: [],
   maxOperands: 1,
   run: ({ args, operands }) => {
-    const { context, ledger } = loadCycleLedger(args, operands[0]);
-    const summary = summarize(ledger, cycleTimeline(context.directory, context.record.status === "active"));
+    const { context, ledger, timeline } = loadCycleLedger(args, operands[0]);
+    const summary = summarize(ledger, timeline);
     emit(
       {
         cycle: context.name,
@@ -285,9 +290,8 @@ register({
   run: ({ args, operands }) => {
     const id = operands[0];
     if (id === undefined) throw new HikyakuError("事項の ID を指定してください");
-    const { context, ledger } = loadCycleLedger(args, operands[1]);
+    const { ledger, timeline } = loadCycleLedger(args, operands[1]);
     const item = findItem(ledger, id);
-    const timeline = cycleTimeline(context.directory, context.record.status === "active");
     const timing = item.latest === undefined ? summarize({ items: [item], orphans: [] }, timeline).open[0]?.timing : undefined;
     emit({ open: item.open, decisions: item.decisions, latest: item.latest ?? null, timing: timing ?? null }, () => {
       const o = item.open;

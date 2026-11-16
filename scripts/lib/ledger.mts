@@ -18,6 +18,7 @@
  * 期限の判定（timingOf）がこのサイクルの期限の唯一の正。PR 本文の節（build-06）もこれを呼ぶ。
  */
 
+import { randomBytes } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { isPhase, type Phase } from "./branch.mts";
@@ -26,7 +27,9 @@ import { appendJsonl, readJsonl, type JsonlLabels } from "./jsonl.mts";
 import { listPatchUnits, patchPhaseOf, patchUnitDirectory } from "./patch.mts";
 import { readProgress, RESTART, type ProgressEvent } from "./progress.mts";
 import type { Harm } from "./risk.mts";
-import { currentEvents, type SkillSteps } from "./steps/engine.mts";
+import type { ResolvedConfig } from "./config.mts";
+import { currentEvents, evaluate, type SkillSteps } from "./steps/engine.mts";
+import type { CycleContext } from "./workspace.mts";
 import { ownerOf, SKILL_STEPS } from "./steps/index.mts";
 import { buildDirName, normalizeBuildId, type BuildRecord } from "./tasklist.mts";
 
@@ -277,6 +280,7 @@ export function parseWhen(raw: string, ctx: RefContext): When {
   }
   if (value === "merge" || value.startsWith("merge@")) {
     const unit = value === "merge" ? ctx.opening : requireUnit(value.slice("merge@".length), ctx);
+    if (unit === "create") throw new HikyakuError("merge@create は指定できません（サイクルの作成はもう終わっています）");
     return { kind: "merge", unit };
   }
   if (value.startsWith("gate:")) {
@@ -402,7 +406,10 @@ export function findItem(ledger: Ledger, id: string): LedgerItem {
   return item;
 }
 
-/** その作業単位の次の ID（{unit}.{n}） */
+/**
+ * その作業単位の次の ID（{unit}.{n}-{4桁の16進}）。連番はこのツリーに見える事項から数えるので、
+ * 2つのブランチが同じ作業単位に事項を足すと連番が重なる。末尾の乱数で、マージしても同じ ID にならない
+ */
 export function nextItemId(ledger: Ledger, unit: string): string {
   const prefix = `${unit}.`;
   const used = ledger.items
@@ -410,7 +417,7 @@ export function nextItemId(ledger: Ledger, unit: string): string {
     .filter((id) => id.startsWith(prefix))
     .map((id) => Number.parseInt(id.slice(prefix.length), 10))
     .filter((n) => Number.isInteger(n));
-  return `${prefix}${Math.max(0, ...used) + 1}`;
+  return `${prefix}${Math.max(0, ...used) + 1}-${randomBytes(2).toString("hex")}`;
 }
 
 export function openItem(cycleDirectory: string, record: OpenRecord, ledger: Ledger): void {
@@ -442,16 +449,32 @@ export interface CycleTimeline {
   merged: Set<string> | undefined;
 }
 
-/** サイクルの作業単位の記録を集める */
-export function cycleTimeline(cycleDirectory: string, active: boolean, merged?: Set<string>): CycleTimeline {
+/**
+ * サイクルの作業単位の記録を集め、記録のある単位を engine で評価して現在のステップを入れる。
+ * 記録から近似すると、when で外れたステップ（振り返りの skip など）に現在地が落ちて期限を誤るため。
+ * 評価に失敗した単位は近似に戻す（ほかの単位の状態で status や notices を止めない）
+ */
+export function cycleTimeline(config: ResolvedConfig, cycle: CycleContext, merged?: Set<string>): CycleTimeline {
   const events = new Map<string, ProgressEvent[]>();
-  for (const relative of unitDirectories(cycleDirectory)) {
+  const current = new Map<string, string | null>();
+  for (const relative of unitDirectories(cycle.directory)) {
     const units = unitsOfDirectory(relative);
     if (units.length === 0) continue;
-    const read = readProgress(join(cycleDirectory, relative));
-    for (const unit of units) events.set(unit, read);
+    const unitDirectory = join(cycle.directory, relative);
+    const read = readProgress(unitDirectory);
+    for (const unit of units) {
+      events.set(unit, read);
+      const skill = ownerOf(unit as Phase)?.skill;
+      if (skill === undefined || !read.some((event) => event.skill === skill.skill)) continue;
+      try {
+        const evaluation = evaluate(skill, { config, cycle, unit, unitDirectory, events: read });
+        current.set(unit, evaluation.current?.definition.id ?? null);
+      } catch {
+        // 近似に戻す
+      }
+    }
   }
-  return { active, events, current: new Map(), merged };
+  return { active: cycle.record.status === "active", events, current, merged };
 }
 
 const COMPLETED = new Set(["done", "skipped", "approved"]);

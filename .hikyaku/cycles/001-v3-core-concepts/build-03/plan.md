@@ -76,7 +76,7 @@ export interface LedgerItem { open: OpenRecord; decisions: DecideRecord[]; lates
 /** サイクルの全作業単位（直下・planning・design・build-NN・patches/*/*）の decisions.jsonl を読み、ID で結ぶ */
 export function readLedger(cycleDirectory: string): LedgerItem[];
 export function ledgerDirectoryOf(cycleDirectory: string, phase: Phase): string;  // ownerOf(phase).directory
-export function nextItemId(items: LedgerItem[], unit: string): string;            // `{unit}.{n}`
+export function nextItemId(items: LedgerItem[], unit: string): string;            // `{unit}.{n}-{4桁の16進}`（コードレビューの指摘: 2つのブランチの採番が重ならないように乱数を添える）
 export function openItem(cycleDirectory: string, record: OpenRecord, items: LedgerItem[]): void;   // 同じ ID の2回目は HikyakuError
 export function decideItem(cycleDirectory: string, record: DecideRecord, items: LedgerItem[]): void;
 /** 付け替えの禁止: who=user の事項は by=user だけ。by=user は input 必須。ai の事項は ai:* か user、supervisor の事項は supervisor か user */
@@ -112,7 +112,7 @@ export function noticeLines(summary: LedgerSummary): string[];     // 1事項1�
   - `merge[@<unit>]`: unit の現在のステップが「マージの前の区切り」以降（完了を含む）なら来た。区切りは、`consent`（build-06 が足す同意ゲート）があればそれ、無ければ patch は `publish`（patch は Draft PR を実装より前に作るため）、ほかは `pr`。build-06 は ID `consent` のステップを足すだけで判定に乗る。過ぎたのは、build-NN がベースブランチへマージされたとき（`cycle status` の `merged`。conductor では各ビルドの PR は conductor ブランチ向けなので、最後の PR がマージされるまで過ぎない）。plan / architect / close / patch のマージは導けないので、決まるまで「来た」で示し続ける（US-19.2 の「PR のマージの前」に、PR を作ってからマージするまでに決めるのは正当なので、PR の記録では過ぎたにしない）。directive（step next）ではマージを導かない（`merged` が undefined）ので「来た」として示す。@unit 省略は記録した作業単位
   - `close`: サイクル直下に close-cycle の記録があれば来た。cycles.md の status が active でなくなったら過ぎた
   - 参照先の実在: build-NN は tasklist.md に、patch はサイクルの patches/ に在ること。plan / architect / close は常に在る
-  - **他の単位の現在のステップ**（cycle status と、directive で自分以外の単位）: 最後の restart の後で完了したステップのうち、定義の並びで最も後ろのものの次。内部スキルの記録は呼び出し元の単位の記録として数え、G6 の記録があれば来た・承認で過ぎたとする
+  - **他の単位の現在のステップ**（cycle status と、directive で自分以外の単位）: 記録のある単位を engine で評価する（コードレビューの指摘: 記録からの近似は when で外れたステップに落ちる）。評価に失敗した単位だけ、最後の restart の後で完了したステップのうち、定義の並びで最も後ろのものの次で近似する。directive は内部スキルの評価で呼び出し元の単位を上書きしない。記録を読めなければ notices に1行出して手順は止めない。内部スキルの記録は呼び出し元の単位の記録として数え、G6 の記録があれば来た・承認で過ぎたとする
 - **決まったか**: 最新の `decide`（`at` 順。同時刻は読み順で後のもの。読み順はサイクル直下 → planning → design → build-NN（番号順）→ patches（パス順）、ファイルの中は行順）。`decide` が無ければ未決。最新が `rejected` なら「未解決の退け」（`resolved` で消える）。期限の判定は未決の事項だけ
 - **置き場**: `open` は記録した作業単位のファイル、`decide` は決めた作業単位（`ledger decide` に渡したフェーズ）のファイル
 

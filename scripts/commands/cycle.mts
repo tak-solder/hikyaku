@@ -33,7 +33,7 @@ import { emit, table } from "../lib/output.mts";
 import { pluginVersion } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
 import { formatRef } from "../lib/refs.mts";
-import { cycleTimeline, itemJson, itemLine, readLedger, summarize } from "../lib/ledger.mts";
+import { cycleTimeline, itemJson, itemLine, readLedger, summarize, type LedgerSummary } from "../lib/ledger.mts";
 import { buildDirName, isComplete, loadTasklist, normalizeBuildId } from "../lib/tasklist.mts";
 import { resolveViews, sectionNote } from "../lib/views.mts";
 import { openCycle, type CycleContext } from "../lib/workspace.mts";
@@ -588,8 +588,15 @@ register({
     const inProgress = remote.names.filter((branchRef) => branchRef.startsWith(prefix));
 
     // 未決事項。merge の事項は、ベースブランチへマージ済みのビルドで期限を過ぎたとする
+    // 記録を読めなくても status は止めない（直し方は ledger list が示す）
     const merged = views.mergedIds === undefined ? undefined : new Set([...views.mergedIds].map((id) => buildDirName(normalizeBuildId(id))));
-    const ledger = summarize(readLedger(directory), cycleTimeline(directory, record.status === "active", merged));
+    let ledger: LedgerSummary = { due: [], open: [], rejected: [] };
+    let ledgerError: string | null = null;
+    try {
+      ledger = summarize(readLedger(directory), cycleTimeline(config, ctx, merged));
+    } catch (error) {
+      ledgerError = error instanceof Error ? error.message : String(error);
+    }
 
     emit(
       {
@@ -612,6 +619,7 @@ register({
           due: ledger.due.map(itemJson),
           open: ledger.open.map(itemJson),
           rejected: ledger.rejected.map(itemJson),
+          ...(ledgerError === null ? {} : { error: ledgerError }),
         },
         suggestion: suggestFor(state, name),
       },
@@ -653,7 +661,9 @@ register({
           }
         }
 
-        if (ledger.open.length > 0 || ledger.rejected.length > 0) {
+        if (ledgerError !== null) {
+          lines.push("", `  ! 未決事項の記録を読めません: ${ledgerError}`);
+        } else if (ledger.open.length > 0 || ledger.rejected.length > 0) {
           lines.push("", `  未決事項: ${ledger.open.length} 件（期限が来た・過ぎた ${ledger.due.length} 件）`);
           for (const item of ledger.due) lines.push(`    ${itemLine(item)}`);
           for (const item of ledger.rejected) lines.push(`    未解決の退け ${item.open.id}: ${item.open.summary}`);

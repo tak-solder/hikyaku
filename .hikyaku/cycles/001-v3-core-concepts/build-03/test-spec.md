@@ -400,7 +400,7 @@
 - 対応: —
 - Given: build-02/decisions.jsonl に JSON でない行がある
 - When: `step hook stop` と `step where` を実行
-- Then: どちらも ledger のエラーにならず従来どおりの出力（notices: false の経路で読まない）。同じ状態で `step next` はエラーになる
+- Then: どちらも ledger のエラーにならず従来どおりの出力（notices: false の経路で読まない）。同じ状態で `step next` は止まらず、notices に「未決事項の記録を読めません」が載る（コードレビューの指摘で、step report が進捗を書いたあとに失敗しないように改めた）。`ledger list` は止まり、`cycle status --json` は `ledger.error` を返す
 
 ## scripts/commands/cycle.mts（status）
 

@@ -8,6 +8,7 @@ import {
   assertDecider,
   decideItem,
   formatWhen,
+  nextItemId,
   noticeLines,
   openItem,
   parsePremise,
@@ -139,6 +140,15 @@ test("openItem / decideItem: 決定は決めた単位に書き、事項のファ
   assert.throws(() => openItem(dir, opened("architect.1", "architect", { who: "supervisor" }), readLedger(dir)), /すでに記録/);
   assert.equal(readFileSync(join(dir, "design", "decisions.jsonl"), "utf8"), before);
   assert.throws(() => decideItem(dir, { ...decided("architect.1", "build-02", "2026-11-16T12:00:00Z", "decided"), by: "supervisor" }, readLedger(dir)));
+});
+
+test("nextItemId: 連番に乱数を添え、同じツリーから2つのブランチが採番しても重ならない", (t) => {
+  const dir = temporaryDirectory(t);
+  appendJsonl(join(dir, "design", "decisions.jsonl"), opened("architect.3-0a0b", "architect"));
+  const ledger = readLedger(dir);
+  const ids = new Set(Array.from({ length: 20 }, () => nextItemId(ledger, "architect")));
+  for (const id of ids) assert.match(id, /^architect\.4-[0-9a-f]{4}$/);
+  assert.ok(ids.size > 1);
 });
 
 test("readLedger: 全単位を読み ID で結び、最新は at 順（同時刻は読み順で後のもの）", (t) => {
@@ -296,6 +306,13 @@ function json<T>(directory: string, ...args: string[]): T {
   return JSON.parse(succeeds(directory, ...args, "--json")) as T;
 }
 
+/** ledger open を実行し、記録した事項の ID（{unit}.{n}-{乱数}）を返す */
+function openId(directory: string, ...args: string[]): string {
+  const id = json<{ record: OpenRecord }>(directory, "ledger", "open", ...args).record.id;
+  assert.match(id, /^[a-z0-9-]+\.\d+-[0-9a-f]{4}$/);
+  return id;
+}
+
 function git(directory: string, ...args: string[]): void {
   const result = spawnSync("git", args, { cwd: directory, encoding: "utf8", env: testEnvironment() });
   assert.equal(result.status, 0, result.stderr);
@@ -312,10 +329,11 @@ test("ledger open: 記録して欄が show で読め、--dry-run は書き込ま
   succeeds(directory, "ledger", "open", "build-02", "001", "--type", "risk", "--when", "merge", "--who", "user", "--summary", "外部APIの退避", "--dry-run");
   assert.deepEqual(snapshot(directory), before);
 
-  succeeds(directory, "ledger", "open", "build-02", "001", "--type", "risk", "--when", "merge", "--who", "user", "--summary", "外部APIの退避",
+  const id = openId(directory, "build-02", "001", "--type", "risk", "--when", "merge", "--who", "user", "--summary", "外部APIの退避",
     "--premises", "app.exposure,assumption:社内向け", "--loses", "安全側の再試行", "--harm", "高", "--ask", "G8");
+  assert.match(id, /^build-02\.1-/);
   assert.equal(existsSync(join(directory, CYCLE, "build-02", "decisions.jsonl")), true);
-  const shown = json<{ open: OpenRecord }>(directory, "ledger", "show", "build-02.1", "001");
+  const shown = json<{ open: OpenRecord }>(directory, "ledger", "show", id, "001");
   assert.deepEqual(shown.open.premises, ["app.exposure", "assumption:社内向け"]);
   assert.equal(shown.open.loses, "安全側の再試行");
   assert.equal(shown.open.harm, "高");
@@ -336,13 +354,16 @@ test("ledger open: 語彙外・存在しない参照先・書式外を拒否し�
     ["--when", "now", "--who", "user", "--harm", "低"],
     ["--when", "now", "--who", "user", "--ask", "nonexistent"],
     ["--when", "phase:build-07", "--who", "user"],
+    ["--when", "merge@create", "--who", "user"],
   ]) {
     assert.notEqual(cli(directory, ...base, ...extra).status, 0, extra.join(" "));
   }
   assert.equal(existsSync(join(directory, CYCLE, "build-02", "decisions.jsonl")), false);
-  succeeds(directory, ...base, "--when", "now", "--who", "user", "--ask", "design-conflict");
-  succeeds(directory, ...base, "--when", "now", "--who", "user", "--ask", "P1");
-  assert.equal(json<{ open: OpenRecord }>(directory, "ledger", "show", "build-02.2", "001").open.ask, "P1");
+  const conflict = openId(directory, ...base.slice(2), "--when", "now", "--who", "user", "--ask", "design-conflict");
+  const gate = openId(directory, ...base.slice(2), "--when", "now", "--who", "user", "--ask", "P1");
+  assert.match(gate, /^build-02\.2-/);
+  assert.equal(json<{ open: OpenRecord }>(directory, "ledger", "show", conflict, "001").open.ask, "design-conflict");
+  assert.equal(json<{ open: OpenRecord }>(directory, "ledger", "show", gate, "001").open.ask, "P1");
 });
 
 test("ledger open: サイクルに属さない patch は拒否する", (t) => {
@@ -361,21 +382,21 @@ test("ledger open: 外れたゲートを指すと記録して知らせる", (t) 
 test("ledger decide: 決めた単位に書き、付け替えと答えの無い user と --dry-run は書き込まない", (t) => {
   const directory = cycleWorkspace(t);
   write(directory, `${CYCLE}/planning/user-stories.md`);
-  succeeds(directory, "ledger", "open", "plan", "001", "--type", "provisional", "--when", "phase:architect", "--who", "ai:plan", "--summary", "暫定");
-  succeeds(directory, "ledger", "open", "build-02", "001", "--type", "question", "--when", "now", "--who", "user", "--summary", "ユーザーの問い");
+  const plan = openId(directory, "plan", "001", "--type", "provisional", "--when", "phase:architect", "--who", "ai:plan", "--summary", "暫定");
+  const question = openId(directory, "build-02", "001", "--type", "question", "--when", "now", "--who", "user", "--summary", "ユーザーの問い");
   const planning = readFileSync(join(directory, CYCLE, "planning", "decisions.jsonl"), "utf8");
 
   const before = snapshot(directory);
-  succeeds(directory, "ledger", "decide", "build-02", "build-02.1", "001", "--decision", "decided", "--by", "user", "--input", "OK", "--dry-run");
-  assert.notEqual(cli(directory, "ledger", "decide", "build-02", "build-02.1", "001", "--decision", "decided", "--by", "supervisor", "--input", "x").status, 0);
-  assert.notEqual(cli(directory, "ledger", "decide", "build-02", "build-02.1", "001", "--decision", "decided", "--by", "ai:build-02").status, 0);
-  assert.notEqual(cli(directory, "ledger", "decide", "build-02", "build-02.1", "001", "--decision", "decided", "--by", "user").status, 0);
+  succeeds(directory, "ledger", "decide", "build-02", question, "001", "--decision", "decided", "--by", "user", "--input", "OK", "--dry-run");
+  assert.notEqual(cli(directory, "ledger", "decide", "build-02", question, "001", "--decision", "decided", "--by", "supervisor", "--input", "x").status, 0);
+  assert.notEqual(cli(directory, "ledger", "decide", "build-02", question, "001", "--decision", "decided", "--by", "ai:build-02").status, 0);
+  assert.notEqual(cli(directory, "ledger", "decide", "build-02", question, "001", "--decision", "decided", "--by", "user").status, 0);
   assert.deepEqual(snapshot(directory), before);
 
-  succeeds(directory, "ledger", "decide", "build-02", "plan.1", "001", "--decision", "consented", "--by", "user", "--input", "それでよい",
+  succeeds(directory, "ledger", "decide", "build-02", plan, "001", "--decision", "consented", "--by", "user", "--input", "それでよい",
     "--accepts", "再試行が無いことを受け入れる");
   assert.equal(readFileSync(join(directory, CYCLE, "planning", "decisions.jsonl"), "utf8"), planning);
-  const shown = json<{ latest: DecideRecord }>(directory, "ledger", "show", "plan.1", "001");
+  const shown = json<{ latest: DecideRecord }>(directory, "ledger", "show", plan, "001");
   assert.equal(shown.latest.unit, "build-02");
   assert.equal(shown.latest.input, "それでよい");
   assert.equal(shown.latest.accepts, "再試行が無いことを受け入れる");
@@ -384,20 +405,20 @@ test("ledger decide: 決めた単位に書き、付け替えと答えの無い u
 test("ledger decide: 2ブランチが同じ事項に決定を足してもマージで衝突しない", (t) => {
   const directory = cycleWorkspace(t);
   write(directory, `${CYCLE}/build-01/issue.md`);
-  succeeds(directory, "ledger", "open", "architect", "001", "--type", "provisional", "--when", "close", "--who", "ai:architect", "--summary", "暫定");
+  const id = openId(directory, "architect", "001", "--type", "provisional", "--when", "close", "--who", "ai:architect", "--summary", "暫定");
   commitAll(directory, "base");
   git(directory, "branch", "a");
   git(directory, "branch", "b");
   git(directory, "checkout", "-q", "a");
-  succeeds(directory, "ledger", "decide", "build-01", "architect.1", "001", "--decision", "decided", "--by", "ai:build-01");
+  succeeds(directory, "ledger", "decide", "build-01", id, "001", "--decision", "decided", "--by", "ai:build-01");
   commitAll(directory, "a");
   git(directory, "checkout", "-q", "b");
-  succeeds(directory, "ledger", "decide", "build-02", "architect.1", "001", "--decision", "rejected", "--by", "ai:build-02");
+  succeeds(directory, "ledger", "decide", "build-02", id, "001", "--decision", "rejected", "--by", "ai:build-02");
   commitAll(directory, "b");
   git(directory, "checkout", "-q", "main");
   git(directory, "-c", "user.name=t", "-c", "user.email=t@example.com", "merge", "-q", "--no-edit", "a");
   git(directory, "-c", "user.name=t", "-c", "user.email=t@example.com", "merge", "-q", "--no-edit", "b");
-  const shown = json<{ decisions: DecideRecord[]; latest: DecideRecord }>(directory, "ledger", "show", "architect.1", "001");
+  const shown = json<{ decisions: DecideRecord[]; latest: DecideRecord }>(directory, "ledger", "show", id, "001");
   assert.equal(shown.decisions.length, 2);
   assert.equal(shown.latest.decision, "rejected");
 });
@@ -405,38 +426,44 @@ test("ledger decide: 2ブランチが同じ事項に決定を足してもマー�
 test("ledger list / step next / cycle status: 期限を過ぎた事項を示し続け、Stop フックの経路では読まない", (t) => {
   const directory = cycleWorkspace(t);
   // plan で記録した phase:architect の事項。architect と build-01 に後の記録があるので過ぎた
-  succeeds(directory, "ledger", "open", "plan", "001", "--type", "question", "--when", "phase:architect", "--who", "user", "--summary", "対象の利用者");
-  succeeds(directory, "ledger", "open", "build-02", "001", "--type", "question", "--when", "close", "--who", "user", "--summary", "締めで決める");
-  succeeds(directory, "ledger", "open", "build-02", "001", "--type", "question", "--when", "now", "--who", "user", "--summary", "退けた");
-  succeeds(directory, "ledger", "decide", "build-02", "build-02.2", "001", "--decision", "rejected", "--by", "user", "--input", "やり直す");
+  const plan = openId(directory, "plan", "001", "--type", "question", "--when", "phase:architect", "--who", "user", "--summary", "対象の利用者");
+  const close = openId(directory, "build-02", "001", "--type", "question", "--when", "close", "--who", "user", "--summary", "締めで決める");
+  const rejected = openId(directory, "build-02", "001", "--type", "question", "--when", "now", "--who", "user", "--summary", "退けた");
+  succeeds(directory, "ledger", "decide", "build-02", rejected, "001", "--decision", "rejected", "--by", "user", "--input", "やり直す");
   const later = new Date(Date.now() + 60_000).toISOString();
   write(directory, `${CYCLE}/design/progress.jsonl`, `${JSON.stringify({ at: later, skill: "architect", step: "survey", result: "done" })}\n`);
   write(directory, `${CYCLE}/build-01/progress.jsonl`, `${JSON.stringify({ at: later, skill: "builder", step: "plan", result: "done" })}\n`);
 
   const list = json<{ due: { id: string; timing: string }[]; open: { id: string }[]; rejected: { id: string }[] }>(directory, "ledger", "list", "001");
-  assert.deepEqual(list.due.map((item) => [item.id, item.timing]), [["plan.1", "overdue"]]);
-  assert.deepEqual(list.open.map((item) => item.id).sort(), ["build-02.1", "plan.1"]);
-  assert.deepEqual(list.rejected.map((item) => item.id), ["build-02.2"]);
+  assert.deepEqual(list.due.map((item) => [item.id, item.timing]), [[plan, "overdue"]]);
+  assert.deepEqual(list.open.map((item) => item.id).sort(), [close, plan].sort());
+  assert.deepEqual(list.rejected.map((item) => item.id), [rejected]);
 
   const next = json<{ directive: { notices: string[] } }>(directory, "step", "next", "build-02", "001");
   assert.equal(next.directive.notices.length, 1);
-  assert.match(next.directive.notices[0] ?? "", /期限を過ぎた未決事項 plan\.1/);
+  assert.match(next.directive.notices[0] ?? "", new RegExp(`期限を過ぎた未決事項 ${plan.replace(".", "\\.")}`));
 
   const status = json<{ ledger: { due: { id: string }[]; open: { id: string }[]; rejected: { id: string }[] } }>(directory, "cycle", "status", "001", "--no-fetch");
-  assert.deepEqual(status.ledger.due.map((item) => item.id), ["plan.1"]);
-  assert.deepEqual(status.ledger.open.map((item) => item.id).sort(), ["build-02.1", "plan.1"]);
-  assert.deepEqual(status.ledger.rejected.map((item) => item.id), ["build-02.2"]);
+  assert.deepEqual(status.ledger.due.map((item) => item.id), [plan]);
+  assert.deepEqual(status.ledger.open.map((item) => item.id).sort(), [close, plan].sort());
+  assert.deepEqual(status.ledger.rejected.map((item) => item.id), [rejected]);
   assert.match(succeeds(directory, "cycle", "status", "001", "--no-fetch"), /未決事項/);
 
   // 決定を足すと due・open から消える
-  succeeds(directory, "ledger", "decide", "build-02", "plan.1", "001", "--decision", "decided", "--by", "user", "--input", "社内の利用者");
+  succeeds(directory, "ledger", "decide", "build-02", plan, "001", "--decision", "decided", "--by", "user", "--input", "社内の利用者");
   assert.deepEqual(json<{ due: unknown[] }>(directory, "ledger", "list", "001").due, []);
 
-  // 壊れた記録: step next は止まるが、Stop フックと step where は読まない
+  // 壊れた記録: 手順は止めずに注意で知らせ（step report が進捗を書いたあとに失敗しないため）、
+  // Stop フックと step where は読まない。ledger のコマンドは止まる
   succeeds(directory, "step", "report", "build-02", "plan", "001", "--result", "failed", "--reason", "試し");
   writeFileSync(join(directory, CYCLE, "build-02", "decisions.jsonl"), "{broken\n", { flag: "a" });
-  assert.notEqual(cli(directory, "step", "next", "build-02", "001").status, 0);
-  assert.equal(cli(directory, "step", "where", "001").status, 0);
+  const broken = json<{ directive: { notices: string[] } }>(directory, "step", "next", "build-02", "001");
+  assert.match(broken.directive.notices.join("\n"), /未決事項の記録を読めません/);
+  assert.notEqual(cli(directory, "ledger", "list", "001").status, 0);
+  assert.match(json<{ ledger: { error?: string } }>(directory, "cycle", "status", "001", "--no-fetch").ledger.error ?? "", /JSON として読めません/);
+  const where = cli(directory, "step", "where", "001");
+  assert.equal(where.status, 0);
+  assert.doesNotMatch(where.stdout, /未決事項/);
   const hook = cliInput(directory, JSON.stringify({ session_id: "s", stop_hook_active: false }), {}, "step", "hook", "stop");
   assert.equal(hook.status, 0);
   assert.doesNotMatch(hook.stderr, /decisions\.jsonl/);

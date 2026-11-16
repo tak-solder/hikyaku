@@ -204,15 +204,23 @@ export interface BuildOptions {
   notices?: boolean;
 }
 
-/** 期限が来た・過ぎた未決事項の行。自分の単位の現在のステップは engine の評価で上書きする */
+/**
+ * 期限が来た・過ぎた未決事項の行。自分の単位の現在のステップは、この評価で上書きする（内部スキルの
+ * 評価は呼び出し元の単位の現在地ではないので上書きしない）。記録を読めなくても手順は止めない
+ * （step report は進捗を書いたあとにこれを組み立てるので、ここで失敗すると報告の失敗に見える）
+ */
 function ledgerNotices(opened: Opened, evaluation: Evaluation): string[] {
   const cycle = opened.ctx.cycle;
   if (cycle === undefined) return [];
-  const ledger = readLedger(cycle.directory);
-  if (ledger.items.length === 0) return [];
-  const timeline = cycleTimeline(cycle.directory, cycle.record.status === "active");
-  timeline.current.set(opened.phase, evaluation.current?.definition.id ?? null);
-  return noticeLines(summarize(ledger, timeline));
+  try {
+    const ledger = readLedger(cycle.directory);
+    if (ledger.items.length === 0) return [];
+    const timeline = cycleTimeline(opened.ctx.config, cycle);
+    if (opened.skill.internal !== true) timeline.current.set(opened.phase, evaluation.current?.definition.id ?? null);
+    return noticeLines(summarize(ledger, timeline));
+  } catch (error) {
+    return [`未決事項の記録を読めません: ${error instanceof Error ? error.message : String(error)}（hikyaku ledger list で確かめてください）`];
+  }
 }
 
 export function buildDirective(opened: Opened, evaluation: Evaluation, options: BuildOptions = {}): Directive {
