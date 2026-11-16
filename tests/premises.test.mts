@@ -13,6 +13,7 @@ import {
   declarationArgs,
   declarationChanges,
   idRanges,
+  isSuperseded,
   parseAcceptedSection,
 } from "../scripts/lib/premises.mts";
 import type { StepContext } from "../scripts/lib/steps/engine.mts";
@@ -108,6 +109,33 @@ test("parseAcceptedSection: 項目より深い字下げの行は前の項目の�
   assert.deepEqual(problems.map((problem) => problem.line), [4]);
 });
 
+test("parseAcceptedSection: assumption の文の中の 、 と全角括弧で参照を切らない", () => {
+  const source = [
+    "- **受け入れたこと**:",
+    "  - 社内だけで使う（拠り所: `assumption:利用者は社内、外部公開なし`, `app.exposure`）",
+    "  - 決済を任せる（拠り所: `assumption:決済は外部（Stripe）経由`）",
+    "",
+  ].join("\n");
+  const { lines, problems } = parseAcceptedSection(source, "a.md");
+  assert.deepEqual(problems, []);
+  assert.deepEqual(lines.map((line) => line.premises), [
+    ["assumption:利用者は社内、外部公開なし", "app.exposure"],
+    ["assumption:決済は外部（Stripe）経由"],
+  ]);
+  assert.equal(lines[1]?.text, "決済を任せる");
+});
+
+test("parseAcceptedSection: 「なし」は受け入れたことが無いと書いたもので、警告しない", () => {
+  assert.deepEqual(parseAcceptedSection("- **受け入れたこと**: なし\n- **トレードオフ**: x\n", "a.md"), { lines: [], problems: [] });
+  assert.deepEqual(parseAcceptedSection("## 受け入れたこと\n\nなし\n", "c.md"), { lines: [], problems: [] });
+});
+
+test("isSuperseded: frontmatter の status が superseded の ADR だけを true にする", () => {
+  assert.equal(isSuperseded("---\nstatus: superseded\n---\n# x\n"), true);
+  assert.equal(isSuperseded("---\nstatus: accepted\n---\n# x\n"), false);
+  assert.equal(isSuperseded("# x\n\nstatus: superseded\n"), false, "frontmatter の外は見ない");
+});
+
 test("parseAcceptedSection: コードブロックの中の節は読まない（テンプレートの例）", () => {
   const source = ["```markdown", "- **受け入れたこと**:", "  - 例（拠り所: `app.bogus`）", "```", ""].join("\n");
   assert.deepEqual(parseAcceptedSection(source, "t.md"), { lines: [], problems: [] });
@@ -178,6 +206,13 @@ test("declarationChanges: area の追加と変更を area:<name> で返す", (t)
   const base = `exposure = "internal"\ndata = "none"\nimpact = "low"\n`;
   const directory = branchFrom(t, app(base), app(base) + AREA);
   assert.deepEqual(declarationChanges(configOf(directory), "main").changed, ["area:billing"]);
+});
+
+test("declarationChanges: area の中のキーを並べ替えただけでは変わったことにしない", (t) => {
+  const base = `exposure = "internal"\ndata = "none"\nimpact = "low"\n`;
+  const reordered = `[[app.areas]]\npaths = ["src/billing/**"]\nname = "billing"\n`;
+  const directory = branchFrom(t, app(base) + AREA, app(base) + reordered);
+  assert.deepEqual(declarationChanges(configOf(directory), "main").changed, []);
 });
 
 test("declarationChanges: 宣言が同じなら changed は空", (t) => {
@@ -345,6 +380,21 @@ test("ledger premises: --format pr は ID とファイル:行を個別に並べ�
   for (const id of ["architect.1-aaaa", "architect.3-cccc", "architect.4-dddd"]) assert.match(result.stdout, new RegExp(`^- 001-test の ${id}`, "m"));
   assert.match(result.stdout, /`docs\/decisions\/20261116-a\.md:4`/);
   assert.doesNotMatch(result.stdout, /〜|\d+ ?件/);
+});
+
+test("ledger premises: 覆された ADR（status: superseded）の受け入れは並べない", (t) => {
+  const directory = declaredWorkspace(t);
+  write(directory, "docs/decisions/20261101-old.md", "---\nstatus: superseded\n---\n\n# 旧\n\n- **受け入れたこと**:\n  - 古い受け入れ（拠り所: `app.exposure`）\n");
+  const data = JSON.parse(cli(directory, "ledger", "premises", "--changed-from", "main", "--json").stdout);
+  assert.deepEqual(data.documents.map((line: { source: string }) => line.source), ["docs/decisions/20261116-a.md"]);
+});
+
+test("ledger premises: 基準を読めないときは、--format pr に理由（notices）も載せる", (t) => {
+  const directory = declaredWorkspace(t);
+  const result = cli(directory, "ledger", "premises", "--changed-from", "nowhere", "--format", "pr");
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /基準の宣言を読めなかった/);
+  assert.match(result.stdout, /^- nowhere も origin\/nowhere も解決できません/m);
 });
 
 test("ledger premises: 宣言が変わっていなければ、--format pr は何も出さない", (t) => {

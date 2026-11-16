@@ -342,6 +342,8 @@ gh pr list --head {conductor ブランチ} --base {baseBranch} --state open --js
   - `gh pr create --draft` で作る。Draft に対応していない場合だけ通常の PR で作り、その旨を案内する
   - 本文に、取り込んだフェーズの PR を順に並べ、それぞれで**監督が答えた確認ゲート**と、子が解釈で
     決めた振る舞いを1行ずつ示す（ユーザーがレビューで確認するため）
+  - `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger premises --format pr` の出力が空でなければ、本文にそのまま貼る
+    （サイクルで宣言を変えたなら、それを拠り所にした受け入れをユーザーが見直すのはこの PR。フェーズの PR は監督が取り込む）
   - 外部連携が有効なら、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref conductor {cycle}` の行
     （サイクルの issue への `Refs #12`）を本文の末尾に入れる。issue は CLOSE の PR で閉じる
 - [ ] 設定に従って公開する（失敗したら、再実行のコマンドと Draft のままであることを案内する）

@@ -20,7 +20,7 @@ import { cycleDir, cycleDirName, loadCycles } from "./cycles.mts";
 import { loadGuide } from "./docs.mts";
 import { HikyakuError } from "./errors.mts";
 import { gitSync } from "./git.mts";
-import { parsePremise, readLedger, type Decision } from "./ledger.mts";
+import { APP_KEYS, parsePremise, readLedger, type Decision } from "./ledger.mts";
 import { effectiveDeclaration } from "./risk.mts";
 import type { StepContext } from "./steps/engine.mts";
 import { parseToml, type TomlTable } from "./toml.mts";
@@ -51,7 +51,7 @@ export interface AcceptedProblem {
 const HEADING = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
 const BOLD_ITEM = new RegExp(`^(\\s*)[-*+]\\s+\\*\\*${SECTION}\\*\\*\\s*[:：]\\s*(.*)$`);
 const BULLET = /^(\s*)[-*+]\s+(.*)$/;
-const PREMISE_SUFFIX = /（拠り所\s*[:：]\s*([^（）]*)）\s*$/;
+const PREMISE_PREFIX = /^（拠り所\s*[:：]\s*/;
 const FENCE = /^\s*(`{3,}|~{3,})/;
 
 function indentOf(line: string): number {
@@ -108,7 +108,9 @@ export function parseAcceptedSection(markdown: string, source: string): { lines:
     if (bold) {
       close();
       section = { parent: indentOf(raw) };
-      if ((bold[2] ?? "").trim() !== "") {
+      // 「なし」は受け入れたことが無いと書いたもの（ADR の他の欄と同じ書き方）
+      const rest = (bold[2] ?? "").trim();
+      if (rest !== "" && !rest.startsWith("なし")) {
         problems.push({ source, line: number, message: `「${SECTION}」の本文が項目と同じ行にあります。1件1行の箇条書きにしてください` });
       }
       return;
@@ -141,6 +143,7 @@ export function parseAcceptedSection(markdown: string, source: string): { lines:
       return;
     }
     flush();
+    if (raw.trim() === "なし") return;
     problems.push({ source, line: number, message: `「${SECTION}」の節に箇条書きでない行があります: ${raw.trim()}` });
   });
   close();
@@ -154,29 +157,33 @@ function finishItem(
   problems: AcceptedProblem[],
 ): void {
   const text = item.parts.join(" ").trim();
-  const suffix = PREMISE_SUFFIX.exec(text);
-  if (suffix === null) {
+  // 最後の「（拠り所」から行末の「）」までが拠り所。参照の中の全角括弧（`assumption:決済は外部（Stripe）経由`）も読める
+  const start = text.lastIndexOf("（拠り所");
+  const prefix = start === -1 ? null : PREMISE_PREFIX.exec(text.slice(start));
+  if (start === -1 || prefix === null || !text.endsWith("）")) {
     if (/拠り所\s*[:：]/.test(text)) {
       problems.push({ source, line: item.line, message: "（拠り所: …）が行末にありません。拠り所は行末に1つだけ書きます" });
     }
     lines.push({ source, line: item.line, text, premises: [] });
     return;
   }
+  const inner = text.slice(start + prefix[0].length, -1);
   const premises: string[] = [];
   const bad: string[] = [];
-  for (const part of (suffix[1] ?? "").split(/[,、]/).map((value) => value.trim())) {
-    const code = /^`([^`]+)`$/.exec(part);
-    if (code === null) {
-      bad.push(part === "" ? "（空）" : part);
-      continue;
-    }
+  // 参照はバッククォートで囲んだものだけ。囲みの外は区切り（, と 、）だけを許す
+  // （囲みの中の 、 で切らない: assumption の文は 、 を含みうる）
+  for (const match of inner.matchAll(/`([^`]+)`/g)) {
+    const value = (match[1] ?? "").trim();
     try {
-      parsePremise(code[1] ?? "");
-      premises.push((code[1] ?? "").trim());
+      parsePremise(value);
+      premises.push(value);
     } catch {
-      bad.push(part);
+      bad.push(`\`${value}\``);
     }
   }
+  const rest = inner.replace(/`[^`]+`/g, "").replace(/[\s,、]/g, "");
+  if (rest !== "") bad.push(rest);
+  if (premises.length === 0 && bad.length === 0) bad.push("（空）");
   if (bad.length > 0) {
     problems.push({
       source,
@@ -184,7 +191,7 @@ function finishItem(
       message: `拠り所の参照の書式に合いません: ${bad.join(", ")}（\`app.exposure\` / \`area:<name>\` / \`constraints#<anchor>\` / \`adr:<file>\` / \`assumption:<短い文>\` をバッククォートで囲んで書きます）`,
     });
   }
-  lines.push({ source, line: item.line, text: text.slice(0, suffix.index).trim(), premises });
+  lines.push({ source, line: item.line, text: text.slice(0, start).trim(), premises });
 }
 
 // ---------------------------------------------------------------------------
@@ -209,12 +216,21 @@ export function documentFiles(config: ResolvedConfig, names: string[]): string[]
   return files;
 }
 
-/** decisions（ADR）・constraints の「受け入れたこと」の行 */
+/** frontmatter の status が superseded か */
+export function isSuperseded(markdown: string): boolean {
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(markdown);
+  return frontmatter !== null && /^status:\s*["']?superseded["']?\s*$/m.test(frontmatter[1] ?? "");
+}
+
+/** decisions（ADR）・constraints の「受け入れたこと」の行。覆された ADR は読まない */
 export function persistentAcceptances(config: ResolvedConfig): { lines: AcceptedLine[]; problems: AcceptedProblem[] } {
   const lines: AcceptedLine[] = [];
   const problems: AcceptedProblem[] = [];
   for (const file of documentFiles(config, ["decisions", "constraints"])) {
-    const parsed = parseAcceptedSection(readFileSync(file, "utf8"), relative(config.repoRoot, file));
+    const source = readFileSync(file, "utf8");
+    // 覆された ADR（status: superseded）の受け入れは、もう効いていない
+    if (isSuperseded(source)) continue;
+    const parsed = parseAcceptedSection(source, relative(config.repoRoot, file));
     lines.push(...parsed.lines);
     problems.push(...parsed.problems);
   }
@@ -283,21 +299,28 @@ export interface DeclarationChanges {
   notices: string[];
 }
 
-const APP_KEYS = ["exposure", "data", "impact", "merge_gate"];
+/** キーの順に依らない比較用の文字列（`[[app.areas]]` の中のキーを並べ替えただけでは変わったことにしない） */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (typeof value === "object" && value !== null) {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical((value as Record<string, unknown>)[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
 
 /** [app] の表から、参照ごとの値（比較用の文字列） */
 function declarationRefs(app: TomlTable | undefined): Map<string, string> {
   const refs = new Map<string, string>();
   if (app === undefined) return refs;
   for (const key of APP_KEYS) {
-    if (app[key] !== undefined) refs.set(`app.${key}`, JSON.stringify(app[key]));
+    if (app[key] !== undefined) refs.set(`app.${key}`, canonical(app[key]));
   }
   const areas = app["areas"];
   if (Array.isArray(areas)) {
     for (const area of areas) {
       if (typeof area !== "object" || area === null || Array.isArray(area)) continue;
       const name = (area as TomlTable)["name"];
-      if (typeof name === "string") refs.set(`area:${name}`, JSON.stringify(area));
+      if (typeof name === "string") refs.set(`area:${name}`, canonical(area));
     }
   }
   return refs;
@@ -454,7 +477,10 @@ export function premisesPrSection(review: PremisesReview): string {
   const out = ["## 宣言の変更", ""];
   if (changes.changed.length > 0) {
     out.push(`変わった宣言: ${premiseList(changes.changed)}（基準: ${changes.bases.map((base) => base.ref).join(", ") || "読めず"}）`);
-    if (changes.uncertain) out.push("", "基準の宣言を読めなかったので、宣言されている参照をすべて変わったものとして扱っています。");
+    if (changes.uncertain) {
+      out.push("", "基準の宣言を読めなかったので、宣言されている参照をすべて変わったものとして扱っています。");
+      out.push(...changes.notices.map((notice) => `- ${notice}`));
+    }
     out.push("");
     const lines = reviewLines(review);
     if (lines.length === 0) out.push("この宣言を拠り所にした受け入れはありません。");
