@@ -40,7 +40,9 @@ register({
     const dryRun = flagBoolean(args, "dry-run");
     // 子では Ready にしないので、GitHub の状態を読む必要が無い（gh が使えない環境でも止めない）
     if (child) {
-      emit({ pr, ready: false, applied: true, reason: "conductor-child", dryRun }, () => "Draft のまま監督へ渡します");
+      // PR の存在と状態は確かめない（監督が取り込む直前の --for-merge と check-pr で確かめる）。pr は他の経路と同じく番号で返す
+      const number = /(\d+)\/?$/.exec(pr.trim())?.[1];
+      emit({ pr: number === undefined ? pr : Number(number), ready: false, applied: true, reason: "conductor-child", dryRun }, () => "Draft のまま監督へ渡します");
       return;
     }
     const retry = `hikyaku pr ready ${phase} ${cycle ?? ""} --pr ${shellQuote(pr)}${forMerge ? " --for-merge" : ""}`;

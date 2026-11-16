@@ -21,19 +21,29 @@ export interface EscalationCheck {
 
 /** 見出し（# 〜 ######）。名前を含む見出しを節の始まりと読む（「問題を変える選択肢」も選択肢） */
 const HEADING = /^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$/;
-/** 行頭のラベル（`試したこと:` / `**推奨**：`）。コロンの後の同じ行の本文も中身 */
-const LABEL = /^\s*(?:[-*]\s+)?\*{0,2}((?:問題を変える)?選択肢|試したこと|推奨)\*{0,2}\s*[:：]\s*(.*)$/;
+/**
+ * 行頭のラベル（`試したこと:` / `**推奨**：`）。コロンの後の同じ行の本文も中身。リストの項目（`- 推奨: …`）は
+ * ほかの節の中身として読み、節を切り替えない
+ */
+const LABEL = /^\*{0,2}((?:問題を変える)?選択肢|試したこと|推奨)\*{0,2}\s*[:：]\s*(.*)$/;
 /** リストの項目の行。字下げが2未満のものを項目の始まりと読み、深い字下げは続きの行 */
-const ITEM = /^\s{0,1}(?:[-*+]|\d+[.)])\s+(.*)$/;
+const ITEM = /^\s{0,1}(?:(?:[-*+]|\d+[.)])\s+|・\s*)(.*)$/;
 const LOSS = /失うもの\s*[:：]/;
-/** テンプレートの置き場所の印（行全体が （…））。埋めずに出した報告を通さない */
-const PLACEHOLDER = /^\s*(?:[-*+]|\d+[.)])?\s*（[^（）]*）\s*$/;
+/** テンプレートの置き場所の印（（…））。埋めずに出した報告を通さない */
+const PLACEHOLDER_GROUP = /（[^（）]*）/g;
+const MARKER = /^\s*(?:[-*+・]|\d+[.)])?\s*/;
 
+/** 置き場所の印とリストの印を除いた本文が空か */
+function blank(text: string): boolean {
+  return text.replace(PLACEHOLDER_GROUP, "").replace(MARKER, "").trim() === "";
+}
+
+/** 見出しは節の名前で終わるものだけを節と読む（「問題を変える選択肢」は選択肢。「推奨しない理由」は読まない） */
 function sectionOfHeading(title: string): SectionKey | undefined {
-  const plain = title.replace(/\*/g, "");
-  if (plain.includes(ESCALATION_SECTIONS.tried)) return "tried";
-  if (plain.includes(ESCALATION_SECTIONS.options)) return "options";
-  if (plain.includes(ESCALATION_SECTIONS.recommendation)) return "recommendation";
+  const plain = title.replace(/\*/g, "").trim();
+  if (plain.endsWith(ESCALATION_SECTIONS.tried)) return "tried";
+  if (plain.endsWith(ESCALATION_SECTIONS.options)) return "options";
+  if (plain.endsWith(ESCALATION_SECTIONS.recommendation)) return "recommendation";
   return undefined;
 }
 
@@ -69,7 +79,7 @@ function splitSections(text: string): Map<SectionKey, string[]> {
 }
 
 function meaningful(lines: string[]): string[] {
-  return lines.filter((line) => line.trim() !== "" && !PLACEHOLDER.test(line));
+  return lines.filter((line) => !blank(line));
 }
 
 /** 選択肢の項目（項目の行と、その続きの行をつなげたもの）。リストが無ければ本文全体を1項目とする */
@@ -104,7 +114,15 @@ export function checkEscalation(text: string): EscalationCheck {
     const items = itemsOf(meaningful(options));
     if (items.length === 0) problems.push(`「${ESCALATION_SECTIONS.options}」に項目がありません`);
     items.forEach((item, index) => {
-      if (!LOSS.test(item)) problems.push(`「${ESCALATION_SECTIONS.options}」の${index + 1}件目に「失うもの:」がありません`);
+      const where = `「${ESCALATION_SECTIONS.options}」の${index + 1}件目`;
+      const loss = LOSS.exec(item);
+      if (loss === null) {
+        problems.push(`${where}に「失うもの:」がありません`);
+        return;
+      }
+      // テンプレートの「- （…） 失うもの: （…）」を埋めずに残した項目を通さない
+      if (blank(item.slice(0, loss.index))) problems.push(`${where}の選択肢が空です`);
+      if (blank(item.slice(loss.index + loss[0].length))) problems.push(`${where}の「失うもの:」が空です`);
     });
   }
 

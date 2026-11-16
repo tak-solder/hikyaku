@@ -58,6 +58,27 @@ test("checkEscalation: 3つとも欠ければ3件を返す", () => {
   assert.equal(result.problems.length, 3);
 });
 
+test("checkEscalation: テンプレートの選択肢の行（（…） 失うもの: （…））を埋めずに残せば欠けになる", () => {
+  const text = "## 試したこと\n- 直した\n## 問題を変える選択肢\n- （スコープを削る など） 失うもの: （この選択肢で失うもの）\n## 推奨\n削る";
+  assert.deepEqual(checkEscalation(text).problems, ["「選択肢」の1件目の選択肢が空です", "「選択肢」の1件目の「失うもの:」が空です"]);
+});
+
+test("checkEscalation: リストの項目の「推奨:」は節を切り替えない", () => {
+  const text = "## 試したこと\n- 直した\n## 選択肢\n- 推奨: A案 失うもの: 時間\n- B案\n## このビルドの状態\n- x";
+  assert.deepEqual(checkEscalation(text).problems, ["「選択肢」の2件目に「失うもの:」がありません", "「推奨」の節がありません"]);
+});
+
+test("checkEscalation: 見出しは節の名前で終わるものだけを読む", () => {
+  const text = `${ESCALATION_BODY}\n## 推奨しない理由\n`;
+  assert.deepEqual(checkEscalation(text).problems, []);
+  assert.deepEqual(checkEscalation("## 推奨しない理由\nx").problems.includes("「推奨」の節がありません"), true);
+});
+
+test("checkEscalation: 「・」の項目も1件ずつ数える", () => {
+  const text = "## 試したこと\n- 直した\n## 選択肢\n・A: 別案 失うもの: X\n・B: やめる\n## 推奨\nA";
+  assert.deepEqual(checkEscalation(text).problems, ["「選択肢」の2件目に「失うもの:」がありません"]);
+});
+
 test("describeEscalationProblems: 欠けと書き直しの案内を複数行で返す", () => {
   const text = describeEscalationProblems(["「推奨」が空です"]);
   assert.match(text, /^行き詰まりの報告に欠けがあります:\n {2}- 「推奨」が空です\n/);

@@ -985,6 +985,20 @@ test("CLI: gh が無い環境で pr request-reviewers は止めず、マージ�
   assert.match(output.manual, /\[pr\] reviewers: alice/);
 });
 
+test("CLI: phase_reviewers が空でも、マージ先が分からなければ conductor ブランチ向けは依頼しないと示す", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["alice"]\n');
+  const output = JSON.parse(withoutGh(t, directory, "pr", "request-reviewers", "build-01", "001", "--pr", "7", "--json").stdout);
+  assert.match(output.manual, /phase_reviewers: （依頼しない）/);
+  assert.match(output.manual, /\[pr\] reviewers: alice/);
+});
+
+test("CLI: pr request-reviewers は gh pr view の応答が JSON でなければ終了コード 1", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["alice"]\n');
+  assert.equal(useGh(t, directory, { view: "not json" }).cli("pr", "request-reviewers", "plan", "001", "--pr", "7").status, 1);
+});
+
 test("CLI: gh が無い環境でも、オフ・空の一覧なら gh を呼ばずに何もしない", (t) => {
   const directory = workspace(t, true);
   const empty = withoutGh(t, directory, "pr", "request-reviewers", "plan", "001", "--pr", "7", "--json");

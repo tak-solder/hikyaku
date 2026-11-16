@@ -39,6 +39,8 @@ register({
     "applied が false、reason（gh-unavailable / gh-failed）、stage（失敗した呼び出し）、manual",
     "（ユーザーが代わりに行うこと）を返し、終了コード 0 で終わります。PR は作成済みなので、",
     "レビュアーの依頼が通らないことは、PR の後の手順を止める理由にならないためです。",
+    "gh pr view の応答の形が想定外のときだけは、推測で進めずに終了コード 1 で止めます",
+    "（gh api graphql の失敗は、応答の形によるものも含めて gh-failed として返します）。",
     "",
     "--dry-run では、依頼する予定のレビュアーだけを返し、GitHub には何も書き込みません。",
   ].join("\n"),
@@ -70,10 +72,11 @@ register({
       const lists =
         plan !== undefined
           ? [`${plan.request.join(", ")}`]
-          : conductorBranch !== undefined && config.conductor.phaseReviewers.length > 0
+          : conductorBranch !== undefined
             ? [
-                `${conductorBranch} 向けなら [conductor] phase_reviewers: ${config.conductor.phaseReviewers.join(", ") || "（なし）"}`,
-                `それ以外なら [pr] reviewers: ${config.pr.reviewers.join(", ") || "（なし）"}`,
+                // conductor ブランチ向けに [pr] reviewers を依頼すると、監督の取り込みがレビュー待ちで止まる
+                `${conductorBranch} 向けなら [conductor] phase_reviewers: ${config.conductor.phaseReviewers.join(", ") || "（依頼しない）"}`,
+                `それ以外なら [pr] reviewers: ${config.pr.reviewers.join(", ") || "（依頼しない）"}`,
               ]
             : [config.pr.reviewers.join(", ")];
       const manual = [`GitHub の ${target} の画面で、次のレビュアーに依頼してください（PR の作成者本人と依頼済みの人は除く）:`, ...lists.map((line) => `  ${line}`)].join("\n");
@@ -93,13 +96,14 @@ register({
       fail(ghFailure("gh pr view", error));
       return;
     }
-    let state: ReturnType<typeof parsePrReviewState>;
+    // gh は動いたのに応答の形が想定外なら、推測で進めずに止める（pr ready と同じ）
+    let raw: unknown;
     try {
-      state = parsePrReviewState(JSON.parse(stdout));
-    } catch (error) {
-      fail({ reason: "gh-failed", stage: "gh pr view", error: `応答を読めません: ${error instanceof Error ? error.message : String(error)}` });
-      return;
+      raw = JSON.parse(stdout);
+    } catch {
+      throw new HikyakuError("gh pr view の応答を JSON として読めません", stdout.slice(0, 200));
     }
+    const state = parsePrReviewState(raw);
 
     // 依頼済みは GraphQL から取る。gh pr view には Bot（Copilot など）の依頼が現れず、
     // リポジトリの設定などで既に Copilot が依頼されている場合に、重ねて再依頼してしまう

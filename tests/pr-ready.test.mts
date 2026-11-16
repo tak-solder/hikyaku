@@ -83,7 +83,9 @@ test("pr ready: conductor の子は gh を呼ばずに Draft のまま返す", (
   gh.env.VIEW = "not json";
   const result = gh.run("build-01", "001", "--pr", "12", "--json");
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(JSON.parse(result.stdout).reason, "conductor-child");
+  assert.deepEqual([JSON.parse(result.stdout).reason, JSON.parse(result.stdout).pr], ["conductor-child", 12]);
+  const url = gh.run("build-01", "001", "--pr", "https://github.com/o/r/pull/34", "--json");
+  assert.equal(JSON.parse(url.stdout).pr, 34);
   assert.throws(() => gh.calls(), "gh を一度も呼ばない");
 });
 
