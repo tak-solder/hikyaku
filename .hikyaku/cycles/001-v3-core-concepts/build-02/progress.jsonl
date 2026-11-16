@@ -8,3 +8,5 @@
 {"at":"2026-11-16T17:57:01.721Z","skill":"build-manager","step":"estimate","result":"done","context":264687,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
 {"at":"2026-11-16T17:57:04.486Z","skill":"build-manager","step":"dry-run","result":"done","context":265449,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
 {"at":"2026-11-16T17:57:24.223Z","skill":"build-manager","step":"tasklist-review","result":"done","context":267571,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
+{"at":"2026-11-16T17:58:44.407Z","skill":"build-manager","step":"G6","result":"approved","input":"委任された判断（監督）: 承認。tasklist と issue.md を書き込み、build-02 は縮めたスコープで plan から報告し直す","context":274176,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
+{"at":"2026-11-16T17:59:20.847Z","skill":"build-manager","step":"write","result":"done","context":283016,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}

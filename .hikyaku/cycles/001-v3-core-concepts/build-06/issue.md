@@ -4,7 +4,7 @@
 
 - サイクル設定限定の `[consent] deferred` を足す。ルートに書いたらエラー（サイクル設定でだけ書けるキーの検査を `loadConfig` のルート側に新設）。`ResolvedConfig.deferredConsent = { requested, effective, reason }`。有効になるのは、`[app]` にマージがユーザーの関門である前提（`merge_gate`）が書かれ、かつ次のどちらかのときだけ: (a) G1 の承認の記録の値と現在のサイクル設定の値が同じ、(b) ベースブランチ（`resolvePrBase` の `defaultBase`）との merge-base のサイクル設定に同じ値がある。PR のマージ先（`base`）は判定に使わない。有効でなければ理由を `config`・`notices` に出し続ける
 - planner の G1 の args に、サイクル設定の `[consent] deferred` の値を添え、提示に1行出す（build-04 のプロファイルの行と並べる）。`step report` が G1 の承認の記録（planning/progress.jsonl の任意欄 `deferredConsent`）に、そのとき提示した値を残す。値は設定からスクリプトが読み、LLM の引数では受け取らない
-- `consent(ctx)` の `deferred`: 同意の部分をマージの前の同意ゲートへ遅らせ、その回のゲートは確認として `enabled` で評価する。`deferred` を返せるのは上限を超えるリスクの受け入れだけ（G3 と、build-02 の G4 の裏取りがこれに当たる。G1・G10 の `decisions`・`constraints`・宣言の変更・意図を変える判断・外の前提が要る判断・外との境界の変更は常に `now`）
+- `consent(ctx)` の `deferred`: 同意の部分をマージの前の同意ゲートへ遅らせ、その回のゲートは確認として `enabled` で評価する。`deferred` を返せるのは上限を超えるリスクの受け入れだけ（G3 と、build-15 の G4 の裏取りがこれに当たる。G1・G10 の `decisions`・`constraints`・宣言の変更・意図を変える判断・外の前提が要る判断・外との境界の変更は常に `now`）
 - 上限を超える受け入れを `risk` の事項（`who=user`、`when=merge`、`premises`・`loses`）として積む: G3 は options の報告から `step report` が自動で書き、`--loses` を必須にする。異議は `ledger object --defer`（根拠が `app.*` / `area:*` のときだけ）。異議の害の重さを `risk.mts` の上限と比べ、上限を超える受け入れかを判定するのはこの build（US-13.3。上限を超えなければ、事後同意に関わらず build-04 のとおりその場で扱う）
 - `scripts/lib/steps/consent.mts` の `consentStep(skill)` で、architect・builder は `pr` の直前、patch は `publish` の直前に同意ゲート（`（ask: deferred-consent）`、ユーザーに固定）を置く。`accepts` は一覧の全項目にユーザーの決定があること
 - `ledger consent-list`（1項目を「受け入れたリスク / 拠り所の前提 / 失うもの」の3行に収め、`--full` で全文）と `ledger pr-section`（「受け入れたリスク（事後同意）」「未解決の退け」「マージの前に決める事項」「期限を過ぎた事項」の節）を足す。各 pr.md でその出力を本文に貼る
