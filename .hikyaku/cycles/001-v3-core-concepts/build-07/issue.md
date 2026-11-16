@@ -8,7 +8,7 @@
 - 監督の答えの検査（安全側の既定）で、上限を超える受け入れになる答えは `risk.mts` の上限と比べて判定する（US-13.3）
 - `hikyaku conductor waiting <cycle>` と `next --json` の `waiting`: 作業ツリーと、tasklist の各ビルド・architect の origin のブランチの記録から、決定の無い `now` のユーザーの事項と、それを待つビルド（問いを出したビルドと推移的に依存するもの。ARCHITECT の問いは全ビルド）を導く。状態は保存しない
 - `skills/conductor/SKILL.md`: Step 1 で `available` が空になったら待っている問いをまとめて尋ねる。答えごとに conductor ブランチを待っているビルドのブランチへ取り込み、`--from user` で子を再開する（session-id は保存しない）。逐次実行は保つ
-- 事後同意（conductor の形）: 最後のビルドの子のときだけ同意ゲートを有効にし、サイクル全体の事項を対象にする（最後以外のビルドでは無効）。conductor の子での事後同意の有効化（build-06 で無効にしていたもの）。Step 4 で、ユーザーがレビューする最後の PR（conductor ブランチ→ベースブランチ）の本文に、`ledger pr-section` の全フェーズの一覧と同意・退けの決定を載せる
+- 事後同意（conductor の形）: 最後のビルドの子のときだけ同意ゲートを有効にし、サイクル全体の事項を対象にする（最後以外のビルドでは無効）。conductor の子での事後同意の有効化（build-06 で無効にしていたもの）。Step 4 で、ユーザーがレビューする最後の PR（conductor ブランチ→ベースブランチ）の本文に、`ledger pr-section` の全フェーズの一覧と同意・退けの決定と、宣言の変更（build-05 の `declarationChanged`。conductor ブランチとベースブランチの差分で導く）を載せる
 - `conductor asks` の JSON に `deferredConsent` を足し、Step 0 の委任の範囲の確認に事後同意の有効・無効と、問いを積む方針の行を足す
 - `skills/conductor/references/headless-protocol.md`・`docs/workflow/conductor.md` を直す。CHANGELOG に追記する
 
@@ -30,6 +30,7 @@
 - [ ] ユーザーに上げる問いが出ても、それに依存しないビルドが `available` に残り、依存するビルドは `waiting` に何の答えを待っているかが出る
 - [ ] 事後同意のサイクルでは、上限を超える受け入れで止まらず、最後のビルドの同意ゲートで全フェーズの一覧が示される
 - [ ] 最後の PR の本文の節に、全フェーズで受け入れたリスクと同意・退けの決定が載る（`pr-section` の出力）
+- [ ] サイクルの中で宣言を変えていれば、最後の PR の本文に、変わったキーとそれを拠り所にした受け入れが載る
 - [ ] Step 0 の表示に事後同意が出る
 - [ ] `conductor lint`・`npx tsc --noEmit`・`npm test` が通る
 

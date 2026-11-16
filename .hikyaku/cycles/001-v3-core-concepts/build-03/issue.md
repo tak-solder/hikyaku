@@ -3,6 +3,7 @@
 ## やること
 
 - `scripts/lib/ledger.mts` を新しく作る: 作業単位ごとの `decisions.jsonl` の読み書き（壊れた行はエラー。progress.jsonl の厳密な読み書きを関数に切り出して共有）、レコード `open`（`question` / `provisional` / `objection` / `risk`）と `decide`（`decided` / `consented` / `rejected` / `resolved`）
+- レコードの欄はこの build で決め、型と `ledger open / decide` の引数に持たせる: `premises`（前提の参照の配列）・`loses`（失うもの）・`accepts`（ユーザーが受け入れると書いた言葉）・`harm`（`高` / `中`）・`ask`（ask の ID）。前提の参照の書式（`app.exposure` / `app.data` / `app.impact` / `app.merge_gate` / `area:<name>` / `constraints#<anchor>` / `adr:<file>` / `assumption:<短い文>`）の解析と検証も `ledger.mts` に置く。build-04（`ledger object`）・build-05（`ledger premises`）・build-06（`risk` の事項）は、この欄と解析を使うだけで足さない（並行するビルドで形が食い違わないようにする）
 - 「いつ」（`now` / `phase:<phase>` / `gate:<G?>[@<unit>]` / `merge[@<unit>]` / `close`）の構文と、参照先（ゲート ID・ビルド ID）が実在するかの検査。それ以外は受け付けない
 - 「誰が」（`user` / `ai:<phase>` / `supervisor`）。表示は「ユーザー」「AI（<フェーズ>）」「監督」
 - 状態の導出（最新の `decide`）、期限が来た事項・過ぎた事項の判定。状態を表す列は持たない
@@ -26,6 +27,7 @@
 ## 受け入れ基準
 
 - [ ] 語彙にない「いつ」「誰が」と、存在しない参照先は受け付けない
+- [ ] `premises` に書式に無い参照を渡すと受け付けない。`premises`・`loses`・`accepts`・`harm`・`ask` が記録に残り、`ledger show` で読める
 - [ ] 決まったかが決定の記録から導かれ、期限を過ぎて決定の無い事項が示され続ける
 - [ ] `who=user` の事項に、`--by supervisor` / `--by ai:*` で決める経路が拒否される（unit と CLI の結合）
 - [ ] `step next` の directive に、期限が来た事項が載る。Stop フックの経路では記録を読まない
@@ -47,8 +49,8 @@
 |------|------|------|
 | 固定費 | 90k | 実測なし。標準ガイドの出発点 80k〜100k の中央 |
 | 読み込み | 80k | progress.mts・promotions.mts（promotionSources）・steps/locate.mts・steps/directive.mts（notices）・commands/cycle.mts（status）・navigator SKILL.md・git.mts・branch.mts・patch.mts・ADR pending-items |
-| 実装 | 90k | ledger.mts 新規（約500行: 型・読み書き・いつ/誰がの語彙・参照先の検査・状態の導出・期限）、commands/ledger.mts（約300行: open/decide/list/show）、notices の配線、cycle status の節、navigator の1行 |
+| 実装 | 95k | ledger.mts 新規（約500行: 型と欄・読み書き・いつ/誰がの語彙・前提の参照の書式・参照先の検査・状態の導出・期限）、commands/ledger.mts（約300行: open/decide/list/show）、notices の配線、cycle status の節、navigator の1行 |
 | テスト | 60k | ledger の unit（語彙・付け替えの拒否・導出）、CLI の結合（dry-run・notices・status） |
 | 未知の領域 | 30k | Stop フックの経路で読まない分岐と、作業単位の列挙の共通化 |
-| **予測ピーク** | **350k** | 狙いの帯（300k〜450k） |
+| **予測ピーク** | **355k** | 狙いの帯（300k〜450k） |
 | ガイド | 標準 v2 | 03897ac0 |

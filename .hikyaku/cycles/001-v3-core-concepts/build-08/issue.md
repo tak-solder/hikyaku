@@ -2,7 +2,7 @@
 
 ## やること
 
-- `scripts/lib/diff-facts.mts` を新しく作る: `--name-status -M` と hunk から、変更ファイルと種類（A/M/D/R と `classifyPath` の分類）、テストファイルの削除、削除されたテストの宣言、追加されたスキップの印、アサーションの行の変更（「緩和」とは判定せず「変更」）、設定の宣言（`.hikyaku.config` の `[app]`・`[boundaries]`・`[consent]`）の変更、G8 承認後の test-spec.md の書き換え（G8 の承認の `at` より後のコミットと未コミットの差分）を事実として並べる。スコープの内外や緩和かどうかは判定しない
+- `scripts/lib/diff-facts.mts` を新しく作る: `--name-status -M` と hunk から、変更ファイルと種類（A/M/D/R と `classifyPath` の分類）、テストファイルの削除、削除されたテストの宣言、追加されたスキップの印、アサーションの行の変更（「緩和」とは判定せず「変更」）、設定の宣言（`.hikyaku.config` の `[app]`・`[[app.areas]]`・`[boundaries]`・`[consent]`）の変更（`[[app.areas]]` は項目の削除と `paths` の変更も並べる）、G8 承認後の test-spec.md の書き換え（G8 の承認の `at` より後のコミットと未コミットの差分）を事実として並べる。スコープの内外や緩和かどうかは判定しない
 - `git.mts` に `nameStatus` / `unifiedDiff` / `commitsTouchingSince` を足す（`tryGit` の作法）。基準は `resolvePrBase`
 - `[diff]` に `test_declarations` / `skip_markers` / `assertion_markers` を足す（言語に依存しない既定に追加される。既定は消せない）
 - `hikyaku diff facts <phase> [<cycle>] [--format json|pr]`（読み取り専用）。`pr` の形式は、事実と `agreement.md` の理由を合わせた PR 本文の節
@@ -23,6 +23,7 @@
 ## 受け入れ基準
 
 - [ ] テストの削除・スキップの追加・アサーションの変更・設定の宣言の変更が、事実として一覧に並ぶ（言語ごとのフィクスチャの unit）
+- [ ] `[[app.areas]]` の項目を消すか `paths` を狭める変更が、設定の変更として並ぶ
 - [ ] G8 の承認後に test-spec.md を書き換えると、その書き換えが並ぶ（一時リポジトリの結合テスト）
 - [ ] `agreement-review` がどのプロファイルでも手順に入り、`agreement.md` が無ければ完了にならない
 - [ ] review.md からスコープとデータ安全の自己確認が無くなっている
@@ -31,7 +32,7 @@
 
 ## 参照する設計ドキュメント
 
-- `design/design-delta.md` の「5. 差分の事実と合意の突き合わせ」と「1. 承認の種類と上限」（上限はマージ済みの宣言で決める の項の、設定の変更を事実に並べる部分）
+- `design/design-delta.md` の「5. 差分の事実と合意の突き合わせ」と「1. 承認の種類と上限」（上限はユーザーがマージした宣言で決める の項の、設定の変更を事実に並べる部分）
 - `decisions` の `20261116-agreement-review.md` — 事実の範囲・ステップ・PR の節がこの判断に従う
 
 ## 予測ピーク

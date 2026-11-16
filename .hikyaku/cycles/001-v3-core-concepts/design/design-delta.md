@@ -8,20 +8,20 @@
 
 - **ステップ定義が承認の種類を持つ。** gate の `StepDefinition` に `consent(ctx): "now" | "deferred" | false`（理由つき）と `enabled(ctx)` を足し、エンジンは同意の回を設定で外さない。`when` は構造の条件（options をスキップした等）だけを表す
   - G1: 常に `now`。`user_stories_gate` キーは廃止し、書かれていたら移行のヒントつきのエラー
-  - G3: 差し戻しからの再設計の回か、options の報告（`--harm` / `--paths`）を `risk.mts` が上限と比べて超えれば同意。事後同意が有効なら `deferred`。`--harm` と `--paths` は options の done の必須欄で、欠けていれば同意（`now`）に倒す。さらに `gate brief` と同じ照合で、design-delta.md と ADR が触れるパスが重い領域に当たれば、申告に関わらず同意にする（LLM の申告は上げる向きにしか効かない）
-  - G4: 差し戻しからの再設計の回なら同意（US-14.4）。`gate brief G4` が外との境界（`[boundaries] external`）の変更を検出したときも同意（`now`。外との境界はユーザーが同意するもので、事後同意には回さない）。それ以外は確認
+  - G3: 差し戻しからの再設計の回か、options の報告（`--harm` / `--paths`）を `risk.mts` が上限と比べて超えれば同意（申告したパスが重い領域に当たれば、害の重さに関わらず超えるとみなす）。事後同意が有効なら `deferred`。`--harm` と `--paths` は options の done の必須欄で、欠けていれば同意（`now`）に倒す。G3 の時点では design-delta.md と ADR がまだ無いので、申告の裏取りは G4 で行う
+  - G4: 差し戻しからの再設計の回なら同意（US-14.4）。`gate brief G4` が外との境界（`[boundaries] external`）の変更を検出したときも同意（`now`。外との境界はユーザーが同意するもので、事後同意には回さない）。G3 の申告の裏取りもここで行う: design-delta.md と ADR が触れるパスが重い領域に当たり、その領域が G3 の申告（`--paths`）に当たっていなければ、上限を超える受け入れとして同意にする（事後同意が有効なら `deferred`。申告が当たっていれば G3 がすでに同意になっている。LLM の申告は上げる向きにしか効かない）。それ以外は確認
   - `deferred` の意味: 同意の部分をマージの前の同意ゲートへ遅らせる。その回のゲート自体は確認として `enabled` で評価し（プロファイルで省ける）、`risk` の事項が記録されていることを `accepts` で確かめる
   - G6・G8: 確認。全プロファイルで有効のまま、conductor では監督が答える
-  - G10: ゲート1つのまま、候補に `decisions`・`constraints` があれば同意。それ以外の候補だけなら確認として `promotion_gate` で省ける。`promotions --json` が候補ごとに `approval` を返し、提示を分ける。`write` の `accepts` は、`decisions`・`constraints` のパスに触れる差分があるのに同意の承認が無ければ受け付けない
+  - G10: ゲート1つのまま、同意が要る変更があれば同意。同意が要る変更は、`decisions`・`constraints` への変更のうち、このサイクルの ADR の frontmatter の `status` を `accepted` から `implemented` に変えるだけのものを除いた全部（設計の質問 Q11。新しい ADR、本文の変更、覆された判断への書き換えは同意のまま）。`promotions.mts` の1つの関数がこれを判定し、G10 の `consent`（昇格の候補と、作業ツリーの差分の両方を見る）と `write` の `accepts` が同じ関数を使う。同意が要る変更が無ければ確認として `promotion_gate` で省ける。`promotions --json` が候補ごとに `approval` を返し、提示を分ける。`write` の `accepts` は、同意が要る差分があるのに同意の承認が無ければ受け付けず、directive の `args.reworkFrom` で G10 へ戻す（戻った回の G10 は差分を見て同意になる）
 - **directive** が `approval` と理由を出し、conductor は `childStep` からそれを読んで `resolveAsk` に渡す。同意はユーザーに固定し、`delegate` でも上書きできない。`DEFAULT_HANDLERS.consent = "user"`、`consent` は `FIXED_CATEGORIES` に入る。ASKS の G6・G8 は confirm に直す
 - **委任の前提が崩れた出来事**（US-14.2）: 差し戻しは `return.md`、設計と要件の衝突は builder が `（ask: design-conflict）` で `ledger open --type question --ask design-conflict` を記録する（progress.jsonl ではなく未決事項の記録に残るので、スクリプトが判定できる）。architect の差し戻しからの再設計の回の先頭と、builder で design-conflict の事項が記録された直後の `step next` に、gate `delegation` を置く。conductor では `delegation` をユーザーに固定する
 - **監督の答えは安全側だけ**（US-15.1〜15.3）: 監督が答えてよい問い（confirm・spec）の directive に、スクリプトが決めた安全側の既定（推奨案、unsafe-split なら安全な分割、design-conflict なら差し戻し）を載せる。`conductor launch --from supervisor --choice <値>` は、安全側の既定以外の値なら受け付けず、ユーザーに上げるよう返す。事後同意が無効なときに監督の答えが上限を超える受け入れになる場合も、同じ検査でユーザーに上がる
 - **答えの出どころ**（US-19.7）: `conductor launch --from user|supervisor` が子の環境変数 `HIKYAKU_ANSWER_FROM` を設定する。launch は、子の現在の問いの handler がユーザーなのに `--from supervisor` なら弾く。conductor の子（`HIKYAKU_CONDUCTOR_CHILD=1`）の中の `ledger decide --by user` は `HIKYAKU_ANSWER_FROM=user` を要する
 - **新しい問い**: `delegation`（委任の前提が崩れた出来事のあと、委任を続けるか。US-14.2）と `deferred-consent`（事後同意の一覧。US-20）。どちらもユーザーに固定。`（ask: …）` タグと ASKS を同期する
-- **G1 でプロファイルを確かめる**（US-14.1）: planner の G1 の args に profile を添え、提示に1行出す
+- **G1 でプロファイルを確かめる**（US-14.1）: planner の G1 の args に profile と、サイクル設定の `[consent] deferred` の値を添え、提示に1行ずつ出す（事後同意の値は 3節の有効の判定に使う）
 - **アプリケーションの状況**: ルート設定限定の `[app]`（`exposure` / `data` / `impact` と、マージがユーザーの関門である前提のキー）、`[[app.areas]]`（`paths` と3軸）、`[boundaries]`（`external` / `internal` のパス）。読み込みは `[data_integrity]` の先例に倣い、サイクル設定にあればエラー。`risk.mts` がパスごとの解決・上限の表・重い領域の照合を持つ。宣言が無ければ上限なし
-- **上限はマージ済みの宣言で決める**: `risk.mts` は、作業ツリーの宣言と、PR の基準（`resolvePrBase` の merge-base）にある宣言のうち、厳しいほうを使う。作業中のブランチで宣言を緩めても、マージされるまで上限は緩まない（基準を読めなければ作業ツリーの宣言を使い、そのことを `notices` に出す）。`[app]`・`[[app.areas]]`・`[boundaries]`・サイクル設定の `[consent]` の変更は、diff facts の「設定の変更」として並び、agreement-review が合意と突き合わせる
-- **宣言の変更**（US-13.5）: `ledger premises --changed-from <base>` が、merge-base と HEAD の `[app]` の差分から変わったキーを出し、それを拠り所にした受け入れを並べる。対象は、作業ツリーにある全サイクルの `decisions.jsonl` の受け入れと、`decisions`（ADR）・`constraints` の「受け入れたこと」の行（US-6.6）。行の書式は `- <受け入れたこと>（拠り所: \`<前提の参照>\`[, \`<前提の参照>\`]）` に固定し、`ledger premises` が `docs.mts` の `loadGuide` で所在を引いて読む。宣言を変える PR はサイクルの中の出来事なので、Q12 のスコープ外（「いつ」をサイクルの外の出来事にすること）には当たらない（G4 で監督が判断、ユーザーの事後同意待ち）。各フェーズの `pr` の args に `declarationChanged` を添え、PR 本文に載せる。`validate --base` でも警告する（CI 向け）
+- **上限はユーザーがマージした宣言で決める**: `risk.mts` は、作業ツリーの宣言と、ベースブランチ（`resolvePrBase` の `defaultBase`。`base_branch` か、デフォルトブランチ）との merge-base にある宣言のうち、厳しいほうを使う。PR のマージ先（`base`）は使わない（スタックでは未マージの前フェーズのブランチ、conductor では監督が取り込む conductor ブランチになり、どちらもユーザーのマージを経ていない）。作業中のブランチや conductor ブランチで宣言を緩めても、ユーザーがベースブランチへマージするまで上限は緩まない（基準を読めなければ作業ツリーの宣言を使い、そのことを `notices` に出す）。`[app]`・`[[app.areas]]`・`[boundaries]`・サイクル設定の `[consent]` の変更は、diff facts の「設定の変更」として並び、agreement-review が合意と突き合わせる
+- **宣言の変更**（US-13.5）: `ledger premises --changed-from <base>` が、merge-base と HEAD の `[app]` の差分から変わったキーを出し、それを拠り所にした受け入れを並べる。対象は、作業ツリーにある全サイクルの `decisions.jsonl` の受け入れと、`decisions`（ADR）・`constraints` の「受け入れたこと」の行（US-6.6）。行の書式は `- <受け入れたこと>（拠り所: \`<前提の参照>\`[, \`<前提の参照>\`]）` に固定し（拠り所にする外の前提が無い行には付けない）、`ledger premises` が `docs.mts` の `loadGuide` で所在を引いて読む。宣言を変える PR はサイクルの中の出来事なので、Q12 のスコープ外（「いつ」をサイクルの外の出来事にすること）には当たらない（G4 で監督が判断、ユーザーの事後同意待ち）。各フェーズの `pr` の args に `declarationChanged` を添え、PR 本文に載せる。conductor の最後の PR（conductor ブランチ→ベースブランチ）の本文にも載せる（ユーザーが読んでマージするのはこの PR なので）。`validate --base` でも警告する（CI 向け）
 
 ### 2. 未決事項と決定の記録（US-1・US-19）
 
@@ -34,7 +34,7 @@
 
 ### 3. 事後同意（US-20）
 
-- サイクル設定限定の `[consent] deferred`（ルートに書いたらエラー。サイクル設定でだけ書けるキーの検査を `loadConfig` のルート側に新設）。有効になるのは、PR の基準（merge-base）のサイクル設定にも同じ値があるときだけ（作業中のブランチで AI が足しても効かない。create-cycle の PR か、ユーザーがマージしたコミットで入ったものに限る）。`ResolvedConfig.deferredConsent = { requested, effective, reason }`。前提の宣言が無ければ有効にせず、理由を `config`・`notices`・`conductor asks` に出し続ける
+- サイクル設定限定の `[consent] deferred`（ルートに書いたらエラー。サイクル設定でだけ書けるキーの検査を `loadConfig` のルート側に新設）。有効になるのは、次のどちらかのときだけ: (a) G1 の承認の記録の値と、現在のサイクル設定の値が同じ。G1 の提示に事後同意の値を1行出し、`step report` が G1 の承認の記録（planning/progress.jsonl の任意欄）に、そのとき提示した値を残す。(b) ベースブランチ（`resolvePrBase` の `defaultBase`）との merge-base のサイクル設定に同じ値がある（ユーザーがマージしたコミットで入った）。G1 は常に同意でユーザーに固定なので、新しいゲートは足さない。G1 の後に作業中のブランチで AI が足しても効かず、後から選び直すには、ベースブランチへのマージか、planner を回し直して G1 を取り直すことが要る。PR のマージ先（`base`）は、スタックや conductor ではユーザーのマージを経ていないブランチになるので、判定に使わない。`ResolvedConfig.deferredConsent = { requested, effective, reason }`。前提の宣言が無ければ有効にせず、理由を `config`・`notices`・`conductor asks` に出し続ける
 - 上限を超える受け入れ（G3・異議・監督の答え）は、有効なとき `risk` の事項（`who=user`、`when=merge`、`premises`・`loses` つき）として積む。G3 では options の報告から `step report` が自動で書き、`--loses` を必須にする
 - `scripts/lib/steps/consent.mts` の `consentStep(skill)` が、architect・builder では `pr` の直前、patch では `publish` の直前に同意ゲートを置く。conductor の子では、最後のビルドのときだけ有効にし、サイクル全体の事項を対象にする（最後以外のビルドでは無効）。`accepts` は一覧の全項目にユーザーの決定があること
 - 退け: 同じ作業単位の事項なら directive の `args.reworkFrom` でそのステップへ戻す。前のフェーズの事項なら `return.md` で差し戻す（return.md に「退けた項目」の節）。最新の決定が `rejected` の事項は「未解決の退け」として以後の PR 本文と `cycle status` に出し続け、作り直しのあとユーザーが `resolved` を記録すると消える
@@ -67,7 +67,7 @@
 
 ### 8. 記録のテンプレート（US-6・US-7・US-8）
 
-- ADR のテンプレートに、外の前提（事実か仮定か・確かめた日）・推奨・受け入れたこと（拠り所の前提）・再評価条件・退けた推奨で失う利点・領域（任意。`領域: <glob>`、US-5.5）の欄を足す（このサイクルの ADR は領域を除いてこの形で書いた）。「受け入れたこと」の各行は `（拠り所: \`<前提の参照>\`）` で終える（`ledger premises` が読む。参照の書式は2節と同じで、確かめていない前提は `assumption:<短い文>`）。`skills/architect/steps/adr.md` の記録項目も同時に直す
+- ADR のテンプレートに、外の前提（事実か仮定か・確かめた日）・推奨・受け入れたこと（拠り所の前提）・再評価条件・退けた推奨で失う利点・領域（任意。`領域: <glob>`、US-5.5）の欄を足す（このサイクルの ADR は領域を除いてこの形で書いた）。「受け入れたこと」は1件1行の箇条書きにし、外の前提を拠り所にする行は `（拠り所: \`<前提の参照>\`）` で終える（`ledger premises` が読む。拠り所にする外の前提が無い行には付けず、照合の対象にしない。参照の書式は2節と同じで、確かめていない前提は `assumption:<短い文>`）。`skills/architect/steps/adr.md` の記録項目も同時に直す
 - constraints のテンプレートを `skills/close-cycle/references/` に新しく作る（前提・事実か仮定か・確かめた日・受け入れたこと・再評価条件・領域）
 - design-questions.md のテンプレートに、質問ごとの選択肢・各案の欠点・推奨・回答と、推奨を退けたときに失う利点の欄を足す
 - ポインタに件数や範囲を添えさせている指示文（codebase-survey の US-8 の節）を直す。`validate` に警告の段階（JSON の `warnings`、終了コード 0）を足し、永続ドキュメントとサイクルドキュメントの ID の範囲（`X-1〜X-5` の形）を警告する
