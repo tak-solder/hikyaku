@@ -287,7 +287,8 @@ git push origin --delete {フェーズのブランチ}
   - ブランチ名ではなく、`check-pr` が検証したコミット（`headSha`）を `--no-ff` で取り込む
   - 取り込んだブランチは消す。残すと、次のフェーズの PR の向き先（`pr base`）を導くときの候補に混ざる
   - push すると、GitHub はその PR をマージ済みとして扱う
-  - 取り込んだ PR の `check-pr` の結果（CI の件数と状態）は、Step 4 の最後の PR の本文に1行で残す
+  - 取り込んだ PR の `check-pr` の結果（CI の状態）は、Step 4 の最後の PR の本文に、PR へのリンクと1行で残す
+    （チェックの件数は PR から読めるので写さない）
   - 差し戻しの再設計（`architect {cycle} build-NN`）は PR を作らない。取り込まずに Step 1 へ
     （同じビルドのブランチで builder を起動し直す）
   - close-cycle の PR はデフォルトブランチへ向く。取り込まない
@@ -341,6 +342,8 @@ gh pr list --head {conductor ブランチ} --base {baseBranch} --state open --js
   - `gh pr create --draft` で作る。Draft に対応していない場合だけ通常の PR で作り、その旨を案内する
   - 本文に、取り込んだフェーズの PR を順に並べ、それぞれで**監督が答えた確認ゲート**と、子が解釈で
     決めた振る舞いを1行ずつ示す（ユーザーがレビューで確認するため）
+  - `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger premises --format pr` の出力が空でなければ、本文にそのまま貼る
+    （サイクルで宣言を変えたなら、それを拠り所にした受け入れをユーザーが見直すのはこの PR。フェーズの PR は監督が取り込む）
   - 外部連携が有効なら、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref conductor {cycle}` の行
     （サイクルの issue への `Refs #12`）を本文の末尾に入れる。issue は CLOSE の PR で閉じる
 - [ ] 設定に従って公開する（失敗したら、再実行のコマンドと Draft のままであることを案内する）

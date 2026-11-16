@@ -5,6 +5,8 @@ G10 で承認された内容だけを書く。承認されていない候補を�
 
 - [ ] 永続ドキュメントへ、追加・置き換え・削除を反映する
   - `repo` 管理の文書は既存の形式に合わせる。ADR の本文は書き換えない
+  - `hikyaku` 管理の `constraints` は `${CLAUDE_PLUGIN_ROOT}/skills/close-cycle/references/constraints-template.md`
+    （[constraints-template.md](../references/constraints-template.md)）の形で書く
   - 置き換えと削除は、承認された記述だけに行う。周りの記述を整理しない
 - [ ] `workflow` が承認されていれば `{HIKYAKU_ROOT}/instructions.md` を更新する（無ければ新規作成する）
 - [ ] rule の整理（束ねる・分ける・glob を狭める・削除）が承認されていれば反映し、確かめる

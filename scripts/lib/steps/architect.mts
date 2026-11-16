@@ -21,6 +21,7 @@
  */
 
 import { publicationStep } from "./publication.mts";
+import { declarationArgs } from "../premises.mts";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { loadCycles } from "../cycles.mts";
@@ -258,7 +259,7 @@ export const ARCHITECT_STEPS: SkillSteps = {
       title: "PR の作成とレビュアーのアサイン",
       when: (ctx) => roundOf(ctx) !== "return",
       recordsPr: true,
-      args: (ctx) => ({ ...designChoiceGate(ctx), round: roundOf(ctx) }),
+      args: (ctx) => ({ ...designChoiceGate(ctx), round: roundOf(ctx), ...declarationArgs(ctx) }),
     },
     publicationStep("architect", (ctx) => roundOf(ctx) !== "return"),
   ],

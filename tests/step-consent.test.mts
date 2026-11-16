@@ -113,7 +113,8 @@ test("patch: P1（対応方針の合意）と P2（decisions・constraints を�
 test("architect: options をスキップした回でも、G3 を行う設定なら designChoiceGate は true のまま", () => {
   const pr = ARCHITECT_STEPS.steps.find((definition) => definition.id === "pr") as StepDefinition;
   const events = [{ at: "2026-11-16T00:00:00Z", skill: "architect", step: "options", result: "skipped" as const, reason: "分岐なし" }];
-  const config = (designChoice: boolean) => ({ gates: { designChoice } }) as unknown as ResolvedConfig;
+  // pr の args は宣言の変更（declarationChanged）も読むので、git の無い repoRoot を渡す
+  const config = (designChoice: boolean) => ({ gates: { designChoice }, repoRoot: "/nonexistent" }) as unknown as ResolvedConfig;
   assert.equal(pr.args?.({ ...ctx, config: config(true), events })["designChoiceGate"], true);
   assert.equal(pr.args?.({ ...ctx, config: config(false), events })["designChoiceGate"], false);
 });

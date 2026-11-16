@@ -50,6 +50,11 @@ export interface StepContext {
   unit: string;
   unitDirectory: string;
   events: ProgressEvent[];
+  /**
+   * 手順の位置だけを読む経路（Stop フック・step where・conductor parse）。重い args（git を読む宣言の変更など）は
+   * これを見て組み立てを省く
+   */
+  positionOnly?: boolean;
 }
 
 export interface StepDefinition {

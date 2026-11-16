@@ -170,7 +170,8 @@ export function assertDecider(item: Pick<OpenRecord, "id" | "who">, by: Who, inp
 // ---------------------------------------------------------------------------
 // 前提の参照
 
-const APP_KEYS = ["exposure", "data", "impact", "merge_gate"];
+/** 前提の参照 `app.<key>` に使える [app] のキー（premises.mts の宣言の差分も同じものを使う） */
+export const APP_KEYS = ["exposure", "data", "impact", "merge_gate"];
 
 export type Premise =
   | { kind: "app"; key: string }

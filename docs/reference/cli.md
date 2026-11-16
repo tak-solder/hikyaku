@@ -65,7 +65,7 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | コマンド | いつ使うか |
 |---|---|
 | `doctor` | 環境が動く状態かを確認したいとき。導入直後と、動かないとき |
-| `validate [<cycle>]` | ファイルの整合性を確認したいとき。[CI](../operations/ci.md) から呼ぶと効く。`token-guide/guide.md` の版の宣言と本文の食い違い、受け入れ基準の割り当て漏れ、「マージ時点で残る危険」の記録の不備も見る |
+| `validate [<cycle>]` | ファイルの整合性を確認したいとき。[CI](../operations/ci.md) から呼ぶと効く。`token-guide/guide.md` の版の宣言と本文の食い違い、受け入れ基準の割り当て漏れ、「マージ時点で残る危険」の記録の不備も見る。ポインタに添えた ID の範囲と、「受け入れたこと」の読めない行は警告（終了コードは 0 のまま）。`--base <ref>` で宣言の変更も警告する |
 | `docs validate` | ドキュメントガイドのパスだけを確認したいとき |
 | `rules check` | パス指定の rule（`.claude/rules/`）を足したり直したりしたあと。glob が広すぎて本文が長い rule と、どのファイルにも一致しなくなった rule を見つける |
 
@@ -147,6 +147,7 @@ build-manager や retrospective のような内部スキルは、`--skill` を�
 | `ledger object <phase> [<cycle>] --summary --basis --loses --harm --decision --input` | ゲートで、ユーザーの選択がその人自身の宣言・記録と食い違うと異を唱えたとき、異議とユーザーの決定を対で残す（ゲートの指示に呼び方が載る） |
 | `ledger list [<cycle>]` | 未決事項と、期限が来た・過ぎたもの、未解決の退けを見渡したいとき |
 | `ledger show <id> [<cycle>]` | 1件の事項の前提・失うもの・決定の経緯を読みたいとき |
+| `ledger premises [--changed-from <ref>]` | アプリケーションの状況の宣言を変えたとき、それを拠り所にして受け入れたリスク（未決事項の記録と、ADR・`constraints` の「受け入れたこと」の行）を見直す対象として並べる。各フェーズの PR の手順が、宣言が変わっていれば `--format pr` の出力を PR 本文に貼る |
 
 「いつ」に書けるのはサイクルの中の出来事（フェーズやゲートに来たとき、PR のマージの前、サイクルを締めるとき）だけで、日付や自由文、存在しないゲートやビルドはエラーになります。書ける値は `hikyaku help ledger open` にあります。ユーザーが決める事項はユーザーしか決められず、決める人を付け替える手順はありません。
 

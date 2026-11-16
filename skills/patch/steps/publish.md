@@ -5,6 +5,8 @@
   - ドキュメント: この PR で直した永続ドキュメント、またはサイクルの handoff.md へのリンク。無ければ「なし」
   - 残したこと: そのまま進めたレビュー指摘、「確度: 要確認」の懸念、通常のサイクルへ引き継いだ項目、
     `hook` / `upstream` の候補。無ければ「なし」
+  - 値 `declarationChanged` が `false` でなければ、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger premises --format pr`
+    の出力を本文にそのまま貼る（変わった宣言を拠り所にした受け入れを、ユーザーがマージの前に見直すため）
   - 合意した挙動は書き換えない。合意を取り直した場合だけ、取り直した内容に更新する
 - [ ] directive の `値` にある PR を公開し、レビュアーを依頼する
 

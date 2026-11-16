@@ -12,6 +12,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify architect {cycle}
   - 向き先は `pr base` に従う（値 `round` が `add` で conductor から動いているなら conductor ブランチ）
   - 値 `designChoiceGate` が false（G3 を行わない回。express の通常の回など）なら、採用案と退けた案を本文に一行で示す
     （express では PR レビューが人間の目になる）
+  - 値 `declarationChanged` が `false` でなければ、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger premises --format pr`
+    の出力を本文にそのまま貼る（変わった宣言を拠り所にした受け入れを、ユーザーがマージの前に見直すため）
   - `gh pr create --draft` で作る。Draft に対応していないリポジトリで作成に失敗したら、`--draft` を外して作り直し、Ready への切り替えは飛ばす。完了の案内で Draft にできなかったことを伝える
 
 - [ ] `done` を報告し（`--pr` に PR の URL）、progress.jsonl をコミット & push する（PR に含める）

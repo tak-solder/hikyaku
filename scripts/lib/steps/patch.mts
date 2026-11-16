@@ -23,6 +23,7 @@ import { join } from "node:path";
 import { patchUnitDirectory } from "../patch.mts";
 import { formatK } from "../tokens.mts";
 import { publicationStep } from "./publication.mts";
+import { declarationArgs } from "../premises.mts";
 import { currentEvents, latestPeak, type SkillSteps, type StepContext } from "./engine.mts";
 
 export const PATCH_HANDOFF = "handoff.md";
@@ -110,6 +111,7 @@ export const PATCH_STEPS: SkillSteps = {
       consent: () => ({ timing: "now", reason: "永続ドキュメントの更新（decisions・constraints の変更を含みうる）" }),
     },
     { id: "write", kind: "run", title: "永続ドキュメントの書き込みと検証", when: writesDocs },
-    publicationStep("patch"),
+    // patch は pr を実装の前に作るので、宣言の変更は実装を終えた publish で見る
+    publicationStep("patch", undefined, declarationArgs),
   ],
 };

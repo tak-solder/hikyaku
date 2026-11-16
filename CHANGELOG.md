@@ -36,6 +36,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - 設定ファイルの TOML でテーブル配列（`[[x]]`）を書けるようになった
 - **未決事項と決定の記録（`decisions.jsonl`）と `hikyaku ledger open / decide / list / show`**: 決めずに先へ進めたこと・暫定の決定・異議・受け入れたリスクを、いつ（`now` / `phase:` / `gate:` / `merge` / `close` だけ。存在しないゲートやビルドはエラー）・誰が（`user` / `ai:<フェーズ>` / `supervisor`）決めるかとともに、作業単位ごとの `decisions.jsonl` に追記する。決定は決めた作業単位のファイルに書くので、並行するビルドの決定がマージで衝突しない。決まったかと期限は記録から導き、状態の欄は持たない。ユーザーが決める事項はユーザーしか決められない（`--input` 必須）。期限が来た・過ぎた事項は `step next` の注意と `cycle status`（JSON の `ledger`）に、決まるまで示される。Stop フック・`step where` は読まない（builder の `delegation` のきっかけを見るための、その作業単位の `decisions.jsonl` 1つを除く）
 - **異議の記録（`hikyaku ledger object`）とゲートの承認の検査**: ユーザーの選択がその人自身の宣言・記録と食い違うときに唱えた異議（根拠・失うもの・害の重さ）と、ユーザーの決定を対で記録する。害が高で選択どおりに進めるなら、ユーザーの言葉の `--accepts` と `--premises` が必須。どの場合もユーザーの答え（`--input`）が必須。そのステップに片づいていない高の異議があると、`step report` はゲートの承認を受け付けない（記録を読めないときも受け付けない）。中の異議は記録だけで進む。サイクルに属す作業単位の gate の directive（`objection`）に、異を唱える範囲の固定の指示・照合に使える宣言と記録のポインタ・`ledger object` の呼び方が載る
+- **`hikyaku ledger premises [--changed-from <ref>] [--format pr]`**: ルートの `.hikyaku.config` の `[app]`・`[[app.areas]]` を基準と HEAD で比べ、変わった参照（`app.<key>` / `area:<name>`）と、それを拠り所にした受け入れを並べる。受け入れは、作業ツリーにある全サイクルの `decisions.jsonl`（退け・解決されていない risk と、ユーザーが受け入れた objection のうち `premises` を持つもの）と、`decisions`・`constraints` の「受け入れたこと」の行（`（拠り所: \`<参照>\`）` で終わる行）。基準は上限の判定と同じ（base_branch・デフォルトブランチとの merge-base、origin とローカルの両方）。基準を読めないときは、宣言されている参照をすべて変わったものとして扱う。`-` で始まる ref は受け付けない。終了コードは常に 0
+- planner・architect・builder・close-cycle の `pr` と、patch の `publish`（patch は実装の前に PR を作るため）の directive に `args.declarationChanged`（変わった参照をカンマ区切り。無ければ `false`）が載り、宣言が変わっていれば `ledger premises --format pr` の出力を PR 本文に貼る。conductor の最後の PR の本文にも貼る。覆された ADR（`status: superseded`）の受け入れは並べない
+- **`validate` の警告の段階**: 終了コードを変えない警告を JSON の `warnings` とテキストの `!` 行で返す。永続ドキュメント（glossary を除く）と進行中のサイクル（引数があればそのサイクル）の文書で、ポインタに添えた ID の範囲（`AD-1〜AD-5`・`US-15.1〜15.3` の形）と、`decisions`・`constraints` の「受け入れたこと」の節にあって読めない行（箇条書きでない、拠り所の書式が合わない）を示す。`--base <ref>` を付けると、宣言の変更と拠り所にした受け入れも示す（CI 向け。[CI](docs/operations/ci.md)）
+- **constraints のテンプレート**（`skills/close-cycle/references/constraints-template.md`）: 制約 / 外の前提（事実か仮定か・確かめた日）/ 受け入れたこと（拠り所）/ 再評価条件 / 領域（任意）。close-cycle の write が `hikyaku` 管理の `constraints` をこの形で書く
 - **`delegation` ゲート（`（ask: delegation）`）**: 委任の前提が崩れた出来事のあと、委任を続けるかをユーザーに尋ねる同意ゲート。architect では差し戻しからの再設計の回の先頭、builder では設計と要件の衝突（`ledger open --ask design-conflict`）を記録した直後に、どのステップの最中でも返る。conductor でもユーザーに固定で、`[conductor] delegate` に書けない。builder は、自分のビルドの `decisions.jsonl` を読めないと、このゲートを見落とさないよう手順に入らずに止まる。害が高の異議を `ledger open --type objection` で記録するときは `--premises` が必須
 - ステップの定義に `interrupt`（割り込みのゲート）を足した。きっかけの時刻を返す回だけ手順に入り、その後の承認が無ければ並びの位置に関わらず現在地になる。承認しても後ろのステップはやり直しにならない
 - planner: G1 の提示に、サイクルのプロファイルのままでよいかの確認を1行出す（directive の `args.profile`）
@@ -81,6 +85,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **ADR のテンプレート**（architect の `references/templates.md` と `steps/adr.md`）の欄を、決定 / 文脈 / 外の前提 / 検討した案 / 推奨 / 採用理由 / 受け入れたこと / トレードオフ / 再評価条件 / 退けた推奨で失う利点 / 影響範囲 / 領域（任意。`- **領域**: \`<glob>\`, \`<glob>\``）にした。「受け入れたこと」は1件1行で、外の前提を拠り所にする行は `（拠り所: \`<前提の参照>\`）` で終える
+- **design-questions.md のテンプレート**に、各案の欠点・推奨・回答と、推奨を退けたときに失う利点の欄を足した（architect の `steps/questions.md` も同じ）
+- ポインタに件数や範囲を添えさせていた指示を直した（close-cycle の G10 の提示例と collect、init の pr と triage-approval、conductor の最後の PR の CI の結果、token-guide の propose、build-manager と builder の templates）。予測ピークの根拠のファイル数・行数は、見積もりの根拠として残す
 - **永続ドキュメントを書けるスキルの例外に、サイクルに属さない patch を加えた。** コードと同じ PR で、P2 の承認を得て永続ドキュメント・`instructions.md`・スキルを直す（同じ PR でマージされるので、マージ時点で as-is が保たれる）。進行中のサイクルに属す patch は書かず、`patches/{YYYYMM}/{slug}/handoff.md` の「永続化すること」に残す
 - close-cycle: `hikyaku promotions` が、サイクルに属す patch の handoff.md も候補として集める
 - create-cycle: patch から引き継いだときは `planning/intake.md` に依頼・調べたこと・合意したことを書く。planner と `context plan` はこれを企画の入力として読む
@@ -188,6 +195,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `user_stories_gate` はエラーになる（値に関わらず）。ルートの設定では読んだ時点で、サイクルの設定では v3 の作業に使うときに止まるので、削除する
 - `[conductor] delegate` に `G10` を書いているとエラーになるので削除する（`escalate` の `G10` はそのままでよい）。`delegate` に `G3` / `G4` を書いていても、差し戻しからの再設計の回はユーザーに上がる
 - `conductor asks` / `parse` の `handler` の `human` を読んでいる独自のツールは `user` を読むよう直す
+- `validate` に警告が加わったが、終了コードは変わらない。`--json` の出力に `warnings` が増える。`validate` は知らないオプションをエラーにするようになった（受け付けるのは `--base` とグローバルオプション）。既存の ADR・`constraints` を新しいテンプレートに書き直す必要はない（「受け入れたこと」の節が無ければ何も読まない）。節がある文書で警告が出たら、1件1行の箇条書きにし、拠り所を `（拠り所: \`<参照>\`）` の形で行末に書く
 - 起票済みのビルドの issue（子 issue）は Hikyaku からは閉じなくなる。不要なら GitHub 側で閉じる。`tasklist.md` の `issue` 列は、次に `tasklist` のコマンドで書き込んだときに落ちる（`docs/migration/v2-to-v3.md#ビルドごとの外部起票の廃止`）
 
 ## [2.8.0]
