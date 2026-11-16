@@ -23,6 +23,7 @@ import { join } from "node:path";
 import { patchUnitDirectory } from "../patch.mts";
 import { formatK } from "../tokens.mts";
 import { publicationStep } from "./publication.mts";
+import { declarationArgs } from "../premises.mts";
 import { currentEvents, latestPeak, type SkillSteps, type StepContext } from "./engine.mts";
 
 export const PATCH_HANDOFF = "handoff.md";
@@ -84,7 +85,7 @@ export const PATCH_STEPS: SkillSteps = {
       title: "対応方針の合意",
       consent: () => ({ timing: "now", reason: "対応方針の合意（意図を決める判断）" }),
     },
-    { id: "pr", kind: "run", title: "Draft PR の作成（依頼と合意した挙動を本文に）", recordsPr: true },
+    { id: "pr", kind: "run", title: "Draft PR の作成（依頼と合意した挙動を本文に）", recordsPr: true, args: declarationArgs },
     { id: "implement", kind: "run", title: "実装とテスト" },
     { id: "verify", kind: "run", title: "ローカル検証" },
     {

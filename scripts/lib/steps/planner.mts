@@ -9,6 +9,7 @@
  */
 
 import { publicationStep } from "./publication.mts";
+import { declarationArgs } from "../premises.mts";
 import type { SkillSteps } from "./engine.mts";
 
 export const PLANNER_STEPS: SkillSteps = {
@@ -47,7 +48,7 @@ export const PLANNER_STEPS: SkillSteps = {
       when: (ctx) => ctx.config.reviews.retrospective !== "skip",
       reason: () => "企画フェーズの最後の振り返り",
     },
-    { id: "pr", kind: "run", title: "サイクルの issue と PR の作成", recordsPr: true },
+    { id: "pr", kind: "run", title: "サイクルの issue と PR の作成", recordsPr: true, args: declarationArgs },
     publicationStep("planner"),
   ],
 };

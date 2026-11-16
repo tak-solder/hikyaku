@@ -12,6 +12,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify close {cycle}
     必ず書く**。ユーザーが G10 のあとで削除を確かめ直せる場はこの PR になる
   - 手を入れなかったが気づいた点（このサイクルの記録に根拠の無い、古そうな記述）と、
     Hikyaku への報告（宛先 `upstream` の候補）があれば、本文に並べる
+  - 値 `declarationChanged` が `false` でなければ、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger premises --format pr`
+    の出力を本文にそのまま貼る（変わった宣言を拠り所にした受け入れを、ユーザーがマージの前に見直すため）
   - `external ref` が返した行（`Closes #12` など）を本文の末尾に入れる。
     サイクルの issue はこの PR のマージで閉じる
   - `gh pr create --draft` で作る。Draft に対応していないリポジトリで作成に失敗したら、`--draft` を外して作り直し、Ready への切り替えは飛ばす。完了の案内で Draft にできなかったことを伝える

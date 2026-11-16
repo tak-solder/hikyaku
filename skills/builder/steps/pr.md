@@ -25,6 +25,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr base build-{NN} {cycle}
 - [ ] PR を Draft で作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title build-{NN} {cycle} --build-title "{title}"` で生成）
   - マージ先は上で取得した base
   - 本文の末尾に上の参照行を入れる
+  - 値 `declarationChanged` が `false` でなければ、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger premises --format pr`
+    の出力を本文にそのまま貼る（変わった宣言を拠り所にした受け入れを、ユーザーがマージの前に見直すため）
   - 「確度: 要確認」の懸念が残る場合は、未決事項の ID と要点を本文に入れる。懸念の本文は未決事項の記録
     （`hikyaku ledger show <ID>`）に置き、PR に重複して転記しない
   - PR 作成前の承認は取らない。PR はレビューのための提案であって不可逆ではなく、

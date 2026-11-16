@@ -125,10 +125,10 @@ function idRanges(markdown: string): { line: number; text: string }[];
 
 ## 実装ステップ
 
-- [ ] Step 1: `scripts/lib/premises.mts`（節の解析・宣言の差分・ID の範囲）と単体テスト
-- [ ] Step 2: `ledger premises` と結合テスト
-- [ ] Step 3: `validate` の警告の段階・`--base`・範囲の検査と結合テスト
-- [ ] Step 4: pr の args と5つの pr.md
-- [ ] Step 5: ADR・constraints・design-questions のテンプレートと adr.md・questions.md・write.md
-- [ ] Step 6: 件数・範囲の指示の修正（grep で確かめる）
-- [ ] Step 7: docs（ci.md・cli.md）と CHANGELOG、`npx tsc --noEmit`・`npm test`
+- [x] Step 1: `scripts/lib/premises.mts`（節の解析・宣言の差分・ID の範囲）と単体テスト
+- [x] Step 2: `ledger premises` と結合テスト
+- [x] Step 3: `validate` の警告の段階・`--base`・範囲の検査と結合テスト
+- [x] Step 4: pr の args と5つの pr.md
+- [x] Step 5: ADR・constraints・design-questions のテンプレートと adr.md・questions.md・write.md
+- [x] Step 6: 件数・範囲の指示の修正（grep で確かめる）
+- [x] Step 7: docs（ci.md・cli.md）と CHANGELOG、`npx tsc --noEmit`・`npm test`

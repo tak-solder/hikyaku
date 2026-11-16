@@ -287,7 +287,8 @@ git push origin --delete {フェーズのブランチ}
   - ブランチ名ではなく、`check-pr` が検証したコミット（`headSha`）を `--no-ff` で取り込む
   - 取り込んだブランチは消す。残すと、次のフェーズの PR の向き先（`pr base`）を導くときの候補に混ざる
   - push すると、GitHub はその PR をマージ済みとして扱う
-  - 取り込んだ PR の `check-pr` の結果（CI の件数と状態）は、Step 4 の最後の PR の本文に1行で残す
+  - 取り込んだ PR の `check-pr` の結果（CI の状態）は、Step 4 の最後の PR の本文に、PR へのリンクと1行で残す
+    （チェックの件数は PR から読めるので写さない）
   - 差し戻しの再設計（`architect {cycle} build-NN`）は PR を作らない。取り込まずに Step 1 へ
     （同じビルドのブランチで builder を起動し直す）
   - close-cycle の PR はデフォルトブランチへ向く。取り込まない

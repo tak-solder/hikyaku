@@ -23,6 +23,8 @@ GitHub MCP ツールで起票し、`cycle link {cycle} --external {URL}` で記�
 - [ ] PR を Draft で作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title plan {cycle}` で生成）
   - `external ref` が返した行（`Refs #12` など）を本文の末尾に入れる。空なら入れない
   - create-cycle を代行した場合は、cycles.md の変更もこの PR に含める
+  - 値 `declarationChanged` が `false` でなければ、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger premises --format pr`
+    の出力を本文にそのまま貼る（変わった宣言を拠り所にした受け入れを、ユーザーがマージの前に見直すため）
   - `gh pr create --draft` で作る。Draft に対応していないリポジトリで作成に失敗したら、`--draft` を外して作り直し、Ready への切り替えは飛ばす。完了の案内で Draft にできなかったことを伝える
 
 - [ ] `done` を報告し（`--pr` に PR の URL）、progress.jsonl をコミット & push する

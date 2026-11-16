@@ -33,7 +33,9 @@ import {
   type Ledger,
   type OpenRecord,
 } from "../lib/ledger.mts";
+import { loadConfig } from "../lib/config.mts";
 import { emit } from "../lib/output.mts";
+import { premisesPrSection, premisesReview, reviewLines } from "../lib/premises.mts";
 import { pluginVersion } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
 import { open, type Opened } from "../lib/steps/directive.mts";
@@ -392,6 +394,63 @@ register({
         if (ledger.orphans.length > 0) {
           lines.push(`  ! 事項がこのツリーに無い決定: ${ledger.orphans.map((record) => record.id).join(", ")}`);
         }
+        return lines.join("\n");
+      },
+    );
+  },
+});
+
+register({
+  name: "ledger premises",
+  summary: "宣言（[app]・[[app.areas]]）の変更と、それを拠り所にした受け入れ（記録と ADR・constraints）を並べる",
+  usage: "hikyaku ledger premises [--changed-from <ref>] [--format text|pr] [--root <path>] [--json]",
+  details: [
+    "ルートの .hikyaku.config の [app]・[[app.areas]] を、基準と HEAD で比べ、変わった参照（app.<key> / area:<name>）を出します。",
+    "そのうえで、変わった参照を拠り所にした受け入れを並べます。対象は次の2つです:",
+    "  - 作業ツリーにある全サイクルの decisions.jsonl: risk（退け・解決されていないもの。未決も含む）と、",
+    "    ユーザーが受け入れた（consented）objection のうち、--premises を持つもの",
+    "  - document-guide.md の decisions・constraints の「受け入れたこと」の行（`（拠り所: `<参照>`）` で終わる行）",
+    "",
+    "--changed-from を省くと、上限の判定と同じ基準（デフォルトブランチと base_branch との merge-base。",
+    "origin/ とローカルの両方。Hikyaku のブランチは除く）を使います。基準を読めないときは、宣言されている",
+    "参照をすべて変わったものとして扱います（見直しの対象を落とさないため）。",
+    "",
+    "「受け入れたこと」の節にあって読めない行（箇条書きでない、拠り所の書式が合わない）は警告に出します。",
+    "--format pr は、PR 本文に貼る「宣言の変更」の節を出します（変更も警告も無ければ空）。",
+    "警告があっても終了コードは 0 です。",
+  ].join("\n"),
+  options: ["changed-from", "format"],
+  maxOperands: 0,
+  run: ({ args }) => {
+    const config = loadConfig({ root: flagString(args, "root") });
+    const format = flagString(args, "format") ?? "text";
+    if (format !== "text" && format !== "pr") throw new HikyakuError(`--format の値が不正です: ${format}`, "使用できる値: text / pr");
+    const review = premisesReview(config, flagString(args, "changed-from"));
+    if (format === "pr") {
+      emit({ section: premisesPrSection(review) }, () => premisesPrSection(review));
+      return;
+    }
+    const { changes } = review;
+    emit(
+      {
+        bases: changes.bases,
+        changed: changes.changed,
+        uncertain: changes.uncertain,
+        notices: changes.notices,
+        ledger: review.ledger,
+        documents: review.documents,
+        warnings: review.warnings,
+      },
+      () => {
+        const lines: string[] = [];
+        if (changes.changed.length === 0) lines.push("宣言の変更はありません。");
+        else {
+          lines.push(`変わった宣言: ${changes.changed.join(", ")}（基準: ${changes.bases.map((base) => base.ref).join(", ") || "読めず"}）`);
+          const targets = reviewLines(review);
+          lines.push(targets.length === 0 ? "この宣言を拠り所にした受け入れはありません。" : "この宣言を拠り所にした受け入れ（見直しの対象）:", ...targets);
+        }
+        for (const notice of changes.notices) lines.push(`  ${notice}`);
+        for (const warning of review.warnings) lines.push(`! ${warning}`);
         return lines.join("\n");
       },
     );
