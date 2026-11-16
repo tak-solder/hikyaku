@@ -128,6 +128,12 @@
 - When: `hikyaku step restart architect --round return --reason "build-03 の差し戻し"` を実行する
 - Then: 終了コード 0 で、progress.jsonl に `round: "return"` の restart の記録が1行追記される
 
+### step restart: --round return 以外の restart は return.md を見ない
+- 対応: —
+- Given: return.md が無い design/
+- When: `hikyaku step restart architect --round add --reason "指摘からの追加設計"` を実行する
+- Then: 終了コード 0 で、`round: "add"` の restart の記録が1行追記される
+
 ## scripts/commands/step.mts（escalates と failed --reason）
 
 ### buildEvent: escalates のステップの failed --reason に欠けがあれば受け付けない
@@ -144,9 +150,15 @@
 
 ### buildEvent: patch の verify も escalates として検査される
 - 対応: US-3.4
-- Given: patch の作業単位で、`verify` ステップの `--reason` が「推奨」を欠いている
-- When: patch の `step failed ... verify --reason "<推奨の無い報告>"` を実行する
-- Then: 終了コード 1 で、「推奨」の欠けが示される
+- Given: patch の作業単位 `patches/202611/fix-typo`（フェーズ `patch-202611-fix-typo`）の現在地が `verify`
+- When: `hikyaku step report patch-202611-fix-typo verify --result failed --reason "## 試したこと\n- npm test を2回直した\n## 選択肢\n- テストを分ける 失うもの: 1PR で済まない"` を実行する（「推奨」だけが無い）
+- Then: 終了コード 1 で、「推奨」の欠けが示され、progress.jsonl に追記されない
+
+### buildEvent: escalates の無いステップの failed は3節の無い reason でも記録する
+- 対応: —
+- Given: builder の現在地が `plan`（escalates なし）
+- When: `hikyaku step report build-03 plan --result failed --reason "issue.md を読めない"` を実行する
+- Then: 終了コード 0 で、progress.jsonl に `result: "failed"` の記録が1行追記される
 
 ### step lint: gate に escalates が付いた定義を問題として返す
 - 対応: —
