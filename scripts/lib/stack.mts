@@ -303,6 +303,11 @@ export async function resolvableRef(
   return undefined;
 }
 
+/** ベースブランチ（base_branch か、デフォルトブランチ）。resolvePrBase の defaultBase */
+export function defaultBaseOf(config: ResolvedConfig): string | undefined {
+  return config.baseBranch ?? defaultBranch(config.repoRoot);
+}
+
 export interface PrBase {
   /** PR の base に渡すブランチ名 */
   base: string;
@@ -325,7 +330,7 @@ export async function resolvePrBase(
   options: { fetch: boolean },
 ): Promise<PrBase> {
   const { config, context } = scope;
-  const defaultBase = config.baseBranch ?? defaultBranch(config.repoRoot);
+  const defaultBase = defaultBaseOf(config);
   const stacked = await stackParent(config, context, phase, defaultBase, options);
   const base = stacked?.name ?? defaultBase;
 

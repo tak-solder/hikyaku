@@ -340,6 +340,10 @@ export interface ResolvedConfig {
   conductor: ConductorConfig;
   /** [data_integrity] — ビルドのマージで本番データを壊さないための宣言 */
   dataIntegrity: DataIntegrityConfig;
+  /** [app] と [[app.areas]]（作業ツリーの宣言）。無ければ undefined（上限を設けない）。基準側との比較は risk.mts */
+  app: AppDeclaration | undefined;
+  /** [boundaries]。照合は gate brief（build-12） */
+  boundaries: Boundaries;
   /** [diff] — ビルドの差分の集計（tokens history build-NN）が数えない生成物と、テストとして分けるパス */
   diff: DiffPatterns;
   /** [context] — builder の区切りで、メインセッションのコンテキストと比べる目安 */
@@ -384,6 +388,47 @@ export interface DataIntegrityConfig {
   releaseBranches: string[];
   /** マージ時点で本番データの安全を保てないビルド分割を許すか。既定は false */
   allowUnsafeSplit: boolean;
+}
+
+/** アプリケーションの状況の3軸（ADR risk-ceiling-table）。並びは軽い段から重い段 */
+export const EXPOSURES = ["personal", "internal", "public"] as const;
+export const DATA_WEIGHTS = ["none", "internal", "personal-or-secret"] as const;
+export const IMPACTS = ["low", "medium", "high"] as const;
+export type Exposure = (typeof EXPOSURES)[number];
+export type DataWeight = (typeof DATA_WEIGHTS)[number];
+export type Impact = (typeof IMPACTS)[number];
+
+export interface AppAxes {
+  exposure: Exposure;
+  data: DataWeight;
+  impact: Impact;
+}
+
+/**
+ * 重い領域（[[app.areas]]）。name は前提の参照 `area:<name>` に使う。軸は省略でき、
+ * 省略した軸はアプリケーションの値になる（重い領域に触れる受け入れは害の重さに関わらず
+ * 上限を超えるので、軸はゲートの判定には効かない）
+ */
+export interface AppArea {
+  name: string;
+  paths: string[];
+  exposure?: Exposure;
+  data?: DataWeight;
+  impact?: Impact;
+}
+
+/** [app] — AI に任せてよい害の上限を決める宣言。ルート設定でのみ書ける */
+export interface AppDeclaration {
+  axes: AppAxes;
+  /** マージがユーザーの関門である前提（事後同意の前提。"user" だけを受け付ける） */
+  mergeGate: "user" | undefined;
+  areas: AppArea[];
+}
+
+/** [boundaries] — 外との境界・内部の境界のパス（glob）。ルート設定でのみ書ける */
+export interface Boundaries {
+  external: string[];
+  internal: string[];
 }
 
 export interface LoadOptions {
@@ -1049,6 +1094,77 @@ function readDataIntegrity(table: TomlTable | undefined): DataIntegrityConfig {
   };
 }
 
+function readAxis<T extends string>(table: TomlTable, key: string, values: readonly T[], where: string): T | undefined {
+  const value = table[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !(values as readonly string[]).includes(value)) {
+    throw new HikyakuError(`${where}.${key} の値が不正です: ${JSON.stringify(value)}`, `使用できる値: ${values.join(" | ")}`);
+  }
+  return value as T;
+}
+
+function readPaths(table: TomlTable, key: string, where: string, required: boolean): string[] {
+  const paths = readStringArray(table, key, where);
+  if (paths === undefined) {
+    if (required) throw new HikyakuError(`${where}.${key} がありません`, "パス（glob）の配列で書いてください。");
+    return [];
+  }
+  if (paths.some((path) => path.trim() === "")) throw new HikyakuError(`${where}.${key} に空のパスがあります`);
+  if (required && paths.length === 0) throw new HikyakuError(`${where}.${key} が空です`);
+  return paths;
+}
+
+/**
+ * [app] を読む。作業ツリーのルート設定と、基準（merge-base）のルート設定の両方で使う。
+ * 宣言は上限を決めるので、不正な値・知らないキーは黙って捨てずにエラーにする
+ */
+export function readAppDeclaration(table: TomlTable | undefined, where = "[app]"): AppDeclaration | undefined {
+  if (table === undefined) return undefined;
+  assertKnownKeys(table, ["exposure", "data", "impact", "merge_gate", "areas"], where);
+  const exposure = readAxis(table, "exposure", EXPOSURES, where);
+  const data = readAxis(table, "data", DATA_WEIGHTS, where);
+  const impact = readAxis(table, "impact", IMPACTS, where);
+  if (exposure === undefined || data === undefined || impact === undefined) {
+    throw new HikyakuError(
+      `${where} には exposure・data・impact の3つが必要です`,
+      "どれかを省くと上限を決められません。3軸すべてを書いてください（docs/configuration/config-file.md）。",
+    );
+  }
+  const mergeGate = readAxis(table, "merge_gate", ["user"] as const, where);
+
+  const rawAreas = table["areas"];
+  const areas: AppArea[] = [];
+  if (rawAreas !== undefined) {
+    if (!Array.isArray(rawAreas) || rawAreas.some((item) => !isTable(item))) {
+      throw new HikyakuError(`${where}.areas は [[app.areas]] のテーブル配列で書いてください`);
+    }
+    rawAreas.forEach((item, index) => {
+      const area = item as TomlTable;
+      const at = `[[app.areas]] の ${index + 1} 件目`;
+      assertKnownKeys(area, ["name", "paths", "exposure", "data", "impact"], at);
+      const name = readString(area, "name", at);
+      if (name === undefined || name.trim() === "") throw new HikyakuError(`${at} に name がありません`, "前提の参照 area:<name> に使う名前を書いてください。");
+      if (areas.some((entry) => entry.name === name)) throw new HikyakuError(`[[app.areas]] の name が重複しています: ${name}`);
+      const entry: AppArea = { name, paths: readPaths(area, "paths", at, true) };
+      const areaExposure = readAxis(area, "exposure", EXPOSURES, at);
+      const areaData = readAxis(area, "data", DATA_WEIGHTS, at);
+      const areaImpact = readAxis(area, "impact", IMPACTS, at);
+      if (areaExposure !== undefined) entry.exposure = areaExposure;
+      if (areaData !== undefined) entry.data = areaData;
+      if (areaImpact !== undefined) entry.impact = areaImpact;
+      areas.push(entry);
+    });
+  }
+  return { axes: { exposure, data, impact }, mergeGate, areas };
+}
+
+function readBoundaries(table: TomlTable | undefined): Boundaries {
+  if (table === undefined) return { external: [], internal: [] };
+  const where = "[boundaries]";
+  assertKnownKeys(table, ["external", "internal"], where);
+  return { external: readPaths(table, "external", where, false), internal: readPaths(table, "internal", where, false) };
+}
+
 /**
  * サイクル設定に、サイクル側では決められないキーが無いか検査する。
  *
@@ -1087,6 +1203,19 @@ function assertCycleOverridable(table: TomlTable, path: string): void {
       [
         "リリースされるブランチはリポジトリのブランチ運用で決まるので、リポジトリルートの",
         ".hikyaku.config でのみ宣言できます。サイクルで決められるのは allow_unsafe_split だけです。",
+      ].join("\n"),
+    );
+  }
+
+  // アプリケーションの状況と境界はリポジトリの宣言。サイクルが自分の上限を緩められると、
+  // 害の受け入れを AI に任せてよいかの判断をサイクル自身が下せてしまう
+  const declared = ["app", "boundaries"].filter((key) => table[key] !== undefined);
+  if (declared.length > 0) {
+    throw new HikyakuError(
+      `${path}: ${declared.map((key) => `[${key}]`).join("・")} はサイクル設定では指定できません`,
+      [
+        "アプリケーションの状況（[app]・[[app.areas]]）と境界（[boundaries]）はリポジトリの宣言なので、",
+        "リポジトリルートの .hikyaku.config でのみ書けます。",
       ].join("\n"),
     );
   }
@@ -1279,6 +1408,8 @@ function finalize(
     },
     conductor: readConductor(readTable(merged, "conductor")),
     dataIntegrity: readDataIntegrity(readTable(merged, "data_integrity")),
+    app: readAppDeclaration(requireTable(merged, "app", "config")),
+    boundaries: readBoundaries(requireTable(merged, "boundaries", "config")),
     diff: readDiffPatterns(readTable(merged, "diff")),
     context: readContextBudget(readTable(merged, "context")),
     peakBands: readPeakBands(readTable(merged, "context")),

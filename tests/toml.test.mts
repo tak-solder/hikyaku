@@ -47,12 +47,27 @@ for (const [name, source] of [
   ["不明なエスケープ", String.raw`x = "\q"`],
   ["日時型", "x = 2026-10-03"],
   ["インラインテーブル", "x = { y = 1 }"],
-  ["テーブル配列", "[[x]]"],
+  ["既存のテーブルを [[x]] で開く", "[app]\nexposure = 'public'\n[[app]]"],
+  ["既存の値を [[x]] で開く", "x = 1\n[[x]]"],
+  ["テーブル配列を [x] で開く", "[[areas]]\nname = 'a'\n[areas]\nname = 'b'"],
+  ["閉じていないテーブル配列", "[[x]\ny = 1"],
 ] as const) {
   test(`TOML: ${name}を黙って無視しない`, () => {
     assert.throws(() => parseToml(source), TomlError);
   });
 }
+
+test("TOML: テーブル配列の要素を順に積み、後続のキーは最後の要素に入る", () => {
+  const parsed = parseToml('[[app.areas]]\nname = "auth"\npaths = ["src/auth/**"]\n[[app.areas]]\nname = "billing"\npaths = ["src/billing/**"]\n');
+  assert.deepEqual(parsed, {
+    app: { areas: [{ name: "auth", paths: ["src/auth/**"] }, { name: "billing", paths: ["src/billing/**"] }] },
+  });
+});
+
+test("TOML: テーブル配列の要素の下の [a.b] は最後の要素に降りる", () => {
+  const parsed = parseToml('[[a]]\nname = "x"\n[[a]]\nname = "y"\n[a.b]\nk = 1\n');
+  assert.deepEqual(parsed, { a: [{ name: "x" }, { name: "y", b: { k: 1 } }] });
+});
 
 test("TOML: エラーに問題がある行番号を含める", () => {
   assert.throws(() => parseToml("# コメント\nx = 1\nx = 2"), { name: "TomlError", line: 3 });

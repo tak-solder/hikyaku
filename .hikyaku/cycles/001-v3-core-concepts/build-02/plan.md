@@ -176,9 +176,9 @@ export function cycleAdrs(config: ResolvedConfig): string[];
 
 ## 実装ステップ
 
-- [ ] Step 1: toml のテーブル配列
-- [ ] Step 2: config の `[app]`・`[[app.areas]]`・`[boundaries]`（読み込み・ルート限定・表示）
-- [ ] Step 3: `risk.mts`（表・パスの解決・厳しいほう・overlaps・touchedPaths・基準の読み取り・ADR の特定）と git / stack の補助
-- [ ] Step 4: テスト（risk の unit と一時リポジトリ、config、toml）
-- [ ] Step 5: config-file.md、CHANGELOG
+- [x] Step 1: toml のテーブル配列
+- [x] Step 2: config の `[app]`・`[[app.areas]]`・`[boundaries]`（読み込み・ルート限定・表示）
+- [x] Step 3: `risk.mts`（表・パスの解決・厳しいほう・overlaps・touchedPaths・基準の読み取り・ADR の特定）と git / stack の補助
+- [x] Step 4: テスト（risk の unit と一時リポジトリ、config、toml）
+- [x] Step 5: config-file.md、CHANGELOG
 - [ ] Step 6: ローカル検証（`npx tsc --noEmit`・`npm test`・`step lint`・`conductor lint`）

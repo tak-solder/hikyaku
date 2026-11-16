@@ -3,8 +3,8 @@
  *
  * 対応: コメント / 基本文字列 / 複数行基本文字列 / リテラル文字列 /
  *       複数行リテラル文字列 / 整数 / 浮動小数 / 真偽値 / 配列 /
- *       テーブル（ドット区切り可） / ドット区切りキー
- * 非対応: 日時型 / インラインテーブル / テーブル配列（[[x]]）
+ *       テーブル（ドット区切り可） / ドット区切りキー / テーブル配列（[[x]]）
+ * 非対応: 日時型 / インラインテーブル
  *
  * 非対応の構文に遭遇した場合は TomlError を投げる（黙って無視しない）。
  */
@@ -28,6 +28,8 @@ const BARE_KEY = /[A-Za-z0-9_-]/;
 
 export function parseToml(source: string): TomlTable {
   const root: TomlTable = {};
+  // [[x]] で作った配列。値として書かれた配列（x = [...]）と区別する
+  const tableArrays = new Set<TomlValue[]>();
   let current: TomlTable = root;
   let pos = 0;
   let line = 1;
@@ -278,6 +280,9 @@ export function parseToml(source: string): TomlTable {
         node = created;
       } else if (typeof existing === "object" && existing !== null && !Array.isArray(existing)) {
         node = existing;
+      } else if (Array.isArray(existing) && tableArrays.has(existing)) {
+        // テーブル配列の途中のセグメントは、最後の要素へ降りる（TOML 仕様）
+        node = existing[existing.length - 1] as TomlTable;
       } else {
         fail(`キー ${segment} は既に値として定義されています`);
       }
@@ -291,12 +296,37 @@ export function parseToml(source: string): TomlTable {
 
     if (peek() === "[") {
       advance();
-      if (peek() === "[") fail("テーブル配列（[[...]]）には対応していません");
+      const array = peek() === "[";
+      if (array) advance();
       const path = readKeyPath();
       skipInlineSpace();
       if (peek() !== "]") fail("テーブル名が ] で閉じられていません");
       advance();
-      current = descend(root, path);
+      if (array) {
+        if (peek() !== "]") fail("テーブル配列の名前が ]] で閉じられていません");
+        advance();
+        const leaf = path[path.length - 1] as string;
+        const parent = descend(root, path.slice(0, -1));
+        const existing = parent[leaf];
+        let items: TomlValue[];
+        if (existing === undefined) {
+          items = [];
+          tableArrays.add(items);
+          parent[leaf] = items;
+        } else if (Array.isArray(existing) && tableArrays.has(existing)) {
+          items = existing;
+        } else {
+          return fail(`キー ${path.join(".")} は既にテーブル配列でない値として定義されています`);
+        }
+        const table: TomlTable = {};
+        items.push(table);
+        current = table;
+      } else {
+        const leaf = path[path.length - 1] as string;
+        const target = descend(root, path.slice(0, -1))[leaf];
+        if (Array.isArray(target)) fail(`キー ${path.join(".")} はテーブル配列か値として定義されています`);
+        current = descend(root, path);
+      }
       skipInlineSpace();
       if (!eof() && peek() !== "\n") fail("テーブル名の後に余分な文字があります");
       continue;

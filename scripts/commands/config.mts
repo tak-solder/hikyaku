@@ -1,7 +1,8 @@
 /** config — 解決済みの設定を出力する */
 
 import { flagBoolean, flagString } from "../lib/args.mts";
-import { describeProvider, loadConfig } from "../lib/config.mts";
+import { describeProvider, loadConfig, type AppDeclaration, type Boundaries } from "../lib/config.mts";
+import { ceilingOf } from "../lib/risk.mts";
 import { DEFAULT_BRANCH_MARK, resolveUnsafeSplit } from "../lib/integrity.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { emit, warn } from "../lib/output.mts";
@@ -17,8 +18,8 @@ register({
     "  1. リポジトリルート/.hikyaku.config（必須）",
     "  2. {HIKYAKU_ROOT}/cycles/{NNN}-{slug}/.hikyaku.config（任意）",
     "",
-    "サイクル側で上書きできないのは hikyaku_root と profile だけです",
-    "（前者はワークスペースの所在そのもの、後者は cycles.md が唯一の正）。",
+    "サイクル側で上書きできないのは hikyaku_root・profile・data_integrity.release_branches・[app]・[boundaries] です",
+    "（理由は docs/configuration/config-file.md の「サイクル側で上書きできないキー」）。",
     "",
     "サイクルを省略した場合は、現在のブランチ → .hikyaku.local の順で選択済みのサイクルを使い、",
     "未選択ならリポジトリルートの設定を返します。進行中サイクルの件数からは選びません。",
@@ -40,6 +41,10 @@ register({
     "[data_integrity] allow_unsafe_split が true で、base_branch がリリースされるブランチ",
     "（release_branches とデフォルトブランチ）に一致しないときだけ allowed: true になります。",
     "デフォルトブランチ（origin/HEAD）が分からなければ allowed: false に倒します。",
+    "",
+    "[app]・[[app.areas]]・[boundaries] はアプリケーションの状況と境界の宣言で、ルート設定でのみ書けます。",
+    "表示する上限は作業ツリーの宣言から求めたものです。この版では宣言は検査と表示だけで、",
+    "ゲートの判定にはまだ使いません。",
   ].join("\n"),
   run: ({ args, operands }) => {
     if (flagBoolean(args, "require-cycle") && flagBoolean(args, "no-cycle")) {
@@ -117,6 +122,8 @@ register({
         `  allow_unsafe_split  ${config.dataIntegrity.allowUnsafeSplit}`,
         `  安全でない分割      ${unsafeSplit.allowed ? "許す" : "許さない"}（${unsafeSplit.message}）`,
         "",
+        ...describeDeclaration(config.app, config.boundaries),
+        "",
         "[diff]（tokens history build-NN の差分の集計）:",
         `  exclude  ${config.diff.exclude.join(", ")}`,
         `  tests    ${config.diff.tests.join(", ")}`,
@@ -152,4 +159,29 @@ register({
 
 function onOff(value: boolean): string {
   return value ? "on" : "off";
+}
+
+/** [app]・[[app.areas]]・[boundaries] の表示。上限は作業ツリーの宣言から求める（基準側との比較は risk.mts） */
+function describeDeclaration(app: AppDeclaration | undefined, boundaries: Boundaries): string[] {
+  const lines = ["[app]（アプリケーションの状況。この版では検査と表示だけで、ゲートの判定にはまだ使わない）:"];
+  if (app === undefined) {
+    lines.push("  宣言なし（上限を設けない）");
+  } else {
+    const ceiling = ceilingOf(app.axes);
+    lines.push(
+      `  exposure / data / impact  ${app.axes.exposure} / ${app.axes.data} / ${app.axes.impact}`,
+      `  merge_gate                ${app.mergeGate ?? "(未宣言)"}`,
+      `  上限（作業ツリーの宣言）  ${ceiling === "なし" ? "なし（何も任せない）" : `害「${ceiling}」まで`}`,
+    );
+    for (const area of app.areas) {
+      const axes = (["exposure", "data", "impact"] as const).flatMap((axis) => (area[axis] === undefined ? [] : [`${axis}=${area[axis]}`]));
+      lines.push(`  重い領域 ${area.name}  ${area.paths.join(", ")}${axes.length > 0 ? `（${axes.join(" ")}）` : ""}`);
+    }
+  }
+  lines.push(
+    "[boundaries]:",
+    `  external  ${boundaries.external.length === 0 ? "(なし)" : boundaries.external.join(", ")}`,
+    `  internal  ${boundaries.internal.length === 0 ? "(なし)" : boundaries.internal.join(", ")}`,
+  );
+  return lines;
 }

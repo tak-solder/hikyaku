@@ -15,3 +15,5 @@
 {"at":"2026-11-16T18:03:03.579Z","skill":"builder","step":"test-spec","result":"done","context":315724,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
 {"at":"2026-11-16T18:06:09.365Z","skill":"builder","step":"test-spec-review","result":"done","context":323663,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
 {"at":"2026-11-16T18:07:09.743Z","skill":"builder","step":"G8","result":"approved","input":"委任された判断（監督）: 承認。実装に進む。目安超えの継続は見込み約 480k で受け入れる","context":327305,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
+{"at":"2026-11-16T18:17:14.317Z","skill":"builder","step":"implement","result":"done","context":393297,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
+{"at":"2026-11-16T18:17:21.640Z","skill":"builder","step":"verify","result":"done","context":394783,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
