@@ -7,3 +7,7 @@
 {"at":"2026-11-16T20:15:27.309Z","skill":"builder","step":"verify","result":"done","context":337994,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
 {"at":"2026-11-16T20:36:27.548Z","skill":"builder","step":"review","result":"done","context":392531,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
 {"at":"2026-11-16T20:37:04.923Z","skill":"builder","step":"handoff","result":"done","context":395749,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T20:37:18.127Z","skill":"retrospective","step":"peak-actual","result":"done","context":401334,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T20:37:26.231Z","skill":"retrospective","step":"analyze","result":"done","context":403352,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T20:37:49.783Z","skill":"retrospective","step":"write","result":"done","context":408905,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T20:37:50.101Z","skill":"builder","step":"retrospective","result":"done","context":408905,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
