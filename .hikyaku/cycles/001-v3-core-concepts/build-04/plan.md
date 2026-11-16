@@ -123,10 +123,10 @@ hikyaku ledger object <phase> [<cycle>] --summary <text> --basis <text> --loses 
 
 ## 実装ステップ
 
-- [ ] Step 1: ledger.mts に `basis`・`OBJECTION_DECISIONS`・`unacceptedObjections`・`latestOpenAt`、commands/ledger.mts に `ledger object`
-- [ ] Step 2: engine の割り込みのゲートと lint、builder・architect の `delegation`、planner の G1 の args
-- [ ] Step 3: directive の異議の指示とポインタ、step report の高の異議の検査
-- [ ] Step 4: ASKS に `delegation`、指示ファイル（delegation 2本と記録する側の差し込み、headless-protocol）
-- [ ] Step 5: テスト（`tests/objection.test.mts`）
-- [ ] Step 6: docs（workflow の各フェーズ・cli.md・conductor.md）と CHANGELOG
+- [x] Step 1: ledger.mts に `basis`・`OBJECTION_DECISIONS`・`unacceptedObjections`・`latestOpenAt`、commands/ledger.mts に `ledger object`
+- [x] Step 2: engine の割り込みのゲートと lint、builder・architect の `delegation`、planner の G1 の args
+- [x] Step 3: directive の異議の指示とポインタ、step report の高の異議の検査
+- [x] Step 4: ASKS に `delegation`、指示ファイル（delegation 2本と記録する側の差し込み、headless-protocol）
+- [x] Step 5: テスト（`tests/objection.test.mts`）
+- [x] Step 6: docs（workflow の各フェーズ・cli.md・conductor.md）と CHANGELOG
 - [ ] Step 7: `npx tsc --noEmit`・`npm test`（step lint・conductor lint の CLI テストを含む）

@@ -26,6 +26,7 @@ interface Directive {
   reason?: string;
   args?: Record<string, unknown>;
   message?: string;
+  approval?: string;
 }
 
 function parse(stdout: string): Directive {
@@ -270,7 +271,9 @@ test("architect: 差し戻し中は、再設計の回を区切るまで止まる
   assert.equal(stopped.kind, "stop");
   assert.match(stopped.message ?? "", /step restart architect 001-test --round return/);
 
-  const first = restart(directory, "return", "build-01 からの差し戻し");
+  const gate = restart(directory, "return", "build-01 からの差し戻し");
+  assert.deepEqual([gate.step, gate.approval], ["delegation", "consent"], "委任を続けるかを先に尋ねる");
+  const first = report(directory, "delegation", "--result", "approved", "--input", "委任を続ける");
   assert.equal(first.step, "survey", "通常の設計と同じく調査から");
   assert.equal(first.args?.["round"], "return");
   report(directory, "survey", "--result", "done");
@@ -302,7 +305,8 @@ test("architect: 差し戻し中は、再設計の回を区切るまで止まる
   assert.match(again.message ?? "", /もう一度 architect に差し戻されています/);
   const refused = cli(directory, "step", "report", "architect", "survey", "001", "--result", "done");
   assert.equal(refused.status, 1, "止まっている間は報告も受け付けない");
-  assert.equal(restart(directory, "return", "build-01 からの2回目の差し戻し").step, "survey");
+  assert.equal(restart(directory, "return", "build-01 からの2回目の差し戻し").step, "delegation");
+  assert.equal(report(directory, "delegation", "--result", "approved", "--input", "委任を続ける").step, "survey");
 });
 
 test("architect: 追加設計の回は調査を行わず、設計を変えなければビルドの追加へ進む", (t) => {

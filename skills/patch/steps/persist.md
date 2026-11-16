@@ -24,4 +24,9 @@
   - 「永続化すること」の行の形は persistence.md の「記録の書式」に従う。`hikyaku promotions` が読むので形を変えない
   - サイクルの design-delta.md が予定していた永続ドキュメントの更新と、この変更の結果が食い違うなら、
     結果のほうを候補に書き、根拠に「design-delta の予定から変更」と添える
+- [ ] 決めずに残したこと・AI が解釈で決めたことがあれば、1件ずつ未決事項として記録する（`{phase}` は directive の作業単位 `patch-YYYYMM-slug`）
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger open {phase} {cycle} --type <question|provisional> --who user --when <merge|close> --summary "<残したこと>"
+```
 - [ ] `done` を報告し、handoff.md と progress.jsonl をコミット & push する

@@ -17,7 +17,15 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" rules check
 - [ ] `cycles/{cycle}/build-{NN}/handoff.md` を作成する
   - テンプレートは `${CLAUDE_PLUGIN_ROOT}/skills/builder/references/templates.md`（[templates.md](../references/templates.md)）を参照
   - 後続ビルドが前提にすること: PR の diff を読んでも分からないことだけ
-  - 残したこと: 先送りした作業、そのまま進めた指摘、入れられなかった機械的な対策
+  - 残したこと: 先送りした作業、そのまま進めた指摘、「確度: 要確認」の懸念、入れられなかった機械的な対策。
+    1件ずつ未決事項として記録し、handoff には出力の ID だけを1件1行で書く（中身は記録が正）
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger open build-{NN} {cycle} --type <question|provisional> --who user --when <merge|close|phase:build-NN> --summary "<残したこと>"
+```
+
+    AI が解釈で決めて進めたこと・そのまま進めた指摘は `provisional`、まだ決めていないことは `question`。
+    このビルドの PR で決めてほしいなら `merge`、扱うビルドが決まっていれば `phase:build-NN`、それ以外は `close`
   - 永続化すること: close-cycle が反映する知見を、宛先と重要度を付けて1件1行で。書いた rule は `済` で控える
   - 書かない: 実装内容の要約（PR 本文が正）/ 公開インターフェースの一覧（コードが正）/
     環境変数やマイグレーションの一覧（diff が正）/ 重要度が低の知見

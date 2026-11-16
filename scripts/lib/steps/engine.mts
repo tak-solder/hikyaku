@@ -69,6 +69,13 @@ export interface StepDefinition {
   consent?: false | ((ctx: StepContext) => ConsentJudgement);
   /** gate の確認のオン・オフ（プロファイル・個別キー）。省略は有効。同意（now）の回には効かない */
   enabled?: (ctx: StepContext) => boolean;
+  /**
+   * 割り込みのゲート。きっかけの出来事の時刻（ISO 8601）を返す回だけ手順に入り、その時刻より後に承認の
+   * 記録が無ければ、並びの位置に関わらず現在地になる。並びの完了の判定（前のステップの完了より後か）には
+   * 加わらないので、承認しても後ろのステップはやり直しにならない。どのステップの最中にも起きうる出来事
+   * （builder の design-conflict）のあとに尋ねるゲートに使う。gate だけが持てる
+   */
+  interrupt?: (ctx: StepContext) => string | undefined;
   /** 完了に要る成果物（作業単位のディレクトリからの相対パス） */
   produces?: string[];
   /** 成果物で判定できない完了の条件（tasklist の PR 列など）。成果物と同じ扱い */
@@ -172,6 +179,7 @@ export function consentOf(definition: StepDefinition, ctx: StepContext): Consent
  */
 export function isOn(definition: StepDefinition, ctx: StepContext): boolean {
   if (definition.when !== undefined && !definition.when(ctx)) return false;
+  if (definition.interrupt !== undefined && definition.interrupt(ctx) === undefined) return false;
   const consent = consentOf(definition, ctx);
   if (consent !== false && consent.timing === "now") return true;
   return definition.enabled === undefined || definition.enabled(ctx);
@@ -191,7 +199,7 @@ export function lintApproval(skill: Pick<SkillSteps, "skill" | "steps">): string
       }
       continue;
     }
-    for (const key of ["consent", "enabled"] as const) {
+    for (const key of ["consent", "enabled", "interrupt"] as const) {
       if (definition[key] !== undefined) {
         problems.push(`${skill.skill}: ${definition.id} は gate でないのに ${key} を持っています（条件は when に書きます）`);
       }
@@ -222,14 +230,22 @@ export function evaluate(skill: SkillSteps, ctx: StepContext): Evaluation {
   const steps: EvaluatedStep[] = [];
   // 前のステップを完了とみなしたイベントの位置。これより後のイベントだけが有効。
   // step restart より前の記録も使わない
-  let floor = startOf(skill, ctx.events);
+  const start = startOf(skill, ctx.events);
+  let floor = start;
   let current: EvaluatedStep | undefined;
+  let interrupted: EvaluatedStep | undefined;
 
   const indexed = ctx.events.map((event, index) => ({ event, index }));
 
   for (const definition of skill.steps) {
     if (!isOn(definition, ctx)) {
       steps.push({ definition, status: "off", event: undefined, note: undefined, revise: undefined });
+      continue;
+    }
+    if (definition.interrupt !== undefined) {
+      const evaluated = evaluateInterrupt(definition, ctx, indexed.filter(({ index }) => index > start), skill.skill);
+      steps.push(evaluated);
+      if (evaluated.status === "pending") interrupted ??= evaluated;
       continue;
     }
     if (current !== undefined) {
@@ -287,15 +303,41 @@ export function evaluate(skill: SkillSteps, ctx: StepContext): Evaluation {
     if (evaluated.status === "pending") current = evaluated;
   }
 
+  // 記録の欠けは並びの現在地から判定する（割り込みのゲートが現在地でも、並びの位置は変わらない）
   const currentIndex = current === undefined ? steps.length : steps.indexOf(current);
   // 後ろのステップに成果物があっても、一度でも記録があれば「やり直しで前に戻った」のであって
   // 記録の欠けではない（G4 の差し戻しで questions から報告し直したときなど）
   const recorded = new Set(ctx.events.filter((event) => event.skill === skill.skill).map((event) => event.step));
   const orphans = steps
     .slice(currentIndex + 1)
-    .filter((step) => step.status !== "off" && !recorded.has(step.definition.id) && hasAnyArtifact(step.definition, ctx));
+    .filter((step) => step.status !== "off" && step.definition.interrupt === undefined && !recorded.has(step.definition.id) && hasAnyArtifact(step.definition, ctx));
 
-  return { steps, current, orphans };
+  return { steps, current: interrupted ?? current, orphans };
+}
+
+/**
+ * 割り込みのゲートの評価。きっかけの時刻より後の、今回の回の記録だけを見る。承認で完了し、
+ * 差し戻しなら答えを返して提示し直す。完了しても floor は動かさない
+ */
+function evaluateInterrupt(
+  definition: StepDefinition,
+  ctx: StepContext,
+  indexed: { event: ProgressEvent; index: number }[],
+  skill: string,
+): EvaluatedStep {
+  const trigger = definition.interrupt?.(ctx) ?? "";
+  const own = indexed.filter(({ event }) => event.skill === skill && event.step === definition.id && event.at > trigger);
+  const latest = own[own.length - 1]?.event;
+  if (latest?.result === "approved") {
+    return { definition, status: "complete", event: latest, note: undefined, revise: undefined };
+  }
+  if (latest?.result === "rejected") {
+    return {
+      definition, status: "pending", event: latest,
+      note: "差し戻されています。答えに沿って直してから、提示し直してください", revise: latest.input ?? "",
+    };
+  }
+  return { definition, status: "pending", event: latest, note: undefined, revise: undefined };
 }
 
 /**

@@ -7,6 +7,7 @@
  * ブランチを決めるまでは現在地を導出できない。
  */
 
+import { latestOpenAt } from "../ledger.mts";
 import { publicationStep } from "./publication.mts";
 import { readReturn, RETURN_FILE } from "../phase.mts";
 import { buildDirName, loadTasklist, normalizeBuildId } from "../tasklist.mts";
@@ -36,6 +37,11 @@ function prRecorded(ctx: StepContext): boolean {
   return loadTasklist(ctx.cycle.directory).some((build) => build.id === id && build.pr.trim() !== "");
 }
 
+/** このビルドで最後に記録した設計と要件の衝突（ask: design-conflict）の時刻 */
+function designConflictAt(ctx: StepContext): string | undefined {
+  return latestOpenAt(ctx.unitDirectory, (record) => record.ask === "design-conflict" && record.unit === ctx.unit);
+}
+
 export const BUILDER_STEPS: SkillSteps = {
   skill: "builder",
   unit: (phase) => (phase.startsWith("build-") ? buildDirName(normalizeBuildId(phase)) : undefined),
@@ -48,6 +54,15 @@ export const BUILDER_STEPS: SkillSteps = {
     ].join("\n");
   },
   steps: [
+    {
+      // 設計と要件の衝突（ask: design-conflict）を記録したら、どのステップの最中でも委任を続けるかを尋ねる（US-14.2）
+      id: "delegation",
+      kind: "gate",
+      title: "委任を続けるかの確認（設計と要件の衝突のあと）",
+      interrupt: designConflictAt,
+      consent: () => ({ timing: "now", reason: "委任の前提が崩れた出来事（設計と要件の衝突）のあと" }),
+      ask: "delegation",
+    },
     { id: "plan", kind: "run", title: "plan.md の作成と予測ピークの見積もり直し", produces: ["plan.md"], peak: "required" },
     {
       id: "plan-review",

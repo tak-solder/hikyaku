@@ -36,6 +36,8 @@ export const PLANNER_STEPS: SkillSteps = {
       // 要件の合意は意図を決める判断なので、どのプロファイル・設定でも外さない
       consent: () => ({ timing: "now", reason: "要件の合意（意図を決める判断）" }),
       ask: "G1",
+      // 選んだプロファイルのままでよいかを、要件と一緒に確かめる（US-14.1）
+      args: (ctx) => ({ profile: ctx.config.profile }),
     },
     {
       id: "retrospective",

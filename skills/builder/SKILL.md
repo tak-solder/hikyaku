@@ -253,7 +253,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run doc build-{NN} {cycl
 
 ### 完了の案内
 
-「確度: 要確認」の懸念が残る場合は、要点と handoff.md の「残したこと」へのリンクも伝える。
+「確度: 要確認」の懸念が残る場合は、要点と未決事項の ID（handoff.md の「残したこと」）も伝える。
 conductor の子は done ブロックの本文に含める。
 
 `done` が返ったら、次の状況を案内する。`overruns` があれば、まだ伝えていない超過もここで伝える。

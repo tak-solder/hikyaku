@@ -139,6 +139,15 @@ export const ARCHITECT_STEPS: SkillSteps = {
   },
   steps: [
     {
+      // 差し戻しは委任の前提が崩れた出来事なので、再設計の回の先頭で委任を続けるかを尋ねる（US-14.2）
+      id: "delegation",
+      kind: "gate",
+      title: "委任を続けるかの確認（差し戻しのあと）",
+      when: (ctx) => roundOf(ctx) === "return",
+      consent: () => ({ timing: "now", reason: "委任の前提が崩れた出来事（差し戻し）のあと" }),
+      ask: "delegation",
+    },
+    {
       id: "design-change",
       kind: "run",
       title: "指摘への対応に設計の変更が要るかの判断（追加設計）",

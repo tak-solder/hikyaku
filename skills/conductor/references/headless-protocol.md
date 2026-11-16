@@ -86,12 +86,14 @@ done は、`step next` が `done` を返してから出します。
 
 監督の回答に「委任された判断」とあれば、それはユーザーではなく監督が下した判断です。
 確認ゲート（G6 / G8 など）の判断も含まれます。同意ゲート（G10 など）は監督に委任されません。
-後から誰が何を根拠に決めたかを追えるよう、回答と根拠を次の場所に記録してください。
+後から誰が何を根拠に決めたかを追えるよう、回答と根拠を、その作業単位の未決事項の記録
+（`decisions.jsonl`）に残してください。書けるのは `hikyaku ledger` だけです。`{unit}` は子が進めている
+作業単位（`architect` / `build-NN` / `close`。build-manager は呼び出し元の作業単位）です。
 
-| フェーズ | 記録先 |
-|---|---|
-| architect | `cycles/{cycle}/design/design-questions.md` |
-| builder | `cycles/{cycle}/build-{NN}/questions.md` |
-| build-manager（G6）/ close-cycle | その判断を反映するコミットのメッセージ |
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger open {unit} {cycle} --type provisional --who supervisor --when now --summary "<問いと監督の回答>" [--ask <問いの ID>]
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger decide {unit} <ID> {cycle} --decision decided --by supervisor --reason "<監督の根拠>"
+```
 
-記録先のファイルが無ければ、スキルのテンプレートに沿って作成します。
+監督が「この問いはユーザーに上げる」と再開したときは、`--who user` で事項を記録して終えます
+（ユーザーの答えは、後の再開で `--by user` として記録します）。

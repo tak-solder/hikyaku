@@ -40,8 +40,11 @@ import {
   type Evaluation,
 } from "../lib/steps/engine.mts";
 import { checkpointsOf, CHECKPOINT_STEPS } from "../lib/steps/checkpoints.mts";
+import { readLedger, unacceptedObjections } from "../lib/ledger.mts";
 import {
   buildDirective,
+  CLI,
+  cycleArg,
   legacyCycleMessage,
   nextCommand,
   open,
@@ -183,6 +186,7 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
   }
   const refused = result === "done" ? definition.accepts?.(opened.ctx) : undefined;
   if (refused !== undefined) throw new HikyakuError(`${definition.id} の完了の条件を満たしていません: ${refused}`);
+  if (definition.kind === "gate" && result === "approved") assertObjectionsSettled(opened, definition.id);
   if (result === "done" && !hasEvidence(definition, opened.ctx)) {
     const missing = missingRequirement(definition, opened.ctx);
     throw new HikyakuError(
@@ -228,6 +232,33 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
   if (measured.sessionId !== undefined) event.session = measured.sessionId;
   event.hikyaku = pluginVersion();
   return event;
+}
+
+/**
+ * すべてのゲートの承認の条件: そのステップで唱えた害が高の異議が片づいていること（US-1.4）。
+ * 記録を読めなければ、片づいたかを確かめられないので受け付けない
+ */
+function assertObjectionsSettled(opened: Opened, step: string): void {
+  const cycle = opened.ctx.cycle;
+  if (cycle === undefined) return;
+  let pending;
+  try {
+    pending = unacceptedObjections(readLedger(cycle.directory), opened.phase, step);
+  } catch (error) {
+    throw new HikyakuError(
+      `${step} の承認を受け付けません: 未決事項の記録を読めず、害が高の異議が片づいたかを確かめられません`,
+      `${error instanceof Error ? error.message : String(error)}（hikyaku ledger list で確かめてください）`,
+    );
+  }
+  if (pending.length === 0) return;
+  throw new HikyakuError(
+    `${step} の承認を受け付けません: 害が高の異議が片づいていません（${pending.map((item) => item.open.id).join(", ")}）`,
+    [
+      "ユーザーが何を受け入れるかを自分の言葉で書いたら、受け入れの言葉を添えて決定を記録してください:",
+      `  ${CLI} ledger decide ${opened.phase} <ID>${cycleArg(opened.ctx)} --decision consented --by user --input "<ユーザーの答え>" --accepts "<ユーザーが受け入れると書いた言葉>"`,
+      "ユーザーが選択を改めたなら --decision decided で記録します。",
+    ].join("\n"),
+  );
 }
 
 /** PR の URL か番号（12 / #12）。実在の確認はしない（ネットワークへ行かない） */

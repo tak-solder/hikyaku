@@ -40,6 +40,11 @@ export const ITEM_TYPES: ItemType[] = ["question", "provisional", "objection", "
 export type Decision = "decided" | "consented" | "rejected" | "resolved";
 export const DECISIONS: Decision[] = ["decided", "consented", "rejected", "resolved"];
 export const HARMS: Harm[] = ["高", "中"];
+/**
+ * 異議へのユーザーの決定。consented は異議を聞いたうえで選択どおりに進める（受け入れる）、
+ * decided はユーザーが選択を改めた（受け入れるものが無い）
+ */
+export const OBJECTION_DECISIONS: Decision[] = ["consented", "decided"];
 
 /** 「誰が」: user / ai:<phase> / supervisor */
 export type Who = "user" | `ai:${string}` | "supervisor";
@@ -62,6 +67,8 @@ export interface OpenRecord {
   who: Who;
   /** 拠り所にした外の前提の参照 */
   premises?: string[];
+  /** 異議の根拠（食い違う宣言・記録。ledger object が書く） */
+  basis?: string;
   /** 失うもの（退けた安全側の案の利点） */
   loses?: string;
   harm?: Harm;
@@ -432,6 +439,52 @@ export function decideItem(cycleDirectory: string, record: DecideRecord, ledger:
   const item = findItem(ledger, record.id);
   assertDecider(item.open, record.by, record.input);
   appendJsonl(ledgerPath(cycleDirectory, record.unit), record);
+}
+
+// ---------------------------------------------------------------------------
+// 異議
+
+/** 高の異議が片づいたか: ユーザーが選択を改めた（decided）か、受け入れると書いて進めた（accepts 付きの consented） */
+function objectionSettled(latest: DecideRecord | undefined): boolean {
+  if (latest === undefined || latest.by !== "user") return false;
+  if (latest.decision === "decided") return true;
+  return latest.decision === "consented" && latest.accepts !== undefined && latest.accepts.trim() !== "";
+}
+
+/**
+ * そのゲートの承認を止める異議。その作業単位・そのステップで記録した害が高の objection のうち、
+ * 片づいていないもの。中の異議は記録だけで進むので数えない（US-1.3・US-1.4）
+ */
+export function unacceptedObjections(ledger: Ledger, unit: string, step: string): LedgerItem[] {
+  return ledger.items.filter(
+    (item) =>
+      item.open.type === "objection" && item.open.harm === "高" && item.open.unit === unit && item.open.step === step &&
+      !objectionSettled(item.latest),
+  );
+}
+
+/** latestOpenAt が記録を読めなかったときに返す時刻。どの記録よりも前なので、きっかけがあった側に倒れる */
+export const UNREADABLE_AT = "";
+
+/**
+ * その作業単位のディレクトリの decisions.jsonl だけを読み、条件に合う事項の最新の at を返す。
+ * ステップ定義の割り込みのきっかけ（builder の delegation）が使うので、手順の位置だけを読む経路
+ * （Stop フック・step where・conductor parse）もこの1ファイルだけは読む。読めなければ、きっかけが
+ * あった側（UNREADABLE_AT）に倒す。壊れた記録で、ユーザーに尋ねるゲートを黙って消さないため。
+ * 例外は投げない（壊れは step next の notices が知らせる）
+ */
+export function latestOpenAt(unitDirectory: string, matches: (record: OpenRecord) => boolean): string | undefined {
+  let records: LedgerRecord[];
+  try {
+    records = readJsonl(join(unitDirectory, LEDGER_FILE), isRecord, LABELS);
+  } catch {
+    return UNREADABLE_AT;
+  }
+  let latest: string | undefined;
+  for (const record of records) {
+    if (record.record === "open" && matches(record) && (latest === undefined || record.at > latest)) latest = record.at;
+  }
+  return latest;
 }
 
 // ---------------------------------------------------------------------------
