@@ -2,3 +2,4 @@
 {"at":"2026-11-16T16:57:48.442Z","skill":"builder","step":"plan-review","result":"done","peak":395000,"context":198105,"session":"310a33c4-f9dc-4fb2-8307-d0b37256ac8c","hikyaku":"3.0.0"}
 {"at":"2026-11-16T17:00:50.171Z","skill":"builder","step":"test-spec","result":"done","context":226216,"session":"310a33c4-f9dc-4fb2-8307-d0b37256ac8c","hikyaku":"3.0.0"}
 {"at":"2026-11-16T17:02:51.528Z","skill":"builder","step":"test-spec-review","result":"done","context":232902,"session":"310a33c4-f9dc-4fb2-8307-d0b37256ac8c","hikyaku":"3.0.0"}
+{"at":"2026-11-16T17:03:52.314Z","skill":"builder","step":"G8","result":"approved","input":"承認する（委任された判断・監督）。G10 を build-11 まで常に同意、P1 を同意とする解釈は questions.md に記録","context":236193,"session":"310a33c4-f9dc-4fb2-8307-d0b37256ac8c","hikyaku":"3.0.0"}
