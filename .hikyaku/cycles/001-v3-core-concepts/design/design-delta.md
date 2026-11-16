@@ -21,7 +21,7 @@
 - **G1 でプロファイルを確かめる**（US-14.1）: planner の G1 の args に profile を添え、提示に1行出す
 - **アプリケーションの状況**: ルート設定限定の `[app]`（`exposure` / `data` / `impact` と、マージがユーザーの関門である前提のキー）、`[[app.areas]]`（`paths` と3軸）、`[boundaries]`（`external` / `internal` のパス）。読み込みは `[data_integrity]` の先例に倣い、サイクル設定にあればエラー。`risk.mts` がパスごとの解決・上限の表・重い領域の照合を持つ。宣言が無ければ上限なし
 - **上限はマージ済みの宣言で決める**: `risk.mts` は、作業ツリーの宣言と、PR の基準（`resolvePrBase` の merge-base）にある宣言のうち、厳しいほうを使う。作業中のブランチで宣言を緩めても、マージされるまで上限は緩まない（基準を読めなければ作業ツリーの宣言を使い、そのことを `notices` に出す）。`[app]`・`[[app.areas]]`・`[boundaries]`・サイクル設定の `[consent]` の変更は、diff facts の「設定の変更」として並び、agreement-review が合意と突き合わせる
-- **宣言の変更**（US-13.5）: `ledger premises --changed-from <base>` が、merge-base と HEAD の `[app]` の差分から変わったキーを出し、それを拠り所にした受け入れを並べる。対象は作業ツリーにある全サイクルの `decisions.jsonl` の受け入れで、ADR・`constraints` の「受け入れたこと」の行は読まない（Q12 で、サイクルをまたいで ADR・`constraints` の欄を読むことをスコープ外にしたため。US-13.5 の「US-6.6 の記録」のうち ADR の分は G4 で確認する）。各フェーズの `pr` の args に `declarationChanged` を添え、PR 本文に載せる。`validate --base` でも警告する（CI 向け）
+- **宣言の変更**（US-13.5）: `ledger premises --changed-from <base>` が、merge-base と HEAD の `[app]` の差分から変わったキーを出し、それを拠り所にした受け入れを並べる。対象は、作業ツリーにある全サイクルの `decisions.jsonl` の受け入れと、`decisions`（ADR）・`constraints` の「受け入れたこと」の行（US-6.6）。行の書式は `- <受け入れたこと>（拠り所: \`<前提の参照>\`[, \`<前提の参照>\`]）` に固定し、`ledger premises` が `docs.mts` の `loadGuide` で所在を引いて読む。宣言を変える PR はサイクルの中の出来事なので、Q12 のスコープ外（「いつ」をサイクルの外の出来事にすること）には当たらない（G4 で監督が判断、ユーザーの事後同意待ち）。各フェーズの `pr` の args に `declarationChanged` を添え、PR 本文に載せる。`validate --base` でも警告する（CI 向け）
 
 ### 2. 未決事項と決定の記録（US-1・US-19）
 
@@ -67,7 +67,7 @@
 
 ### 8. 記録のテンプレート（US-6・US-7・US-8）
 
-- ADR のテンプレートに、外の前提（事実か仮定か・確かめた日）・推奨・受け入れたこと（拠り所の前提）・再評価条件・退けた推奨で失う利点・領域（任意。`領域: <glob>`、US-5.5）の欄を足す（このサイクルの ADR は領域を除いてこの形で書いた）。`skills/architect/steps/adr.md` の記録項目も同時に直す
+- ADR のテンプレートに、外の前提（事実か仮定か・確かめた日）・推奨・受け入れたこと（拠り所の前提）・再評価条件・退けた推奨で失う利点・領域（任意。`領域: <glob>`、US-5.5）の欄を足す（このサイクルの ADR は領域を除いてこの形で書いた）。「受け入れたこと」の各行は `（拠り所: \`<前提の参照>\`）` で終える（`ledger premises` が読む。参照の書式は2節と同じで、確かめていない前提は `assumption:<短い文>`）。`skills/architect/steps/adr.md` の記録項目も同時に直す
 - constraints のテンプレートを `skills/close-cycle/references/` に新しく作る（前提・事実か仮定か・確かめた日・受け入れたこと・再評価条件・領域）
 - design-questions.md のテンプレートに、質問ごとの選択肢・各案の欠点・推奨・回答と、推奨を退けたときに失う利点の欄を足す
 - ポインタに件数や範囲を添えさせている指示文（codebase-survey の US-8 の節）を直す。`validate` に警告の段階（JSON の `warnings`、終了コード 0）を足し、永続ドキュメントとサイクルドキュメントの ID の範囲（`X-1〜X-5` の形）を警告する
