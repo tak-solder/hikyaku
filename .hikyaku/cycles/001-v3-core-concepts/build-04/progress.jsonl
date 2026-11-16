@@ -2,3 +2,4 @@
 {"at":"2026-11-16T19:52:18.668Z","skill":"builder","step":"plan-review","result":"done","peak":395000,"context":251947,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
 {"at":"2026-11-16T19:55:21.116Z","skill":"builder","step":"test-spec","result":"done","context":262310,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
 {"at":"2026-11-16T19:57:08.657Z","skill":"builder","step":"test-spec-review","result":"done","context":273546,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T19:58:29.610Z","skill":"builder","step":"G8","result":"approved","input":"監督の委任された判断: 承認。条件1: 高の異議で decided のときもユーザーの言葉（--input）を必須にしテストを1つ足す。条件2: G8 前の未コミットの変更は plan.md に沿うか確かめ直す。delegation の判定で decisions.jsonl を読む逸脱は handoff の残したことに確度: 要確認で残す","context":278302,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}

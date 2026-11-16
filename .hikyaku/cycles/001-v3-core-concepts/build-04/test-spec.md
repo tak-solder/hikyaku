@@ -150,6 +150,12 @@
 - When: `--harm 高 --decision consented --accepts "漏えいの危険を受け入れる" --premises "app.data"` を付けて実行
 - Then: open に `premises`（`app.data` を表す参照）と `harm:"高"`、decide に `accepts:"漏えいの危険を受け入れる"` が残る
 
+### ledger object: 害が高で decided でも、ユーザーの言葉（--input）が無ければ拒否する
+- 対応: US-1.4
+- Given: build-02 の G8 を提示している一時ワークスペース
+- When: `ledger object build-02 --summary "s" --basis "b" --loses "l" --harm 高 --decision decided --premises app.data`（--input なし）と、`--input "  "`（空白だけ）で実行
+- Then: どちらも終了コード1で拒否され、decisions.jsonl に何も書かれない
+
 ### ledger object: 害が高でも decided なら --accepts を求めない（解釈）
 - 対応: US-1.4
 - Given: 同上
