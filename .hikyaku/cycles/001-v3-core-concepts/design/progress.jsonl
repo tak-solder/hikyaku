@@ -19,3 +19,5 @@
 {"at":"2026-11-16T10:46:54.396Z","skill":"build-manager","step":"tasklist-review","result":"done","context":514346,"session":"adaa20b9-2cba-4424-a6f0-60663574a8f2","hikyaku":"3.0.0"}
 {"at":"2026-11-16T10:47:52.297Z","skill":"build-manager","step":"G6","result":"approved","input":"監督（中継しているセッション）が承認。Q1 で確認と決めたゲートで、分割は後から G6 で見直せる覆せる判断のため。ユーザーの事後同意を待つ（design-questions S3）","context":517631,"session":"adaa20b9-2cba-4424-a6f0-60663574a8f2","hikyaku":"3.0.0"}
 {"at":"2026-11-16T10:49:03.811Z","skill":"build-manager","step":"write","result":"done","context":527304,"session":"adaa20b9-2cba-4424-a6f0-60663574a8f2","hikyaku":"3.0.0"}
+{"at":"2026-11-16T10:49:09.335Z","skill":"architect","step":"build-split","result":"done","context":527304,"session":"adaa20b9-2cba-4424-a6f0-60663574a8f2","hikyaku":"3.0.0"}
+{"at":"2026-11-16T10:49:19.032Z","skill":"architect","step":"validate","result":"done","context":527609,"session":"adaa20b9-2cba-4424-a6f0-60663574a8f2","hikyaku":"3.0.0"}
