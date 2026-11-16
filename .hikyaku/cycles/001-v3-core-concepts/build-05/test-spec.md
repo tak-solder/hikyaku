@@ -139,11 +139,11 @@
 - When: ledgerAcceptances(config) を呼ぶ
 - Then: items にサイクル 001 の1件が入り、problems にサイクル 002 のファイルについて1件出る（例外は投げない）
 
-### persistentAcceptances: document-guide の decisions・constraints のディレクトリ直下の .md を読む
+### persistentAcceptances: document-guide の decisions・constraints のディレクトリの下の .md を再帰で読む
 - 対応: US-6.6
 - Given: document-guide.md の decisions が `.hikyaku/decisions/`、constraints が `docs/constraints.md`。decisions 直下に拠り所付きの行を持つ ADR が1つ、`.hikyaku/decisions/old/legacy.md`（サブディレクトリ）にも同じ形の行がある。`docs/constraints.md` の `## 受け入れたこと` の節に `- 個人情報は外部に送らない（拠り所: \`app.data\`）` の行がある
 - When: persistentAcceptances(config) を呼ぶ
-- Then: lines に直下の ADR の行と constraints.md の行が入り、source はリポジトリルートからの相対パス。サブディレクトリのファイルの行は含まれない
+- Then: lines に直下の ADR の行、サブディレクトリの legacy.md の行、constraints.md の行が入り、source はリポジトリルートからの相対パス（コードレビュー2回目の指摘を受けた監督の判断で、サブディレクトリも読むよう改めた。questions.md の Q2）
 
 ## scripts/lib/premises.mts（premisesReview・declarationArgs）
 

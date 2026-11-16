@@ -13,7 +13,7 @@
   - 「基準を1つも読めないと、宣言されている参照がすべて変わったものとして毎回出る」（2回目）: G8 で承認した、見直しを落とさない側に倒す判断のまま。notices に理由（origin/HEAD が無い等）を出す
   - 「サイクルに属さない patch の decisions.jsonl を読まない」（2回目）: `ledger` はサイクルに属さない patch の記録を扱わない（`ledger open` がエラーにする）ので、読む記録が無い
   - 「重複した名前・名前の無い [[app.areas]] の変更を見落とす」（2回目）: 設定の読み込み（`readAppDeclaration`）が名前の重複と欠けをエラーにする
-  - 「decisions のサブディレクトリの ADR を読まない」（2回目）: `hikyaku` 管理の ADR は1判断1ファイルで直下に置く形。test-spec でも直下だけを読むと決めた。`repo` 管理でサブディレクトリに分けたリポジトリが出たら、`documentFiles` を再帰にする
+  - 「decisions のサブディレクトリの ADR を読まない」（2回目）: 採った。監督の委任された判断（questions.md の Q2）で、`documentFiles` はディレクトリの下を再帰で読む（repo 管理で ADR をサブディレクトリに分けた形も読む）。test-spec の「サブディレクトリは読まない」の期待値も改めた
   - 「基準の読み取りが risk.mts の `readBaselineAt` と重複する」（1回目・2回目）: 一部だけ採った（`APP_KEYS` は ledger.mts から読み、area はキーの順に依らない比較にした）。risk.mts は正規化した `AppDeclaration` を返すが、差分は area ごとの生の表で比べたいので、読み取りは分けたままにした
 - `validate` は `options: ["base"]` を宣言したので、知らないオプションをエラーにするようになった
 - `validate` の ID の範囲の警告は、永続ドキュメント（glossary を除く）と、進行中のサイクル（引数があればそのサイクル）の .md が対象。このサイクルの文書（design-delta.md の「US-15.1〜15.3」など）にも警告が出る

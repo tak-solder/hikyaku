@@ -197,21 +197,27 @@ function finishItem(
 // ---------------------------------------------------------------------------
 // 永続ドキュメント
 
-/** document-guide.md の論理名が指す Markdown ファイル。ディレクトリなら直下の .md（サブディレクトリは読まない） */
+/** ディレクトリの下の .md（再帰。repo 管理で ADR をサブディレクトリに分けた形も読む） */
+function markdownUnder(directory: string): string[] {
+  const files: string[] = [];
+  for (const name of readdirSync(directory).sort()) {
+    const path = join(directory, name);
+    const stat = statSync(path);
+    if (stat.isDirectory()) files.push(...markdownUnder(path));
+    else if (stat.isFile() && name.endsWith(".md")) files.push(path);
+  }
+  return files;
+}
+
+/** document-guide.md の論理名が指す Markdown ファイル。ディレクトリならその下の .md すべて */
 export function documentFiles(config: ResolvedConfig, names: string[]): string[] {
   const files: string[] = [];
   for (const entry of loadGuide(config.hikyakuRoot)) {
     if (!names.includes(entry.name) || entry.path === undefined) continue;
     const absolute = join(config.repoRoot, entry.path.split("#")[0] ?? entry.path);
     if (!existsSync(absolute)) continue;
-    if (statSync(absolute).isDirectory()) {
-      for (const name of readdirSync(absolute).sort()) {
-        const path = join(absolute, name);
-        if (name.endsWith(".md") && statSync(path).isFile()) files.push(path);
-      }
-    } else if (absolute.endsWith(".md")) {
-      files.push(absolute);
-    }
+    if (statSync(absolute).isDirectory()) files.push(...markdownUnder(absolute));
+    else if (absolute.endsWith(".md")) files.push(absolute);
   }
   return files;
 }

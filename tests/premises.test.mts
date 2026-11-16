@@ -397,6 +397,16 @@ test("ledger premises: 覆された ADR（status: superseded）の受け入れ�
   assert.deepEqual(data.documents.map((line: { source: string }) => line.source), ["docs/decisions/20261116-a.md"]);
 });
 
+test("ledger premises: decisions のサブディレクトリにある ADR の受け入れも並べる", (t) => {
+  const directory = declaredWorkspace(t);
+  write(directory, "docs/decisions/2026/20261110-nested.md", "# 入れ子\n\n- **受け入れたこと**:\n  - 入れ子の受け入れ（拠り所: `app.exposure`）\n");
+  const data = JSON.parse(cli(directory, "ledger", "premises", "--changed-from", "main", "--json").stdout);
+  assert.deepEqual(data.documents.map((line: { source: string; line: number }) => `${line.source}:${line.line}`), [
+    "docs/decisions/2026/20261110-nested.md:4",
+    "docs/decisions/20261116-a.md:4",
+  ]);
+});
+
 test("ledger premises: 基準を読めないときは、--format pr に理由（notices）も載せる", (t) => {
   const directory = declaredWorkspace(t);
   const result = cli(directory, "ledger", "premises", "--changed-from", "nowhere", "--format", "pr");
