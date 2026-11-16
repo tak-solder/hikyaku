@@ -11,6 +11,8 @@
   - 選択肢: このまま委任を続ける / ユーザーがプロファイルや委任の範囲を変える（変えるのはユーザー。
     頼まれればサイクル設定を書き換えてよい）/ conductor を止めて対話で進める
   - design-conflict の選択肢（`references/return.md`）も並べ、同じ答えで決められるようにする
-- [ ] 答えを `approved` の `--input` に書いて報告する。答えに design-conflict の選択が含まれていれば、
+- [ ] 答えを `approved` の `--input` に書いて報告する。委任をやめる・プロファイルを変えると答えたときも
+  `approved` で記録する（ゲートは「尋ねた」ことの記録で、答えは `--input` に残る）。`rejected` は、提示を
+  直して出し直すよう求められたときだけ。答えに design-conflict の選択が含まれていれば、
   その事項に `ledger decide build-{NN} <ID> {cycle} --decision decided --by user --input "<答え>"` で決定を記録する
 - [ ] 報告したら、`references/return.md` の続き（選んだ選択肢の手順）に戻る

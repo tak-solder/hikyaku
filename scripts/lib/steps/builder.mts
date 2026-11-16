@@ -39,7 +39,8 @@ function prRecorded(ctx: StepContext): boolean {
 
 /** このビルドで最後に記録した設計と要件の衝突（ask: design-conflict）の時刻 */
 function designConflictAt(ctx: StepContext): string | undefined {
-  return latestOpenAt(ctx.unitDirectory, (record) => record.ask === "design-conflict" && record.unit === ctx.unit);
+  // 衝突そのもの（question）だけを数える。監督の答えや異議の記録が同じ ask を持っても、新しい出来事ではない
+  return latestOpenAt(ctx.unitDirectory, (record) => record.type === "question" && record.ask === "design-conflict" && record.unit === ctx.unit);
 }
 
 export const BUILDER_STEPS: SkillSteps = {

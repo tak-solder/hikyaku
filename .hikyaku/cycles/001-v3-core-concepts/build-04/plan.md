@@ -15,7 +15,7 @@
   - 中の異議は対象にしない（記録だけで進む）
 - `export function latestOpenAt(unitDirectory: string, matches: (record: OpenRecord) => boolean): string | undefined`
   - その作業単位のディレクトリの `decisions.jsonl` だけを読み、条件に合う事項の最新の `at` を返す
-  - 読めなければ `UNREADABLE_AT`（空文字。どの記録よりも前）を返し、きっかけがあった側に倒す。壊れた記録で、ユーザーに固定した同意のゲートを黙って消さないため（plan-review の指摘）。例外は投げない（壊れは `step next` の notices が知らせる）
+  - 読めなければ `undefined` を返し、例外は投げない。壊れた記録で同意のゲートを黙って消さないよう（plan-review の指摘）、builder の `stop` が `unitLedgerProblem` で先に止まる（コードレビュー1回目の指摘で、空文字を返して倒す形から改めた。以前の承認が新しい衝突のゲートを隠すため）
   - build-03 の「手順の位置だけを読む経路（Stop フック・step where・conductor parse）は記録を読まない」を、この1ファイルに限って改める。design-delta が delegation の判定を未決事項の記録に置いているため。handoff の「永続化すること」に反映する
 
 ### `scripts/commands/ledger.mts`（`ledger object` を追加）

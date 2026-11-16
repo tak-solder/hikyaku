@@ -40,7 +40,7 @@ import {
   type Evaluation,
 } from "../lib/steps/engine.mts";
 import { checkpointsOf, CHECKPOINT_STEPS } from "../lib/steps/checkpoints.mts";
-import { readLedger, unacceptedObjections } from "../lib/ledger.mts";
+import { readLedger, readUnitLedger, unacceptedObjections } from "../lib/ledger.mts";
 import {
   buildDirective,
   CLI,
@@ -161,6 +161,14 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
   // 現在地のほか、完了したステップを done で報告し直せる（成果物を作り直したとき）。
   // そこから後ろはやり直しになる。現在地より後ろへは進めない
   const redo = (evaluated.status === "complete" || evaluated.status === "skipped") && result === "done";
+  // 割り込みのゲート（delegation）が現在地のあいだは、報告し直しも受け付けない（同意の前に作業を記録しない）
+  const interrupted = evaluation.current?.definition.interrupt !== undefined && evaluation.current !== evaluated;
+  if (interrupted) {
+    throw new HikyakuError(
+      `${evaluation.current?.definition.id} の承認が先です。それまでは ${definition.id} を報告できません`,
+      "step next で現在地を確認してください。",
+    );
+  }
   if (evaluation.current !== evaluated && !redo) {
     const current = evaluation.current?.definition.id;
     throw new HikyakuError(
@@ -236,14 +244,21 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
 
 /**
  * すべてのゲートの承認の条件: そのステップで唱えた害が高の異議が片づいていること（US-1.4）。
- * 記録を読めなければ、片づいたかを確かめられないので受け付けない
+ * ほかの作業単位の記録が壊れていれば、この単位の記録だけで確かめる（ほかの単位の決定が見えない分は
+ * 片づいていない側に倒れる）。この単位の記録を読めなければ、確かめられないので受け付けない
  */
 function assertObjectionsSettled(opened: Opened, step: string): void {
   const cycle = opened.ctx.cycle;
   if (cycle === undefined) return;
   let pending;
   try {
-    pending = unacceptedObjections(readLedger(cycle.directory), opened.phase, step);
+    let ledger;
+    try {
+      ledger = readLedger(cycle.directory);
+    } catch {
+      ledger = readUnitLedger(cycle.directory, opened.phase);
+    }
+    pending = unacceptedObjections(ledger, opened.phase, step);
   } catch (error) {
     throw new HikyakuError(
       `${step} の承認を受け付けません: 未決事項の記録を読めず、害が高の異議が片づいたかを確かめられません`,

@@ -325,7 +325,8 @@ export function buildDirective(opened: Opened, evaluation: Evaluation, options: 
     const now = consent !== false && consent.timing === "now";
     directive.approval = now ? "consent" : "confirm";
     directive.approvalReason = now ? consent.reason : null;
-    if (ctx.cycle !== undefined) directive.objection = objectionGuide(opened, ctx.cycle);
+    // 手順の位置だけを読む側（Stop フック・step where・conductor parse）には要らないので組み立てない
+    if (ctx.cycle !== undefined && options.notices !== false) directive.objection = objectionGuide(opened, ctx.cycle);
   }
   if (definition.kind === "call") {
     directive.call = definition.call ?? "";

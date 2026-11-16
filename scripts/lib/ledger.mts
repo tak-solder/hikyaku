@@ -446,16 +446,35 @@ export function decideItem(cycleDirectory: string, record: DecideRecord, ledger:
 
 /**
  * 高の異議が片づいたか: ユーザーが選択を改めた（decided）か、受け入れると書いて進めた（accepts 付きの
- * consented）。受け入れるなら、拠り所にした前提が事項に結び付いていること（US-1.5）
+ * consented）。拠り所の前提は、記録するとき（ledger open / object）に求める。決定では前提を足せないので、
+ * ここで求めると前提の無い事項を受け入れで片づける手段が無くなる
  */
 function objectionSettled(item: LedgerItem): boolean {
   const latest = item.latest;
   if (latest === undefined || latest.by !== "user") return false;
   if (latest.decision === "decided") return true;
-  return (
-    latest.decision === "consented" && latest.accepts !== undefined && latest.accepts.trim() !== "" &&
-    item.open.premises !== undefined && item.open.premises.length > 0
-  );
+  return latest.decision === "consented" && latest.accepts !== undefined && latest.accepts.trim() !== "";
+}
+
+/**
+ * 1つの作業単位の decisions.jsonl だけから組み立てた記録。サイクルのほかの単位の記録が壊れていて
+ * readLedger が失敗したときに、その単位の異議を確かめるのに使う（ほかの単位の決定は見えないので、
+ * 片づいていない側に倒れる）
+ */
+export function readUnitLedger(cycleDirectory: string, unit: string): Ledger {
+  const items: LedgerItem[] = [];
+  const decides: DecideRecord[] = [];
+  for (const record of readJsonl(ledgerPath(cycleDirectory, unit), isRecord, LABELS)) {
+    if (record.record === "open") items.push({ open: record, decisions: [], latest: undefined });
+    else decides.push(record);
+  }
+  for (const decide of [...decides].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))) {
+    const item = items.find((entry) => entry.open.id === decide.id);
+    if (item === undefined) continue;
+    item.decisions.push(decide);
+    item.latest = decide;
+  }
+  return { items, orphans: [] };
 }
 
 /**

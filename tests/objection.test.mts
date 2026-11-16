@@ -53,10 +53,10 @@ test("unacceptedObjections: 決定の無い高の異議は止め、accepts 付�
   // accepts が無い・空白だけ
   assert.deepEqual(ids(unacceptedObjections(ledgerOf([open("a"), [decide("a")]]), "build-02", "G8")), ["a"]);
   assert.deepEqual(ids(unacceptedObjections(ledgerOf([open("a"), [decide("a", { accepts: "  " })]]), "build-02", "G8")), ["a"]);
-  // 受け入れるなら、拠り所にした前提が事項に結び付いていること
+  // 前提は記録するときに求める。前提の無い既存の事項でも、受け入れで片づけられる
   const bare = open("a");
   delete bare.premises;
-  assert.deepEqual(ids(unacceptedObjections(ledgerOf([bare, [decide("a", { accepts: "受け入れる" })]]), "build-02", "G8")), ["a"]);
+  assert.deepEqual(ids(unacceptedObjections(ledgerOf([bare, [decide("a", { accepts: "受け入れる" })]]), "build-02", "G8")), []);
 });
 
 test("unacceptedObjections: ユーザー以外の決定では片づかず、最新の決定で判定する", () => {
@@ -268,11 +268,17 @@ test("step report: 内部スキルの G6 でも高の異議で拒否し、記録
   assert.equal(g6?.["step"], "G6");
   assert.equal(cli(directory, "step", "report", "build-01", "G6", "001", "--skill", "build-manager", "--result", "approved", "--input", "OK").status, 1);
 
-  // ほかの作業単位の記録が壊れていても、異議が片づいたかを確かめられないので受け付けない
+  // ほかの作業単位の記録が壊れていても、この単位の記録だけで確かめる
   write(directory, `${CYCLE}/planning/decisions.jsonl`, '{"record":"open",\n');
   const broken = cli(directory, "step", "report", "build-01", "G6", "001", "--skill", "build-manager", "--result", "approved", "--input", "OK");
   assert.equal(broken.status, 1);
-  assert.match(broken.stderr, /未決事項の記録を読めず/);
+  assert.match(broken.stderr, /害が高の異議が片づいていません/);
+  // ledger のコマンドは壊れた記録で止まるので、決定は記録を直してから書く。そのあと壊れても、この単位の決定で片づく
+  rmSync(join(directory, CYCLE, "planning", "decisions.jsonl"));
+  const id = String(g6?.["id"]);
+  succeeds(directory, "ledger", "decide", "build-01", id, "001", "--decision", "consented", "--by", "user", "--input", "進める", "--accepts", "受け入れる");
+  write(directory, `${CYCLE}/planning/decisions.jsonl`, '{"record":"open",\n');
+  assert.equal(cli(directory, "step", "report", "build-01", "G6", "001", "--skill", "build-manager", "--result", "approved", "--input", "OK").status, 0);
 });
 
 test("directive: サイクルの gate に異議の指示とポインタが載り、run には載らない", (t) => {
@@ -403,6 +409,21 @@ test("delegation（builder）: decisions.jsonl が壊れていたら止まる（
   const stopped = (JSON.parse(succeeds(directory, "step", "next", "build-01", "001", "--json")) as { directive: { kind: string; message?: string } }).directive;
   assert.equal(stopped.kind, "stop");
   assert.match(stopped.message ?? "", /未決事項の記録を読めません/);
+});
+
+test("delegation（builder）: 割り込みの間は報告し直しも拒否し、監督の答えなど同じ ask の question 以外では出ない", (t) => {
+  const directory = built(t);
+  write(directory, `${BUILD}/plan.md`, "# plan\n");
+  report(directory, "plan", "--result", "done", "--peak", "350k");
+  conflict(directory);
+  const redo = cli(directory, "step", "report", "build-01", "plan", "001", "--result", "done", "--peak", "350k");
+  assert.equal(redo.status, 1);
+  assert.match(redo.stderr, /delegation の承認が先です/);
+  report(directory, "delegation", "--result", "approved", "--input", "続ける");
+  const wait = Date.now() + 5;
+  while (Date.now() < wait) { /* 時刻を進める */ }
+  openId(directory, "build-01", "001", "--type", "provisional", "--ask", "design-conflict", "--when", "now", "--who", "supervisor", "--summary", "監督の答え: 差し戻す");
+  assert.equal(next(directory).step, "plan-review");
 });
 
 test("delegation（builder）: step restart より前の承認も、同じ出来事への答えとして数える", (t) => {
