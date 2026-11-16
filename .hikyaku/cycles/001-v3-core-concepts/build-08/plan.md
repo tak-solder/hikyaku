@@ -127,12 +127,12 @@ export function agreementReasons(markdown: string): string[]    // agreement.md 
 
 ## 実装ステップ
 
-- [ ] Step 1: `diff-stats.mts` と `config.mts` に印の既定と `[diff]` の3キー（既定に追加）
-- [ ] Step 2: `git.mts` に `nameStatus` / `unifiedDiff` / `commitsTouchingSince` / `untrackedFiles` / `mergeBaseOf` / `hasUncommittedChange`
-- [ ] Step 3: `diff-facts.mts`（diff の解析、未追跡ファイルの中身、印の事実、リネームでテストから外れたもの、設定の宣言の変更、issue.md の変更と G8 後の plan.md・test-spec.md、text / pr の描画、agreement.md の読み取り）
-- [ ] Step 4: `commands/diff.mts` と `hikyaku.mts` の登録
-- [ ] Step 5: `review action doc --context agreement`
-- [ ] Step 6: builder の `agreement-review` ステップと指示ファイル、review.md の自己確認の削除、pr.md、doc-reviewer.md
-- [ ] Step 7: テスト（`tests/diff-facts.test.mts`: 言語ごとのフィクスチャの unit、リネームでテストから外したファイル、`[[app.areas]]` の削除と paths の縮小、一時リポジトリでの G8 後の test-spec の書き換え・未追跡の新しいテストのスキップ、agreement.md が無ければ完了にならない、PR の節）と既存テストの期待値
-- [ ] Step 8: docs（`workflow/build.md`・`reference/agents-and-skills.md`・`configuration/config-file.md`・`reference/cli.md`）と CHANGELOG の `[3.0.0]`
-- [ ] Step 9: ローカル検証（`step lint`・`conductor lint`・`npx tsc --noEmit`・`npm test`）
+- [x] Step 1: `diff-stats.mts` と `config.mts` に印の既定と `[diff]` の3キー（既定に追加）
+- [x] Step 2: `git.mts` に `nameStatus` / `unifiedDiff` / `commitsTouchingSince` / `untrackedFiles` / `mergeBaseOf` / `hasUncommittedChange`
+- [x] Step 3: `diff-facts.mts`（diff の解析、未追跡ファイルの中身、印の事実、リネームでテストから外れたもの、設定の宣言の変更、issue.md の変更と G8 後の plan.md・test-spec.md、text / pr の描画、agreement.md の読み取り）
+- [x] Step 4: `commands/diff.mts` と `hikyaku.mts` の登録
+- [x] Step 5: `review action doc --context agreement`
+- [x] Step 6: builder の `agreement-review` ステップと指示ファイル、review.md の自己確認の削除、pr.md、doc-reviewer.md
+- [x] Step 7: テスト（`tests/diff-facts.test.mts`: 言語ごとのフィクスチャの unit、リネームでテストから外したファイル、`[[app.areas]]` の削除と paths の縮小、一時リポジトリでの G8 後の test-spec の書き換え・未追跡の新しいテストのスキップ、agreement.md が無ければ完了にならない、PR の節）と既存テストの期待値
+- [x] Step 8: docs（`workflow/build.md`・`reference/agents-and-skills.md`・`configuration/config-file.md`・`reference/cli.md`）と CHANGELOG の `[3.0.0]`
+- [x] Step 9: ローカル検証（`step lint`・`conductor lint`・`npx tsc --noEmit`・`npm test`）

@@ -24,7 +24,14 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { type DiffPatterns, DEFAULT_DIFF_EXCLUDE, DEFAULT_DIFF_TESTS } from "./diff-stats.mts";
+import {
+  type DiffPatterns,
+  DEFAULT_ASSERTION_MARKERS,
+  DEFAULT_DIFF_EXCLUDE,
+  DEFAULT_DIFF_TESTS,
+  DEFAULT_SKIP_MARKERS,
+  DEFAULT_TEST_DECLARATIONS,
+} from "./diff-stats.mts";
 import { DEFAULT_PEAK_BANDS, type PeakBands } from "./tokens.mts";
 import type { BranchNaming } from "./branch.mts";
 import {
@@ -909,8 +916,10 @@ function mergeTables(base: TomlTable, override: TomlTable): TomlTable {
 }
 
 /**
- * [diff] を読む。配列は既定値を置き換える（足し合わせない）。
- * 既定値に足したいときは、既定値（hikyaku config --json の diff）を写してから足す
+ * [diff] を読む。exclude / tests は既定値を置き換える（足し合わせない）。
+ * 既定値に足したいときは、既定値（hikyaku config --json の diff）を写してから足す。
+ * 差分の事実の印（test_declarations / skip_markers / assertion_markers）は既定に追加される。
+ * 既定を消せると、テストの後退を設定で見えなくできてしまう
  */
 function readDiffPatterns(table: TomlTable | undefined): DiffPatterns {
   const where = "[diff]";
@@ -921,7 +930,14 @@ function readDiffPatterns(table: TomlTable | undefined): DiffPatterns {
     }
     return values;
   };
-  return { exclude: read("exclude", DEFAULT_DIFF_EXCLUDE), tests: read("tests", DEFAULT_DIFF_TESTS) };
+  const extend = (key: string, defaults: string[]): string[] => [...new Set([...defaults, ...read(key, [])])];
+  return {
+    exclude: read("exclude", DEFAULT_DIFF_EXCLUDE),
+    tests: read("tests", DEFAULT_DIFF_TESTS),
+    testDeclarations: extend("test_declarations", DEFAULT_TEST_DECLARATIONS),
+    skipMarkers: extend("skip_markers", DEFAULT_SKIP_MARKERS),
+    assertionMarkers: extend("assertion_markers", DEFAULT_ASSERTION_MARKERS),
+  };
 }
 
 /**

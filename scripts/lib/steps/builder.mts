@@ -122,6 +122,13 @@ export const BUILDER_STEPS: SkillSteps = {
     { id: "implement", kind: "run", title: "実装とテストコードの生成", checkpoint: "implement" },
     { id: "verify", kind: "run", title: "ローカル検証" },
     {
+      // 全プロファイル必須（when 無し）。builder 自身のスコープとデータ安全の確認はここへ移した（US-2.5）
+      id: "agreement-review",
+      kind: "run",
+      title: "差分の事実と合意の突き合わせ（doc-reviewer の agreement）",
+      produces: ["agreement.md"],
+    },
+    {
       id: "review",
       kind: "run",
       title: "コードレビュー",

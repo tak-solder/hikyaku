@@ -328,6 +328,9 @@ internal = ["src/lib/**"]
 [diff]
 exclude = ["package-lock.json", "*.lock", "**/__snapshots__/**", "*.snap", "*.generated.*"]
 tests = ["**/tests/**", "*.test.*", "*_test.*"]
+test_declarations = ["scenario("]
+skip_markers = ["@Skip"]
+assertion_markers = ["check("]
 ```
 
 振り返りで `hikyaku tokens history build-NN` がビルドの差分を数えるときの振り分けです。`exclude` に当たるファイルは生成物として数えず、`tests` に当たるファイルはテストとして、それ以外は実装として行数を分けます（[実測と振り返り](token-guide.md#実測と振り返り)）。両方に当たるファイルは生成物として扱います。テストのスナップショットを数えないためです。
@@ -335,6 +338,10 @@ tests = ["**/tests/**", "*.test.*", "*_test.*"]
 パターンはリポジトリルートからのパスに当てる glob です。`/` を含まないパターン（`*.lock`）はファイル名に当て、どのディレクトリにあっても当たります。`/` を含むパターンはパス全体に当て、`**/` は0個以上のディレクトリ、`*` は `/` をまたがない任意の文字列、`?` は `/` 以外の1文字です。
 
 書いた配列は既定値を置き換えます。既定値に足したいときは、`hikyaku config --json` の `diff` に出る既定値を写してから足してください。既定の `exclude` は主要なロックファイル（`package-lock.json`・`pnpm-lock.yaml`・`*.lock`・`go.sum` など）、スナップショット（`__snapshots__/`・`*.snap`）、生成コードと圧縮済みの成果物（`*.generated.*`・`*.pb.go`・`*.min.js`・`*.map` など）です。既定の `tests` は `test/`・`tests/`・`__tests__/`・`spec/`・`e2e/` の配下と、`*.test.*`・`*.spec.*`・`*_test.*`・`test_*.py` です。
+
+`tests` の振り分けは、合意との突き合わせで `hikyaku diff facts` がテストファイルを見分けるのにも使われます（[BUILD](../workflow/build.md#合意との突き合わせ)）。テストファイルの変更行は、3つの印で見ます。`test_declarations` はテストの宣言（削除されたテストの検出）、`skip_markers` はスキップ（追加されたスキップの検出）、`assertion_markers` はアサーション（アサーションの行の変更の検出）の印です。印は正規表現ではなく、行に含まれる文字列として照合します。英数字で始まる印は、直前が英数字でない位置だけに当たります（`it(` は `submit(` に当たりません）。
+
+この3つのキーは、`exclude` や `tests` と違って **既定に追加されます。** 既定を消すことはできません。既定は JavaScript / TypeScript・Python・Go・Ruby・Java / Kotlin・C#・Rust・PHP の主要なテストの枠組みの書き方で、`hikyaku config --json` の `diff` に出ます。既定で拾えない枠組みを使っているときに、その書き方を足してください。
 
 ## [context]
 

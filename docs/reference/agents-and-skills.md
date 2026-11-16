@@ -47,7 +47,9 @@ Hikyaku の手順そのものに穴があると思える場合も、このリポ
 
 `code-explorer` が返す Key Files は本セッション自身が読みます。要約だけで設計を進めると、規約やインターフェースの解像度が落ちるためです。
 
-`doc-reviewer` は渡された context（`user-stories` / `architecture` / `tasklist` / `plan` / `test-spec`）に応じて観点を切り替えます。architecture と plan ではセキュリティ設計の考慮漏れも見ます。tasklist は予測ピークの見積もりの妥当性と分割の網羅性が対象で、tasklist.md・issue.md がまだファイルに書き込まれていない段階でレビューするため、build-manager が内容をプロンプトへ直接渡します。plan と test-spec はそれぞれの成果物の完成直後にレビューされ、`plan` は plan.md 作成直後、`test-spec` は test-spec.md 作成後という位置は、どのプロファイルでも変わりません。plan は受け入れ基準の網羅とスコープ逸脱に加えて、plan.md に書かれた予測ピークの成分の妥当性も見ます（tasklist は issue.md のスコープ記述から、plan は実装計画から、それぞれ内訳表の成分と根拠が記述と合っているかを見ます。合計と判定はコマンドが行うので対象外です）。test-spec は plan.md・issue.md に対するテストシナリオの網羅性が対象です。
+`doc-reviewer` は渡された context（`user-stories` / `architecture` / `tasklist` / `plan` / `test-spec` / `agreement`）に応じて観点を切り替えます。architecture と plan ではセキュリティ設計の考慮漏れも見ます。tasklist は予測ピークの見積もりの妥当性と分割の網羅性が対象で、tasklist.md・issue.md がまだファイルに書き込まれていない段階でレビューするため、build-manager が内容をプロンプトへ直接渡します。plan と test-spec はそれぞれの成果物の完成直後にレビューされ、`plan` は plan.md 作成直後、`test-spec` は test-spec.md 作成後という位置は、どのプロファイルでも変わりません。plan は受け入れ基準の網羅とスコープ逸脱に加えて、plan.md に書かれた予測ピークの成分の妥当性も見ます（tasklist は issue.md のスコープ記述から、plan は実装計画から、それぞれ内訳表の成分と根拠が記述と合っているかを見ます。合計と判定はコマンドが行うので対象外です）。test-spec は plan.md・issue.md に対するテストシナリオの網羅性が対象です。
+
+`agreement` は builder の検証の後・コードレビューの前に、どのプロファイルでも入ります。`hikyaku diff facts` が差分から並べた事実（テストの削除・スキップ・アサーションの変更・設定の宣言の変更・合意の文書の書き換え）を、issue.md・test-spec.md・plan.md の「マージ時点のデータ安全」と突き合わせ、合意に無い変更・スコープ外の変更・データ安全の不備を指摘します。スクリプトは判定をしないので、緩和かどうか、スコープの内か外かを決めるのはこのレビューです。作った本人の builder は、指摘を直すか理由を返すだけです。
 
 `doc-reviewer` は `[review.doc]` で `codex` を選んだときだけ、定義の本文を指示文にして `codex exec` で起動されます（[.hikyaku.config](../configuration/config-file.md#review)）。
 

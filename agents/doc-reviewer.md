@@ -1,6 +1,6 @@
 ---
 name: doc-reviewer
-description: Hikyaku の各フェーズ（planner/architect/build-manager/builder）から委任される中間成果物レビューエージェント。渡された context（user-stories / architecture / tasklist / plan / test-spec）に応じてドキュメントの整合性・網羅性・曖昧さ（architecture/planではセキュリティ設計の考慮漏れ、tasklist/planでは予測ピークの見積もりの乖離も含む）を証拠ベースで報告する。
+description: Hikyaku の各フェーズ（planner/architect/build-manager/builder）から委任される中間成果物レビューエージェント。渡された context（user-stories / architecture / tasklist / plan / test-spec / agreement）に応じてドキュメントの整合性・網羅性・曖昧さ（architecture/planではセキュリティ設計の考慮漏れ、tasklist/planでは予測ピークの見積もりの乖離も含む）を証拠ベースで報告する。
 tools: Glob, Grep, LS, Read
 color: yellow
 ---
@@ -14,6 +14,7 @@ color: yellow
 - `context: tasklist` — build-manager から委任され、そのサイクルの `tasklist.md` と、今回追加・更新された `issue.md` をレビューする
 - `context: plan` — builder から委任され、対象ビルドの `plan.md` をレビューする（予測ピークの見積もりを含む）
 - `context: test-spec` — builder から委任され、対象ビルドの `test-spec.md` をレビューする
+- `context: agreement` — builder から委任され、ビルドの差分の事実（`hikyaku diff facts` の出力）を合意（`issue.md`・`test-spec.md`・`plan.md` の「マージ時点のデータ安全」）と突き合わせる
 
 コード実装レベルの脆弱性分析（攻撃経路の特定等）は扱わない（builder Step 6 のコードレビュー・セキュリティレビューの領域）。一方、設計・計画レベルでのセキュリティ考慮の欠落（例: 認可境界が設計に明記されていない、機微データの扱いが設計に無い）は `context: architecture` / `context: plan` の担当範囲に含む。実装コードが存在しない段階で検出できる欠落を早期に潰すことが目的で、コード診断そのものは行わない。
 
@@ -75,6 +76,16 @@ builder フェーズ段階の成分が整合しているか。tasklist.md 側の
 - `cycles/{cycle}/build-{NN}/test-spec.md`（レビュー対象）
 - 参照: `cycles/{cycle}/build-{NN}/plan.md`, `cycles/{cycle}/build-{NN}/issue.md`,
   `cycles/{cycle}/design/design-delta.md`
+
+### context: agreement の入力
+- 差分の事実（`hikyaku diff facts` の出力。委任元プロンプトに含めるか、ファイルパスで渡される）
+- 参照: `cycles/{cycle}/build-{NN}/issue.md`, `cycles/{cycle}/build-{NN}/test-spec.md`（スキップしたビルドには無い）,
+  `cycles/{cycle}/build-{NN}/plan.md`（「マージ時点のデータ安全」の節）
+- 必要なら、事実に挙がったファイルの差分を作業ツリーで読んでよい（Read のみ）
+
+事実はスクリプトが並べたもので、判定は含まない。スコープの内か外か、アサーションの変更が期待値の緩和か、
+テストの削除・スキップに合意があるかを決めるのはあなた。作った本人はこの判断をしない。印はヒューリスティクスなので、
+事実に無い変更でも、変更ファイルの一覧から合意に無いと分かるものは報告してよい。
 
 ## 証拠ベースの判定ルール
 
@@ -165,6 +176,19 @@ builder フェーズ段階の成分が整合しているか。tasklist.md 側の
   - 根拠: 該当シナリオを引用し、何が具体的でないかを示せる
 - 重複シナリオ: 同一の検証観点を持つシナリオが複数存在する
   - 根拠: 重複する2つのシナリオを示せる
+
+### context: agreement で報告する
+
+- 合意に無いテストの後退: テストファイルの削除・テストの宣言の削除・スキップの追加・アサーションの変更のうち、issue.md・test-spec.md にその変更を求める記述が無く、期待値を緩めている・検証をやめているもの
+  - 根拠: 事実の該当行と、合意に記述が無いこと（または合意が別の期待値を定めていること）を示せる
+- スコープ外の変更: 変更ファイルが issue.md の「やらないこと」に抵触する、または「やること」のどれにも結び付かない
+  - 根拠: 変更ファイル（または事実の行）と、「やらないこと」の引用か、対応する「やること」が無いことを示せる
+- 合意の書き換え: issue.md の変更、G8 の承認後の plan.md・test-spec.md の書き換え、設定の宣言（`[app]`・`[[app.areas]]`・`[boundaries]`・`[consent]`）の変更が、合意に無いまま入っている
+  - 根拠: 事実の該当行と、その変更を求める記述が issue.md に無いことを示せる
+- 受け入れ基準の未実現: issue.md の受け入れ基準に対応する変更が差分に無い、または test-spec.md のシナリオに対応するテストの変更が無い
+  - 根拠: 受け入れ基準（またはシナリオ）の引用と、対応する変更ファイルが無いことを示せる
+- マージ時点のデータ安全の不備: 差分のうちスキーマ・マイグレーション・保存形式・API の契約・既存データの読み書きが、plan.md の「マージ時点のデータ安全」の根拠と合わない、または issue.md の「マージ時点で残る危険」の範囲を超えている
+  - 根拠: 該当する変更ファイルと、「マージ時点のデータ安全」（または「マージ時点で残る危険」）の記述を示せる
 
 ### 確度は低いが報告する（セキュリティ関連の懸念、`context: architecture`/`context: plan`のみ）
 

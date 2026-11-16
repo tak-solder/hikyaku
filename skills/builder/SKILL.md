@@ -200,7 +200,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title build-{NN} {cycle
 
 ### Step 3 以降: step に従って進める
 
-ここから先の手順（plan → レビュー → G8 → 実装 → 検証 → コードレビュー → handoff → 振り返り → PR → 公開）は、
+ここから先の手順（plan → レビュー → G8 → 実装 → 検証 → 合意との突き合わせ → コードレビュー → handoff → 振り返り → PR → 公開）は、
 `step next` が設定と進捗から1手ずつ返す。**手順を自分で組み立てない。** どのレビューが有効か、
 どのゲートがあるかは step が決める。
 

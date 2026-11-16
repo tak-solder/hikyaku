@@ -317,8 +317,8 @@ register({
 register({
   name: "review action",
   summary: "レビュー指摘への対応確認と、再レビューの要否を返す",
-  usage: "hikyaku review action <code|security> <phase> [<cycle>] --round <n> [--has-findings] [--uncertain] [--repeated] [--json]",
-  options: ["round", "has-findings", "uncertain", "repeated"],
+  usage: "hikyaku review action <code|security|doc> <phase> [<cycle>] --round <n> [--context agreement] [--has-findings] [--uncertain] [--repeated] [--json]",
+  options: ["round", "context", "has-findings", "uncertain", "repeated"],
   maxOperands: 3,
   details: [
     "指摘の妥当性と重複は呼び出し元が判断し、妥当かつスコープ内の指摘があれば --has-findings を渡します。",
@@ -326,13 +326,26 @@ register({
     "action は done / fix / confirm。nextRound が null なら、修正後の再レビューは行いません。",
     "有限回で自動修正できる指摘が無ければ、懸念だけで同じ差分を再レビューしません。",
     "deferUncertain が true なら懸念を保留し、nextRound が null なら PR・完了案内で参照先を伝えます。",
+    "",
+    "doc は --context agreement（builder の agreement-review の指摘）でだけ使えます。agreement は",
+    "[review.doc] max_rounds に関わらず1回で終え、confirm を返しません（指摘は直すか理由を返し、止めない）。",
   ].join("\n"),
   run: ({ args, operands }) => {
     const kind = requireKind(operands[0]);
-    if (kind === "doc") throw new HikyakuError("review action は code / security の指摘への対応に使います");
+    const agreement = kind === "doc";
+    if (agreement && flagString(args, "context") !== "agreement") {
+      throw new HikyakuError(
+        "review action doc は --context agreement でだけ使います",
+        "code / security の指摘への対応か、builder の agreement-review の指摘への対応に使います。",
+      );
+    }
+    if (!agreement && flagString(args, "context") !== undefined) {
+      throw new HikyakuError("--context は review action doc --context agreement でだけ指定できます");
+    }
     const phase = requirePhase(operands[1]);
     const { config } = scopeFor(args, phase, operands[2]);
-    const settings = config.review[kind];
+    // agreement は止めない（US-2.6）。1回で終えれば confirm にならない
+    const settings = agreement ? { ...config.review.doc, maxRounds: 1 } : config.review[kind];
     const round = flagInteger(args, "round");
     if (round === undefined || round < 1 || (settings.maxRounds > 0 && round > settings.maxRounds)) {
       throw new HikyakuError("--round は 1 以上で max_rounds 以下の整数を指定してください（max_rounds = 0 は上限なし）");

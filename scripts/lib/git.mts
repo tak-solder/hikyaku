@@ -26,9 +26,9 @@ type RunResult = { ok: true; stdout: string } | { ok: false; message: string };
  * **終了コードだけで判断する。** fatal メッセージは locale 依存なので、
  * 文字列の一致で場合分けしてはいけない（LANG が日本語の環境で壊れる）。
  */
-async function tryGit(cwd: string, argv: string[], timeout = 15_000): Promise<RunResult> {
+async function tryGit(cwd: string, argv: string[], timeout = 15_000, maxBuffer = 8 * 1024 * 1024): Promise<RunResult> {
   try {
-    const { stdout } = await run("git", argv, { cwd, timeout, maxBuffer: 8 * 1024 * 1024 });
+    const { stdout } = await run("git", argv, { cwd, timeout, maxBuffer });
     return { ok: true, stdout };
   } catch (error) {
     // execFile の message は "Command failed: git …" で始まり、原因は stderr 側にある。
@@ -506,6 +506,106 @@ export async function diffStats(
   }
 
   return { mergeBase, files };
+}
+
+/** base と head の merge-base。解決できなければ undefined */
+export async function mergeBaseOf(cwd: string, baseRef: string, head = "HEAD"): Promise<string | undefined> {
+  const found = await tryGit(cwd, ["merge-base", baseRef, head]);
+  if (!found.ok) return undefined;
+  const sha = found.stdout.trim();
+  return sha === "" ? undefined : sha;
+}
+
+export type NameStatusCode = "A" | "M" | "D" | "R" | "C" | "T" | "U" | "X";
+
+export interface NameStatusEntry {
+  status: NameStatusCode;
+  /** リポジトリルートからの相対パス。リネーム・コピーは移動先 */
+  path: string;
+  /** リネーム・コピーの移動元 */
+  from?: string;
+}
+
+/**
+ * from から作業ツリーまでの変更ファイルと種類（git diff --name-status -M）。
+ * コミット済みの変更と、未コミットの追跡ファイルの変更の両方を含む。未追跡のファイルは含まない
+ * （untrackedFiles で別に取る）。失敗は undefined
+ */
+export async function nameStatus(cwd: string, from: string, excludePaths: string[] = []): Promise<NameStatusEntry[] | undefined> {
+  const pathspec = ["--", ".", ...excludePaths.map((path) => `:(exclude)${path}`)];
+  const result = await tryGit(cwd, ["diff", "--name-status", "-M", "-z", "--no-ext-diff", from, ...pathspec]);
+  if (!result.ok) return undefined;
+  const fields = result.stdout.split("\0");
+  const entries: NameStatusEntry[] = [];
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index] as string;
+    if (field === "") continue;
+    // R100・C075 のように類似度が付く
+    const code = (field[0] ?? "X") as NameStatusCode;
+    if (code === "R" || code === "C") {
+      entries.push({ status: code, from: fields[index + 1] ?? "", path: fields[index + 2] ?? "" });
+      index += 2;
+    } else {
+      entries.push({ status: code, path: fields[index + 1] ?? "" });
+      index += 1;
+    }
+  }
+  return entries;
+}
+
+/**
+ * from から作業ツリーまでの unified diff（-U0。hunk の行番号と増減の行だけ）。
+ * 行の照合に使うので文脈の行は要らない。外部の diff ツールと色は切る。失敗は undefined
+ */
+export async function unifiedDiff(cwd: string, from: string, excludePaths: string[] = []): Promise<string | undefined> {
+  const pathspec = ["--", ".", ...excludePaths.map((path) => `:(exclude)${path}`)];
+  const result = await tryGit(
+    cwd,
+    ["-c", "core.quotePath=false", "diff", "-M", "-U0", "--no-color", "--no-ext-diff", from, ...pathspec],
+    30_000,
+    64 * 1024 * 1024,
+  );
+  return result.ok ? result.stdout : undefined;
+}
+
+/** 未追跡で、ignore されていないファイル（作業中に足したばかりのファイル） */
+export async function untrackedFiles(cwd: string, excludePaths: string[] = []): Promise<string[]> {
+  const pathspec = ["--", ".", ...excludePaths.map((path) => `:(exclude)${path}`)];
+  const result = await tryGit(cwd, ["ls-files", "--others", "--exclude-standard", "-z", ...pathspec]);
+  if (!result.ok) return [];
+  return result.stdout.split("\0").filter((path) => path !== "");
+}
+
+export interface CommitSummary {
+  sha: string;
+  /** コミット日時（ISO 8601） */
+  committedAt: string;
+  subject: string;
+}
+
+/**
+ * since（ISO 8601）より後に、path を変えたコミット（新しい順）。
+ * `git log --since` は秒の単位で境界を含むので、同じ時刻のコミットは除く。失敗は undefined
+ */
+export async function commitsTouchingSince(cwd: string, path: string, since: string): Promise<CommitSummary[] | undefined> {
+  const threshold = Date.parse(since);
+  if (Number.isNaN(threshold)) return undefined;
+  const result = await tryGit(cwd, ["log", `--since=${since}`, "--format=%h%x09%cI%x09%s", "--", path]);
+  if (!result.ok) return undefined;
+  const commits: CommitSummary[] = [];
+  for (const line of result.stdout.split("\n")) {
+    if (line.trim() === "") continue;
+    const [sha = "", committedAt = "", ...subject] = line.split("\t");
+    if (!(Date.parse(committedAt) > threshold)) continue;
+    commits.push({ sha, committedAt, subject: subject.join("\t") });
+  }
+  return commits;
+}
+
+/** path に、HEAD からの未コミットの変更（ステージ済みを含む）があるか。未追跡も変更とみなす */
+export async function hasUncommittedChange(cwd: string, path: string): Promise<boolean> {
+  const result = await tryGit(cwd, ["status", "--porcelain", "--", path]);
+  return result.ok && result.stdout.trim() !== "";
 }
 
 /**
