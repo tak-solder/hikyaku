@@ -164,6 +164,12 @@
 - When: adr の directive を受け取る
 - Then: `args.designChoiceGate` が `true` になる
 
+### designChoiceGate: pr の args も G3 が手順に入るかを返す
+- 対応: —
+- Given: profile express のサイクルと profile standard のサイクルで、それぞれ通常の設計の回を validate まで報告した（再設計の回は pr が off なので、pr は通常の回で確かめる）
+- When: pr の directive を受け取る
+- Then: express では `args.designChoiceGate` が `false`、standard では `true` になる
+
 ### designChoiceGate: standard の通常の回では true
 - 対応: —
 - Given: profile standard のサイクルの最初の設計の回
@@ -183,6 +189,30 @@
 - Given: profile express のサイクルで、build-manager を load・scope・estimate・dry-run まで done で報告した
 - When: 次の directive を受け取る
 - Then: `step: "G6"` の gate で、`approval` が `"confirm"`、`approvalReason` が `null` になる
+
+### approval: deferred の回は確認として示す
+- 対応: US-10.2
+- Given: `consent: () => ({ timing: "deferred", reason: "r" })`・`enabled: () => true` の gate を持つ合成したスキルの定義と、その評価
+- When: `buildDirective` で directive を組み立てる
+- Then: `approval` が `"confirm"`、`approvalReason` が `null` になる
+
+### G7: plan_gate で確認として外せる
+- 対応: US-10.2
+- Given: profile standard のサイクル 001 にビルド 1 と issue.md があり、ルート設定 `plan_gate = false`（standard の既定）と `plan_gate = true` の2通り
+- When: builder の plan を `--peak 350k` で、plan-review を done で報告する
+- Then: `plan_gate = false` では次が test-spec で `step status build-01 001 --json` に `G7:off`、`plan_gate = true` では次が G7 の gate で `approval` が `"confirm"`
+
+### P1: patch の対応方針の合意は同意
+- 対応: US-10.1
+- Given: サイクルに属さない patch の作業単位で、手順が P1 の手前まで進んでいる
+- When: `step next <patch のフェーズ> --json` を実行する
+- Then: `step: "P1"` の gate で、`approval` が `"consent"`、`approvalReason` が空でない
+
+### P2: patch の永続ドキュメントの更新の承認は確認
+- 対応: US-10.2
+- Given: サイクルに属さない patch で、persist が永続ドキュメントに残すものを記録して P2 が手順に入っている
+- When: P2 の directive を受け取る
+- Then: `approval` が `"confirm"`、`approvalReason` が `null`
 
 ### approval: G10 は express でも同意として返る
 - 対応: US-10.1
@@ -266,6 +296,12 @@
 - When: `resolveAsk("G4", config, settings, "consent")` を呼ぶ
 - Then: `handler: "user"`・`source: "fixed"` になる
 
+### resolveAsk: approval が consent なら escalate に書いてあっても source は fixed
+- 対応: US-10.1
+- Given: `conductor({ escalate: ["G3"] })` と AskSettings
+- When: `resolveAsk("G3", config, settings, "consent")` を呼ぶ
+- Then: `handler: "user"`・`source: "fixed"` になる（`"escalate"` ではない）
+
 ### resolveAsk: approval に confirm を渡すと enabled を true にして監督に振る
 - 対応: US-10.2
 - Given: `DEFAULT_CONDUCTOR` と `architecture: false` の AskSettings（G4 の静的な enabled は false）
@@ -336,7 +372,7 @@
 
 ### parse: G8 の表示はユーザーの語で示す
 - 対応: —
-- Given: ルート設定 `[conductor]` の `escalate = ["G8"]` と `<hikyaku-gate id="G8">` の `r.json`
+- Given: profile standard のサイクル 001（子の手順の記録なし）、ルート設定 `[conductor]` の `escalate = ["G8"]`、`session_id: "s-1"` で `<hikyaku-gate id="G8">` を含む `r.json`。digest は `conductor asks 001 --json` の `digest`
 - When: `hikyaku conductor parse r.json 001 --expect-digest <digest>`（テキスト出力）を実行する
 - Then: 出力に「ユーザーに上げる」が含まれ、「人間」は含まれない
 
