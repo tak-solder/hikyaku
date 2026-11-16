@@ -41,7 +41,8 @@ export interface DiffFacts {
   addedSkips: MarkerFact[];           // テストファイルの + 行で、スキップの印を含み、同じファイルの - 行に同じ文が無いもの
   assertionChanges: (MarkerFact & { side: "-" | "+" })[]; // テストファイルのアサーションの行の増減（移動だけのものは除く）。緩和とは判定しない
   configChanges: ConfigChange[];
-  testSpec: { approvedAt: string | undefined; commits: CommitSummary[]; uncommitted: boolean } | undefined;
+  issueChanged: boolean;              // このビルドの issue.md が基準から変わっている（合意そのものの書き換え）
+  afterG8: { approvedAt: string | undefined; files: { path: string; commits: CommitSummary[]; uncommitted: boolean }[] }; // test-spec.md と plan.md
   notices: string[];
 }
 export interface ConfigChange { file: string; ref: string; change: "added" | "removed" | "changed"; detail: string }
@@ -56,8 +57,12 @@ export function agreementReasons(markdown: string): string[]    // agreement.md 
 ```
 
 - 差分の基準は `resolvePrBase` の `ref` と HEAD の merge-base。作業ツリーと比べる（agreement-review は review のコミットの前に走るため）
-- 変更ファイルの一覧から `hikyakuRoot` 配下は除く（ワークフローの成果物）。ただし設定の宣言はルートの `.hikyaku.config` と、サイクルの `.hikyaku.config` を merge-base と作業ツリーで別に比べる
-- G8 の承認の `at` は、このビルドの progress.jsonl の `builder`・`G8`・`approved` の最後の記録。無ければ `testSpec` は承認前として `approvedAt: undefined`（並べない）
+- **未追跡のファイル**は追加（A）として並べ、中身を読んで全行を `+` 行として印の照合に加える（初めのコミットは review なので、新しいテストファイルは未追跡のまま。index を変える `git add -N` は使わない）
+- 変更ファイルの一覧から除くのは、このビルドのディレクトリのうち builder が正当に書く成果物（`progress.jsonl`・`decisions.jsonl`・`handoff.md`・`agreement.md`・`retrospective.md`・`questions.md`・`plan.md`・`test-spec.md`）だけ。issue.md・ほかのビルドの成果物・`decisions` の ADR などワークスペースの他の変更は一覧に残す
+- **合意の文書の書き換え**: issue.md が基準から変わっていれば `issueChanged`。plan.md と test-spec.md は G8 の承認より後のコミットと未コミットの変更を `afterG8` に並べる
+- **テストファイルの削除**: `deletedTestFiles` は D の変更と、元のパスがテストに分類され、新しいパスがテストでない R の変更（リネームでテストから外したもの）
+- 設定の宣言はルートの `.hikyaku.config` と、サイクルの `.hikyaku.config` を merge-base と作業ツリーで別に比べる
+- G8 の承認の `at` は、このビルドの progress.jsonl の `builder`・`G8`・`approved` の最後の記録。無ければ `afterG8.approvedAt` は undefined で、ファイルは並べない
 - PR の節は、PR の diff から読める変更ファイルの一覧は写さず（原則7）、問題を変えうる事実（テストの削除・スキップ・アサーション・設定の宣言・G8 後の test-spec）と返した理由だけを並べる。事実が無ければ「該当なし」と1行
 
 ### `scripts/commands/diff.mts`（新規）
@@ -92,18 +97,18 @@ export function agreementReasons(markdown: string): string[]    // agreement.md 
 | 段階 | 予測ピーク |
 |------|------------|
 | architectフェーズ段階 | 360k |
-| builderフェーズ段階 | 350k |
+| builderフェーズ段階 | 415k |
 
 **読むファイル**
 
 - `design/design-delta.md` の「5.」「1.」の該当項、ADR `20261116-agreement-review.md`（読了）
 - `scripts/lib/git.mts`・`diff-stats.mts`・`steps/builder.mts`・`review.mts`・`commands/review.mts`・`premises.mts` の宣言の差分（読了）
 - `skills/builder/steps/review.md`・`pr.md`・`verify.md`・`agents/doc-reviewer.md`（読了）
-- これから: `scripts/lib/steps/engine.mts`（produces）、`scripts/lib/progress.mts`、`scripts/lib/stack.mts` の `resolvePrBase`・`scopeFor`、`tests/helpers.mts`、step の既存テスト、docs 3本の該当節
+- これから: `scripts/lib/steps/engine.mts`（produces）、`scripts/lib/progress.mts`、`scripts/lib/stack.mts` の `resolvePrBase`・`scopeFor`、`scripts/lib/config.mts` の `[diff]`、`scripts/hikyaku.mts`、`tests/helpers.mts`、`tests/step.test.mts`・`tests/objection.test.mts`（verify → review の期待値）・`tests/config.test.mts`・`tests/review.test.mts`・`tests/session.test.mts`（`DiffPatterns` の組み立て）、docs 4本（`workflow/build.md`・`reference/agents-and-skills.md`・`configuration/config-file.md`・`reference/cli.md`）の該当節
 
 **作成するファイル**
 
-- `scripts/lib/diff-facts.mts`（約 400 行）
+- `scripts/lib/diff-facts.mts`（約 450 行）
 - `scripts/commands/diff.mts`（約 120 行）
 - `skills/builder/steps/agreement-review.md`（約 50 行）
 - `tests/diff-facts.test.mts`（約 300 行）
@@ -112,22 +117,22 @@ export function agreementReasons(markdown: string): string[]    // agreement.md 
 
 | 成分 | 予測 | 根拠 |
 |------|------|------|
-| 固定費 | 60k | tokens session の開始時の固定分 59k |
-| 読み込み | 100k | plan 時点で 143k（固定分込み）。残りは engine.mts の produces・step lint・progress.mts・tests/helpers.mts・既存のCLI結合テストの型・docs 3本の該当節で約 15k |
-| 実装 | 90k | diff-facts.mts 新規（約400行）、commands/diff.mts（約120行）、git.mts に3関数、config.mts の [diff] 3キー、review action の agreement、builder.mts のステップ、指示ファイル agreement-review.md、review.md・pr.md・doc-reviewer.md の修正、docs 3本、CHANGELOG |
-| テスト | 60k | tests/diff-facts.test.mts（unified diff のフィクスチャ解析・印・設定の変更）と一時リポジトリでの CLI 結合（G8 後の test-spec 書き換え・agreement.md 必須）、既存の step テストの期待値の更新 |
-| 未知の領域 | 40k | hunk の解析の境界（リネーム・バイナリ・未追跡）、step lint と既存テストの期待値の連鎖 |
-| **予測ピーク** | **350k** | 狙いの帯（300k〜450k） |
+| 固定費 | 100k | 開始時の固定分 59k に、手順の進行分（agreement-review・review・retrospective・PR）40k |
+| 読み込み | 110k | plan 時点で 143k（固定分込み）。残りは engine.mts の produces・progress.mts・stack.mts の resolvePrBase/scopeFor・config.mts の該当節・hikyaku.mts・tests/helpers.mts・config/review/session/step の既存テスト・docs 4本の該当節で約 25k |
+| 実装 | 100k | diff-facts.mts 新規（約450行。未追跡ファイルの中身、合意の文書の書き換え、リネームでテストから外れたもの）、commands/diff.mts（約120行）、git.mts に6関数、config.mts の [diff] 3キー、review action の agreement、builder.mts のステップ、agreement-review.md、review.md・pr.md・doc-reviewer.md、docs 4本、CHANGELOG |
+| テスト | 60k | tests/diff-facts.test.mts（unified diff のフィクスチャ解析・印・設定の変更・リネーム）と一時リポジトリでの CLI 結合（G8 後の書き換え・未追跡のテスト・agreement.md 必須）、既存の step テストと session.test の DiffPatterns の期待値の更新 |
+| 未知の領域 | 45k | hunk の解析の境界（リネーム・バイナリ・未追跡）、DiffPatterns の型の連鎖、step lint と既存テストの期待値の連鎖 |
+| **予測ピーク** | **415k** | 狙いの帯（300k〜450k） |
 | ガイド | 標準 v2 | 03897ac0 |
 
 ## 実装ステップ
 
 - [ ] Step 1: `diff-stats.mts` と `config.mts` に印の既定と `[diff]` の3キー（既定に追加）
-- [ ] Step 2: `git.mts` に `nameStatus` / `unifiedDiff` / `commitsTouchingSince` / `untrackedFiles` / `mergeBaseOf`
-- [ ] Step 3: `diff-facts.mts`（diff の解析、印の事実、設定の宣言の変更、G8 後の test-spec、text / pr の描画、agreement.md の読み取り）
+- [ ] Step 2: `git.mts` に `nameStatus` / `unifiedDiff` / `commitsTouchingSince` / `untrackedFiles` / `mergeBaseOf` / `hasUncommittedChange`
+- [ ] Step 3: `diff-facts.mts`（diff の解析、未追跡ファイルの中身、印の事実、リネームでテストから外れたもの、設定の宣言の変更、issue.md の変更と G8 後の plan.md・test-spec.md、text / pr の描画、agreement.md の読み取り）
 - [ ] Step 4: `commands/diff.mts` と `hikyaku.mts` の登録
 - [ ] Step 5: `review action doc --context agreement`
 - [ ] Step 6: builder の `agreement-review` ステップと指示ファイル、review.md の自己確認の削除、pr.md、doc-reviewer.md
-- [ ] Step 7: テスト（`tests/diff-facts.test.mts`: 言語ごとのフィクスチャの unit、`[[app.areas]]` の削除と paths の縮小、一時リポジトリでの G8 後の test-spec の書き換え、agreement.md が無ければ完了にならない、PR の節）と既存テストの期待値
+- [ ] Step 7: テスト（`tests/diff-facts.test.mts`: 言語ごとのフィクスチャの unit、リネームでテストから外したファイル、`[[app.areas]]` の削除と paths の縮小、一時リポジトリでの G8 後の test-spec の書き換え・未追跡の新しいテストのスキップ、agreement.md が無ければ完了にならない、PR の節）と既存テストの期待値
 - [ ] Step 8: docs（`workflow/build.md`・`reference/agents-and-skills.md`・`configuration/config-file.md`・`reference/cli.md`）と CHANGELOG の `[3.0.0]`
 - [ ] Step 9: ローカル検証（`step lint`・`conductor lint`・`npx tsc --noEmit`・`npm test`）
