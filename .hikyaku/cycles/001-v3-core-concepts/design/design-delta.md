@@ -25,7 +25,7 @@
 
 ### 2. 未決事項と決定の記録（US-1・US-19）
 
-- 作業単位ごとの `decisions.jsonl`（`planning/`・`design/`・`build-NN/`・サイクル直下・`patches/{YYYYMM}/{slug}/`）。書き手は `hikyaku ledger open / decide / object` だけ（`--dry-run` つき）。読み手は `ledger list / show / premises / consent-list / pr-section`
+- 作業単位ごとの `decisions.jsonl`（`planning/`・`design/`・`build-NN/`・サイクル直下・`patches/{YYYYMM}/{slug}/`）。書き手は `hikyaku ledger open / decide / object` だけ（`--dry-run` つき）。決定のレコードは、事項のあるファイルではなく、決めた作業単位のファイルに追記する（並行するビルドが前のフェーズのファイルへ追記して衝突しないように）。事項と決定は ID で結び、状態はサイクルの全ファイルを読んで導く。読み手は `ledger list / show / premises / consent-list / pr-section`
 - 「誰が」は `user` / `ai:<phase>` / `supervisor`。表示は「ユーザー」「AI（<フェーズ>）」「監督」
 - 期限が来た事項と過ぎた事項は、`buildDirective` の `notices`（現在は空のまま配線済み）に1事項1行で入る。Stop フック・step where の経路では読まない。`cycle status` の JSON とテキストに `ledger` の節（`due` / `open` / `rejected`）を足し、navigator は判定表に1行足す
 - 記録する側（指示文は「`ledger open` を呼ぶ」ことと語彙だけ）: planner（未回答の質問）、architect（暫定の設計判断、異議）、build-manager（G6 の受け入れ）、builder（handoff の「残したこと」を事項にし、handoff には ID のポインタだけを書く）、サイクルに属す patch（`persist`）、close-cycle（`close` 期限の事項を示し、決定を記録）、conductor（子が記録する。監督の判断の記録先を headless-protocol で `decisions.jsonl` に改める）
