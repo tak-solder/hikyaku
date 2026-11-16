@@ -11,7 +11,7 @@
 - `OpenRecord.basis?: string` — 異議の根拠（食い違う宣言・記録の参照。自由文）。`isRecord` は欄が無くても読む（既存の記録はそのまま読める）
 - `export const OBJECTION_DECISIONS: Decision[] = ["consented", "decided"]` — 異議への決定。`consented` は異議を聞いたうえで選択どおりに進める（受け入れる）、`decided` はユーザーが選択を改めた
 - `export function unacceptedObjections(ledger: Ledger, unit: string, step: string): LedgerItem[]`
-  - その作業単位・そのステップ（`OpenRecord.step`）の、害が高（`harm: "高"`）の `objection` のうち、決定が無いか、最新の決定が「`accepts` 付きの `consented`」でも `decided` でもないもの
+  - その作業単位・そのステップ（`OpenRecord.step`）の、害が高（`harm: "高"`）の `objection` のうち、決定が無いか、最新の決定が「ユーザー（`by: user`）の、`accepts` 付きの `consented`」でも「ユーザーの `decided`」でもないもの
   - 中の異議は対象にしない（記録だけで進む）
 - `export function latestOpenAt(unitDirectory: string, matches: (record: OpenRecord) => boolean): string | undefined`
   - その作業単位のディレクトリの `decisions.jsonl` だけを読み、条件に合う事項の最新の `at` を返す

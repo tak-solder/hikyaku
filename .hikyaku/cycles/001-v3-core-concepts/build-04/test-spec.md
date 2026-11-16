@@ -38,6 +38,12 @@
 - When: `unacceptedObjections(ledger, "build-02", "G8")`
 - Then: `build-02-1` が返る（受け入れはユーザーのもの）
 
+### unacceptedObjections: ユーザー以外の decided では片づかない
+- 対応: US-1.4
+- Given: 高の異議 `build-02-1` に `decision:"decided", by:"supervisor"` の決定だけがある
+- When: `unacceptedObjections(ledger, "build-02", "G8")`
+- Then: `build-02-1` が返る（選択を改めたのがユーザーでなければ片づかない）
+
 ### unacceptedObjections: 最新の決定で判定する
 - 対応: US-1.4
 - Given: 高の異議 `build-02-1` に、先に accepts 付き consented、後に accepts 無しの consented の決定がある
@@ -76,9 +82,15 @@
 - When: `latestOpenAt(build02Dir, (r) => r.ask === "design-conflict")`
 - Then: `2026-11-16T03:00:00Z` が返る
 
-### latestOpenAt: 合う事項が無ければ undefined
+### latestOpenAt: 記録のファイルが無ければ undefined
 - 対応: US-14.2
-- Given: build-02/decisions.jsonl が無い（または design-conflict の事項が無い）
+- Given: build-02/decisions.jsonl が無い
+- When: `latestOpenAt(build02Dir, (r) => r.ask === "design-conflict")`
+- Then: `undefined` が返る
+
+### latestOpenAt: 条件に合う事項が無ければ undefined
+- 対応: US-14.2
+- Given: build-02/decisions.jsonl に `ask` の無い open だけがある
 - When: `latestOpenAt(build02Dir, (r) => r.ask === "design-conflict")`
 - Then: `undefined` が返る
 
@@ -96,8 +108,8 @@
 
 ## scripts/commands/ledger.mts — ledger object
 
-### ledger object: 異議と決定を同じ作業単位のファイルに対で書く
-- 対応: US-1.5
+### ledger object: 異議と決定を同じ作業単位のファイルに対で書く（害が中は --accepts・--premises が要らない）
+- 対応: US-1.5, US-1.3
 - Given: build-02 の G8 を提示している一時ワークスペース（`step next build-02` の現在地が G8）
 - When: `ledger object build-02 --summary "ログに個人データを残す" --basis "[app] data = \"personal\"" --loses "ログからの漏えいを防げない" --harm 中 --decision consented --input "そのままでよい"`
 - Then: build-02/decisions.jsonl に2行が追記され、1行目は `record:"open", type:"objection", when:"now", who:"user", step:"G8", basis, loses, harm:"中"`、2行目は同じ id の `record:"decide", decision:"consented", by:"user", input:"そのままでよい"`
@@ -137,12 +149,6 @@
 - Given: 同上
 - When: `--harm 高 --decision consented --accepts "漏えいの危険を受け入れる" --premises "app.data"` を付けて実行
 - Then: open に `premises`（`app.data` を表す参照）と `harm:"高"`、decide に `accepts:"漏えいの危険を受け入れる"` が残る
-
-### ledger object: 害が中なら --accepts・--premises は要らない
-- 対応: US-1.3
-- Given: 同上
-- When: `--harm 中 --decision consented --input "そのままで"` だけで実行（--accepts・--premises なし）
-- Then: 終了コード0で、異議と決定の2行が書かれる
 
 ### ledger object: 害が高でも decided なら --accepts を求めない（解釈）
 - 対応: US-1.4
@@ -254,13 +260,19 @@
 - 対応: US-1.3
 - Given: 同上
 - When: `step next build-02 --json`
-- Then: `objection.guide` に、中は指摘にとどめる旨と、高はユーザーが受け入れることを書くまで承認を報告しない旨の行がある
+- Then: `objection.guide` に「中は指摘にとどめ」を含む行と、「高は、ユーザーが何を受け入れるかを自分の言葉で書くまで承認を報告しない」を含む行がある
 
 ### directive: 未登録の文書はポインタに載らない
 - 対応: —
 - Given: document-guide.md に `decisions` だけを登録し、`constraints` は無い
 - When: `step next build-02 --json`
 - Then: `objection.pointers` に `decisions:` はあり、`constraints:` は無い
+
+### directive: 未作成・対象外で登録した文書はポインタに載らない
+- 対応: —
+- Given: document-guide.md で `constraints` を「未作成」、`overview` を「対象外」、`decisions` を `hikyaku` のパス付きで登録している
+- When: `step next build-02 --json`
+- Then: `objection.pointers` に `decisions:` だけがあり、`constraints:` は無い
 
 ### directive: テキストの描画に「異議:」の行が出る
 - 対応: US-1.1
@@ -338,6 +350,12 @@
 - When: design-conflict 以外の事項（`--type question` の ask 無し）を記録して `step next build-02 --json`
 - Then: 現在地は delegation にならない
 
+### delegation: 差し戻しと再設計のあと builder に戻っても、同じ出来事でもう一度は出ない
+- 対応: US-14.2
+- Given: build-02 で design-conflict を記録し、delegation を approved で通したあと、return.md を作り、architect の再設計の回（step restart --round return）で return.md を消した
+- When: builder の `step next build-02 --json`
+- Then: 現在地は delegation ではなく、plan.md の無い plan になる
+
 ### delegation: decisions.jsonl が壊れていると delegation が出る
 - 対応: US-14.2
 - Given: build-02 の現在地が implement で、build-02/decisions.jsonl に壊れた行を書いた
@@ -362,7 +380,7 @@
 - 対応: US-14.2
 - Given: 上の状態
 - When: `step report architect delegation --result approved --input "委任を続ける"` のあと `step next architect --json`
-- Then: 現在地が delegation 以外（再設計の回の次のステップ）になる
+- Then: 現在地が survey（ほかに進行中のサイクルが無いので cycle-scan は外れる）になる
 
 ### delegation: 通常の設計の回には出ない
 - 対応: US-14.2
