@@ -21,7 +21,8 @@ Hikyaku の規則に従う / 現在のブランチで作業する / 別のブラ
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers init --pr {PR の URL}
 ```
 
-  失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
+  失敗しても PR は作成済みなので止めない。出力の `applied` が `false` なら、できなかったことと `manual`
+  （ユーザーが代わりに行うこと）を、完了の案内と一緒にユーザーに伝える
 - [ ] `done` を報告する（`--pr` に PR の URL）
 - [ ] 同じブランチへコミット & push する（progress.jsonl）
 - [ ] 移行の回では、PR の本文に、置き場ごとの移した先・消した理由の区分と、機械で防げるが未対応の項目

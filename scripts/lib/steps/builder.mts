@@ -10,6 +10,7 @@
 import { latestOpenAt, unitLedgerProblem } from "../ledger.mts";
 import { publicationStep } from "./publication.mts";
 import { declarationArgs } from "../premises.mts";
+import { describeEscalationProblems } from "../escalation.mts";
 import { readReturn, RETURN_FILE } from "../phase.mts";
 import { buildDirName, loadTasklist, normalizeBuildId } from "../tasklist.mts";
 import { formatK } from "../tokens.mts";
@@ -57,7 +58,16 @@ export const BUILDER_STEPS: SkillSteps = {
         "設計と要件の衝突のあとに委任を続けるかを尋ねるゲートを見落とさないよう、記録を直すまで止まります（hikyaku ledger list で確かめてください）。",
       ].join("\n");
     }
-    if (ctx.cycle === undefined || readReturn(ctx.cycle.directory) === undefined) return undefined;
+    const record = ctx.cycle === undefined ? undefined : readReturn(ctx.cycle.directory);
+    if (ctx.cycle === undefined || record === undefined) return undefined;
+    if (record.problems.length > 0) {
+      // 欠けたままでは architect が再設計の回を始められない（step restart が受け付けない）
+      return [
+        `このブランチは architect に差し戻されていますが、差し戻しの記録が欠けています（${RETURN_FILE}）。`,
+        describeEscalationProblems(record.problems),
+        `${RETURN_FILE} を直してコミット & push してから、/hikyaku:architect ${ctx.cycle.name} ${ctx.unit} を案内してください。`,
+      ].join("\n");
+    }
     return [
       `このブランチは architect に差し戻されています（${RETURN_FILE}）。設計を見直している最中なので、作業を始めずに止まります。`,
       `再開のコマンド: /hikyaku:architect ${ctx.cycle.name} ${ctx.unit}`,
@@ -119,8 +129,9 @@ export const BUILDER_STEPS: SkillSteps = {
       ask: "G8",
       checkpoint: "approval",
     },
-    { id: "implement", kind: "run", title: "実装とテストコードの生成", checkpoint: "implement" },
-    { id: "verify", kind: "run", title: "ローカル検証" },
+    // リトライの上限で止まるときは、failed --reason に行き詰まりの報告を添える（retry-policy.md）
+    { id: "implement", kind: "run", title: "実装とテストコードの生成", checkpoint: "implement", escalates: true },
+    { id: "verify", kind: "run", title: "ローカル検証", escalates: true },
     {
       // 全プロファイル必須（when 無し）。builder 自身のスコープとデータ安全の確認はここへ移した（US-2.5）
       id: "agreement-review",

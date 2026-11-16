@@ -132,11 +132,11 @@ export function planWithoutPr(input: Pick<ReviewerInput, "phase" | "conductorBra
 
 ## 実装ステップ
 
-- [ ] Step 1: `escalation.mts` と unit テスト
-- [ ] Step 2: `readReturn`・builder / architect の `stop`・`step restart --round return` の拒否、既存テストの return.md フィクスチャを3節の形に（共通の定数を `tests/helpers.mts` に置く）
-- [ ] Step 3: `escalates` と `failed --reason` の検査、`step lint` の検査
-- [ ] Step 4: `parseFinalText` の blocked の検査とテスト
-- [ ] Step 5: `pr request-reviewers` の事前判定と gh の失敗の扱い、`tests/conductor.test.mts` の期待値の変更、gh が無い環境の結合テスト
-- [ ] Step 6: `pr ready` の子の扱いと gh の失敗、`tests/pr-ready.test.mts`
-- [ ] Step 7: テンプレート・retry-policy・headless-protocol・conductor SKILL・publish.md
-- [ ] Step 8: docs と CHANGELOG
+- [x] Step 1: `escalation.mts` と unit テスト
+- [x] Step 2: `readReturn`・builder / architect の `stop`・`step restart --round return` の拒否、既存テストの return.md フィクスチャを3節の形に（共通の定数を `tests/helpers.mts` に置く）
+- [x] Step 3: `escalates` と `failed --reason` の検査、`step lint` の検査
+- [x] Step 4: `parseFinalText` の blocked の検査とテスト
+- [x] Step 5: `pr request-reviewers` の事前判定と gh の失敗の扱い、`tests/conductor.test.mts` の期待値の変更、gh が無い環境の結合テスト
+- [x] Step 6: `pr ready` の子の扱いと gh の失敗、`tests/pr-ready.test.mts`
+- [x] Step 7: テンプレート・retry-policy・headless-protocol・conductor SKILL・publish.md
+- [x] Step 8: docs と CHANGELOG

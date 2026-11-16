@@ -306,7 +306,8 @@ git push origin --delete {フェーズのブランチ}
 規約どおりのブロックが無い。**子の自由文から問いや結果を推測しない。**
 
 - 1回目: 同じ session-id で再開し、「非対話規約に従い、最後に gate / done / blocked のどれか1つを
-  出力してください」とだけ伝える
+  出力してください」と伝え、`reason` を添える（blocked の行き詰まりの報告が欠けていたときは、欠けた節が
+  `reason` にある）
 - 2回目も violation なら、`body`（出力の末尾）と `reason` を示して人間に上げる
 
 #### error
@@ -346,13 +347,15 @@ gh pr list --head {conductor ブランチ} --base {baseBranch} --state open --js
     （サイクルで宣言を変えたなら、それを拠り所にした受け入れをユーザーが見直すのはこの PR。フェーズの PR は監督が取り込む）
   - 外部連携が有効なら、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref conductor {cycle}` の行
     （サイクルの issue への `Refs #12`）を本文の末尾に入れる。issue は CLOSE の PR で閉じる
-- [ ] 設定に従って公開する（失敗したら、再実行のコマンドと Draft のままであることを案内する）
+- [ ] 設定に従って公開する（失敗したら、再実行のコマンドと Draft のままであることを案内する。出力の
+  `applied` が `false` なら、gh でできなかったことと `manual` を人間に伝える）
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr ready conductor {cycle} --pr {PR}
 ```
 - [ ] この PR にレビュアーをアサインする（`[pr] reviewers` が空、または `[pr] reviewers_skip` に
-  `conductor` があれば何もしない）。人間がレビューする PR なので、待たない
+  `conductor` があれば何もしない）。人間がレビューする PR なので、待たない。出力の `applied` が `false` なら、
+  `manual`（人間が代わりに依頼するレビュアー）を伝える
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers conductor {cycle} --pr {PR の URL}
@@ -397,7 +400,7 @@ close-cycle の子が done になったら、`cycle status` が `closed` であ�
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr ready close {cycle} --pr {CLOSE の PR}
 ```
 
-失敗したら再実行のコマンドを示す。CLOSE の PR と、子が別のブランチで作った PR（見積もりのガイドの
+失敗したら再実行のコマンドを示す（`applied` が `false` なら `manual` を示す）。CLOSE の PR と、子が別のブランチで作った PR（見積もりのガイドの
 見直し・フックの提案）があれば併せて示して終了する。監督はどれも取り込まない。
 
 ## 問いへの答え方

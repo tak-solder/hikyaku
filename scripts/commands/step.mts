@@ -30,6 +30,8 @@ import { openCycle } from "../lib/workspace.mts";
 import { formatTokens, measureCurrent } from "../lib/session.mts";
 import { parseTokenAmount } from "../lib/tokens.mts";
 import { assertCurrentConfig } from "../lib/config.mts";
+import { checkEscalation, describeEscalationProblems } from "../lib/escalation.mts";
+import { readReturn, RETURN_FILE } from "../lib/phase.mts";
 import {
   allowedResults,
   evaluate,
@@ -189,6 +191,16 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
   if ((result === "skipped" || result === "failed") && (reason === undefined || reason.trim() === "")) {
     throw new HikyakuError(`${result} には --reason で理由を添えてください`);
   }
+  if (result === "failed" && definition.escalates === true) {
+    // 行き詰まりでユーザーに上げる報告は、問題を変える選択肢と失うもの・推奨が欠けたまま通さない（US-3.4）
+    const check = checkEscalation(reason ?? "");
+    if (!check.ok) {
+      throw new HikyakuError(
+        `${definition.id} の failed を受け付けません: --reason が行き詰まりの報告の形式を満たしていません`,
+        describeEscalationProblems(check.problems),
+      );
+    }
+  }
   if (result === "rejected" && (input === undefined || input.trim() === "")) {
     throw new HikyakuError("rejected には --input でユーザーの答えを添えてください");
   }
@@ -276,6 +288,27 @@ function assertObjectionsSettled(opened: Opened, step: string): void {
   );
 }
 
+/**
+ * 差し戻しからの再設計の回を始める条件: return.md があり、行き詰まりの報告の形式を満たすこと（US-3.4）。
+ * return.md は手順の外で書かれるので、拒むのは書いた直後ではなく、この回を始めるとき
+ */
+function assertReturnRecord(opened: Opened): void {
+  const cycle = opened.ctx.cycle;
+  const record = cycle === undefined ? undefined : readReturn(cycle.directory);
+  if (record === undefined) {
+    throw new HikyakuError(
+      `--round return を受け付けません: 差し戻しの記録（${RETURN_FILE}）がありません`,
+      "差し戻し元のビルドのブランチで始めてください。差し戻しでない再設計なら --round を付けずに区切ります。",
+    );
+  }
+  if (record.problems.length > 0) {
+    throw new HikyakuError(
+      `--round return を受け付けません: 差し戻しの記録（${RETURN_FILE}）が欠けています`,
+      `${describeEscalationProblems(record.problems)}\n差し戻した builder のセッションか、ユーザーが ${RETURN_FILE} を直してから区切り直してください。`,
+    );
+  }
+}
+
 /** PR の URL か番号（12 / #12）。実在の確認はしない（ネットワークへ行かない） */
 function isPrReference(value: string): boolean {
   const trimmed = value.trim();
@@ -314,6 +347,7 @@ register({
         );
       }
       event.round = round;
+      if (opened.skill.skill === "architect" && round === "return") assertReturnRecord(opened);
     }
     const measured = measureCurrent(process.env);
     if (measured.sessionId !== undefined) event.session = measured.sessionId;

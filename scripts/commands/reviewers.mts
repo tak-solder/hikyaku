@@ -3,10 +3,11 @@
 import { flagBoolean, flagString } from "../lib/args.mts";
 import { branchName } from "../lib/branch.mts";
 import { HikyakuError } from "../lib/errors.mts";
+import { ghFailure, type GhFailure } from "../lib/gh-failure.mts";
 import { fetchPrGraphql, parsePrReviewState, reviewerLogin, run } from "../lib/github.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
-import { planReviewers } from "../lib/reviewers.mts";
+import { planReviewers, planWithoutPr, type ReviewerPlan } from "../lib/reviewers.mts";
 import { requirePhase, scopeFor } from "../lib/stack.mts";
 
 register({
@@ -15,14 +16,14 @@ register({
   usage: "hikyaku pr request-reviewers <phase> [<cycle>] --pr <number|url> [--dry-run] [--root <path>] [--json]",
   details: [
     "PR を作成した直後に、各スキルが呼びます。設定が空、またはこのフェーズのアサインが",
-    "オフ（[pr] reviewers_skip）なら何もしません。",
+    "オフ（[pr] reviewers_skip）なら、gh を呼ばずに何もしません。",
     "",
     "どの一覧を使うかは、PR の実際のマージ先で決めます。",
     "",
     "  conductor ブランチ向け   [conductor] phase_reviewers",
     "  それ以外                 [pr] reviewers（デフォルトブランチ向けの PR）",
     "",
-    "conductor ブランチ向けを分けるのは、人間のレビュアーを入れると、/hikyaku:conductor が",
+    "conductor ブランチ向けを分けるのは、ユーザーのレビュアーを入れると、/hikyaku:conductor が",
     "フェーズごとの取り込みで、レビューが付くまで止まってしまうためです。",
     "",
     "次のレビュアーには依頼しません。理由は excluded に返します。",
@@ -33,7 +34,11 @@ register({
     "  レビュー済み      gh pr edit --add-reviewer はレビュー済みの人にも再依頼するため",
     "",
     "依頼は gh pr edit --add-reviewer で行うので、@copilot（Copilot への依頼）も使えます。",
-    "gh pr create --reviewer は人とチームしか扱えるか分からないため使いません。",
+    "",
+    "**gh が使えなくても手順を止めません。** gh が無い・認証できない・依頼に失敗したときは、",
+    "applied が false、reason（gh-unavailable / gh-failed）、stage（失敗した呼び出し）、manual",
+    "（ユーザーが代わりに行うこと）を返し、終了コード 0 で終わります。PR は作成済みなので、",
+    "レビュアーの依頼が通らないことは、PR の後の手順を止める理由にならないためです。",
     "",
     "--dry-run では、依頼する予定のレビュアーだけを返し、GitHub には何も書き込みません。",
   ].join("\n"),
@@ -44,6 +49,39 @@ register({
     if (pr === undefined) throw new HikyakuError("--pr に PR の番号か URL を指定してください");
     const { config, cycle } = scopeFor(args, phase, operands[1]);
     const dryRun = flagBoolean(args, "dry-run");
+    const conductorBranch = cycle === undefined ? undefined : branchName(config.branch, "conductor", cycle);
+    const settings = {
+      phase,
+      conductorBranch,
+      reviewers: config.pr.reviewers,
+      skip: config.pr.reviewersSkip,
+      phaseReviewers: config.conductor.phaseReviewers,
+    };
+
+    const decided = planWithoutPr(settings);
+    if (decided !== undefined) {
+      emitPlan({ phase, pr: null, base: null, dryRun, requested: false, applied: true, ...decided });
+      return;
+    }
+
+    /** gh の失敗。マージ先が分からなければ、どちらの一覧を依頼すればよいかも両方示す */
+    const fail = (failure: GhFailure, plan?: ReviewerPlan, number?: number): void => {
+      const target = number === undefined ? `PR ${pr}` : `PR #${number}`;
+      const lists =
+        plan !== undefined
+          ? [`${plan.request.join(", ")}`]
+          : conductorBranch !== undefined && config.conductor.phaseReviewers.length > 0
+            ? [
+                `${conductorBranch} 向けなら [conductor] phase_reviewers: ${config.conductor.phaseReviewers.join(", ") || "（なし）"}`,
+                `それ以外なら [pr] reviewers: ${config.pr.reviewers.join(", ") || "（なし）"}`,
+              ]
+            : [config.pr.reviewers.join(", ")];
+      const manual = [`GitHub の ${target} の画面で、次のレビュアーに依頼してください（PR の作成者本人と依頼済みの人は除く）:`, ...lists.map((line) => `  ${line}`)].join("\n");
+      emit(
+        { phase, pr: number ?? null, dryRun, requested: false, applied: false, reason: failure.reason, stage: failure.stage, error: failure.error, manual },
+        () => [`レビュアーの依頼をできませんでした（${failure.stage}: ${failure.error}）。PR 自体は作成済みです。`, manual].join("\n"),
+      );
+    };
 
     let stdout: string;
     try {
@@ -52,33 +90,33 @@ register({
         timeout: 30_000,
       }));
     } catch (error) {
-      throw new HikyakuError(
-        `PR ${pr} の状態を gh pr view で取得できませんでした`,
-        error instanceof Error ? error.message : String(error),
-      );
+      fail(ghFailure("gh pr view", error));
+      return;
     }
-    let raw: unknown;
+    let state: ReturnType<typeof parsePrReviewState>;
     try {
-      raw = JSON.parse(stdout);
-    } catch {
-      throw new HikyakuError("gh pr view の応答を JSON として読めません", stdout.slice(0, 200));
+      state = parsePrReviewState(JSON.parse(stdout));
+    } catch (error) {
+      fail({ reason: "gh-failed", stage: "gh pr view", error: `応答を読めません: ${error instanceof Error ? error.message : String(error)}` });
+      return;
     }
-    const state = parsePrReviewState(raw);
 
     // 依頼済みは GraphQL から取る。gh pr view には Bot（Copilot など）の依頼が現れず、
     // リポジトリの設定などで既に Copilot が依頼されている場合に、重ねて再依頼してしまう
-    const graphql = await fetchPrGraphql(config.repoRoot, state.number);
+    let graphql: Awaited<ReturnType<typeof fetchPrGraphql>>;
+    try {
+      graphql = await fetchPrGraphql(config.repoRoot, state.number);
+    } catch (error) {
+      fail(ghFailure("gh api graphql", error), undefined, state.number);
+      return;
+    }
 
     const names = (list: unknown): string[] =>
       (Array.isArray(list) ? list : []).map(reviewerLogin).filter((name): name is string => name !== undefined);
 
     const plan = planReviewers({
-      phase,
+      ...settings,
       baseRefName: state.baseRefName,
-      conductorBranch: cycle === undefined ? undefined : branchName(config.branch, "conductor", cycle),
-      reviewers: config.pr.reviewers,
-      skip: config.pr.reviewersSkip,
-      phaseReviewers: config.conductor.phaseReviewers,
       author: state.author,
       requested: names(graphql.reviewRequests),
       reviewed: names(state.latestReviews),
@@ -93,30 +131,26 @@ register({
         });
         requested = true;
       } catch (error) {
-        throw new HikyakuError(
-          `PR #${state.number} へのレビュアーの依頼に失敗しました: ${plan.request.join(", ")}`,
-          [
-            error instanceof Error ? error.message : String(error),
-            "PR 自体は作成済みです。権限やレビュアーの名前を確かめて、手で依頼してください。",
-          ].join("\n"),
-        );
+        fail(ghFailure("gh pr edit", error), plan, state.number);
+        return;
       }
     }
 
-    emit(
-      { phase, pr: state.number, base: state.baseRefName, dryRun, requested, ...plan },
-      () => {
-        if (plan.skipped) return `${phase} のレビュアーのアサインはオフです（[pr] reviewers_skip）`;
-        if (plan.source === "none") return "アサインするレビュアーは設定されていません";
-        const lines = [
-          `${plan.source === "conductor" ? "[conductor] phase_reviewers" : "[pr] reviewers"} から選びました（PR #${state.number} → ${state.baseRefName}）`,
-          plan.request.length === 0
-            ? "新しく依頼するレビュアーはいません"
-            : `${dryRun ? "依頼予定（--dry-run）" : "依頼しました"}: ${plan.request.join(", ")}`,
-          ...plan.excluded.map((item) => `  除外: ${item.reviewer}（${item.reason}）`),
-        ];
-        return lines.join("\n");
-      },
-    );
+    emitPlan({ phase, pr: state.number, base: state.baseRefName, dryRun, requested, applied: true, ...plan });
   },
 });
+
+function emitPlan(output: ReviewerPlan & { phase: string; pr: number | null; base: string | null; dryRun: boolean; requested: boolean; applied: boolean }): void {
+  emit(output, () => {
+    if (output.skipped) return `${output.phase} のレビュアーのアサインはオフです（[pr] reviewers_skip）`;
+    if (output.source === "none") return "アサインするレビュアーは設定されていません";
+    const lines = [
+      `${output.source === "conductor" ? "[conductor] phase_reviewers" : "[pr] reviewers"} から選びました（PR #${output.pr} → ${output.base}）`,
+      output.request.length === 0
+        ? "新しく依頼するレビュアーはいません"
+        : `${output.dryRun ? "依頼予定（--dry-run）" : "依頼しました"}: ${output.request.join(", ")}`,
+      ...output.excluded.map((item) => `  除外: ${item.reviewer}（${item.reason}）`),
+    ];
+    return lines.join("\n");
+  });
+}

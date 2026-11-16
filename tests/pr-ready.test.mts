@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { chmodSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { cliWith, workspace, write } from "./helpers.mts";
+import { cliWith, withoutGh, workspace, write } from "./helpers.mts";
 
 function fakeGh(t: TestContext, extra: NodeJS.ProcessEnv = {}) {
   const directory = workspace(t, true);
@@ -58,21 +58,45 @@ test("pr ready: 監督は設定オフでも conductor 向け PR を公開し、�
   assert.equal(gh.run(...args).status, 1);
 });
 
-test("pr ready: 不明な状態と公開失敗は成功扱いせず、再試行できる", (t) => {
+test("pr ready: 不明な状態は成功扱いせず終了コード 1。公開の失敗は止めずに代わりに行うことを返す", (t) => {
   const gh = fakeGh(t);
   const args = ["plan", "001", "--pr", "7", "--json"];
   const valid = gh.env.VIEW;
-  for (const view of ['{}', '{"number":7,"state":"CLOSED","isDraft":true,"baseRefName":"main"}']) {
+  for (const view of ['{}', 'not json', '{"number":7,"state":"CLOSED","isDraft":true,"baseRefName":"main"}']) {
     gh.env.VIEW = view;
     assert.equal(gh.run(...args).status, 1);
   }
   gh.env.VIEW = valid;
   gh.env.FAIL_READY = "1";
   const failed = gh.run(...args);
-  assert.equal(failed.status, 1);
-  assert.match(failed.stderr, /再実行/);
+  assert.equal(failed.status, 0, failed.stderr);
+  const output = JSON.parse(failed.stdout);
+  assert.deepEqual([output.ready, output.applied, output.reason, output.stage], [false, false, "gh-failed", "gh pr ready"]);
+  assert.match(output.manual, /gh pr ready 7/);
   gh.env.FAIL_READY = "0";
-  assert.equal(gh.run(...args).status, 0);
+  assert.equal(JSON.parse(gh.run(...args).stdout).applied, true);
+});
+
+test("pr ready: conductor の子は gh を呼ばずに Draft のまま返す", (t) => {
+  const gh = fakeGh(t);
+  gh.env.HIKYAKU_CONDUCTOR_CHILD = "1";
+  gh.env.VIEW = "not json";
+  const result = gh.run("build-01", "001", "--pr", "12", "--json");
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).reason, "conductor-child");
+  assert.throws(() => gh.calls(), "gh を一度も呼ばない");
+});
+
+test("pr ready: gh が無い環境では止めず、--for-merge だけは終了コード 1", (t) => {
+  const directory = workspace(t, true);
+  const result = withoutGh(t, directory, "pr", "ready", "build-01", "001", "--pr", "7", "--json");
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.deepEqual([output.ready, output.applied, output.reason, output.stage], [false, false, "gh-unavailable", "gh pr view"]);
+  assert.match(output.manual, /Draft のまま/);
+  const forMerge = withoutGh(t, directory, "pr", "ready", "build-01", "001", "--pr", "7", "--for-merge");
+  assert.equal(forMerge.status, 1);
+  assert.match(forMerge.stderr, /取り込まずに止まってください/);
 });
 
 test("pr ready: URL先と既定リポジトリが異なっても、確認したPRのURLを公開に使う", (t) => {

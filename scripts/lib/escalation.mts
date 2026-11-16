@@ -1,0 +1,125 @@
+/**
+ * 行き詰まりの報告の形式の検査（US-3・原則3）。
+ *
+ * 行き詰まってユーザーに上げる報告（差し戻しの return.md・retry-limit の failed --reason・
+ * conductor の子の <hikyaku-blocked>）に、試したこと・問題を変える選択肢とそれぞれで失うもの・推奨が
+ * そろっているかだけを判定する。選択肢が本当に問題を変えるものかは判定しない（LLM とユーザーが読む）。
+ *
+ * 節の名前を変えるときは、テンプレート（skills/builder/references/templates.md の return.md・
+ * retry-policy.md・skills/conductor/references/headless-protocol.md）を同じ変更で直す。
+ */
+
+export const ESCALATION_SECTIONS = { tried: "試したこと", options: "選択肢", recommendation: "推奨" } as const;
+
+type SectionKey = keyof typeof ESCALATION_SECTIONS;
+
+export interface EscalationCheck {
+  ok: boolean;
+  /** 欠けの説明（1件1行） */
+  problems: string[];
+}
+
+/** 見出し（# 〜 ######）。名前を含む見出しを節の始まりと読む（「問題を変える選択肢」も選択肢） */
+const HEADING = /^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$/;
+/** 行頭のラベル（`試したこと:` / `**推奨**：`）。コロンの後の同じ行の本文も中身 */
+const LABEL = /^\s*(?:[-*]\s+)?\*{0,2}((?:問題を変える)?選択肢|試したこと|推奨)\*{0,2}\s*[:：]\s*(.*)$/;
+/** リストの項目の行。字下げが2未満のものを項目の始まりと読み、深い字下げは続きの行 */
+const ITEM = /^\s{0,1}(?:[-*+]|\d+[.)])\s+(.*)$/;
+const LOSS = /失うもの\s*[:：]/;
+/** テンプレートの置き場所の印（行全体が （…））。埋めずに出した報告を通さない */
+const PLACEHOLDER = /^\s*(?:[-*+]|\d+[.)])?\s*（[^（）]*）\s*$/;
+
+function sectionOfHeading(title: string): SectionKey | undefined {
+  const plain = title.replace(/\*/g, "");
+  if (plain.includes(ESCALATION_SECTIONS.tried)) return "tried";
+  if (plain.includes(ESCALATION_SECTIONS.options)) return "options";
+  if (plain.includes(ESCALATION_SECTIONS.recommendation)) return "recommendation";
+  return undefined;
+}
+
+function sectionOfLabel(name: string): SectionKey {
+  if (name === ESCALATION_SECTIONS.tried) return "tried";
+  if (name.endsWith(ESCALATION_SECTIONS.options)) return "options";
+  return "recommendation";
+}
+
+/** 節ごとの中身の行。同じ節が2回現れたら後ろに足す。節が無ければ undefined */
+function splitSections(text: string): Map<SectionKey, string[]> {
+  const sections = new Map<SectionKey, string[]>();
+  let current: string[] | undefined;
+  for (const line of text.replace(/\r\n?/g, "\n").split("\n")) {
+    const heading = HEADING.exec(line);
+    if (heading !== null) {
+      const key = sectionOfHeading(heading[1] ?? "");
+      current = key === undefined ? undefined : sections.get(key) ?? [];
+      if (key !== undefined && current !== undefined) sections.set(key, current);
+      continue;
+    }
+    const label = LABEL.exec(line);
+    if (label !== null) {
+      const key = sectionOfLabel(label[1] ?? "");
+      current = sections.get(key) ?? [];
+      sections.set(key, current);
+      if ((label[2] ?? "").trim() !== "") current.push(label[2] ?? "");
+      continue;
+    }
+    current?.push(line);
+  }
+  return sections;
+}
+
+function meaningful(lines: string[]): string[] {
+  return lines.filter((line) => line.trim() !== "" && !PLACEHOLDER.test(line));
+}
+
+/** 選択肢の項目（項目の行と、その続きの行をつなげたもの）。リストが無ければ本文全体を1項目とする */
+function itemsOf(lines: string[]): string[] {
+  const items: string[] = [];
+  let open = false;
+  for (const line of lines) {
+    if (ITEM.test(line)) {
+      items.push(line);
+      open = true;
+    } else if (open && items.length > 0) {
+      items[items.length - 1] += `\n${line}`;
+    }
+  }
+  if (items.length > 0) return items;
+  return lines.length === 0 ? [] : [lines.join("\n")];
+}
+
+/** 形式だけを判定する */
+export function checkEscalation(text: string): EscalationCheck {
+  const sections = splitSections(text);
+  const problems: string[] = [];
+
+  const tried = sections.get("tried");
+  if (tried === undefined) problems.push(`「${ESCALATION_SECTIONS.tried}」の節がありません`);
+  else if (meaningful(tried).length === 0) problems.push(`「${ESCALATION_SECTIONS.tried}」に項目がありません`);
+
+  const options = sections.get("options");
+  if (options === undefined) {
+    problems.push(`「${ESCALATION_SECTIONS.options}」の節がありません`);
+  } else {
+    const items = itemsOf(meaningful(options));
+    if (items.length === 0) problems.push(`「${ESCALATION_SECTIONS.options}」に項目がありません`);
+    items.forEach((item, index) => {
+      if (!LOSS.test(item)) problems.push(`「${ESCALATION_SECTIONS.options}」の${index + 1}件目に「失うもの:」がありません`);
+    });
+  }
+
+  const recommendation = sections.get("recommendation");
+  if (recommendation === undefined) problems.push(`「${ESCALATION_SECTIONS.recommendation}」の節がありません`);
+  else if (meaningful(recommendation).length === 0) problems.push(`「${ESCALATION_SECTIONS.recommendation}」が空です`);
+
+  return { ok: problems.length === 0, problems };
+}
+
+/** 欠けを、書き直しの案内つきの複数行にする（stop / restart / failed / violation で共有） */
+export function describeEscalationProblems(problems: string[]): string {
+  return [
+    "行き詰まりの報告に欠けがあります:",
+    ...problems.map((problem) => `  - ${problem}`),
+    `「${ESCALATION_SECTIONS.tried}」（1項目以上）・「問題を変える${ESCALATION_SECTIONS.options}」（各項目に「失うもの:」）・「${ESCALATION_SECTIONS.recommendation}」をそろえてください（見出しでも、行頭の「${ESCALATION_SECTIONS.tried}:」のようなラベルでも読みます）。`,
+  ].join("\n");
+}
