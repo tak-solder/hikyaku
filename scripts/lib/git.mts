@@ -11,7 +11,7 @@
  * 到達できないことで着手可否が変わることもない。
  */
 
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -43,6 +43,20 @@ async function tryGit(cwd: string, argv: string[], timeout = 15_000): Promise<Ru
         : undefined;
     const message = fromStderr ?? (error instanceof Error ? error.message : String(error));
     return { ok: false, message: message.split("\n")[0] ?? message };
+  }
+}
+
+/**
+ * git を同期で実行する。失敗は undefined（終了コードだけで判断する）。
+ * ステップの判定（consent など）は同期で評価されるので、そこから git を読むときに使う
+ */
+export function gitSync(cwd: string, argv: string[]): string | undefined {
+  try {
+    return execFileSync("git", argv, {
+      cwd, encoding: "utf8", timeout: 15_000, maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return undefined;
   }
 }
 

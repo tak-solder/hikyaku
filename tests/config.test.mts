@@ -214,3 +214,72 @@ test("設定: v3 で廃止した bp_max と [bp_actual] は、移行先を示し
   write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n');
   assert.equal(JSON.parse(succeeds(directory, "config", "--json")).peakBands.splitAbove, 450_000);
 });
+
+const ROOT = 'hikyaku_root = "docs/hikyaku"\n';
+const APP = '[app]\nexposure = "internal"\ndata = "none"\nimpact = "low"\nmerge_gate = "user"\n';
+
+test("設定: ルート設定の [app]・[[app.areas]]・[boundaries] を読み、表示する", (t) => {
+  const directory = workspace(t);
+  write(directory, ".hikyaku.config", `${ROOT}${APP}[[app.areas]]\nname = "auth"\npaths = ["src/auth/**"]\nimpact = "high"\n[boundaries]\nexternal = ["api/**"]\ninternal = ["src/lib/**"]\n`);
+  const config = JSON.parse(succeeds(directory, "config", "--json"));
+  assert.deepEqual(config.app, {
+    axes: { exposure: "internal", data: "none", impact: "low" },
+    mergeGate: "user",
+    areas: [{ name: "auth", paths: ["src/auth/**"], impact: "high" }],
+  });
+  assert.deepEqual(config.boundaries, { external: ["api/**"], internal: ["src/lib/**"] });
+
+  const text = succeeds(directory, "config");
+  assert.match(text, /internal \/ none \/ low/);
+  assert.match(text, /merge_gate\s+user/);
+  assert.match(text, /害「中」まで/);
+  assert.match(text, /重い領域 auth\s+src\/auth\/\*\*（impact=high）/);
+  assert.match(text, /external\s+api\/\*\*/);
+  assert.match(text, /この版では検査と表示だけで、ゲートの判定にはまだ使わない/);
+});
+
+test("設定: 宣言が無ければ app は無く、boundaries は空で、「宣言なし（上限を設けない）」と出す", (t) => {
+  const directory = workspace(t);
+  const config = JSON.parse(succeeds(directory, "config", "--json"));
+  assert.equal("app" in config, false);
+  assert.deepEqual(config.boundaries, { external: [], internal: [] });
+  assert.match(succeeds(directory, "config"), /宣言なし（上限を設けない）/);
+});
+
+test("設定: [app]・[[app.areas]]・[boundaries] の欠け・不正な値・知らないキー・名前の重複はエラー", (t) => {
+  const directory = workspace(t);
+  const area = (body: string) => `${APP}[[app.areas]]\n${body}\n`;
+  for (const [body, pattern] of [
+    ['[app]\nexposure = "public"\ndata = "none"\n', /exposure・data・impact/],
+    ['[app]\nexposure = "world"\ndata = "none"\nimpact = "low"\n', /exposure の値が不正/],
+    ['[app]\nexposure = "public"\ndata = "none"\nimpact = "low"\nmerge_gate = "ci"\n', /merge_gate の値が不正/],
+    ['[app]\nexposure = "public"\ndata = "none"\nimpact = "low"\nceiling = "高"\n', /指定できないキーです: ceiling/],
+    [area('name = "auth"\npaths = ["src/auth/**"]\ndata = "secret"'), /data の値が不正/],
+    [area('name = "auth"\npaths = ["a/**"]\n[[app.areas]]\nname = "auth"\npaths = ["b/**"]'), /name が重複しています: auth/],
+    [area('name = "auth"\npaths = []'), /paths が空/],
+    [area('name = "auth"'), /paths がありません/],
+    [area('paths = ["a/**"]'), /name がありません/],
+    [area('name = "auth"\npaths = ["a/**"]\nowner = "x"'), /指定できないキーです: owner/],
+    ['[boundaries]\nexternal = "api/**"\n', /external/],
+    ["[boundaries]\ninternal = [1]\n", /internal/],
+    ['[boundaries]\npublic = ["a"]\n', /指定できないキーです: public/],
+  ] as const) {
+    write(directory, ".hikyaku.config", `${ROOT}${body}`);
+    const result = cli(directory, "config", "--json");
+    assert.equal(result.status, 1, body);
+    assert.match(result.stderr, pattern, body);
+  }
+});
+
+test("設定: サイクル設定に [app]・[boundaries] があるとエラー", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", `${ROOT}${APP}`);
+  const cycleConfig = "docs/hikyaku/cycles/001-test/.hikyaku.config";
+  for (const [body, key] of [['[app]\nimpact = "low"\n', "app"], ['[boundaries]\nexternal = ["x"]\n', "boundaries"]] as const) {
+    write(directory, cycleConfig, body);
+    const result = cli(directory, "config", "001", "--json");
+    assert.equal(result.status, 1, body);
+    assert.match(result.stderr, new RegExp(`\\[${key}\\] はサイクル設定では指定できません`));
+    assert.ok(result.stderr.includes(cycleConfig), result.stderr);
+  }
+});

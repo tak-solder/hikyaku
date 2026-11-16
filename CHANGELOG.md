@@ -32,6 +32,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **アプリケーションの状況と境界の宣言（`[app]`・`[[app.areas]]`・`[boundaries]`）**: 公開範囲・扱うデータの重さ・壊れたときの影響の3軸と `merge_gate`、名前つきの重い領域のパス、外との境界・内部の境界のパスを、ルート設定に書ける。サイクル設定に書くと、不正な値・知らないキー・重い領域の名前の重複と同じくエラー。`hikyaku config` に宣言と、作業ツリーの宣言から求めた AI に任せてよい害の上限を表示する。上限は、作業ツリーと、base_branch・デフォルトブランチとの merge-base にある宣言のうち最も厳しいもので決める（ユーザーがマージしていない宣言で緩めない）。**この版では宣言は検査と表示だけで、ゲートの判定にはまだ使わない**
+- 設定ファイルの TOML でテーブル配列（`[[x]]`）を書けるようになった
 - **patch スキル（`/hikyaku:patch [--cycle {cycle}] {依頼}`）**: サイクルを作らずに、小さな変更（バグ修正・軽い仕様変更・改善、QA のフィードバックを複数件まとめてでもよい）を、依頼のすり合わせから実装・検証・コードレビュー・PR まで1セッションで進める。手順は start → survey → scope（予測ピークの見積もり）→ fit（patch で進めるかの判定）→ P1（対応方針の合意）→ pr（Draft PR に依頼と合意を書く）→ implement → verify → review → persist（知見の仕分け）→ P2 / write（永続ドキュメントの承認と書き込み）→ publish。作業管理の文書は作らず、依頼・合意・検証結果は PR の本文に集める。`disable-model-invocation: true` で、明示的に起動したときだけ動く（[#93](https://github.com/tak-solder/hikyaku/issues/93)）
 - **patch の作業単位**: フェーズ `patch-YYYYMM-slug`、ブランチ `{prefix}/patch/{YYYYMM}/{slug}`、記録 `patches/{YYYYMM}/{slug}/progress.jsonl`。サイクルに属さなければ HIKYAKU_ROOT の下、進行中のサイクルに属せばそのサイクルのディレクトリの下に置く
 - **承認ゲート P1 / P2**: patch の対応方針の合意と、永続ドキュメントの更新の承認。どちらもプロファイルの管轄外

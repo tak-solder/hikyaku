@@ -8,12 +8,12 @@
   - `--full` で全文を出す
 - G4 の `consent`: `gate brief G4` と同じ照合で外との境界の変更を検出したら `now`（事後同意には回さない）
 - `skills/architect/steps/G4.md`・`skills/builder/steps/G8.md` を、`gate brief` の出力を示す手順に改める。test-spec.md のテンプレートに「（解釈）」の印の書き方を足す
-- docs（`workflow/architect.md`・`build.md`）を直す。CHANGELOG に追記する
+- docs（`workflow/architect.md`・`build.md`）を直す。`docs/configuration/config-file.md` と CHANGELOG に残る「`[boundaries]` は判定にまだ使わない」旨（build-02・build-15）を、G4 の外との境界の同意に効くことに改める。CHANGELOG に追記する
 
 ## やらないこと
 
 - `[boundaries]` の読み込み（build-02）
-- 重い領域による G4 の同意（G3 の申告の裏取り。build-02）
+- 重い領域による G4 の同意（G3 の申告の裏取り。build-15）
 - G8 のゲートそのものの分類の変更（確認のまま。Q1）
 
 ## 対応する受け入れ基準
@@ -47,4 +47,4 @@
 | **予測ピーク** | **280k** | 統合を検討（300k 未満。推奨のみ） |
 | ガイド | 標準 v2 | 03897ac0 |
 
-統合は見送る。依存の近い build-02（340k）とまとめると 450k を超え、ほかのビルドとは触るファイルが重ならないため
+統合は見送る。依存の近い build-02（420k）・build-15（350k）とまとめると 450k を超え、ほかのビルドとは触るファイルが重ならないため
