@@ -4,7 +4,7 @@ status: accepted
 
 # 差分の事実はスクリプトが並べ、全プロファイル必須の agreement-review が合意と突き合わせる
 
-- **決定**: `scripts/lib/diff-facts.mts` が、ビルドの差分（`--name-status -M` と hunk）から事実だけを並べる。変更ファイルと種類、テストファイルの削除、削除されたテストの宣言、追加されたスキップの印、アサーションの行の変更（「緩和」とは判定せず「変更」として出す）、G8 承認後の test-spec.md の書き換え。印は言語に依存しない既定を内蔵し、`[diff]` で既定に追加できる（既定を消すことはできない）。builder に verify の後、review の前のステップ `agreement-review` を `when` 無しで足し、doc-reviewer の `agreement` の context が事実を issue.md・test-spec.md・plan.md の「マージ時点のデータ安全」と突き合わせる。builder 自身のスコープとデータ安全の確認はここへ移す。指摘は既存の `reviewAction` に乗せ、止めない。返した理由は `agreement.md` に残し、PR の節は `diff facts --format pr` がそのときの差分から組み立てる
+- **決定**: `scripts/lib/diff-facts.mts` が、ビルドの差分（`--name-status -M` と hunk）から事実だけを並べる。変更ファイルと種類、テストファイルの削除、削除されたテストの宣言、追加されたスキップの印、アサーションの行の変更（「緩和」とは判定せず「変更」として出す）、G8 承認後の test-spec.md の書き換え。印は言語に依存しない既定を内蔵し、`[diff]` で既定に追加できる（既定を消すことはできない）。builder に verify の後、review の前のステップ `agreement-review` を `when` 無しで足し、doc-reviewer の `agreement` の context が事実を issue.md・test-spec.md・plan.md の「マージ時点のデータ安全」と突き合わせる。builder 自身のスコープとデータ安全の確認はここへ移す。指摘は既存の `reviewAction` に乗せ、止めない。返した理由は `agreement.md` に残し、PR の節は `diff facts --format pr` が、そのときの差分から作る事実と `agreement.md` の理由を合わせて組み立てる。設定の宣言（`[app]`・`[boundaries]`・`[consent]`）の変更も事実として並べる
 - **文脈**: US-2 と原則3で、AI が問題を黙って変えた差分を、作った本人ではないレビューが合意と突き合わせる。Q4 で全プロファイル必須、Q6（企画）で止めないと決めた
 - **外の前提**: 利用者のテストの書き方は、主要な枠組みの慣習（`it(`・`test(`・`def test_`・`.skip(` など）に沿っていることが多い（仮定。2026-11-16 時点で利用者のリポジトリでの検証なし）
 - **検討した案**:

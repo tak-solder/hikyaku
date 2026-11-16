@@ -4,7 +4,7 @@ status: accepted
 
 # レビューで引いた rule は handoff の1つの見出しに、基準の理由は rule の frontmatter に残す
 
-- **決定**: handoff.md に見出し「レビューの記録」を足し、行は `- [重|軽] \`rule:<パス>\`: 指摘の要約`（rule に当たらなければ宛先は `-`）。この1つの記録から、rule が引かれた回数（`[rules] hit_threshold`、既定3、サイクルをまたいで数える）と重い指摘の数（品質の指標）を `review-records.mts` が集める。rule の frontmatter に `prevents`・`basis`・`importance: 高|中` を足し、`conventions` などに書く基準と「永続化すること」の行には末尾に `（防ぐ: … / 立つ: …）` を持たせる。置き場の順の先頭に宛先 `refactor`（なくす）を足す。ADR と `constraints` の前提の行に `領域: <glob>` を書けるようにし、`git.mts` の `lastTouched` と `[areas] dormant_days`（既定180）で休眠を判定する。消す候補は、一致しない rule（既存の `stale`）・役に立たなかった記述・理由の欠けた基準から作り、`importance: 高` は試しに消す候補から外す。消す PR とマージ前後2サイクルの指標の比較は close-cycle の `followups` に乗せる
+- **決定**: handoff.md に見出し「レビューの記録」を足し、行は `- [重|軽] \`rule:<パス>\`: 指摘の要約`（rule に当たらなければ宛先は `-`）。この1つの記録から、rule が引かれた回数（`[rules] hit_threshold`、既定3、サイクルをまたいで数える）と重い指摘の数（品質の指標）を `review-records.mts` が集める。rule の frontmatter に `prevents`・`basis`・`importance: 高|中` を足し、`conventions` などに書く基準と「永続化すること」の行には末尾に `（防ぐ: … / 立つ: … / 重要度: 高|中）` を持たせる。置き場の順の先頭に宛先 `refactor`（なくす）を足す。ADR と `constraints` の前提の行に `領域: <glob>` を書けるようにし、`git.mts` の `lastTouched` と `[areas] dormant_days`（既定180）で休眠を判定する。消す候補は、一致しない rule（既存の `stale`）・役に立たなかった記述・理由の欠けた基準から作り、`importance: 高` は試しに消す候補から外す。消す PR とマージ前後2サイクルの指標の比較は close-cycle の `followups` に乗せる
 - **文脈**: US-4・US-5・US-9 と原則5・10。現状、レビューの重い指摘はコミットされた記録に残っていない
 - **外の前提**: なし
 - **検討した案**:
