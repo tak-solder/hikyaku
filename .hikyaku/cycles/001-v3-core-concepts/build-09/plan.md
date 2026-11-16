@@ -41,7 +41,7 @@ export function describeEscalationProblems(problems: string[]): string;
 - `scripts/commands/step.mts` の `step restart`: `--round return` で、return.md が無い、または欠けがあれば受け付けない（`HikyakuError`）
 - `scripts/lib/steps/engine.mts`: `StepDefinition.escalates?: boolean`（行き詰まりでユーザーに上げるステップ。`failed --reason` を checkEscalation で確かめる）。`lintApproval` は gate に付いたら問題として返す
 - `scripts/commands/step.mts` の `buildEvent`: `failed` かつ `escalates` なら `--reason` を検査し、欠けがあれば受け付けない
-- `scripts/lib/steps/builder.mts`: `implement`・`verify` に `escalates: true`
+- `scripts/lib/steps/builder.mts`・`scripts/lib/steps/patch.mts`: `implement`・`verify` に `escalates: true`（retry-policy は patch の verify も参照するため、両方に付ける）
 - `scripts/lib/conductor.mts` の `parseFinalText`: `blocked` の本文を検査し、欠けがあれば `{ outcome: "violation", body, reason }`（reason に欠け）
 - `scripts/lib/steps/hook.mts`: 変更しない（violation は「ブロックで終わっていない」と同じ扱いで、次の1手が run / call なら1回だけ引き止める既存の動きのまま）
 
@@ -60,8 +60,10 @@ export function planWithoutPr(input: Pick<ReviewerInput, "phase" | "conductorBra
 ### `pr ready`（`scripts/commands/pr-ready.mts`）
 
 - conductor の子は `gh` を呼ばずに `conductor-child` を返す（子では Ready にしないので、状態を読む必要が無い）
-- `gh pr view` を try で囲む。失敗したら `ready: false`・`applied: false`・`reason`（`gh-unavailable` / `gh-failed`）・`error`・`manual`（`gh pr ready <PR>` を手で実行するか、GitHub の PR 画面で Ready for Review にする）を出し、終了コード 0
-- 応答の形が不正（既存の検査）と `gh pr ready` の失敗は従来どおり終了コード 1（gh は使えるのに状態が想定外、または切り替えに失敗したもので、推測で先へ進めない）
+- `gh pr view` を try で囲む。失敗したら `ready: false`・`applied: false`・`reason`（`gh-unavailable` / `gh-failed`）・`stage`・`error`・`manual`（`gh pr ready <PR>` を手で実行するか、GitHub の PR 画面で Ready for Review にする）を出し、終了コード 0
+- `gh pr ready` の失敗も同じく `applied: false`・`manual`・終了コード 0（design-delta 11節「pr-ready の gh の呼び出しも同じ扱い」。Draft のまま残るだけで、取り込み前に監督かユーザーが Ready にする）
+- 例外: 監督が取り込む直前の `--for-merge` は、view の失敗も `gh pr ready` の失敗も従来どおり終了コード 1（向き先が conductor ブランチであることを view で確かめられないまま正常終了にしない。conductor/SKILL.md の「失敗したら取り込まない」と揃える）
+- 応答の形が不正（既存の検査）は従来どおり終了コード 1（gh は使えるのに状態が想定外で、推測で先へ進めない）
 
 ### 指示文・テンプレート
 
@@ -71,17 +73,21 @@ export function planWithoutPr(input: Pick<ReviewerInput, "phase" | "conductorBra
 - `skills/conductor/references/headless-protocol.md`: blocked の本文を3つの節の形にする（欠けると violation になる）
 - `skills/conductor/SKILL.md` の violation: 再開のメッセージに `reason` を添える（欠けた節を子が知るため）
 - 各 `steps/publish.md`（architect / builder / close-cycle / patch / planner）: `applied: false` なら、何ができなかったかと `manual` をユーザーに伝えて `done` を報告してよい
+- `pr request-reviewers` を呼ぶほかの手順（`skills/init/steps/pr.md`・`skills/create-cycle/steps/pr.md`・`skills/token-guide/steps/pr.md`・`skills/conductor/SKILL.md` の最後の PR・`headless-protocol.md` の注記）: `applied: false` なら `manual` を伝える
+- `skills/conductor/SKILL.md` の `pr ready --for-merge`: 終了コードで失敗を判定する既存の書き方のまま（`--for-merge` は終了コード 1 を保つため）。それ以外の `pr ready` の呼び出しがあれば `applied: false` の扱いを足す
 
 ### docs・CHANGELOG
 
 - `docs/operations/troubleshooting.md`: gh が使えないときの `pr request-reviewers` / `pr ready` の出力と代わりに行うこと、blocked / return.md の欠けで止まったとき
 - `docs/reference/cli.md`: `pr request-reviewers`・`pr ready` が gh の失敗で止めないこと
+- `docs/workflow/architect.md`（restart は return.md の欠けで受け付けない）・`docs/workflow/build.md`（return.md の3つの節）・`docs/reference/directory-layout.md`（return.md で読むもの）・`docs/workflow/conductor.md`（blocked の欠けは violation）
 - `CHANGELOG.md` の `[3.0.0]` に追記（バージョンは 3.0.0 のまま）
 
 ## 解釈したこと（G8 で確かめたい点）
 
 - **すべての `<hikyaku-blocked>` を検査する。** ADR（escalation-report-check）と issue どおり、blocked の種類を区別しない。PR 作成の代行の依頼や権限不足のように「行き詰まり」に見えない blocked も、3つの節（試したこと / 選択肢と失うもの / 推奨）で書く必要がある。監督が環境ごとに補足する blocked の書式（この環境の「PR 作成の代行を依頼します」など）は、取り込み後はこの形に合わせないと violation（1回目は再開、2回目はユーザーに上がる。安全側）になる。handoff の「残したこと」に書く
-- **`gh pr ready` 自体の失敗は止める失敗のまま。** issue は `gh pr view` を try で囲むことだけを求めている。gh が使えないとき（view で分かる）は止めず、切り替えだけが失敗したときは publish.md の既存の扱い（`failed` を報告して再実行を案内）を保つ
+- **`gh pr ready` 自体の失敗も止めない（`--for-merge` を除く）。** issue は `gh pr view` を try で囲むことだけを挙げるが、design-delta 11節は「pr-ready の gh の呼び出しも同じ扱い」とし、request-reviewers の書き込み（`gh pr edit`）の失敗も止めないので揃える。監督が取り込む直前の `--for-merge` だけは、向き先の確認と取り込みの判定に使うので従来どおり止める。`tests/pr-ready.test.mts` の「公開失敗は終了コード 1」の期待値を改める
+- **欠けのある差し戻しの blocked は、conductor ではユーザーに上がる。** conductor/SKILL.md は violation を `returned` の判定より先に扱うので、Step 1（architect）へ進まず再開を経てユーザーに上がる（安全側）。handoff の「残したこと」に書く
 
 ## 非機能要件
 
@@ -94,7 +100,7 @@ export function planWithoutPr(input: Pick<ReviewerInput, "phase" | "conductorBra
 | 段階 | 予測ピーク |
 |------|------------|
 | architectフェーズ段階 | 305k |
-| builderフェーズ段階 | 300k |
+| builderフェーズ段階 | 340k |
 
 **読むファイル**
 
@@ -103,7 +109,8 @@ export function planWithoutPr(input: Pick<ReviewerInput, "phase" | "conductorBra
 - `scripts/commands/reviewers.mts`・`scripts/lib/reviewers.mts`・`scripts/commands/pr-ready.mts`・`scripts/commands/external.mts`（手本）・`scripts/lib/github.mts`
 - `skills/builder/references/templates.md`・`return.md`・`retry-policy.md`、`skills/conductor/references/headless-protocol.md`・`SKILL.md` の violation、各 `steps/publish.md`
 - `tests/conductor.test.mts`・`tests/pr-ready.test.mts`、return.md を書く既存テスト（phase / step / step-architect / step-consent / cli / objection）
-- `docs/operations/troubleshooting.md`・`docs/reference/cli.md`
+- `docs/operations/troubleshooting.md`・`docs/reference/cli.md`・`docs/workflow/{architect,build,conductor}.md`・`docs/reference/directory-layout.md`
+- `scripts/lib/steps/patch.mts`、`skills/{init,create-cycle,token-guide}/steps/pr.md`、`skills/conductor/SKILL.md` の pr ready と violation、`tests/helpers.mts`
 
 **作成するファイル**
 
@@ -111,16 +118,16 @@ export function planWithoutPr(input: Pick<ReviewerInput, "phase" | "conductorBra
 - `tests/escalation.test.mts`（約 120 行）
 - 上記の lib・commands・テンプレート・手順・テスト・docs の変更、`CHANGELOG.md`
 
-**builderフェーズ段階の内訳**
+**builderフェーズ段階の内訳**（plan-review の指摘で、読むファイルと未知の領域を見積もり直した）
 
 | 成分 | 予測 | 根拠 |
 |------|------|------|
 | 固定費 | 90k | — |
-| 読み込み | 70k | phase/builder/architect/engine/step.mts/conductor.mts parseFinalText・hook.mts・reviewers(commands/lib)・pr-ready・external（手本）・github.mts・templates/return/retry-policy/headless-protocol・conductor/pr-ready テスト（既に約 60k を読了。残りは docs と return.md を書くテスト） |
-| 実装 | 55k | escalation.mts 新規（約120行）、readReturn・builder stop・restart・failed・parseFinalText の差し込み、reviewers の事前判定と gh 失敗の扱い、pr-ready の gh 失敗、テンプレート3つ・publish.md 5つ・docs・CHANGELOG |
+| 読み込み | 90k | phase/builder/architect/engine/patch/step.mts/conductor.mts parseFinalText・hook.mts・reviewers(commands/lib)・pr-ready・external（手本）・github.mts・templates/return/retry-policy/headless-protocol・conductor SKILL の pr ready と violation・init/create-cycle/token-guide の pr.md・publish.md 5つ・conductor/pr-ready/step/objection/step-consent テストと helpers.mts・docs 6ファイル（約 70k は読了） |
+| 実装 | 60k | escalation.mts 新規（約120行）、readReturn・builder/architect stop・restart・failed・parseFinalText の差し込み、reviewers の事前判定と gh 失敗の扱い、pr-ready の gh 失敗と for-merge の例外、テンプレート3つ・手順 約10ファイル・docs 6ファイル・CHANGELOG |
 | テスト | 55k | escalation の unit、restart/stop/failed の拒否、parseFinalText、偽の gh（無い・失敗）、既存 return.md のフィクスチャ約20か所の書き換え |
-| 未知の領域 | 30k | 既存テストの return.md フィクスチャと終了コード 1 の期待値の波及 |
-| **予測ピーク** | **300k** | 狙いの帯（300k〜450k） |
+| 未知の領域 | 45k | 既存テストの return.md フィクスチャと終了コード 1 の期待値の波及、gh が無い環境の PATH の隔離、gh-unavailable と gh-failed の判別（stage ごと） |
+| **予測ピーク** | **340k** | 狙いの帯（300k〜450k） |
 | ガイド | 標準 v2 | 03897ac0 |
 
 ## 実装ステップ
