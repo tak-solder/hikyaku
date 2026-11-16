@@ -2,3 +2,4 @@
 {"at":"2026-11-16T18:53:49.382Z","skill":"builder","step":"plan-review","result":"done","peak":425000,"context":228051,"session":"603473f3-e56a-43e4-a329-59faf2deca6b","hikyaku":"3.0.0"}
 {"at":"2026-11-16T18:56:47.147Z","skill":"builder","step":"test-spec","result":"done","context":232144,"session":"603473f3-e56a-43e4-a329-59faf2deca6b","hikyaku":"3.0.0"}
 {"at":"2026-11-16T18:59:57.999Z","skill":"builder","step":"test-spec-review","result":"done","context":253856,"session":"603473f3-e56a-43e4-a329-59faf2deca6b","hikyaku":"3.0.0"}
+{"at":"2026-11-16T19:01:08.069Z","skill":"builder","step":"G8","result":"approved","input":"委任された判断（監督）: 承認。目安超えの継続は、約400kを超えたらreview前にbuild-managerで切り出す方針で受け入れる","context":258265,"session":"603473f3-e56a-43e4-a329-59faf2deca6b","hikyaku":"3.0.0"}
