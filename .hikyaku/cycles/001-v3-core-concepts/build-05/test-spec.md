@@ -46,7 +46,7 @@
 
 ### parseAcceptedSection: 深い字下げの続きの行は前の項目の続きとして扱う
 - 対応: —
-- Given: `  - 対話で答えたのが本人かは確かめない` の次の行が、項目より深い字下げ（6スペース）の `    既存の --input と同じ扱い（拠り所: \`assumption:利用者は自分で答える\`）`
+- Given: `  - 対話で答えたのが本人かは確かめない` の次の行が、項目（2スペース）より深い字下げ（4スペース）の `    既存の --input と同じ扱い（拠り所: \`assumption:利用者は自分で答える\`）`
 - When: parseAcceptedSection を呼ぶ
 - Then: problems は空で、lines は1件。その項目の premises は `["assumption:利用者は自分で答える"]`
 
@@ -108,6 +108,12 @@
 - When: declarationChanges(config) を呼ぶ
 - Then: uncertain が true、changed が `app.exposure` と `area:billing` を含み、notices に基準を読めない理由が1件以上出る
 
+### declarationChanges: 基準を読めず、宣言がどこにも無ければ changed は空
+- 対応: —
+- Given: origin を持たず main も無い一時リポジトリで、HEAD の `.hikyaku.config` に `[app]` が無い
+- When: declarationChanges(config) を呼ぶ
+- Then: changed が空（uncertain の値に関わらず、見直す参照が無い）
+
 ### declarationChanges: 基準の宣言を読めないときも上げる向きに倒す
 - 対応: US-13.5
 - Given: main の `.hikyaku.config` が TOML として壊れている（`[app` で閉じていない）、HEAD は `[app] impact = "high"`
@@ -123,7 +129,7 @@
 
 ### ledgerAcceptances: 受け入れの定義に合うものだけを返す
 - 対応: US-13.5
-- Given: サイクル 001 の decisions.jsonl に、premises 付きの risk が4件（未決 R-1、最新の決定が `accepted` の R-2、`rejected` の R-3、`resolved` の R-4）と、premises 付きの objection が2件（最新の決定が `consented` の O-1、`decided` の O-2）
+- Given: サイクル 001 の decisions.jsonl に、premises 付きの risk が4件（未決 R-1、最新の決定が `consented` の R-2、`rejected` の R-3、`resolved` の R-4）と、premises 付きの objection が2件（最新の決定が `consented` の O-1、`decided` の O-2）
 - When: ledgerAcceptances(config) を呼ぶ
 - Then: items が R-1（decision は null）・R-2・O-1 の3件で、R-3・R-4・O-2 は含まれない
 
@@ -135,7 +141,7 @@
 
 ### persistentAcceptances: document-guide の decisions・constraints のディレクトリ直下の .md を読む
 - 対応: US-6.6
-- Given: document-guide.md の decisions が `.hikyaku/decisions/`、constraints が `docs/constraints.md`。decisions 直下に拠り所付きの行を持つ ADR が1つ、`.hikyaku/decisions/old/legacy.md`（サブディレクトリ）にも同じ形の行がある
+- Given: document-guide.md の decisions が `.hikyaku/decisions/`、constraints が `docs/constraints.md`。decisions 直下に拠り所付きの行を持つ ADR が1つ、`.hikyaku/decisions/old/legacy.md`（サブディレクトリ）にも同じ形の行がある。`docs/constraints.md` の `## 受け入れたこと` の節に `- 個人情報は外部に送らない（拠り所: \`app.data\`）` の行がある
 - When: persistentAcceptances(config) を呼ぶ
 - Then: lines に直下の ADR の行と constraints.md の行が入り、source はリポジトリルートからの相対パス。サブディレクトリのファイルの行は含まれない
 
@@ -181,9 +187,9 @@
 
 ### ledger premises: `--format pr` は ID とファイル:行のポインタだけを出す
 - 対応: US-13.5
-- Given: 1件目のシナリオと同じリポジトリ
+- Given: 1件目のシナリオと同じリポジトリに、premises `["app.exposure"]` の未決 risk をさらに2件足した（同じ作業単位の連番の ID が3件）
 - When: `hikyaku ledger premises --changed-from main --format pr` を実行する
-- Then: 「宣言の変更」の見出しの節が出て、`app.exposure`、risk の ID、`.hikyaku/decisions/20261116-a.md:<行>` を含む。件数（「N件」）や ID の範囲（`R-1〜R-3`）を含まない
+- Then: 「宣言の変更」の見出しの節が出て、`app.exposure`、3件の risk の ID がそれぞれ1行ずつ、`.hikyaku/decisions/20261116-a.md:<行>` を含む。件数（「N件」）や ID の範囲（`〜`）に畳まれない
 ## scripts/commands/validate.mts
 
 ### validate: ID の範囲を警告し、終了コードは 0 のまま
