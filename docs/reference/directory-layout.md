@@ -65,6 +65,7 @@ cycles/{NNN}-{slug}/
 │   ├── questions.md          # 質問が発生した場合のみ
 │   ├── user-stories.md
 │   ├── progress.jsonl        # planner の手順の進捗
+│   ├── decisions.jsonl       # 未決事項と決定の記録（あるときだけ。どの作業単位にも置かれる）
 │   └── retrospective.md      # 振り返り（永続化すること / 役に立たなかった記述）
 ├── design/
 │   ├── codebase-survey.md    # 既存コードがある場合
@@ -73,7 +74,6 @@ cycles/{NNN}-{slug}/
 │   ├── progress.jsonl        # 手順の進捗（architect と build-manager の記録）
 │   └── retrospective.md
 ├── tasklist.md
-`progress.jsonl` は、フェーズの手順がどこまで進んだかの記録です。置き場所はフェーズで決まり、PLAN は `planning/`、ARCHITECT は `design/`、BUILD は `build-{NN}/`、CLOSE と create-cycle はサイクルのディレクトリ直下、init は HIKYAKU_ROOT 直下、token-guide は `token-guide/` です。CLOSE がサイクルの直下なのは、成果物がサイクルの外にあり、フェーズ専用のディレクトリを持たないためです。build-manager と振り返り（retrospective）の記録は、呼び出し元のフェーズと同じファイルに入ります。`hikyaku step report` が1手ごとに1行を追記し、成果物と一緒にコミットされます。現在地そのものは保存されず、`hikyaku step next` がこの記録と成果物から毎回導き直します。別のセッションや別のマシンから再開しても、同じ続きが返るのはこのためです。手で編集すると読めなくなるので、記録を直すときも `step report` を使います。
 ├── return.md                 # architect への差し戻し中のみ（差し戻し元のビルドのブランチだけにある）
 ├── patches/{YYYYMM}/{slug}/  # このサイクルに属す patch
 │   ├── progress.jsonl        # patch の手順の進捗
@@ -95,6 +95,8 @@ cycles/{NNN}-{slug}/
 `patches/{YYYYMM}/{slug}/` は [patch](../workflow/patch.md) の作業単位です。サイクルに属さない patch は HIKYAKU_ROOT の下に、進行中のサイクルに属す patch はそのサイクルのディレクトリの下に置きます。依頼・合意・検証結果は PR の本文にあり、ここに残るのは手順の記録と、サイクルに属す patch の `handoff.md` だけです。
 
 `progress.jsonl` は、フェーズの手順がどこまで進んだかの記録です。置き場所はフェーズで決まり、PLAN は `planning/`、ARCHITECT は `design/`、BUILD は `build-{NN}/`、CLOSE と create-cycle はサイクルのディレクトリ直下、init は HIKYAKU_ROOT 直下、token-guide は `token-guide/` です。CLOSE がサイクルの直下なのは、成果物がサイクルの外にあり、フェーズ専用のディレクトリを持たないためです。build-manager と振り返り（retrospective）の記録は、呼び出し元のフェーズと同じファイルに入ります。`hikyaku step report` が1手ごとに1行を追記し、成果物と一緒にコミットされます。現在地そのものは保存されず、`hikyaku step next` がこの記録と成果物から毎回導き直します。別のセッションや別のマシンから再開しても、同じ続きが返るのはこのためです。手で編集すると読めなくなるので、記録を直すときも `step report` を使います。
+
+`decisions.jsonl` は、決めずに先へ進めたことや暫定で決めたことを、いつ・誰が決めるかとともに残す記録です。どの作業単位（`planning/`・`design/`・`build-{NN}/`・サイクルのディレクトリ直下・`patches/{YYYYMM}/{slug}/`）にも置かれ、書くのは `hikyaku ledger open` と `ledger decide` だけです。事項は記録した作業単位のファイルに、決定は決めた作業単位のファイルに追記します。前のフェーズの事項に並行するビルドがそれぞれ決定を足しても、同じファイルへの追記にならないので、マージで衝突しません。事項と決定は ID で結ばれ、決まったか・期限が来たかはサイクルの全ファイルと `progress.jsonl` から毎回導きます。状態を表す欄はありません。`progress.jsonl` と同じく、手で編集すると読めなくなります。
 
 `return.md` は、builder が architect に差し戻したときに書く記録です。差し戻し元のビルドのブランチにだけコミットされ、architect が再設計の最後に削除するので、デフォルトブランチには入りません。作業ツリーにこのファイルがあることが「差し戻し中」を意味し、1行目の見出し（`# 差し戻し: build-NN`）から差し戻し元のビルドが読まれます。
 

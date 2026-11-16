@@ -245,13 +245,13 @@ function runningInternal(unit: FoundUnit, events: ProgressEvent[]): SkillSteps |
  */
 export function directiveOf(unit: FoundUnit, options: { root?: string } = {}): { opened: Opened; directive: Directive } {
   const opened = openUnit(unit, options);
-  const directive = buildDirective(opened, evaluate(opened.skill, opened.ctx), { measure: false });
+  const directive = buildDirective(opened, evaluate(opened.skill, opened.ctx), { measure: false, notices: false });
   if (directive.kind === "stop") return { opened, directive };
   const called = directive.kind === "call" && directive.call !== undefined ? stepsOf(directive.call) : undefined;
   const callee = called?.internal === true ? called : runningInternal(unit, opened.ctx.events);
   if (callee === undefined) return { opened, directive };
 
   const inner = openUnit(unit, { ...options, skill: callee });
-  const innerDirective = buildDirective(inner, evaluate(inner.skill, inner.ctx), { measure: false });
+  const innerDirective = buildDirective(inner, evaluate(inner.skill, inner.ctx), { measure: false, notices: false });
   return innerDirective.kind === "done" ? { opened, directive } : { opened: inner, directive: innerDirective };
 }

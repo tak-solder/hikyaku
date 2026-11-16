@@ -11,6 +11,7 @@ import { flagString, type ParsedArgs } from "../args.mts";
 import type { Phase } from "../branch.mts";
 import type { ContextBudget } from "../config.mts";
 import { HikyakuError } from "../errors.mts";
+import { cycleTimeline, noticeLines, readLedger, summarize } from "../ledger.mts";
 import { pluginRoot } from "../paths.mts";
 import { readProgress, type StepResult } from "../progress.mts";
 import { formatTokens, measureCurrent, type CurrentContext } from "../session.mts";
@@ -196,6 +197,31 @@ export interface BuildOptions {
    * 読みに行くので遅く、読む側のセッションを測ってしまうため
    */
   measure?: boolean;
+  /**
+   * 期限が来た・過ぎた未決事項（decisions.jsonl）を notices に載せるか（既定 true）。手順の位置だけを
+   * 読む側（Stop フック・step where・conductor parse）は読まない。壊れた記録でフックが止まらないように
+   */
+  notices?: boolean;
+}
+
+/**
+ * 期限が来た・過ぎた未決事項の行。自分の単位の現在のステップは、この評価で上書きする（内部スキルの
+ * 評価は呼び出し元の単位の現在地ではないので上書きしない）。記録を読めなくても手順は止めない
+ * （step report は進捗を書いたあとにこれを組み立てるので、ここで失敗すると報告の失敗に見える）
+ */
+function ledgerNotices(opened: Opened, evaluation: Evaluation): string[] {
+  const cycle = opened.ctx.cycle;
+  if (cycle === undefined) return [];
+  try {
+    const ledger = readLedger(cycle.directory);
+    // 未決の事項が無ければ、全単位の評価をしない（notices に載るのは未決の事項だけ）
+    if (!ledger.items.some((item) => item.latest === undefined)) return [];
+    const timeline = cycleTimeline(opened.ctx.config, cycle);
+    if (opened.skill.internal !== true) timeline.current.set(opened.phase, evaluation.current?.definition.id ?? null);
+    return noticeLines(summarize(ledger, timeline));
+  } catch (error) {
+    return [`未決事項の記録を読めません: ${error instanceof Error ? error.message : String(error)}（hikyaku ledger list で確かめてください）`];
+  }
 }
 
 export function buildDirective(opened: Opened, evaluation: Evaluation, options: BuildOptions = {}): Directive {
@@ -223,6 +249,8 @@ export function buildDirective(opened: Opened, evaluation: Evaluation, options: 
       ].join("\n"),
     };
   }
+
+  if (options.notices !== false) base.notices.push(...ledgerNotices(opened, evaluation));
 
   const overruns = checkpointsOf(ctx.events, ctx.config.context).filter((entry) => entry.over);
   const current = evaluation.current;
