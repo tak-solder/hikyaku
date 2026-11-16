@@ -142,6 +142,47 @@ docs/                利用者向けの説明（concepts.md が今回の要件�
 - 手本: `scripts/commands/external.mts:79-86, 138-165` — `hasGh` で判定し、`reason:"gh-not-found"`・人間の代わりの手順・終了コード 0
 - `skills/*/steps/publish.md:10-11` — レビュアーの依頼の失敗は指示文で「伝えて完了」としているが、CLI の終了コードでは区別されない
 
+### US-19: 未決事項と暫定の決定の記録（G3 の途中で追加）
+
+- 追記型の記録の前例は作業単位ごとの progress.jsonl だけ（`scripts/lib/progress.mts:17, 64, 100-103`）。サイクル全体で1本の追記型の記録は無い
+- サイクルの記録を集める型: `scripts/lib/promotions.mts:164-185` `promotionSources`（planning / design / 各 build-NN / 各 patch を固定の順で列挙）と `:187-217` `collectPromotions`。作業ツリーだけを読むので、いま居るブランチに在るものしか見えない
+- 記録する側の現状
+  - planner: `skills/planner/references/templates.md:3-13` の questions.md は `### Qn:` / `**回答**:` だけ。未回答の書式は決まっていない（`steps/user-stories.md:8-9`）
+  - builder: questions.md は `## Qn:`（見出しの深さが planner と違う。`skills/builder/references/templates.md:65-77`）。handoff.md の「残したこと」（`:93-96`）は自由文で、いつ・誰が決めるかの欄は無い
+  - サイクルに属す patch: `cycles/{cycle}/patches/{YYYYMM}/{slug}/` に progress.jsonl と handoff.md を書ける（`scripts/lib/patch.mts:6-7, 24-27`、`scripts/lib/steps/patch.mts:28, 45-51`）
+  - conductor: 監督の判断は design-questions.md / build-NN/questions.md、G6・G10 はコミットメッセージ（`skills/conductor/references/headless-protocol.md:85-97`）。どれもスクリプトは読まない
+- questions 系（planning/questions.md・design-questions.md・build-NN/questions.md）を解析するスクリプトは無い
+
+「いつ」に使えるサイクルの中の出来事と、それを判定する既存の関数:
+
+- フェーズの開始: `scripts/lib/phase.mts:116-193` `deriveState`、作業単位の記録の有無（`scripts/lib/steps/locate.mts:72-111, 159-175`）
+- ゲートの開始: `scripts/lib/steps/engine.mts:163-241` `evaluate` の `current` が gate であること（`directive.mts:241-243` で `ask` にゲート ID）
+- PR のマージの前: 各フェーズの `pr` ステップ（`recordsPr`）が current になった時点。`publicationStep`（`scripts/lib/steps/publication.mts:4-15`）。サイクル側の `mergePending`（`phase.mts:122-125`）。conductor の最後の PR は指示文の中だけで、step の定義は無い
+- サイクルの close: `scripts/lib/steps/close-cycle.mts:31-33` `cycleClosed`、`:67` の close ステップ、`scripts/commands/cycle.mts:680-734`
+
+示す先:
+
+- `scripts/lib/steps/directive.mts:143` の `notices: string[]` は描画（`:291`）まで配線済みだが、`:199` で常に `[]` で、どこからも値が入っていない。`buildDirective` は step next / report / restart と `directiveOf`（Stop フック・step where・conductor parse）から呼ばれるので、差し込めば全経路に効く
+- `scripts/commands/cycle.mts:534-667` `cycle status`（JSON `:589-607`、テキスト `:609-663`）。差し戻しの注記（`:614-621`）が節の手本
+- `skills/navigator/SKILL.md:33-79, 85-99` は `cycle status` などの JSON だけを根拠にする。JSON に欄を足せば判定表に1行足すだけ
+- PR 本文はすべてのフェーズで LLM が書く（`skills/*/steps/pr.md`）。スクリプトが組み立てる前例は `pr title`（`scripts/commands/naming.mts:168`）と `external ref` の1行だけ。directive の値で節の有無を切り替える型は architect の `designChoiceGate`（`skills/architect/steps/pr.md:13-14`）
+
+### US-20: 事後同意（G3 の途中で追加）
+
+- サイクル設定の読み込みは `scripts/lib/config.mts:1106-1194` `loadConfig`。マージの前はルートとサイクルを別の table で持つ（ルートは `:1110-1128`、サイクルは `:1178-1191`）
+- サイクル設定で弾くキー: `assertCycleOverridable`（`:1057-1104`。profile / ask / `data_integrity.release_branches`）、`CYCLE_LOCKED_KEYS`（`:417`）。**「サイクル設定でのみ書けて、ルートでは不可」のキーの前例は無い**。ルート側の検査は `:1124-1128` の並びに足せる
+- サイクル設定は create-cycle が書き出す（`scripts/commands/cycle.mts:55, 291`）。設定ファイルの内容ごと conductor の digest に入る（`scripts/commands/conductor.mts:556-559`）
+
+### US-21: conductor の走りきり（G3 の途中で追加）
+
+- `skills/conductor/SKILL.md:39` は「逐次実行」と固定。`:117-127` は `resumeAt` か、`available` のうち番号が最小の1件を選ぶ。順序と並行を決める処理はスクリプトに無く、指示文（LLM）が選ぶ
+- 依存の判定: `scripts/lib/tasklist.mts:302-311` `readyBuilds`、`:314-317` `blockedBuilds`。tasklist の dependencies はビルド ID の列挙だけで、ビルド以外（問い）への依存を書く列は無い（`:16, 89-92`）
+- `scripts/commands/next.mts:76` は差し戻し中なら `available=[]` で全ビルドを止める。`:77-79` は origin にブランチがあるビルドを `inProgress` として外す
+- ループ全体が止まる箇所: human の gate で `AskUserQuestion` を待つ（`SKILL.md:197, 433-443`）。blocked で returned が無いとき（`:295-300`）。violation の2回目（`:306-308`）。error（`:310-315`）。check-pr の不合格・headSha・digest の不一致（`:252-275`）
+- 再開: `conductor launch … --resume {sessionId} --message {回答ファイル}`（`scripts/commands/conductor.mts:164-196`）。状態も session-id も保存しない（`SKILL.md:27-28`）
+- 最後の PR の本文は監督（LLM）が組み立てる（`SKILL.md:338-344`）。`pr body` に当たるコマンドは無い
+- Step 0 の委任の範囲の確認: 文面は `SKILL.md:82-95`、データは `conductor asks`（`scripts/commands/conductor.mts:65-111`）
+
 ## 既存の規約・パターン
 
 - **命名規約**: CLI は `register({ name: "<group> <verb>", usage, details, writes, run })`。判定関数は `validateX(...) → Problem[]`、`readXSection(issue)`。見出しの定数は export する（`PROMOTE_HEADING` など）
@@ -169,4 +210,5 @@ docs/                利用者向けの説明（concepts.md が今回の要件�
 - `docs/configuration/profiles.md:37` は「G1 は常に有効」と書くが、コードは `user_stories_gate = false` で外せる
 - `skills/conductor/SKILL.md:82-97` は同意ゲートを監督に委任させるが、`docs/concepts.md:190` と AGENTS.md の原則 11 は「同意は conductor でも省かない」
 - `agents/doc-triager.md:16-22` は persistence.md の置き場の順を写している（AGENTS.md のスクリプト規約「写さず persistence.md を読ませる」に反する）
+- `skills/conductor/SKILL.md:39`（逐次実行）と human の gate で監督のセッション全体が止まること（`:197`）は、`docs/concepts.md` の「conductor は、明示した範囲で委任する」の走りきりの段落（US-21.2）と食い違う
 - `docs/concepts.md` の「知見の置き場」「基準は少なく保ち」「Hikyaku 自身を直す」節は、まだ仕組みが無い理想の姿（このサイクルの対象そのもの）
