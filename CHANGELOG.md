@@ -34,6 +34,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - **アプリケーションの状況と境界の宣言（`[app]`・`[[app.areas]]`・`[boundaries]`）**: 公開範囲・扱うデータの重さ・壊れたときの影響の3軸と `merge_gate`、名前つきの重い領域のパス、外との境界・内部の境界のパスを、ルート設定に書ける。サイクル設定に書くと、不正な値・知らないキー・重い領域の名前の重複と同じくエラー。`hikyaku config` に宣言と、作業ツリーの宣言から求めた AI に任せてよい害の上限を表示する。上限は、作業ツリーと、base_branch・デフォルトブランチとの merge-base にある宣言のうち最も厳しいもので決める（ユーザーがマージしていない宣言で緩めない）。**この版では宣言は検査と表示だけで、ゲートの判定にはまだ使わない**
 - 設定ファイルの TOML でテーブル配列（`[[x]]`）を書けるようになった
+- **差分の事実（`hikyaku diff facts <build-NN> [<cycle>] [--format text|json|pr]`、読み取り専用）**: PR のマージ先との merge-base から作業ツリーまで（未コミットの変更と未追跡のファイルを含む）を比べ、変更ファイルと種類、テストファイルの削除（リネームでテストの分類から外れたものを含む）、削除されたテストの宣言、追加されたスキップの印、アサーションの行の変更、設定の宣言（`[app]`・`[[app.areas]]`・`[boundaries]`・`[consent]`。`[[app.areas]]` は項目の追加・削除と `paths` の外した・足したパス）の変更、`issue.md` の変更、G8 の承認より後の `plan.md`・`test-spec.md` の書き換えを並べる。スコープの内外や、緩和かどうかは判定しない。このビルドの成果物（`progress.jsonl`・`plan.md` など）は一覧から除く。`--format pr` は変更ファイルの一覧を写さず、事実と `agreement.md` の「返した理由」を PR 本文の節に組み立てる。基準を解決できないときも止めず、注意に理由を出す
+- **builder の `agreement-review` ステップ**: verify の後・review の前に、どのプロファイルでも入る。`diff facts` の事実を、doc-reviewer の新しい context `agreement` が issue.md・test-spec.md・plan.md の「マージ時点のデータ安全」と突き合わせ、合意に無い変更・スコープ外の変更・データ安全の不備を指摘する。指摘は `hikyaku review action doc --context agreement` で解決し（`max_rounds` に関わらず1回で終わり、`confirm` を返さない）、builder は直すか理由を返す。ユーザーの判断を待って止まらない。結果は `build-NN/agreement.md` に残し、無ければ完了にならない
+- `[diff]` に `test_declarations` / `skip_markers` / `assertion_markers`（差分の事実の印）。主要な枠組みの書き方を既定に持ち、書いた印は **既定に追加される**（既定は消せない）。英数字で始まる印は、直前が英数字でない位置だけに当たる
 - **未決事項と決定の記録（`decisions.jsonl`）と `hikyaku ledger open / decide / list / show`**: 決めずに先へ進めたこと・暫定の決定・異議・受け入れたリスクを、いつ（`now` / `phase:` / `gate:` / `merge` / `close` だけ。存在しないゲートやビルドはエラー）・誰が（`user` / `ai:<フェーズ>` / `supervisor`）決めるかとともに、作業単位ごとの `decisions.jsonl` に追記する。決定は決めた作業単位のファイルに書くので、並行するビルドの決定がマージで衝突しない。決まったかと期限は記録から導き、状態の欄は持たない。ユーザーが決める事項はユーザーしか決められない（`--input` 必須）。期限が来た・過ぎた事項は `step next` の注意と `cycle status`（JSON の `ledger`）に、決まるまで示される。Stop フック・`step where` は読まない（builder の `delegation` のきっかけを見るための、その作業単位の `decisions.jsonl` 1つを除く）
 - **異議の記録（`hikyaku ledger object`）とゲートの承認の検査**: ユーザーの選択がその人自身の宣言・記録と食い違うときに唱えた異議（根拠・失うもの・害の重さ）と、ユーザーの決定を対で記録する。害が高で選択どおりに進めるなら、ユーザーの言葉の `--accepts` と `--premises` が必須。どの場合もユーザーの答え（`--input`）が必須。そのステップに片づいていない高の異議があると、`step report` はゲートの承認を受け付けない（記録を読めないときも受け付けない）。中の異議は記録だけで進む。サイクルに属す作業単位の gate の directive（`objection`）に、異を唱える範囲の固定の指示・照合に使える宣言と記録のポインタ・`ledger object` の呼び方が載る
 - **`hikyaku ledger premises [--changed-from <ref>] [--format pr]`**: ルートの `.hikyaku.config` の `[app]`・`[[app.areas]]` を基準と HEAD で比べ、変わった参照（`app.<key>` / `area:<name>`）と、それを拠り所にした受け入れを並べる。受け入れは、作業ツリーにある全サイクルの `decisions.jsonl`（退け・解決されていない risk と、ユーザーが受け入れた objection のうち `premises` を持つもの）と、`decisions`・`constraints` の「受け入れたこと」の行（`（拠り所: \`<参照>\`）` で終わる行）。基準は上限の判定と同じ（base_branch・デフォルトブランチとの merge-base、origin とローカルの両方）。基準を読めないときは、宣言されている参照をすべて変わったものとして扱う。`-` で始まる ref は受け付けない。終了コードは常に 0
@@ -85,6 +88,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- builder の review から、スコープ準拠とマージ時点のデータ安全の自己確認を削った（agreement-review に移した）。pr は `diff facts build-NN --format pr` の出力を PR 本文に貼る
 - **ADR のテンプレート**（architect の `references/templates.md` と `steps/adr.md`）の欄を、決定 / 文脈 / 外の前提 / 検討した案 / 推奨 / 採用理由 / 受け入れたこと / トレードオフ / 再評価条件 / 退けた推奨で失う利点 / 影響範囲 / 領域（任意。`- **領域**: \`<glob>\`, \`<glob>\``）にした。「受け入れたこと」は1件1行で、外の前提を拠り所にする行は `（拠り所: \`<前提の参照>\`）` で終える
 - **design-questions.md のテンプレート**に、各案の欠点・推奨・回答と、推奨を退けたときに失う利点の欄を足した（architect の `steps/questions.md` も同じ）
 - ポインタに件数や範囲を添えさせていた指示を直した（close-cycle の G10 の提示例と collect、init の pr と triage-approval、conductor の最後の PR の CI の結果、token-guide の propose、build-manager と builder の templates）。予測ピークの根拠のファイル数・行数は、見積もりの根拠として残す
@@ -169,6 +173,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Migration
 
+- agreement-review の導入に対応は不要。進行中のビルドで verify を終えていれば、次の1手が agreement-review になる。`[diff]` の印のキーは省略すれば既定を使う。テストの書き方が既定の印で拾えない枠組みなら、`[diff]` の `test_declarations` / `skip_markers` / `assertion_markers` に足す
 - patch の導入に対応は不要。サイクルに属さない patch の記録は `{HIKYAKU_ROOT}/patches/` にコミットされ、マージのたびに増えるので、ときどき `hikyaku patch prune --before <YYYYMM>` で古い月を消して PR にする
 - 永続ドキュメントを独自の仕組みで「close-cycle だけが書く」と検査している場合は、patch の PR（`{prefix}/patch/...` のブランチ）を例外に加える
 - サイクルを省略する設定参照では、active が1件だけという理由でサイクル設定を重ねない。既存サイクルの設定を使う場合は、サイクルを明示するか、ブランチ・`cycle use` で選択する

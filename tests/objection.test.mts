@@ -514,6 +514,8 @@ test("記録する側: planner の user-stories と builder の handoff の最�
   report(directory, "G8", "--result", "approved", "--input", "OK");
   report(directory, "implement", "--result", "done");
   report(directory, "verify", "--result", "done");
+  write(directory, `${BUILD}/agreement.md`);
+  report(directory, "agreement-review", "--result", "done");
   report(directory, "review", "--result", "done");
   openId(directory, "build-01", "001", "--type", "provisional", "--who", "user", "--when", "merge", "--summary", "確度: 要確認");
   const [buildItem] = jsonl(directory, `${BUILD}/decisions.jsonl`);

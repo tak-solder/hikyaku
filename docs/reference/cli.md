@@ -210,7 +210,8 @@ patch（`patch-YYYYMM-slug`）は、サイクルに属さなければ `<cycle>` 
 
 | コマンド | いつ使うか |
 |---|---|
-| `review action` | コード・セキュリティの指摘の妥当性を判断したあと、対応確認と再レビューの要否を設定から決めるとき |
+| `review action` | コード・セキュリティの指摘の妥当性を判断したあと、対応確認と再レビューの要否を設定から決めるとき。合意との突き合わせ（`doc --context agreement`）の指摘にも使い、こちらは1回で終わって止まらない |
+| `diff facts <build-NN> [<cycle>]` | 合意との突き合わせの前に、テストの削除・スキップ・アサーションの変更・設定の宣言の変更・合意の文書の書き換えを差分から事実として並べるとき。`--format pr` は PR 本文の節を組み立てる（builder の PR の手順が貼る） |
 | `review resolve <kind> <phase> [<cycle>]` | レビューをどのプロバイダ・モデル・回数で、どう起動するか確かめるとき |
 | `review run <kind> <phase> [<cycle>]` | コードやセキュリティのレビューを別プロセスで実行するとき（builder と patch が呼ぶ）。Codex で動かす doc-reviewer も同じ |
 

@@ -200,7 +200,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title build-{NN} {cycle
 
 ### Step 3 以降: step に従って進める
 
-ここから先の手順（plan → レビュー → G8 → 実装 → 検証 → コードレビュー → handoff → 振り返り → PR → 公開）は、
+ここから先の手順（plan → レビュー → G8 → 実装 → 検証 → 合意との突き合わせ → コードレビュー → handoff → 振り返り → PR → 公開）は、
 `step next` が設定と進捗から1手ずつ返す。**手順を自分で組み立てない。** どのレビューが有効か、
 どのゲートがあるかは step が決める。
 
@@ -228,7 +228,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next build-{NN} {cycle}
 - 再開したとき、前のステップで会話の中に作った成果（提示する案・指摘の統合など）が手元に無ければ、
   そのステップを `done` で報告し直してやり直す
 - 報告したら、成果物と `cycles/{cycle}/build-{NN}/progress.jsonl` をコミット & push する。
-  指示ファイルにコミット・push の時機の定めがあれば（implement / verify / review / retrospective / pr）、そちらに従う
+  指示ファイルにコミット・push の時機の定めがあれば（implement / verify / agreement-review / review / retrospective / pr）、そちらに従う
 - 迷ったら `step next` を呼び直す。同じ状態なら同じ1手が返る
 - `context` が付いた1手は、コンテキストの区切り（G8・実装開始前・レビュー前）。目安を超えていても
   止まらず、継続するか分割するかを自分で判断する。継続するなら、次のゲートの報告でそのことを伝える

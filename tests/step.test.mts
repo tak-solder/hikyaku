@@ -289,6 +289,8 @@ test("step: 振り返りを PR 前に終え、PR 列と URL が揃うまで完�
   report(directory, "G8", "--result", "approved");
   report(directory, "implement", "--result", "done");
   report(directory, "verify", "--result", "done");
+  write(directory, `${BUILD}/agreement.md`);
+  report(directory, "agreement-review", "--result", "done");
   report(directory, "review", "--result", "done");
   write(directory, `${BUILD}/handoff.md`);
   assert.equal(report(directory, "handoff", "--result", "done").step, "retrospective");
@@ -359,7 +361,9 @@ test("step: 区切りでは現在のセッションのコンテキストを目�
   assert.equal(last?.["session"], "s-1");
 
   reportWith(directory, env, "implement", "--result", "done");
-  const review = reportWith(directory, env, "verify", "--result", "done");
+  assert.equal(reportWith(directory, env, "verify", "--result", "done").step, "agreement-review");
+  write(directory, `${BUILD}/agreement.md`);
+  const review = reportWith(directory, env, "agreement-review", "--result", "done");
   assert.equal(review.step, "review");
   assert.deepEqual(review.overruns?.map((entry) => entry.checkpoint), ["approval", "implement"]);
 });

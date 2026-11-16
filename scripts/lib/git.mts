@@ -26,9 +26,9 @@ type RunResult = { ok: true; stdout: string } | { ok: false; message: string };
  * **終了コードだけで判断する。** fatal メッセージは locale 依存なので、
  * 文字列の一致で場合分けしてはいけない（LANG が日本語の環境で壊れる）。
  */
-async function tryGit(cwd: string, argv: string[], timeout = 15_000): Promise<RunResult> {
+async function tryGit(cwd: string, argv: string[], timeout = 15_000, maxBuffer = 8 * 1024 * 1024): Promise<RunResult> {
   try {
-    const { stdout } = await run("git", argv, { cwd, timeout, maxBuffer: 8 * 1024 * 1024 });
+    const { stdout } = await run("git", argv, { cwd, timeout, maxBuffer });
     return { ok: true, stdout };
   } catch (error) {
     // execFile の message は "Command failed: git …" で始まり、原因は stderr 側にある。
@@ -462,12 +462,10 @@ export async function diffStats(
   excludePaths: string[] = [],
   head = "HEAD",
 ): Promise<DiffStats | undefined> {
-  const found = await tryGit(cwd, ["merge-base", baseRef, head]);
-  if (!found.ok) return undefined;
-  const mergeBase = found.stdout.trim();
-  if (mergeBase === "") return undefined;
+  const mergeBase = await mergeBaseOf(cwd, baseRef, head);
+  if (mergeBase === undefined) return undefined;
 
-  const pathspec = ["--", ".", ...excludePaths.map((path) => `:(exclude)${path}`)];
+  const pathspec = excludingPathspec(excludePaths);
 
   // -z ではパスが引用符でくくられず、リネームも「移動元\0移動先」で分かれて出る
   const numstat = await tryGit(cwd, ["diff", "--numstat", "-z", `${mergeBase}..${head}`, ...pathspec]);
@@ -506,6 +504,123 @@ export async function diffStats(
   }
 
   return { mergeBase, files };
+}
+
+/** リポジトリ全体から、指定したパスを除く pathspec（`--` から） */
+function excludingPathspec(excludePaths: string[]): string[] {
+  return ["--", ".", ...excludePaths.map((path) => `:(exclude,literal)${path}`)];
+}
+
+/** base と head の merge-base。解決できなければ undefined */
+export async function mergeBaseOf(cwd: string, baseRef: string, head = "HEAD"): Promise<string | undefined> {
+  const found = await tryGit(cwd, ["merge-base", baseRef, head]);
+  if (!found.ok) return undefined;
+  const sha = found.stdout.trim();
+  return sha === "" ? undefined : sha;
+}
+
+export type NameStatusCode = "A" | "M" | "D" | "R" | "C" | "T" | "U" | "X";
+
+export interface NameStatusEntry {
+  status: NameStatusCode;
+  /** リポジトリルートからの相対パス。リネーム・コピーは移動先 */
+  path: string;
+  /** リネーム・コピーの移動元 */
+  from?: string;
+}
+
+/**
+ * from から作業ツリーまでの変更ファイルと種類（git diff --name-status -M）。
+ * コミット済みの変更と、未コミットの追跡ファイルの変更の両方を含む。未追跡のファイルは含まない
+ * （untrackedFiles で別に取る）。失敗は undefined
+ */
+export async function nameStatus(cwd: string, from: string, excludePaths: string[] = []): Promise<NameStatusEntry[] | undefined> {
+  const result = await tryGit(cwd, ["diff", "--name-status", "-M", "-z", "--no-ext-diff", from, ...excludingPathspec(excludePaths)]);
+  if (!result.ok) return undefined;
+  const fields = result.stdout.split("\0");
+  const entries: NameStatusEntry[] = [];
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index] as string;
+    if (field === "") continue;
+    // R100・C075 のように類似度が付く
+    const code = (field[0] ?? "X") as NameStatusCode;
+    if (code === "R" || code === "C") {
+      entries.push({ status: code, from: fields[index + 1] ?? "", path: fields[index + 2] ?? "" });
+      index += 2;
+    } else {
+      entries.push({ status: code, path: fields[index + 1] ?? "" });
+      index += 1;
+    }
+  }
+  return entries;
+}
+
+/**
+ * from から作業ツリーまでの、指定したパスの unified diff（-U0。hunk の行番号と増減の行だけ）。
+ * 行の照合に使うので文脈の行は要らない。外部の diff ツールと色は切る。
+ * 見出しの接頭辞は a/ b/ に固定する（利用者の diff.mnemonicPrefix・diff.noprefix で見出しのパスが変わらないように）。
+ * パスが空なら空文字列。失敗は undefined
+ */
+export async function unifiedDiff(cwd: string, from: string, paths: string[]): Promise<string | undefined> {
+  if (paths.length === 0) return "";
+  const result = await tryGit(
+    cwd,
+    [
+      "-c", "core.quotePath=false",
+      "diff", "-M", "-U0", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/",
+      from, "--", ...paths.map((path) => `:(literal)${path}`),
+    ],
+    30_000,
+    64 * 1024 * 1024,
+  );
+  return result.ok ? result.stdout : undefined;
+}
+
+/** 未追跡で、ignore されていないファイル（作業中に足したばかりのファイル）。失敗は undefined */
+export async function untrackedFiles(cwd: string, excludePaths: string[] = []): Promise<string[] | undefined> {
+  const result = await tryGit(cwd, ["ls-files", "--others", "--exclude-standard", "-z", ...excludingPathspec(excludePaths)]);
+  if (!result.ok) return undefined;
+  return result.stdout.split("\0").filter((path) => path !== "");
+}
+
+export interface CommitSummary {
+  sha: string;
+  /** コミット日時（ISO 8601） */
+  committedAt: string;
+  subject: string;
+}
+
+/**
+ * path の履歴で、needle を初めて足したコミット（git log -S の最も古いもの）。
+ * 記録（progress.jsonl の承認の at）がコミットに入った時点を、日時ではなく履歴で求める。
+ * 見つからなければ null、失敗は undefined
+ */
+export async function commitIntroducing(cwd: string, path: string, needle: string): Promise<string | null | undefined> {
+  const result = await tryGit(cwd, ["log", "--reverse", "--format=%H", `-S${needle}`, "--", path]);
+  if (!result.ok) return undefined;
+  return result.stdout.split("\n").find((line) => line.trim() !== "")?.trim() ?? null;
+}
+
+/**
+ * since のコミットより後（since..HEAD）に path を変えたコミット（新しい順）。
+ * 日時ではなく履歴の前後で決める（rebase でコミット日時が書き換わっても、前のコミットを後と数えない）。失敗は undefined
+ */
+export async function commitsTouchingSince(cwd: string, path: string, since: string): Promise<CommitSummary[] | undefined> {
+  const result = await tryGit(cwd, ["log", "--format=%h%x09%cI%x09%s", `${since}..HEAD`, "--", path]);
+  if (!result.ok) return undefined;
+  const commits: CommitSummary[] = [];
+  for (const line of result.stdout.split("\n")) {
+    if (line.trim() === "") continue;
+    const [sha = "", committedAt = "", ...subject] = line.split("\t");
+    commits.push({ sha, committedAt, subject: subject.join("\t") });
+  }
+  return commits;
+}
+
+/** path に、HEAD からの未コミットの変更（ステージ済みを含む）があるか。未追跡も変更とみなす。失敗は undefined */
+export async function hasUncommittedChange(cwd: string, path: string): Promise<boolean | undefined> {
+  const result = await tryGit(cwd, ["status", "--porcelain", "--", path]);
+  return result.ok ? result.stdout.trim() !== "" : undefined;
 }
 
 /**
