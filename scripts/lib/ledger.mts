@@ -40,6 +40,11 @@ export const ITEM_TYPES: ItemType[] = ["question", "provisional", "objection", "
 export type Decision = "decided" | "consented" | "rejected" | "resolved";
 export const DECISIONS: Decision[] = ["decided", "consented", "rejected", "resolved"];
 export const HARMS: Harm[] = ["高", "中"];
+/**
+ * 異議へのユーザーの決定。consented は異議を聞いたうえで選択どおりに進める（受け入れる）、
+ * decided はユーザーが選択を改めた（受け入れるものが無い）
+ */
+export const OBJECTION_DECISIONS: Decision[] = ["consented", "decided"];
 
 /** 「誰が」: user / ai:<phase> / supervisor */
 export type Who = "user" | `ai:${string}` | "supervisor";
@@ -62,6 +67,8 @@ export interface OpenRecord {
   who: Who;
   /** 拠り所にした外の前提の参照 */
   premises?: string[];
+  /** 異議の根拠（食い違う宣言・記録。ledger object が書く） */
+  basis?: string;
   /** 失うもの（退けた安全側の案の利点） */
   loses?: string;
   harm?: Harm;
@@ -435,6 +442,88 @@ export function decideItem(cycleDirectory: string, record: DecideRecord, ledger:
 }
 
 // ---------------------------------------------------------------------------
+// 異議
+
+/**
+ * 高の異議が片づいたか: ユーザーが選択を改めた（decided）か、受け入れると書いて進めた（accepts 付きの
+ * consented）。拠り所の前提は、記録するとき（ledger open / object）に求める。決定では前提を足せないので、
+ * ここで求めると前提の無い事項を受け入れで片づける手段が無くなる
+ */
+function objectionSettled(item: LedgerItem): boolean {
+  const latest = item.latest;
+  if (latest === undefined || latest.by !== "user") return false;
+  if (latest.decision === "decided") return true;
+  return latest.decision === "consented" && latest.accepts !== undefined && latest.accepts.trim() !== "";
+}
+
+/**
+ * 1つの作業単位の decisions.jsonl だけから組み立てた記録。サイクルのほかの単位の記録が壊れていて
+ * readLedger が失敗したときに、その単位の異議を確かめるのに使う（ほかの単位の決定は見えないので、
+ * 片づいていない側に倒れる）
+ */
+export function readUnitLedger(cycleDirectory: string, unit: string): Ledger {
+  const items: LedgerItem[] = [];
+  const decides: DecideRecord[] = [];
+  for (const record of readJsonl(ledgerPath(cycleDirectory, unit), isRecord, LABELS)) {
+    if (record.record === "open") items.push({ open: record, decisions: [], latest: undefined });
+    else decides.push(record);
+  }
+  for (const decide of [...decides].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))) {
+    const item = items.find((entry) => entry.open.id === decide.id);
+    if (item === undefined) continue;
+    item.decisions.push(decide);
+    item.latest = decide;
+  }
+  return { items, orphans: [] };
+}
+
+/**
+ * そのゲートの承認を止める異議。その作業単位・そのステップで記録した害が高の objection のうち、
+ * 片づいていないもの。中の異議は記録だけで進むので数えない（US-1.3・US-1.4）
+ */
+export function unacceptedObjections(ledger: Ledger, unit: string, step: string): LedgerItem[] {
+  return ledger.items.filter(
+    (item) =>
+      item.open.type === "objection" && item.open.harm === "高" && item.open.unit === unit && item.open.step === step &&
+      !objectionSettled(item),
+  );
+}
+
+/**
+ * その作業単位の decisions.jsonl を読めないときの理由。読めれば undefined。
+ * 割り込みのきっかけを記録に置くスキル（builder）は、読めなければ手順に入らずに止まる。きっかけが
+ * 見えないまま進むと、ユーザーに尋ねるゲートが黙って消えるため
+ */
+export function unitLedgerProblem(unitDirectory: string): string | undefined {
+  try {
+    readJsonl(join(unitDirectory, LEDGER_FILE), isRecord, LABELS);
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
+/**
+ * その作業単位のディレクトリの decisions.jsonl だけを読み、条件に合う事項の最新の at を返す。
+ * ステップ定義の割り込みのきっかけ（builder の delegation）が使うので、手順の位置だけを読む経路
+ * （Stop フック・step where・conductor parse）もこの1ファイルだけは読む。例外は投げず、読めなければ
+ * undefined を返す（読めないことは、スキルの stop が unitLedgerProblem で先に止める）
+ */
+export function latestOpenAt(unitDirectory: string, matches: (record: OpenRecord) => boolean): string | undefined {
+  let records: LedgerRecord[];
+  try {
+    records = readJsonl(join(unitDirectory, LEDGER_FILE), isRecord, LABELS);
+  } catch {
+    return undefined;
+  }
+  let latest: string | undefined;
+  for (const record of records) {
+    if (record.record === "open" && matches(record) && (latest === undefined || record.at > latest)) latest = record.at;
+  }
+  return latest;
+}
+
+// ---------------------------------------------------------------------------
 // 期限
 
 export type Timing = "pending" | "due" | "overdue";
@@ -469,7 +558,8 @@ export function cycleTimeline(config: ResolvedConfig, cycle: CycleContext, merge
       if (skill === undefined || !read.some((event) => event.skill === skill.skill)) continue;
       try {
         const evaluation = evaluate(skill, { config, cycle, unit, unitDirectory, events: read });
-        current.set(unit, evaluation.current?.definition.id ?? null);
+        // 割り込みのゲート（delegation）が現在地でも、期限は並びの位置で判定する
+        current.set(unit, evaluation.sequential?.definition.id ?? null);
       } catch {
         // 近似に戻す
       }

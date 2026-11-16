@@ -11,6 +11,7 @@ import { flagString, type ParsedArgs } from "../args.mts";
 import type { Phase } from "../branch.mts";
 import type { ContextBudget } from "../config.mts";
 import { HikyakuError } from "../errors.mts";
+import { loadGuide } from "../docs.mts";
 import { cycleTimeline, noticeLines, readLedger, summarize } from "../ledger.mts";
 import { pluginRoot } from "../paths.mts";
 import { readProgress, type StepResult } from "../progress.mts";
@@ -138,6 +139,8 @@ export interface Directive {
   approval?: "confirm" | "consent";
   /** 同意の理由（確認なら null） */
   approvalReason?: string | null;
+  /** 異を唱える範囲と記録の仕方（サイクルに属す作業単位の gate だけ） */
+  objection?: ObjectionGuide;
   call?: string;
   reason?: string;
   /** 呼ぶ内部スキルが step に移っていれば、そのスキルが最初に呼ぶコマンド */
@@ -148,6 +151,52 @@ export interface Directive {
   notices: string[];
   message?: string;
   progress: { complete: number; total: number };
+}
+
+export interface ObjectionGuide {
+  /** スクリプトが固定する短い指示。各スキルの指示文には写さない */
+  guide: string[];
+  /** 照合に使える宣言・記録のポインタ */
+  pointers: string[];
+  /** 異議と決定を記録するコマンド */
+  command: string;
+}
+
+const OBJECTION_GUIDE = [
+  "ユーザーの選択が、下の宣言・記録・前提と食い違うときだけ異を唱える。好みの違い（どれとも食い違わない選択）には唱えない",
+  "唱えるときは、根拠（どの宣言・記録か）と、その選択で失うものを示す",
+  "害の重さは persistence.md の重要度で決める（高: 害が成果物に残る / 中: セッションのコスト）。中は指摘にとどめ、ユーザーがそのまま進めればそれで決まる",
+  "高は、ユーザーが何を受け入れるかを自分の言葉で書くまで承認を報告しない（受け入れの言葉を AI が代わりに書かない）",
+  "異を唱えたら、ユーザーの決定を聞いてから、承認を報告する前に下のコマンドで異議と決定を対で記録する",
+];
+
+/** 照合に使える宣言・記録。登録されていない文書は指さない */
+function objectionPointers(opened: Opened, cycle: CycleContext): string[] {
+  const pointers = [`アプリケーションの状況と境界の宣言: ${CLI} config ${cycle.name}（[app]・[[app.areas]]・[boundaries]）`];
+  try {
+    for (const entry of loadGuide(opened.ctx.config.hikyakuRoot)) {
+      if ((entry.name === "constraints" || entry.name === "decisions") && entry.path !== undefined) {
+        pointers.push(`${entry.name}: ${entry.path}`);
+      }
+    }
+  } catch {
+    // document-guide.md が読めなくても、ほかのポインタは示す
+  }
+  pointers.push(
+    `見積もり（予測ピーク）: ${relative(opened.ctx.config.repoRoot, join(cycle.directory, "tasklist.md"))}`,
+    `受け入れ・決定・異議の記録: ${CLI} ledger list ${cycle.name}`,
+  );
+  return pointers;
+}
+
+function objectionGuide(opened: Opened, cycle: CycleContext): ObjectionGuide {
+  return {
+    guide: OBJECTION_GUIDE,
+    pointers: objectionPointers(opened, cycle),
+    command:
+      `${CLI} ledger object ${opened.phase} ${cycle.name} --summary "<異議>" --basis "<食い違う宣言・記録>" --loses "<失うもの>" ` +
+      `--harm 高|中 --decision consented|decided --input "<ユーザーの答え>" [--accepts "<ユーザーが受け入れると書いた言葉>" --premises <前提の参照,...>]`,
+  };
 }
 
 function reportCommand(opened: Opened, step: string, result: StepResult): string {
@@ -217,7 +266,7 @@ function ledgerNotices(opened: Opened, evaluation: Evaluation): string[] {
     // 未決の事項が無ければ、全単位の評価をしない（notices に載るのは未決の事項だけ）
     if (!ledger.items.some((item) => item.latest === undefined)) return [];
     const timeline = cycleTimeline(opened.ctx.config, cycle);
-    if (opened.skill.internal !== true) timeline.current.set(opened.phase, evaluation.current?.definition.id ?? null);
+    if (opened.skill.internal !== true) timeline.current.set(opened.phase, evaluation.sequential?.definition.id ?? null);
     return noticeLines(summarize(ledger, timeline));
   } catch (error) {
     return [`未決事項の記録を読めません: ${error instanceof Error ? error.message : String(error)}（hikyaku ledger list で確かめてください）`];
@@ -276,6 +325,8 @@ export function buildDirective(opened: Opened, evaluation: Evaluation, options: 
     const now = consent !== false && consent.timing === "now";
     directive.approval = now ? "consent" : "confirm";
     directive.approvalReason = now ? consent.reason : null;
+    // 手順の位置だけを読む側（Stop フック・step where・conductor parse）には要らないので組み立てない
+    if (ctx.cycle !== undefined && options.notices !== false) directive.objection = objectionGuide(opened, ctx.cycle);
   }
   if (definition.kind === "call") {
     directive.call = definition.call ?? "";
@@ -306,6 +357,13 @@ export function renderDirective(directive: Directive): string {
   if (directive.kind === "gate") {
     lines.push(`問いの ID: ${directive.ask}`);
     lines.push(directive.approval === "consent" ? `承認: 同意（${directive.approvalReason ?? ""}）` : "承認: 確認");
+    if (directive.objection !== undefined) {
+      lines.push("異議:");
+      for (const line of directive.objection.guide) lines.push(`  - ${line}`);
+      lines.push("  照合に使える宣言・記録:");
+      for (const pointer of directive.objection.pointers) lines.push(`    ${pointer}`);
+      lines.push(`  記録: ${directive.objection.command}`);
+    }
   }
   if (directive.kind === "call") {
     lines.push(`呼ぶスキル: /hikyaku:${directive.call}`, `理由: ${directive.reason}`);

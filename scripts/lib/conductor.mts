@@ -83,6 +83,7 @@ export const ASKS: AskDefinition[] = [
   { id: "G6", category: "confirm", where: "build-manager: tasklist / issue の変更" },
   { id: "G8", category: "confirm", where: "builder: plan + test-spec の承認" },
   { id: "G10", category: "consent", where: "close-cycle: 永続ドキュメントへの昇格" },
+  { id: "delegation", category: "consent", where: "architect / builder: 委任の前提が崩れたあと（差し戻し・設計と要件の衝突）、委任を続けるか" },
   { id: "questions", category: "spec", where: "architect / builder: 質問ループ" },
   { id: "adr-status", category: "spec", where: "architect / close-cycle: ADR に status 欄が無い" },
   { id: "design-conflict", category: "spec", where: "builder: 設計どおりでは要件を満たせない" },

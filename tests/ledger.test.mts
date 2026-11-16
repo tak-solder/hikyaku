@@ -466,10 +466,11 @@ test("ledger list / step next / cycle status: 期限を過ぎた事項を示し�
   succeeds(directory, "ledger", "decide", "build-02", plan, "001", "--decision", "decided", "--by", "user", "--input", "社内の利用者");
   assert.deepEqual(json<{ due: unknown[] }>(directory, "ledger", "list", "001").due, []);
 
-  // 壊れた記録: 手順は止めずに注意で知らせ（step report が進捗を書いたあとに失敗しないため）、
-  // Stop フックと step where は読まない。ledger のコマンドは止まる
+  // 壊れた記録（ほかの作業単位）: 手順は止めずに注意で知らせ（step report が進捗を書いたあとに失敗しないため）、
+  // Stop フックと step where は読まない。ledger のコマンドは止まる。
+  // builder 自身の単位の記録が壊れたときは、delegation のきっかけを読めないので止まる（objection.test.mts）
   succeeds(directory, "step", "report", "build-02", "plan", "001", "--result", "failed", "--reason", "試し");
-  writeFileSync(join(directory, CYCLE, "build-02", "decisions.jsonl"), "{broken\n", { flag: "a" });
+  writeFileSync(join(directory, CYCLE, "planning", "decisions.jsonl"), "{broken\n", { flag: "a" });
   const broken = json<{ directive: { notices: string[] } }>(directory, "step", "next", "build-02", "001");
   assert.match(broken.directive.notices.join("\n"), /未決事項の記録を読めません/);
   assert.notEqual(cli(directory, "ledger", "list", "001").status, 0);

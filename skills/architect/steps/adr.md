@@ -10,3 +10,11 @@
   - **トレードオフ欄に「特になし」と書かない。** 書きたくなるなら `options` の分岐判定が誤っている
   - 既存エントリは書き換えない（覆すときは新エントリ + 旧を superseded）
   - `designChoiceGate` が false（G3 を行わない回。express の通常の回など）では、trade-off表と推奨理由をそのまま「検討した案」「採用理由」に残す
+- [ ] 実装で確かめるまで決めきれず、暫定で決めた判断は、未決事項として記録する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger open architect {cycle} --type provisional --who <user|ai:build-NN> --when <gate:G4|phase:build-NN|merge@build-NN> --summary "<暫定の判断と、確かめること>"
+```
+
+  確かめるビルドが確定するなら `--who ai:build-NN`（そのビルドが `--by ai:build-NN` で決める）、
+  ユーザーが確かめるなら `--who user`

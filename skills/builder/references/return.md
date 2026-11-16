@@ -5,8 +5,16 @@
 変わる、と分かった場合の手順。issue.md のスコープどおりに作るとマージ時点で本番データの安全を
 保てない（「マージ時点で残る危険」に書かれていない危険が残る）と分かった場合も、これに従う。ビルドの分割や追加で済むスコープの問題は上の「ビルド管理」で扱う。
 
+- [ ] まず衝突を未決事項として記録し、`step next` を呼ぶ。委任の前提が崩れた出来事なので、step が
+  委任を続けるかの確認（gate `delegation`）を返す。それに従ってから次へ進む
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger open build-{NN} {cycle} --type question --ask design-conflict --when now --who <user|supervisor> --summary "<何と何が矛盾しているか>"
+```
+
+  `--who` は、対話のセッションなら `user`、conductor の子（`HIKYAKU_CONDUCTOR_CHILD=1`）なら `supervisor`
 - [ ] **自分で設計を変えずに、ユーザーに提示して方針を確認する（ask: design-conflict）。** 次の選択肢を、何と何が
-  矛盾しているかの説明とともに示す
+  矛盾しているかの説明とともに示す。答えは記録した事項に `ledger decide` で残す
   1. 設計に合わせる（要件のほうを改める）
   2. 要件に合わせて、このビルドの中で設計を改める
   3. architect に差し戻す

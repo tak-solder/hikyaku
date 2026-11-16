@@ -258,6 +258,7 @@ test("設定: 解決した gates に userStories は無く、表示は G1 を常
 function redesignUpToOptions(t: TestContext, directory: string): { options: Directive; next: Directive } {
   write(directory, `${CYCLE}/return.md`, "# 差し戻し: build-01\n");
   step(t, directory, "restart", "architect", "001", "--round", "return", "--reason", "build-01 からの差し戻し");
+  step(t, directory, "report", "architect", "delegation", "001", "--result", "approved", "--input", "委任を続ける");
   write(directory, `${DESIGN}/codebase-survey.md`);
   step(t, directory, "report", "architect", "survey", "001", "--result", "done");
   const options = step(t, directory, "report", "architect", "questions", "001", "--result", "done");
@@ -306,6 +307,7 @@ test("architect: 再設計の回でも options をスキップすれば G3 は�
   const directory = workspaceWith(t, "express");
   write(directory, `${CYCLE}/return.md`, "# 差し戻し: build-01\n");
   step(t, directory, "restart", "architect", "001", "--round", "return", "--reason", "x");
+  step(t, directory, "report", "architect", "delegation", "001", "--result", "approved", "--input", "委任を続ける");
   write(directory, `${DESIGN}/codebase-survey.md`);
   step(t, directory, "report", "architect", "survey", "001", "--result", "done");
   step(t, directory, "report", "architect", "questions", "001", "--result", "done");

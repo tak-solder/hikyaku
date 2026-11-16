@@ -7,6 +7,7 @@
  * ブランチを決めるまでは現在地を導出できない。
  */
 
+import { latestOpenAt, unitLedgerProblem } from "../ledger.mts";
 import { publicationStep } from "./publication.mts";
 import { readReturn, RETURN_FILE } from "../phase.mts";
 import { buildDirName, loadTasklist, normalizeBuildId } from "../tasklist.mts";
@@ -36,11 +37,25 @@ function prRecorded(ctx: StepContext): boolean {
   return loadTasklist(ctx.cycle.directory).some((build) => build.id === id && build.pr.trim() !== "");
 }
 
+/** このビルドで最後に記録した設計と要件の衝突（ask: design-conflict）の時刻 */
+function designConflictAt(ctx: StepContext): string | undefined {
+  // 衝突そのもの（question）だけを数える。監督の答えや異議の記録が同じ ask を持っても、新しい出来事ではない
+  return latestOpenAt(ctx.unitDirectory, (record) => record.type === "question" && record.ask === "design-conflict" && record.unit === ctx.unit);
+}
+
 export const BUILDER_STEPS: SkillSteps = {
   skill: "builder",
   unit: (phase) => (phase.startsWith("build-") ? buildDirName(normalizeBuildId(phase)) : undefined),
   // 差し戻し中のブランチでは builder は進まない（再設計は architect がこのブランチで行う）
   stop: (ctx) => {
+    // delegation のきっかけを記録から読めなければ、尋ねるべきゲートを見落とさないように止まる
+    const problem = unitLedgerProblem(ctx.unitDirectory);
+    if (problem !== undefined) {
+      return [
+        `このビルドの未決事項の記録を読めません: ${problem}`,
+        "設計と要件の衝突のあとに委任を続けるかを尋ねるゲートを見落とさないよう、記録を直すまで止まります（hikyaku ledger list で確かめてください）。",
+      ].join("\n");
+    }
     if (ctx.cycle === undefined || readReturn(ctx.cycle.directory) === undefined) return undefined;
     return [
       `このブランチは architect に差し戻されています（${RETURN_FILE}）。設計を見直している最中なので、作業を始めずに止まります。`,
@@ -48,6 +63,15 @@ export const BUILDER_STEPS: SkillSteps = {
     ].join("\n");
   },
   steps: [
+    {
+      // 設計と要件の衝突（ask: design-conflict）を記録したら、どのステップの最中でも委任を続けるかを尋ねる（US-14.2）
+      id: "delegation",
+      kind: "gate",
+      title: "委任を続けるかの確認（設計と要件の衝突のあと）",
+      interrupt: designConflictAt,
+      consent: () => ({ timing: "now", reason: "委任の前提が崩れた出来事（設計と要件の衝突）のあと" }),
+      ask: "delegation",
+    },
     { id: "plan", kind: "run", title: "plan.md の作成と予測ピークの見積もり直し", produces: ["plan.md"], peak: "required" },
     {
       id: "plan-review",

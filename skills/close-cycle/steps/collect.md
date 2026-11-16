@@ -20,6 +20,12 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" promotions {cycle}
 | 役に立たなかった記述 | 振り返りで挙がった記述を、場所ごとに束ねたもの。理由（古い・自明・無関係）ごとの件数付き |
 | 読めなかった行 | 書式が崩れていた行。捨てずに、内容を見て候補に含めるかを判断する |
 
+- [ ] 未決事項を集める。期限が来た・過ぎた事項（とくに いつ が `close` のもの）と未解決の退けを、G10 で示す
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger list {cycle}
+```
+
 - [ ] 候補が指す範囲だけを読む
   - 昇格先の文書は、候補が書き込まれる節と、「役に立たなかった記述」が指す節を読む（全文を読み直さない）
   - 覆した設計判断（`decisions` 宛て）があれば、該当の ADR を読む

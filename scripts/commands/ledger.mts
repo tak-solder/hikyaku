@@ -1,4 +1,4 @@
-/** ledger open / decide / list / show — 未決事項と決定の記録（decisions.jsonl） */
+/** ledger open / decide / object / list / show — 未決事項と決定の記録（decisions.jsonl） */
 
 import { flagString, type ParsedArgs } from "../lib/args.mts";
 import { ASK_IDS } from "../lib/conductor.mts";
@@ -18,6 +18,7 @@ import {
   ITEM_TYPES,
   ledgerPath,
   nextItemId,
+  OBJECTION_DECISIONS,
   openItem,
   parsePremises,
   parseWhen,
@@ -138,6 +139,10 @@ register({
     if (ask !== undefined && !ASK_IDS.includes(ask) && !gateIds().includes(ask)) {
       throw new HikyakuError(`--ask の値が不正です: ${ask}`, "conductor の問いの ID（hikyaku conductor asks）か、ゲートの ID を指定してください。");
     }
+    // 高の異議は受け入れるときに前提と結び付けて残す（US-1.5）。決定では前提を足せないので、記録するときに求める
+    if (type === "objection" && harm === "高" && (premisesRaw === undefined || premisesRaw.trim() === "")) {
+      throw new HikyakuError("害が高の異議には --premises に拠り所にした前提の参照を添えてください", "異議と決定を対で書くなら hikyaku ledger object を使います。");
+    }
     const loses = flagString(args, "loses");
 
     const ledger = readLedger(opened.cycle.directory);
@@ -241,6 +246,112 @@ register({
   },
 });
 
+register({
+  name: "ledger object",
+  summary: "ゲートや問いでの異議と、それへのユーザーの決定を対で記録する",
+  usage:
+    "hikyaku ledger object <phase> [<cycle>] --summary <text> --basis <text> --loses <text> --harm 高|中 --decision consented|decided --input <ユーザーの答え> [--accepts <text>] [--premises <ref,...>] [--ask <id>] [--dry-run] [--json]",
+  details: [
+    "ユーザーの選択が、その人自身の宣言・記録・前提と食い違うときに唱えた異議（objection）と、ユーザーの決定を",
+    "その作業単位の decisions.jsonl に対で書きます。好みの違いには異を唱えません。",
+    "",
+    "  --basis     食い違う宣言・記録（例: [app] data = \"personal\"、build-02 の予測ピーク）",
+    "  --loses     その選択で失うもの",
+    "  --harm      害の重さ。高は害が成果物に残る、中はセッションのコスト（persistence.md の重要度）",
+    "  --decision  consented（異議を聞いたうえで選択どおりに進める）/ decided（ユーザーが選択を改めた）",
+    "  --input     ユーザーの答え（必須）",
+    "  --accepts   ユーザーが受け入れると自分の言葉で書いたこと",
+    "  --premises  拠り所にした外の前提の参照（ledger open と同じ書式）",
+    "  --ask       問いの ID（ゲートの ID か conductor の問いの ID）",
+    "",
+    "害が高で consented なら --accepts と --premises が必須です。害が高の異議が片づいていない（決定が無い、",
+    "または受け入れの言葉の無い決定）ゲートは、step report で承認を受け付けません。中の異議は記録だけで進みます。",
+    "記録したときのその作業単位の現在のステップを step に残すので、ゲートを提示している間に呼んでください。",
+  ].join("\n"),
+  writes: true,
+  options: ["summary", "basis", "loses", "harm", "decision", "input", "accepts", "premises", "ask"],
+  maxOperands: 2,
+  run: ({ args, operands }) => {
+    const opened = openUnit(args, operands[0], operands[1]);
+    const summary = required(args, "summary").trim();
+    const basis = required(args, "basis").trim();
+    const loses = required(args, "loses").trim();
+    const harm = required(args, "harm") as Harm;
+    if (!HARMS.includes(harm)) throw new HikyakuError(`--harm の値が不正です: ${harm}`, `使用できる値: ${HARMS.join(" / ")}`);
+    const decision = required(args, "decision") as Decision;
+    if (!OBJECTION_DECISIONS.includes(decision)) {
+      throw new HikyakuError(`--decision の値が不正です: ${decision}`, `使用できる値: ${OBJECTION_DECISIONS.join(" / ")}`);
+    }
+    const input = required(args, "input");
+    const accepts = flagString(args, "accepts");
+    const premisesRaw = flagString(args, "premises");
+    if (harm === "高" && decision === "consented") {
+      if (accepts === undefined || accepts.trim() === "") {
+        throw new HikyakuError(
+          "害が高の異議を受け入れて進めるには、--accepts にユーザーが受け入れると書いた言葉を添えてください",
+          "ユーザーが何を受け入れるかを自分の言葉で書くまで、先へ進みません（AI が代わりに書かない）。",
+        );
+      }
+      if (premisesRaw === undefined || premisesRaw.trim() === "") {
+        throw new HikyakuError("害が高の異議を受け入れて進めるには、--premises に拠り所にした前提の参照を添えてください");
+      }
+    }
+    const ask = flagString(args, "ask");
+    if (ask !== undefined && !ASK_IDS.includes(ask) && !gateIds().includes(ask)) {
+      throw new HikyakuError(`--ask の値が不正です: ${ask}`, "conductor の問いの ID（hikyaku conductor asks）か、ゲートの ID を指定してください。");
+    }
+
+    const ledger = readLedger(opened.cycle.directory);
+    const { step } = currentStep(args, opened);
+    const at = new Date().toISOString();
+    const open: OpenRecord = {
+      record: "open",
+      at,
+      id: nextItemId(ledger, opened.phase),
+      unit: opened.phase,
+      ...(step === undefined ? {} : { step }),
+      type: "objection",
+      summary,
+      when: "now",
+      who: "user",
+      ...(premisesRaw === undefined ? {} : { premises: parsePremises(premisesRaw) }),
+      basis,
+      loses,
+      harm,
+      ...(ask === undefined ? {} : { ask }),
+      ...meta(),
+    };
+    const decide: DecideRecord = {
+      record: "decide",
+      at,
+      id: open.id,
+      unit: opened.phase,
+      decision,
+      by: "user",
+      input,
+      ...(accepts === undefined ? {} : { accepts }),
+      ...meta(),
+    };
+    const dryRun = args.flags.get("dry-run") === true;
+    if (!dryRun) {
+      openItem(opened.cycle.directory, open, ledger);
+      decideItem(opened.cycle.directory, decide, { items: [...ledger.items, { open, decisions: [], latest: undefined }], orphans: ledger.orphans });
+    }
+    const path = relative(opened.ctx.config.repoRoot, ledgerPath(opened.cycle.directory, opened.phase));
+    emit({ record: open, decision: decide, path, dryRun }, () =>
+      [
+        `${dryRun ? "記録します（--dry-run のため書き込みません）" : "記録しました"}: ${open.id}（異議・害 ${harm}）${decision}`,
+        `  要約      ${summary}`,
+        `  根拠      ${basis}`,
+        `  失うもの  ${loses}`,
+        ...(accepts === undefined ? [] : [`  受け入れ  ${accepts}`]),
+        `  ステップ  ${step ?? "（なし）"}`,
+        `  記録先    ${path}`,
+      ].join("\n"),
+    );
+  },
+});
+
 function loadCycleLedger(args: ParsedArgs, key: string | undefined): { context: CycleContext; ledger: Ledger; timeline: CycleTimeline } {
   const opened = openCycle(args, key);
   return {
@@ -307,6 +418,7 @@ register({
         `  いつ          ${o.when}${timing === undefined ? "" : `（${timing === "overdue" ? "期限を過ぎた" : timing === "due" ? "期限が来た" : "まだ"}）`}`,
         `  誰が          ${whoLabel(o.who)}`,
       ];
+      if (o.basis !== undefined) lines.push(`  根拠          ${o.basis}`);
       if (o.premises !== undefined) lines.push(`  拠り所        ${o.premises.join(", ")}`);
       if (o.loses !== undefined) lines.push(`  失うもの      ${o.loses}`);
       if (o.harm !== undefined) lines.push(`  害の重さ      ${o.harm}`);
