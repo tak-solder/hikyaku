@@ -11,7 +11,7 @@ import {
   latestOpenAt,
   readLedger,
   unacceptedObjections,
-  UNREADABLE_AT,
+  unitLedgerProblem,
   type DecideRecord,
   type Ledger,
   type LedgerItem,
@@ -30,7 +30,7 @@ const ROOT = join(import.meta.dirname, "..");
 function open(id: string, overrides: Partial<OpenRecord> = {}): OpenRecord {
   return {
     record: "open", at: "2026-11-16T00:00:00.000Z", id, unit: "build-02", step: "G8",
-    type: "objection", summary: "s", when: "now", who: "user", harm: "高", ...overrides,
+    type: "objection", summary: "s", when: "now", who: "user", harm: "高", premises: ["app.data"], ...overrides,
   };
 }
 
@@ -53,6 +53,10 @@ test("unacceptedObjections: 決定の無い高の異議は止め、accepts 付�
   // accepts が無い・空白だけ
   assert.deepEqual(ids(unacceptedObjections(ledgerOf([open("a"), [decide("a")]]), "build-02", "G8")), ["a"]);
   assert.deepEqual(ids(unacceptedObjections(ledgerOf([open("a"), [decide("a", { accepts: "  " })]]), "build-02", "G8")), ["a"]);
+  // 受け入れるなら、拠り所にした前提が事項に結び付いていること
+  const bare = open("a");
+  delete bare.premises;
+  assert.deepEqual(ids(unacceptedObjections(ledgerOf([bare, [decide("a", { accepts: "受け入れる" })]]), "build-02", "G8")), ["a"]);
 });
 
 test("unacceptedObjections: ユーザー以外の決定では片づかず、最新の決定で判定する", () => {
@@ -76,7 +80,7 @@ test("unacceptedObjections: 中の異議・別のステップ・別の作業単�
   assert.deepEqual(ids(unacceptedObjections(ledger, "build-02", "G8")), []);
 });
 
-test("latestOpenAt: 条件に合う最新の at、無ければ undefined、壊れていれば UNREADABLE_AT", (t) => {
+test("latestOpenAt: 条件に合う最新の at、無ければ・壊れていれば undefined（壊れは unitLedgerProblem が返す）", (t) => {
   const directory = temporaryDirectory(t);
   assert.equal(latestOpenAt(directory, (r) => r.ask === "design-conflict"), undefined, "ファイルが無い");
   const path = join(directory, "decisions.jsonl");
@@ -89,9 +93,10 @@ test("latestOpenAt: 条件に合う最新の at、無ければ undefined、壊�
   assert.equal(latestOpenAt(directory, (r) => r.ask === "design-conflict"), undefined, "合う事項が無い");
   writeFileSync(path, `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
   assert.equal(latestOpenAt(directory, (r) => r.ask === "design-conflict"), "2026-11-16T03:00:00Z");
+  assert.equal(unitLedgerProblem(directory), undefined);
   writeFileSync(path, `${JSON.stringify(lines[0])}\n{"record":"open",\n`);
-  assert.equal(latestOpenAt(directory, () => true), UNREADABLE_AT);
-  assert.equal(UNREADABLE_AT, "");
+  assert.equal(latestOpenAt(directory, () => true), undefined);
+  assert.match(unitLedgerProblem(directory) ?? "", /decisions\.jsonl:2/);
 });
 
 test("readLedger: basis の無い既存の open も読め、basis があれば読める", (t) => {
@@ -220,7 +225,9 @@ test("ledger object: 語彙外・必須の欠落を拒否し、--dry-run は書�
 test("step report: 高の異議が片づくまでゲートの approved を拒否し、consented + accepts で受け付ける", (t) => {
   const directory = built(t);
   upToG8(directory);
-  const id = openId(directory, "build-01", "001", "--type", "objection", "--harm", "高", "--when", "now", "--who", "user", "--summary", "s");
+  // 高の異議は前提なしでは記録できない
+  assert.equal(cli(directory, "ledger", "open", "build-01", "001", "--type", "objection", "--harm", "高", "--when", "now", "--who", "user", "--summary", "s").status, 1);
+  const id = openId(directory, "build-01", "001", "--type", "objection", "--harm", "高", "--when", "now", "--who", "user", "--summary", "s", "--premises", "app.data");
   const refused = cli(directory, "step", "report", "build-01", "G8", "001", "--result", "approved", "--input", "OK");
   assert.equal(refused.status, 1);
   assert.match(refused.stderr, new RegExp(`害が高の異議が片づいていません（${id}）`));
@@ -236,7 +243,7 @@ test("step report: decided（解釈）・中・別のステップの異議はゲ
   write(directory, `${BUILD}/plan.md`, "# plan\n");
   report(directory, "plan", "--result", "done", "--peak", "350k");
   // plan-review の最中に記録した高の異議は G8 を止めない
-  openId(directory, "build-01", "001", "--type", "objection", "--harm", "高", "--when", "now", "--who", "user", "--summary", "別のステップ");
+  openId(directory, "build-01", "001", "--type", "objection", "--harm", "高", "--when", "now", "--who", "user", "--summary", "別のステップ", "--premises", "app.data");
   report(directory, "plan-review", "--result", "done");
   write(directory, `${BUILD}/test-spec.md`, "# test-spec\n");
   report(directory, "test-spec", "--result", "done");
@@ -256,12 +263,13 @@ test("step report: 内部スキルの G6 でも高の異議で拒否し、記録
     succeeds(directory, "step", "report", "build-01", step, "001", "--skill", "build-manager", "--result", "done");
   }
   assert.equal(next(directory).step, "split");
-  openId(directory, "build-01", "001", "--type", "objection", "--harm", "高", "--when", "now", "--who", "user", "--summary", "G6");
+  openId(directory, "build-01", "001", "--type", "objection", "--harm", "高", "--when", "now", "--who", "user", "--summary", "G6", "--premises", "app.data");
   const g6 = jsonl(directory, `${BUILD}/decisions.jsonl`)[0];
   assert.equal(g6?.["step"], "G6");
   assert.equal(cli(directory, "step", "report", "build-01", "G6", "001", "--skill", "build-manager", "--result", "approved", "--input", "OK").status, 1);
 
-  writeFileSync(join(directory, BUILD, "decisions.jsonl"), '{"record":"open",\n');
+  // ほかの作業単位の記録が壊れていても、異議が片づいたかを確かめられないので受け付けない
+  write(directory, `${CYCLE}/planning/decisions.jsonl`, '{"record":"open",\n');
   const broken = cli(directory, "step", "report", "build-01", "G6", "001", "--skill", "build-manager", "--result", "approved", "--input", "OK");
   assert.equal(broken.status, 1);
   assert.match(broken.stderr, /未決事項の記録を読めず/);
@@ -389,12 +397,38 @@ test("delegation（builder）: 差し戻しと再設計のあとに戻っても�
   assert.equal(next(directory).step, "plan");
 });
 
-test("delegation（builder）: decisions.jsonl が壊れていたら出る（安全側）。Stop フックは引き止めない", (t) => {
+test("delegation（builder）: decisions.jsonl が壊れていたら止まる（安全側）", (t) => {
+  const directory = built(t);
+  write(directory, `${BUILD}/decisions.jsonl`, '{"record":"open",\n');
+  const stopped = (JSON.parse(succeeds(directory, "step", "next", "build-01", "001", "--json")) as { directive: { kind: string; message?: string } }).directive;
+  assert.equal(stopped.kind, "stop");
+  assert.match(stopped.message ?? "", /未決事項の記録を読めません/);
+});
+
+test("delegation（builder）: step restart より前の承認も、同じ出来事への答えとして数える", (t) => {
+  const directory = built(t);
+  conflict(directory);
+  report(directory, "delegation", "--result", "approved", "--input", "続ける");
+  succeeds(directory, "step", "restart", "build-01", "001", "--reason", "やり直し");
+  assert.equal(next(directory).step, "plan");
+});
+
+test("delegation（builder）: 割り込みの間も、期限の判定は並びの位置で行う", (t) => {
+  const directory = built(t);
+  upToG8(directory);
+  report(directory, "G8", "--result", "approved", "--input", "OK");
+  openId(directory, "build-01", "001", "--type", "question", "--when", "gate:G8", "--who", "user", "--summary", "G8 で決めること");
+  conflict(directory);
+  const list = JSON.parse(succeeds(directory, "ledger", "list", "001", "--json")) as { due: { summary: string; timing: string }[] };
+  assert.equal(list.due.find((item) => item.summary === "G8 で決めること")?.timing, "overdue");
+});
+
+test("delegation（builder）: Stop フックは delegation のゲートで引き止めない", (t) => {
   const directory = built(t);
   const env = { CLAUDE_CODE_SESSION_ID: "s-del", CLAUDE_CONFIG_DIR: temporaryDirectory(t) };
   write(directory, `${BUILD}/plan.md`, "# plan\n");
   assert.equal(cliWith(directory, env, "step", "report", "build-01", "plan", "001", "--result", "done", "--peak", "350k").status, 0);
-  write(directory, `${BUILD}/decisions.jsonl`, '{"record":"open",\n');
+  conflict(directory);
   assert.equal(next(directory).step, "delegation");
   const hook = cliInput(directory, JSON.stringify({ hook_event_name: "Stop", cwd: directory, session_id: "s-del", stop_hook_active: false }), {}, "step", "hook", "stop");
   assert.equal(hook.status, 0, hook.stderr);

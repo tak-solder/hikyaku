@@ -94,11 +94,11 @@
 - When: `latestOpenAt(build02Dir, (r) => r.ask === "design-conflict")`
 - Then: `undefined` が返る
 
-### latestOpenAt: 記録が壊れていたら UNREADABLE_AT を返し、例外を投げない
+### latestOpenAt / unitLedgerProblem: 記録が壊れていたら例外を投げず、壊れは unitLedgerProblem が返す
 - 対応: US-14.2
 - Given: build-02/decisions.jsonl の2行目が `{"record":"open",`（途中で切れた行）
-- When: `latestOpenAt(build02Dir, () => true)`
-- Then: 例外にならず `UNREADABLE_AT`（空文字）が返る
+- When: `latestOpenAt(build02Dir, () => true)` と `unitLedgerProblem(build02Dir)`
+- Then: 前者は例外にならず `undefined`、後者は行番号つきの理由を返す（コードレビュー1回目の指摘で、壊れたときは builder が止まる形に改めた）
 
 ### latestOpenAt: その作業単位のファイルだけを読む
 - 対応: —
@@ -362,11 +362,29 @@
 - When: builder の `step next build-02 --json`
 - Then: 現在地は delegation ではなく、plan.md の無い plan になる
 
-### delegation: decisions.jsonl が壊れていると delegation が出る
+### delegation: decisions.jsonl が壊れていると builder は止まる
 - 対応: US-14.2
-- Given: build-02 の現在地が implement で、build-02/decisions.jsonl に壊れた行を書いた
+- Given: build-02/decisions.jsonl に壊れた行を書いた
 - When: `step next build-02 --json`
-- Then: 現在地が delegation（approval: consent）になり、notices に記録の壊れが出る
+- Then: kind が stop で、message に「未決事項の記録を読めません」が出る（以前の承認で、新しい衝突へのゲートを見落とさないため）
+
+### delegation: step restart より前の承認も同じ出来事への答えとして数える
+- 対応: US-14.2
+- Given: design-conflict を記録して delegation を承認したあと、`step restart build-02` で区切った
+- When: `step next build-02 --json`
+- Then: 現在地は delegation ではなく plan
+
+### delegation: 割り込みの間も、期限の判定は並びの位置で行う
+- 対応: —
+- Given: G8 を承認したあと、`gate:G8` の事項と design-conflict を記録した
+- When: `ledger list --json`
+- Then: `gate:G8` の事項は overdue のまま（delegation の位置で pending にならない）
+
+### ledger open: 害が高の objection は --premises が無ければ拒否する
+- 対応: US-1.5
+- Given: build-02 の G8 を提示している
+- When: `ledger open build-02 --type objection --harm 高 --when now --who user --summary s`
+- Then: 終了コード1
 
 ### Stop フック: delegation で止まっているときは引き止めない
 - 対応: —

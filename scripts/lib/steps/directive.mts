@@ -266,7 +266,7 @@ function ledgerNotices(opened: Opened, evaluation: Evaluation): string[] {
     // 未決の事項が無ければ、全単位の評価をしない（notices に載るのは未決の事項だけ）
     if (!ledger.items.some((item) => item.latest === undefined)) return [];
     const timeline = cycleTimeline(opened.ctx.config, cycle);
-    if (opened.skill.internal !== true) timeline.current.set(opened.phase, evaluation.current?.definition.id ?? null);
+    if (opened.skill.internal !== true) timeline.current.set(opened.phase, evaluation.sequential?.definition.id ?? null);
     return noticeLines(summarize(ledger, timeline));
   } catch (error) {
     return [`未決事項の記録を読めません: ${error instanceof Error ? error.message : String(error)}（hikyaku ledger list で確かめてください）`];

@@ -139,6 +139,10 @@ register({
     if (ask !== undefined && !ASK_IDS.includes(ask) && !gateIds().includes(ask)) {
       throw new HikyakuError(`--ask の値が不正です: ${ask}`, "conductor の問いの ID（hikyaku conductor asks）か、ゲートの ID を指定してください。");
     }
+    // 高の異議は受け入れるときに前提と結び付けて残す（US-1.5）。決定では前提を足せないので、記録するときに求める
+    if (type === "objection" && harm === "高" && (premisesRaw === undefined || premisesRaw.trim() === "")) {
+      throw new HikyakuError("害が高の異議には --premises に拠り所にした前提の参照を添えてください", "異議と決定を対で書くなら hikyaku ledger object を使います。");
+    }
     const loses = flagString(args, "loses");
 
     const ledger = readLedger(opened.cycle.directory);
@@ -246,7 +250,7 @@ register({
   name: "ledger object",
   summary: "ゲートや問いでの異議と、それへのユーザーの決定を対で記録する",
   usage:
-    "hikyaku ledger object <phase> [<cycle>] --summary <text> --basis <text> --loses <text> --harm 高|中 --decision consented|decided --input <ユーザーの答え> [--accepts <text>] [--premises <ref,...>] [--dry-run] [--json]",
+    "hikyaku ledger object <phase> [<cycle>] --summary <text> --basis <text> --loses <text> --harm 高|中 --decision consented|decided --input <ユーザーの答え> [--accepts <text>] [--premises <ref,...>] [--ask <id>] [--dry-run] [--json]",
   details: [
     "ユーザーの選択が、その人自身の宣言・記録・前提と食い違うときに唱えた異議（objection）と、ユーザーの決定を",
     "その作業単位の decisions.jsonl に対で書きます。好みの違いには異を唱えません。",
@@ -258,6 +262,7 @@ register({
     "  --input     ユーザーの答え（必須）",
     "  --accepts   ユーザーが受け入れると自分の言葉で書いたこと",
     "  --premises  拠り所にした外の前提の参照（ledger open と同じ書式）",
+    "  --ask       問いの ID（ゲートの ID か conductor の問いの ID）",
     "",
     "害が高で consented なら --accepts と --premises が必須です。害が高の異議が片づいていない（決定が無い、",
     "または受け入れの言葉の無い決定）ゲートは、step report で承認を受け付けません。中の異議は記録だけで進みます。",

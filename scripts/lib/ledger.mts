@@ -444,11 +444,18 @@ export function decideItem(cycleDirectory: string, record: DecideRecord, ledger:
 // ---------------------------------------------------------------------------
 // 異議
 
-/** 高の異議が片づいたか: ユーザーが選択を改めた（decided）か、受け入れると書いて進めた（accepts 付きの consented） */
-function objectionSettled(latest: DecideRecord | undefined): boolean {
+/**
+ * 高の異議が片づいたか: ユーザーが選択を改めた（decided）か、受け入れると書いて進めた（accepts 付きの
+ * consented）。受け入れるなら、拠り所にした前提が事項に結び付いていること（US-1.5）
+ */
+function objectionSettled(item: LedgerItem): boolean {
+  const latest = item.latest;
   if (latest === undefined || latest.by !== "user") return false;
   if (latest.decision === "decided") return true;
-  return latest.decision === "consented" && latest.accepts !== undefined && latest.accepts.trim() !== "";
+  return (
+    latest.decision === "consented" && latest.accepts !== undefined && latest.accepts.trim() !== "" &&
+    item.open.premises !== undefined && item.open.premises.length > 0
+  );
 }
 
 /**
@@ -459,26 +466,36 @@ export function unacceptedObjections(ledger: Ledger, unit: string, step: string)
   return ledger.items.filter(
     (item) =>
       item.open.type === "objection" && item.open.harm === "高" && item.open.unit === unit && item.open.step === step &&
-      !objectionSettled(item.latest),
+      !objectionSettled(item),
   );
 }
 
-/** latestOpenAt が記録を読めなかったときに返す時刻。どの記録よりも前なので、きっかけがあった側に倒れる */
-export const UNREADABLE_AT = "";
+/**
+ * その作業単位の decisions.jsonl を読めないときの理由。読めれば undefined。
+ * 割り込みのきっかけを記録に置くスキル（builder）は、読めなければ手順に入らずに止まる。きっかけが
+ * 見えないまま進むと、ユーザーに尋ねるゲートが黙って消えるため
+ */
+export function unitLedgerProblem(unitDirectory: string): string | undefined {
+  try {
+    readJsonl(join(unitDirectory, LEDGER_FILE), isRecord, LABELS);
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
 
 /**
  * その作業単位のディレクトリの decisions.jsonl だけを読み、条件に合う事項の最新の at を返す。
  * ステップ定義の割り込みのきっかけ（builder の delegation）が使うので、手順の位置だけを読む経路
- * （Stop フック・step where・conductor parse）もこの1ファイルだけは読む。読めなければ、きっかけが
- * あった側（UNREADABLE_AT）に倒す。壊れた記録で、ユーザーに尋ねるゲートを黙って消さないため。
- * 例外は投げない（壊れは step next の notices が知らせる）
+ * （Stop フック・step where・conductor parse）もこの1ファイルだけは読む。例外は投げず、読めなければ
+ * undefined を返す（読めないことは、スキルの stop が unitLedgerProblem で先に止める）
  */
 export function latestOpenAt(unitDirectory: string, matches: (record: OpenRecord) => boolean): string | undefined {
   let records: LedgerRecord[];
   try {
     records = readJsonl(join(unitDirectory, LEDGER_FILE), isRecord, LABELS);
   } catch {
-    return UNREADABLE_AT;
+    return undefined;
   }
   let latest: string | undefined;
   for (const record of records) {
@@ -522,7 +539,8 @@ export function cycleTimeline(config: ResolvedConfig, cycle: CycleContext, merge
       if (skill === undefined || !read.some((event) => event.skill === skill.skill)) continue;
       try {
         const evaluation = evaluate(skill, { config, cycle, unit, unitDirectory, events: read });
-        current.set(unit, evaluation.current?.definition.id ?? null);
+        // 割り込みのゲート（delegation）が現在地でも、期限は並びの位置で判定する
+        current.set(unit, evaluation.sequential?.definition.id ?? null);
       } catch {
         // 近似に戻す
       }
