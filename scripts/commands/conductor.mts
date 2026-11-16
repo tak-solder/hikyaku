@@ -94,7 +94,7 @@ register({
         `回によって同意になるゲート: ${Object.entries(consentWhen).map(([id, when]) => `${id}（${when}）`).join(" / ")}`,
         `監督が判断する問い: ${ids((a) => a.enabled && a.handler === "supervisor")}`,
         `ユーザーに上げるその他の問い: ${ids((a) => !consent(a) && a.enabled && a.handler === "user")}`,
-        `この profile では出ない問い: ${ids((a) => !a.enabled)}`,
+        `この profile では出ない問い: ${asks.filter((a) => !a.enabled).map((a) => (consentWhen[a.id] === undefined ? a.id : `${a.id}（${consentWhen[a.id]}）`)).join(" / ") || "なし"}`,
         `子に許可するツール: ${allowedTools.join(" ")}`,
         `子のモデル: ${CONDUCTOR_PHASES.map((phase) => `${phase}=${models[phase] ?? "既定"}`).join(" / ")}`,
         `フェーズの PR のレビュアー: ${review.phaseReviewers.length === 0 ? "なし" : review.phaseReviewers.join(", ")}（待つ上限 ${review.timeoutMinutes} 分、承認${review.requireApproval ? "必須" : "不問"}）`,
@@ -281,10 +281,13 @@ register({
     const step = childStep(parsed, config, context, flagString(args, "root"));
     // 子の手順がそのゲートで止まっていれば、その回の承認の種類（同意か確認か）で振り分ける
     const position = step.position;
-    const approval =
+    const confirmed =
       position !== null && position.kind === "gate" && position.ask === parsed.id && position.approval !== null
         ? position.approval
         : undefined;
+    // 回によって同意になるゲートなのに手順の位置で確かめられなければ、同意の側に倒す（監督に答えさせない）
+    const approval =
+      confirmed ?? (parsed.id !== undefined && CONSENT_WHEN[parsed.id] !== undefined ? "consent" : undefined);
     const ask =
       parsed.outcome === "gate" && parsed.id !== undefined
         ? resolveAsk(parsed.id, config.conductor, config, approval)

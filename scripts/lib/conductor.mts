@@ -250,7 +250,8 @@ export function resolveAsk(
   approval?: Approval,
 ): ResolvedAsk {
   const ask = findAsk(id) ?? { id, category: "unknown" as const, where: "表に無い ID" };
-  const category: AskCategory = approval ?? ask.category;
+  // 中止と分類できない問いは、子の手順が何を返しても変えない
+  const category: AskCategory = approval === undefined || ask.category === "abandon" || ask.category === "unknown" ? ask.category : approval;
   const base = {
     id,
     category,
@@ -264,7 +265,7 @@ export function resolveAsk(
   }
   if (conductor.escalate.includes(id)) return { ...base, handler: "user", source: "escalate" };
   if (conductor.delegate.includes(id)) return { ...base, handler: "supervisor", source: "delegate" };
-  return { ...base, handler: DEFAULT_HANDLERS[ask.category], source: "default" };
+  return { ...base, handler: DEFAULT_HANDLERS[category], source: "default" };
 }
 
 export function resolveAllAsks(conductor: ConductorConfig, settings: AskSettings): ResolvedAsk[] {

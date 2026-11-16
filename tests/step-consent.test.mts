@@ -18,6 +18,8 @@ import {
   type StepDefinition,
 } from "../scripts/lib/steps/engine.mts";
 import { PATCH_STEPS } from "../scripts/lib/steps/patch.mts";
+import { SKILL_STEPS } from "../scripts/lib/steps/index.mts";
+import { CONSENT_WHEN, DEFAULT_CONDUCTOR, resolveAsk, type AskSettings } from "../scripts/lib/conductor.mts";
 import { cli, cliWith, repository, snapshot, succeeds, temporaryDirectory, write } from "./helpers.mts";
 
 const CYCLE = "docs/hikyaku/cycles/001-test";
@@ -30,6 +32,14 @@ const ctx = { config: {} as ResolvedConfig, cycle: undefined, unit: "design", un
 function gate(overrides: Partial<StepDefinition>): StepDefinition {
   return { id: "G9", kind: "gate", title: "t", ask: "G9", ...overrides };
 }
+
+const ASK_SETTINGS: AskSettings = {
+  gates: { codebaseSurvey: false, designChoice: true, architecture: true, plan: false },
+  reviews: {
+    userStories: true, architecture: true, tasklist: true, plan: true, testSpec: true, code: true,
+    security: "recommended", retrospective: "auto", validate: "manual",
+  },
+};
 
 const now = () => ({ timing: "now" as const, reason: "r" });
 const deferred = () => ({ timing: "deferred" as const, reason: "r" });
@@ -98,6 +108,20 @@ test("patch: P1（対応方針の合意）は同意、P2 は確認", () => {
   const judged = consentOf(p1, ctx);
   assert.ok(judged !== false && judged.timing === "now" && judged.reason !== "");
   assert.equal(consentOf(p2, ctx), false);
+});
+
+test("conductor: CONSENT_WHEN は、回によって同意になるゲート（consent が関数で enabled を持つ）と一致する", () => {
+  const roundDependent = SKILL_STEPS.flatMap((skill) => skill.steps)
+    .filter((definition) => definition.kind === "gate" && typeof definition.consent === "function" && definition.enabled !== undefined)
+    .map((definition) => definition.ask ?? definition.id);
+  assert.deepEqual([...new Set(roundDependent)].sort(), Object.keys(CONSENT_WHEN).sort());
+});
+
+test("conductor: 中止・分類できない問いは、子の手順が確認と返しても固定のまま", () => {
+  const unknown = resolveAsk("Z9", DEFAULT_CONDUCTOR, ASK_SETTINGS, "confirm");
+  assert.deepEqual([unknown.category, unknown.handler, unknown.source], ["unknown", "user", "fixed"]);
+  const confirm = resolveAsk("G3", DEFAULT_CONDUCTOR, ASK_SETTINGS, "confirm");
+  assert.deepEqual([confirm.category, confirm.handler, confirm.source], ["confirm", "supervisor", "default"]);
 });
 
 // ---------------------------------------------------------------------------
@@ -403,5 +427,16 @@ test("conductor asks: G3・G4 が再設計の回に同意になることを示�
   assert.equal(typeof json.consentWhen.G4, "string");
   const text = succeeds(directory, "conductor", "asks", "001");
   assert.match(text, /ユーザーに上げる同意ゲート: G10/);
+  assert.match(text, /この profile では出ない問い: .*G3（差し戻しからの再設計の回は同意/);
   assert.doesNotMatch(text, /人間/);
+});
+
+test("conductor parse: 子の手順の位置を確かめられないとき、回によって同意になるゲートは同意の側に倒す", (t) => {
+  const directory = workspaceWith(t, "express");
+  const path = join(directory, ".hikyaku.config");
+  writeFileSync(path, `${readFileSync(path, "utf8")}\n[conductor]\ndelegate = ["G4"]\n`);
+  write(directory, "r.json", result("G4"));
+  const output = parse(directory);
+  assert.equal(output.step, null, "子の記録が無い");
+  assert.deepEqual([output.ask.category, output.ask.handler, output.ask.source], ["consent", "user", "fixed"]);
 });
