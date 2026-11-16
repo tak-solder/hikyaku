@@ -3,7 +3,7 @@
 ## やること
 
 - `hikyaku ledger premises --changed-from <base>`: merge-base と HEAD の `[app]`・`[[app.areas]]` の差分から変わったキーを出し、それを拠り所にした受け入れを並べる。対象は作業ツリーにある全サイクルの `decisions.jsonl` の受け入れと、`decisions`（ADR）・`constraints` の「受け入れたこと」の行（`（拠り所: \`<参照>\`）` で終わる行。所在は `loadGuide` で引く）
-- 各フェーズの `pr` の args に `declarationChanged` を添え、PR 本文に載せる手順を pr.md に足す。`validate --base <ref>` でも同じ一覧を警告する。`docs/operations/ci.md` に CI での例を足す
+- 各フェーズの `pr` の args に `declarationChanged` を添え、PR 本文に載せる手順を pr.md に足す。`validate --base <ref>` でも同じ一覧を警告する。「受け入れたこと」の節にあって読めない行（箇条書きでない、`（拠り所: …）` の中身が参照の書式に合わない）は、`ledger premises` と `validate` の警告に出す（参照の解析は build-03 の `ledger.mts` を使う）。`docs/operations/ci.md` に CI での例を足す
 - `validate` に警告の段階（JSON の `warnings`、終了コード 0）を足し、永続ドキュメントとサイクルドキュメントのポインタに ID の範囲（`X-1〜X-5` の形）が添えられていれば警告する
 - ADR のテンプレート（`skills/architect/references/templates.md`）に、外の前提（事実か仮定か・確かめた日）・推奨・受け入れたこと（拠り所）・再評価条件・退けた推奨で失う利点・領域（任意。`領域: \`<glob>\`` の行。build-10 の `areas dormant` が読む書式はここで決める）の欄を足す。`skills/architect/steps/adr.md` の記録項目も直す
 - constraints のテンプレートを `skills/close-cycle/references/` に新しく作り（前提・事実か仮定か・確かめた日・受け入れたこと・再評価条件・領域（任意。ADR と同じ `領域:` の行））、close-cycle の write から指す
@@ -24,6 +24,7 @@
 ## 受け入れ基準
 
 - [ ] 宣言を変えたブランチで `ledger premises` が、拠り所にした受け入れ（記録と ADR・constraints の行）を並べる（一時リポジトリの結合テスト）
+- [ ] ADR・constraints の「受け入れたこと」の節に、箇条書きでない行か、参照の書式に合わない `（拠り所: …）` があると、`ledger premises` と `validate` が警告に出す（読み飛ばさない）
 - [ ] `validate` が ID の範囲を警告として示し、終了コードは 0 のまま
 - [ ] ADR・constraints・design-questions のテンプレートに、前提・判断・推奨・受け入れたこと・再評価条件・失う利点を分けて書ける
 - [ ] ADR と constraints のテンプレートに、前提と基準を領域（パス）に結び付ける `領域:` の行を書ける

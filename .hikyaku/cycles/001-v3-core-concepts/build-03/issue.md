@@ -3,7 +3,7 @@
 ## やること
 
 - `scripts/lib/ledger.mts` を新しく作る: 作業単位ごとの `decisions.jsonl` の読み書き（壊れた行はエラー。progress.jsonl の厳密な読み書きを関数に切り出して共有）、レコード `open`（`question` / `provisional` / `objection` / `risk`）と `decide`（`decided` / `consented` / `rejected` / `resolved`）
-- レコードの欄はこの build で決め、型と `ledger open / decide` の引数に持たせる: `premises`（前提の参照の配列）・`loses`（失うもの）・`accepts`（ユーザーが受け入れると書いた言葉）・`harm`（`高` / `中`）・`ask`（ask の ID）。前提の参照の書式（`app.exposure` / `app.data` / `app.impact` / `app.merge_gate` / `area:<name>` / `constraints#<anchor>` / `adr:<file>` / `assumption:<短い文>`）の解析と検証も `ledger.mts` に置く。build-04（`ledger object`）・build-05（`ledger premises`）・build-06（`risk` の事項）は、この欄と解析を使うだけで足さない（並行するビルドで形が食い違わないようにする）
+- レコードの欄はこの build で決め、型と `ledger open / decide` の引数に持たせる: `premises`（前提の参照の配列）・`loses`（失うもの）・`accepts`（ユーザーが受け入れると書いた言葉）・`harm`（`高` / `中`）・`ask`（ask の ID）・決定のレコードの `from`（答えの出どころ。値を入れるのは build-07）。前提の参照の書式（`app.exposure` / `app.data` / `app.impact` / `app.merge_gate` / `area:<name>` / `constraints#<anchor>` / `adr:<file>` / `assumption:<短い文>`）の解析と検証も `ledger.mts` に置く。build-04（`ledger object`）・build-05（`ledger premises`）・build-06（`risk` の事項）は、この欄と解析を使うだけで足さない（並行するビルドで形が食い違わないようにする）
 - 「いつ」（`now` / `phase:<phase>` / `gate:<G?>[@<unit>]` / `merge[@<unit>]` / `close`）の構文と、参照先（ゲート ID・ビルド ID）が実在するかの検査。それ以外は受け付けない
 - 「誰が」（`user` / `ai:<phase>` / `supervisor`）。表示は「ユーザー」「AI（<フェーズ>）」「監督」
 - 状態の導出（最新の `decide`）、期限が来た事項・過ぎた事項の判定。状態を表す列は持たない

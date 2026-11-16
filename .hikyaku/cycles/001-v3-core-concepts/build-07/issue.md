@@ -3,7 +3,7 @@
 ## やること
 
 - 監督が答えてよい問い（confirm・spec）の directive に、スクリプトが決めた安全側の既定（推奨案、unsafe-split なら安全な分割、design-conflict なら差し戻し）を載せる。`conductor launch --from user|supervisor --choice <値>` を足し、`--from supervisor` で安全側の既定以外の値なら受け付けずにユーザーに上げるよう返す。handler がユーザーの問いに `--from supervisor` も弾く。子の環境変数 `HIKYAKU_ANSWER_FROM` を設定する
-- `ledger decide --by user` は、conductor の子（`HIKYAKU_CONDUCTOR_CHILD=1`）の中では `HIKYAKU_ANSWER_FROM=user` を要する（設定する側と同じ build で入れ、記録できない期間を作らない）
+- `ledger decide --by user` は、conductor の子（`HIKYAKU_CONDUCTOR_CHILD=1`）の中では `HIKYAKU_ANSWER_FROM=user` を要する（設定する側と同じ build で入れ、記録できない期間を作らない）。`HIKYAKU_ANSWER_FROM` の値を決定のレコードに残し、最後の PR の本文の決定の一覧に答えの出どころを添える。この検査は取り違えを防ぐもので、子が環境変数を自分で付ける偽装は防げない（ADR で受け入れ済み。防ぐ仕組みは足さない）
 - ユーザーに上げる問いは `AskUserQuestion` を出さず、固定文で子を再開して `ledger open --type question --who user --when now --ask <id>` を記録させ、コミット・push して blocked で終えさせる（error・2回目の violation・check-pr の不合格は従来どおりその場で上げる）。この「答えを待つ blocked」は本文に記録した事項の ID（`waiting: <id>`）を持たせ、build-09 の行き詰まりの報告の検査（3節）から外す。`parseFinalText` で、ID が実在する未決の事項を指すときだけ外す
 - 監督の答えの検査（安全側の既定）で、上限を超える受け入れになる答えは `risk.mts` の上限と比べて判定する（US-13.3）
 - `hikyaku conductor waiting <cycle>` と `next --json` の `waiting`: 作業ツリーと、tasklist の各ビルド・architect の origin のブランチの記録から、決定の無い `now` のユーザーの事項と、それを待つビルド（問いを出したビルドと推移的に依存するもの。ARCHITECT の問いは全ビルド）を導く。状態は保存しない

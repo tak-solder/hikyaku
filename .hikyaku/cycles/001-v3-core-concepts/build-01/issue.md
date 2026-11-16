@@ -2,7 +2,7 @@
 
 ## やること
 
-- `StepDefinition` に `consent(ctx)`（`"now" | "deferred" | false` と理由）と `enabled(ctx)` を足し、エンジンの評価を `on = when && (consent || enabled !== false)` にする。同意の回はどの設定でも外さない
+- `StepDefinition` に `consent(ctx)`（`"now" | "deferred" | false` と理由）と `enabled(ctx)` を足し、エンジンの評価を `on = when && (consent === "now" || enabled !== false)` にする。`now` の回はどの設定でも外さない（`deferred` の回は `enabled` で決まる。この build では `deferred` を返すゲートは無いが、式と unit はこの形で入れ、build-06 が書き直さずに済むようにする）
 - 各ゲートの定義（planner・architect・builder・build-manager・close-cycle・patch）の `when` から `gates.*` の条件を `enabled` に移す。`when` は構造の条件だけにする
 - G1 を `consent: now` に固定し、`user_stories_gate` キーを廃止する（書かれていれば移行のヒントつきのエラー）
 - G3・G4 の `consent`: 差し戻しからの再設計の回（`roundOf(ctx) === "return"`）なら `now`（US-14.4）。上限・境界による同意は build-02・build-12 が足す
