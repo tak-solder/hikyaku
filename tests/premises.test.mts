@@ -149,6 +149,14 @@ test("idRanges: AD-1〜AD-5 と US-15.1〜15.3 を拾い、単独の ID は拾�
   assert.deepEqual(found, [{ line: 1, text: "AD-1〜AD-5" }, { line: 2, text: "US-15.1〜15.3" }]);
 });
 
+test("idRanges: build-01〜05 の形も拾う", () => {
+  assert.deepEqual(idRanges("build-01〜05 の振り返り"), [{ line: 1, text: "build-01〜05" }]);
+});
+
+test("declarationArgs: 位置だけを読む経路（positionOnly）では git を呼ばずに何も返さない", () => {
+  assert.deepEqual(declarationArgs({ config: { repoRoot: "/nonexistent" }, positionOnly: true } as unknown as StepContext), {});
+});
+
 test("idRanges: コードブロックとインラインコードの中は拾わない", () => {
   const source = ["```", "AD-1〜AD-5", "```", "書式は `X-1〜X-5` の形"].join("\n");
   assert.deepEqual(idRanges(source), []);

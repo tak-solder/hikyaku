@@ -316,7 +316,7 @@ export function buildDirective(opened: Opened, evaluation: Evaluation, options: 
     read: instructionPath(skill.skill, definition.id),
     report: Object.fromEntries(allowedResults(definition).map((result) => [result, reportCommand(opened, definition.id, result)])),
   };
-  if (definition.args !== undefined) directive.args = definition.args(ctx);
+  if (definition.args !== undefined) directive.args = definition.args(options.notices === false ? { ...ctx, positionOnly: true } : ctx);
   if (current.note !== undefined) directive.note = current.note;
   if (current.revise !== undefined) directive.revise = current.revise;
   if (definition.kind === "gate") {

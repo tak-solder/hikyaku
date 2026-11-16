@@ -473,19 +473,18 @@ export function reviewLines(review: PremisesReview): string[] {
 /** PR 本文に貼る「宣言の変更」の節 */
 export function premisesPrSection(review: PremisesReview): string {
   const { changes } = review;
-  if (changes.changed.length === 0 && review.warnings.length === 0) return "";
+  // 宣言が変わっていなければ節を作らない（読めない行の警告は validate が示す）
+  if (changes.changed.length === 0) return "";
   const out = ["## 宣言の変更", ""];
-  if (changes.changed.length > 0) {
-    out.push(`変わった宣言: ${premiseList(changes.changed)}（基準: ${changes.bases.map((base) => base.ref).join(", ") || "読めず"}）`);
-    if (changes.uncertain) {
-      out.push("", "基準の宣言を読めなかったので、宣言されている参照をすべて変わったものとして扱っています。");
-      out.push(...changes.notices.map((notice) => `- ${notice}`));
-    }
-    out.push("");
-    const lines = reviewLines(review);
-    if (lines.length === 0) out.push("この宣言を拠り所にした受け入れはありません。");
-    else out.push("この宣言を拠り所にした受け入れ（見直しの対象）:", "", ...lines);
+  out.push(`変わった宣言: ${premiseList(changes.changed)}（基準: ${changes.bases.map((base) => base.ref).join(", ") || "読めず"}）`);
+  if (changes.uncertain) {
+    out.push("", "基準の宣言を読めなかったので、宣言されている参照をすべて変わったものとして扱っています。");
+    out.push(...changes.notices.map((notice) => `- ${notice}`));
   }
+  out.push("");
+  const lines = reviewLines(review);
+  if (lines.length === 0) out.push("この宣言を拠り所にした受け入れはありません。");
+  else out.push("この宣言を拠り所にした受け入れ（見直しの対象）:", "", ...lines);
   if (review.warnings.length > 0) {
     out.push("", "読めない「受け入れたこと」の行・記録:", "", ...review.warnings.map((warning) => `- ${warning}`));
   }
@@ -494,6 +493,8 @@ export function premisesPrSection(review: PremisesReview): string {
 
 /** pr の args。宣言が変わっていれば、変わった参照をカンマ区切りで（無ければ false） */
 export function declarationArgs(ctx: StepContext): Record<string, unknown> {
+  // Stop フック・step where は位置だけを読むので、git を呼ばない
+  if (ctx.positionOnly === true) return {};
   const { changed } = declarationChanges(ctx.config);
   return { declarationChanged: changed.length > 0 ? changed.join(",") : false };
 }
@@ -501,7 +502,8 @@ export function declarationArgs(ctx: StepContext): Record<string, unknown> {
 // ---------------------------------------------------------------------------
 // ID の範囲
 
-const ID_RANGE = /(?<![A-Za-z0-9])([A-Z][A-Z0-9]*)-(\d+(?:\.\d+)?)\s*[〜～~]\s*(?:\1-)?\d+(?:\.\d+)?/g;
+// 接頭辞は大文字の ID（AD・US）と、小文字の作業単位（build）。build-01〜05 も範囲として拾う
+const ID_RANGE = /(?<![A-Za-z0-9-])([A-Z][A-Z0-9]*|build)-(\d+(?:\.\d+)?)\s*[〜～~]\s*(?:\1-)?\d+(?:\.\d+)?/g;
 
 /** ID の範囲（`AD-1〜AD-5`・`US-15.1〜15.3`）。コードブロックとインラインコードの中は除く */
 export function idRanges(markdown: string): { line: number; text: string }[] {
