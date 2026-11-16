@@ -82,19 +82,22 @@ register({
       skipped: config.pr.reviewersSkip,
     };
 
-    const consentWhen = CONSENT_WHEN;
-    emit({ cycle: context.name, profile: config.profile, digest, allowedTools, models, review, asks, consentWhen }, () => {
+    emit({ cycle: context.name, profile: config.profile, digest, allowedTools, models, review, asks, consentWhen: CONSENT_WHEN }, () => {
+      // profile で出ない問いでも、回によって同意になるゲートは条件を添える（その回は出てユーザーに上がる）
       const ids = (filter: (ask: ResolvedAsk) => boolean): string =>
-        asks.filter(filter).map((ask) => ask.id).join(" / ") || "なし";
+        asks
+          .filter(filter)
+          .map((ask) => (!ask.enabled && CONSENT_WHEN[ask.id] !== undefined ? `${ask.id}（${CONSENT_WHEN[ask.id]}）` : ask.id))
+          .join(" / ") || "なし";
       const consent = (ask: ResolvedAsk): boolean => ask.category === "consent";
       return [
         `サイクル ${context.name}（profile: ${config.profile}）`,
         "",
         `ユーザーに上げる同意ゲート: ${ids((a) => consent(a) && a.enabled)}`,
-        `回によって同意になるゲート: ${Object.entries(consentWhen).map(([id, when]) => `${id}（${when}）`).join(" / ")}`,
+        `回によって同意になるゲート: ${Object.entries(CONSENT_WHEN).map(([id, when]) => `${id}（${when}）`).join(" / ")}`,
         `監督が判断する問い: ${ids((a) => a.enabled && a.handler === "supervisor")}`,
         `ユーザーに上げるその他の問い: ${ids((a) => !consent(a) && a.enabled && a.handler === "user")}`,
-        `この profile では出ない問い: ${asks.filter((a) => !a.enabled).map((a) => (consentWhen[a.id] === undefined ? a.id : `${a.id}（${consentWhen[a.id]}）`)).join(" / ") || "なし"}`,
+        `この profile では出ない問い: ${ids((a) => !a.enabled)}`,
         `子に許可するツール: ${allowedTools.join(" ")}`,
         `子のモデル: ${CONDUCTOR_PHASES.map((phase) => `${phase}=${models[phase] ?? "既定"}`).join(" / ")}`,
         `フェーズの PR のレビュアー: ${review.phaseReviewers.length === 0 ? "なし" : review.phaseReviewers.join(", ")}（待つ上限 ${review.timeoutMinutes} 分、承認${review.requireApproval ? "必須" : "不問"}）`,

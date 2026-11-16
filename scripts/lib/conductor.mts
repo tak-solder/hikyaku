@@ -196,7 +196,9 @@ export function checkConductorAsks(config: ConductorConfig, where: string): void
           `使用できる ID: ${ASK_IDS.filter((x) => !isFixed(x)).join(" | ")}`,
         );
       }
-      if (isFixed(id)) {
+      // 同意ゲートを escalate に書くのは、すでにユーザーに上がるものを上げるだけなので害が無い
+      // （v2 では G10 を手元に残す書き方だった）。監督に任せる delegate だけを拒む
+      if (isFixed(id) && !(key === "escalate" && ask.category === "consent")) {
         throw new HikyakuError(
           `${where}.${key} に ${id} は指定できません`,
           `${CATEGORY_LABELS[ask.category]}は常にユーザーが判断します。`,

@@ -101,7 +101,14 @@ export const PATCH_STEPS: SkillSteps = {
       accepts: handoffWritten,
       args: (ctx) => ({ cycle: ctx.cycle?.name ?? null }),
     },
-    { id: "P2", kind: "gate", title: "永続ドキュメントの更新の承認", when: writesDocs, consent: false },
+    {
+      id: "P2",
+      kind: "gate",
+      title: "永続ドキュメントの更新の承認",
+      when: writesDocs,
+      // decisions・constraints の変更を含みうるので、G10 と同じく同意の側に倒す
+      consent: () => ({ timing: "now", reason: "永続ドキュメントの更新（decisions・constraints の変更を含みうる）" }),
+    },
     { id: "write", kind: "run", title: "永続ドキュメントの書き込みと検証", when: writesDocs },
     publicationStep("patch"),
   ],

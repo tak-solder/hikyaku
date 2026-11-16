@@ -29,8 +29,8 @@ import { readReturn, RETURN_FILE } from "../phase.mts";
 import { buildDirName, loadTasklist } from "../tasklist.mts";
 import {
   currentEvents,
+  consentOf,
   currentRound,
-  isOn,
   type ConsentJudgement,
   type SkillSteps,
   type StepContext,
@@ -106,10 +106,15 @@ const G3: StepDefinition = {
 };
 
 /**
- * その回に G3 が手順に入るか。options・adr は、入らなければ推奨案をそのまま採る。
- * express でも再設計の回は G3 が同意として入るので、設定の値ではなくこれを渡す
+ * その回に設計案の選択（G3）をユーザーが行うか。false なら options・adr は推奨案をそのまま採る。
+ * express でも再設計の回は G3 が同意として入るので、設定の値だけでは決めない。
+ * options をスキップした回でも false にしない（構造の条件 when は見ない。案が無いだけで、
+ * 推奨案を黙って採ったわけではないため）
  */
-const designChoiceGate = (ctx: StepContext) => ({ designChoiceGate: isOn(G3, ctx) });
+const designChoiceGate = (ctx: StepContext) => {
+  const consent = consentOf(G3, ctx);
+  return { designChoiceGate: (consent !== false && consent.timing === "now") || G3.enabled?.(ctx) !== false };
+};
 
 export const ARCHITECT_STEPS: SkillSteps = {
   skill: "architect",

@@ -136,7 +136,7 @@ for (const [name, config, pattern] of [
   ["delegate の other", conductor({ delegate: ["other"] }), /指定できません/],
   ["両方に同じ ID", conductor({ escalate: ["G8"], delegate: ["G8"] }), /両方/],
   ["delegate の同意ゲート G10", conductor({ delegate: ["G10"] }), /指定できません/],
-  ["escalate の同意ゲート G10", conductor({ escalate: ["G10"] }), /指定できません/],
+  ["escalate の abandon", conductor({ escalate: ["abandon"] }), /指定できません/],
 ] as const) {
   test(`conductor: 設定の検査で${name}を拒否する`, () => {
     assert.throws(() => checkConductorAsks(config, "[conductor]"), pattern);
@@ -149,6 +149,9 @@ test("conductor: 同意ゲートを delegate に書いたエラーは、ユー�
     (error: Error & { hint?: string }) => /ユーザー/.test(`${error.message}\n${error.hint ?? ""}`) && !/人間/.test(`${error.message}\n${error.hint ?? ""}`),
   );
   assert.doesNotThrow(() => checkConductorAsks(conductor({ delegate: ["G8"] }), "[conductor]"));
+  // すでにユーザーに上がる同意ゲートを escalate に書くのは害が無いので受け付ける
+  assert.doesNotThrow(() => checkConductorAsks(conductor({ escalate: ["G10"] }), "[conductor]"));
+  assert.equal(resolveAsk("G10", conductor({ escalate: ["G10"] }), settings).source, "fixed");
 });
 
 test("conductor: 最終出力の末尾にある gate / done / blocked を取り出す", () => {

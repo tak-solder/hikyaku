@@ -18,6 +18,7 @@ import {
   type StepDefinition,
 } from "../scripts/lib/steps/engine.mts";
 import { PATCH_STEPS } from "../scripts/lib/steps/patch.mts";
+import { ARCHITECT_STEPS } from "../scripts/lib/steps/architect.mts";
 import { SKILL_STEPS } from "../scripts/lib/steps/index.mts";
 import { CONSENT_WHEN, DEFAULT_CONDUCTOR, resolveAsk, type AskSettings } from "../scripts/lib/conductor.mts";
 import { cli, cliWith, repository, snapshot, succeeds, temporaryDirectory, write } from "./helpers.mts";
@@ -102,12 +103,19 @@ test("directive: deferred の回は確認として示し、now は同意と理�
   assert.equal(buildDirective(run, evaluate(run.skill, run.ctx), { measure: false }).approval, undefined);
 });
 
-test("patch: P1（対応方針の合意）は同意、P2 は確認", () => {
-  const p1 = PATCH_STEPS.steps.find((step) => step.id === "P1") as StepDefinition;
-  const p2 = PATCH_STEPS.steps.find((step) => step.id === "P2") as StepDefinition;
-  const judged = consentOf(p1, ctx);
-  assert.ok(judged !== false && judged.timing === "now" && judged.reason !== "");
-  assert.equal(consentOf(p2, ctx), false);
+test("patch: P1（対応方針の合意）と P2（decisions・constraints を含みうる更新）は同意", () => {
+  for (const id of ["P1", "P2"]) {
+    const judged = consentOf(PATCH_STEPS.steps.find((step) => step.id === id) as StepDefinition, ctx);
+    assert.ok(judged !== false && judged.timing === "now" && judged.reason !== "", id);
+  }
+});
+
+test("architect: options をスキップした回でも、G3 を行う設定なら designChoiceGate は true のまま", () => {
+  const pr = ARCHITECT_STEPS.steps.find((definition) => definition.id === "pr") as StepDefinition;
+  const events = [{ at: "2026-11-16T00:00:00Z", skill: "architect", step: "options", result: "skipped" as const, reason: "分岐なし" }];
+  const config = (designChoice: boolean) => ({ gates: { designChoice } }) as unknown as ResolvedConfig;
+  assert.equal(pr.args?.({ ...ctx, config: config(true), events })["designChoiceGate"], true);
+  assert.equal(pr.args?.({ ...ctx, config: config(false), events })["designChoiceGate"], false);
 });
 
 test("conductor: CONSENT_WHEN は、回によって同意になるゲート（consent が関数で enabled を持つ）と一致する", () => {

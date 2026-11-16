@@ -208,11 +208,17 @@
 - When: `step next <patch のフェーズ> --json` を実行する
 - Then: `step: "P1"` の gate で、`approval` が `"consent"`、`approvalReason` が空でない
 
-### P2: patch の永続ドキュメントの更新の承認は確認
-- 対応: US-10.2
-- Given: サイクルに属さない patch で、persist が永続ドキュメントに残すものを記録して P2 が手順に入っている
-- When: P2 の directive を受け取る
-- Then: `approval` が `"confirm"`、`approvalReason` が `null`
+### P2: patch の永続ドキュメントの更新の承認は同意（コードレビュー ラウンド 2 で確認から改めた）
+- 対応: US-10.1
+- Given: patch の P2 の定義（decisions・constraints の変更を含みうる）
+- When: `consentOf(P2, ctx)` を呼ぶ
+- Then: `timing: "now"` で理由が空でない（G10 と同じく同意の側に倒す）
+
+### designChoiceGate: options をスキップした回でも設定どおり
+- 対応: —
+- Given: options が skipped の記録と、`gates.designChoice` が true / false の設定
+- When: architect の pr の args を評価する
+- Then: true の設定では `designChoiceGate` が true、false では false（構造の条件では false にしない）
 
 ### approval: G10 は express でも同意として返る
 - 対応: US-10.1

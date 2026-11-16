@@ -340,7 +340,7 @@ review_timeout = 15       # レビューの依頼や CI を待つ上限（分）
 
 [conductor](../workflow/conductor.md) で子セッションを動かすときの設定です。使わないなら書く必要はありません。
 
-`escalate` と `delegate` には問いの ID（`G8`、`review-findings` など）を並べます。使える ID と現在の振り分けは `hikyaku conductor asks <cycle>` で確認できます。表に無い ID や、同じ ID を両方に書いた場合はエラーになります。同意ゲート（`G10`）、サイクルの中止（`abandon`）、ID の無い問い（`other`）は常にユーザーに上げるので、`escalate` にも `delegate` にも書けません。確認のゲートでも、差し戻しからの再設計の回の `G3` / `G4` のように、その回が同意になるときは `delegate` に書いてあってもユーザーに上がります。
+`escalate` と `delegate` には問いの ID（`G8`、`review-findings` など）を並べます。使える ID と現在の振り分けは `hikyaku conductor asks <cycle>` で確認できます。表に無い ID や、同じ ID を両方に書いた場合はエラーになります。同意ゲート（`G10`）、サイクルの中止（`abandon`）、ID の無い問い（`other`）は常にユーザーに上げるので、`delegate` には書けません（`escalate` に `G10` を書いても、もとからユーザーに上がるので何も変わりません）。確認のゲートでも、差し戻しからの再設計の回の `G3` / `G4` のように、その回が同意になるときは `delegate` に書いてあってもユーザーに上がります。
 
 `allowed_tools` は `--allowedTools` に渡す書式で書きます（`"Bash(npm test:*)"` など）。子はこの設定を起動のたびに読むので、作業ツリーで一時的に足すのではなくコミットしておいてください。
 
