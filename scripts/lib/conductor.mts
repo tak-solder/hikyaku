@@ -12,6 +12,7 @@
 import { createHash } from "node:crypto";
 import type { Gates, Reviews } from "./config.mts";
 import { HikyakuError } from "./errors.mts";
+import { checkEscalation, describeEscalationProblems } from "./escalation.mts";
 import { reviewerLogin } from "./github.mts";
 
 export type AskCategory = "route" | "confirm" | "consent" | "spec" | "failure" | "abandon" | "unknown";
@@ -332,6 +333,9 @@ export function parseFinalText(text: string): Omit<ParsedResult, "sessionId" | "
     return { outcome: "gate", id, body };
   }
   if (kind === "done") return { outcome: "done", next: attributes.get("next") ?? "", body };
+  // blocked はユーザーに上げる行き詰まりの報告。欠けていれば violation にして、書き直させるかユーザーに上げる（US-3.4）
+  const check = checkEscalation(body);
+  if (!check.ok) return { outcome: "violation", body, reason: describeEscalationProblems(check.problems) };
   return { outcome: "blocked", body };
 }
 

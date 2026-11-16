@@ -18,7 +18,7 @@ import {
   type OpenRecord,
 } from "../scripts/lib/ledger.mts";
 import { lintApproval } from "../scripts/lib/steps/engine.mts";
-import { cli, cliInput, cliWith, snapshot, succeeds, temporaryDirectory, workspace, write } from "./helpers.mts";
+import { cli, cliInput, cliWith, returnRecord, snapshot, succeeds, temporaryDirectory, workspace, write } from "./helpers.mts";
 
 const CYCLE = "docs/hikyaku/cycles/001-test";
 const BUILD = `${CYCLE}/build-01`;
@@ -395,7 +395,7 @@ test("delegation（builder）: 差し戻しと再設計のあとに戻っても�
   report(directory, "plan", "--result", "done", "--peak", "350k");
   conflict(directory);
   report(directory, "delegation", "--result", "approved", "--input", "差し戻す");
-  write(directory, `${CYCLE}/return.md`, "# 差し戻し: build-01\n");
+  write(directory, `${CYCLE}/return.md`, returnRecord());
   assert.equal(next(directory).kind, "stop");
   // architect の再設計が return.md と古い plan.md を消した
   rmSync(join(directory, CYCLE, "return.md"));
@@ -461,7 +461,7 @@ test("delegation（architect）: 再設計の回の先頭にだけ出て、承�
   assert.notEqual(next(directory, "architect").step, "delegation", "通常の設計の回");
   succeeds(directory, "step", "restart", "architect", "001", "--round", "add", "--reason", "指摘");
   assert.equal(next(directory, "architect").step, "design-change", "追加設計の回");
-  write(directory, `${CYCLE}/return.md`, "# 差し戻し: build-01\n");
+  write(directory, `${CYCLE}/return.md`, returnRecord());
   succeeds(directory, "step", "restart", "architect", "001", "--round", "return", "--reason", "build-01 からの差し戻し");
   const gate = next(directory, "architect");
   assert.deepEqual([gate.kind, gate.step, gate.approval], ["gate", "delegation", "consent"]);

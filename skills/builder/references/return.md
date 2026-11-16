@@ -20,7 +20,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger open build-{NN} {cycle} 
   3. architect に差し戻す
 - [ ] 確認のやりとりは `cycles/{cycle}/build-{NN}/questions.md` に残す
 - [ ] 3 を選んだ場合、`cycles/{cycle}/return.md` を書く（サイクル直下。テンプレートは
-  [templates.md](templates.md)。1行目の見出しの書式を変えない）
+  [templates.md](templates.md)。1行目の見出しの書式を変えない。「試したこと」「問題を変える選択肢」（各項目に
+  `失うもの:`）「推奨」が欠けていると、architect が再設計の回を始められない）
 - [ ] コミット & push する
 - [ ] `/hikyaku:architect {cycle} build-{NN}` を案内して終了する
 

@@ -21,8 +21,8 @@ import {
 } from "../scripts/lib/conductor.mts";
 import { pluginRoot } from "../scripts/lib/paths.mts";
 import { parsePrReviewState, parsePrView } from "../scripts/lib/github.mts";
-import { planReviewers, skipTargetOf, type ReviewerInput } from "../scripts/lib/reviewers.mts";
-import { cli, snapshot, succeeds, testEnvironment, workspace, write } from "./helpers.mts";
+import { planReviewers, planWithoutPr, skipTargetOf, type ReviewerInput } from "../scripts/lib/reviewers.mts";
+import { cli, ESCALATION_BODY, snapshot, succeeds, testEnvironment, withoutGh, workspace, write } from "./helpers.mts";
 
 const settings: AskSettings = {
   gates: { codebaseSurvey: false, designChoice: true, architecture: true, plan: false },
@@ -161,9 +161,24 @@ test("conductor: 最終出力の末尾にある gate / done / blocked を取り�
   assert.deepEqual(parseFinalText('<hikyaku-done next="/hikyaku:builder 001-test 2">\nPR: x\n</hikyaku-done>'), {
     outcome: "done", next: "/hikyaku:builder 001-test 2", body: "PR: x",
   });
-  assert.deepEqual(parseFinalText("<hikyaku-blocked>\n差し戻し\n</hikyaku-blocked>"), {
-    outcome: "blocked", body: "差し戻し",
+  assert.deepEqual(parseFinalText(`<hikyaku-blocked>\n差し戻し\n\n${ESCALATION_BODY}</hikyaku-blocked>`), {
+    outcome: "blocked", body: `差し戻し\n\n${ESCALATION_BODY}`.trim(),
   });
+});
+
+test("conductor: 行き詰まりの報告の欠けた blocked は violation にし、reason に欠けを示す", () => {
+  const parsed = parseFinalText("<hikyaku-blocked>\nテストが通らないので止まります\n</hikyaku-blocked>");
+  assert.equal(parsed.outcome, "violation");
+  assert.equal(parsed.body, "テストが通らないので止まります");
+  assert.match(parsed.reason ?? "", /「試したこと」の節がありません/);
+  assert.match(parsed.reason ?? "", /「推奨」の節がありません/);
+});
+
+test("conductor: 行き詰まりに見えない blocked（PR 作成の代行の依頼）も同じ形式で検査する", () => {
+  const plain = "PR 作成の代行を依頼します。\nbase: main\nhead: x";
+  assert.equal(parseFinalText(`<hikyaku-blocked>\n${plain}\n</hikyaku-blocked>`).outcome, "violation");
+  const formed = `${plain}\n\n試したこと: 本文を .tmp/pr.md に書き出した\n選択肢:\n- 監督が PR を作る 失うもの: なし\n推奨: 監督が PR を作る`;
+  assert.equal(parseFinalText(`<hikyaku-blocked>\n${formed}\n</hikyaku-blocked>`).outcome, "blocked");
 });
 
 for (const [name, text, reason] of [
@@ -935,15 +950,73 @@ reviewers_skip = ["plan"]
   assert.equal([...gh.calls(), ...already.calls()].some((call) => call.startsWith("pr edit")), false);
 });
 
-test("CLI: pr request-reviewers は --pr が無い・gh が失敗したときに終了コード 1 を返す", (t) => {
+test("CLI: pr request-reviewers は --pr が無ければ終了コード 1、gh pr edit の失敗は止めずに代わりに行うことを返す", (t) => {
   const directory = workspace(t, true);
   write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["alice"]\n');
   const gh = useGh(t, directory, { view: prView({ baseRefName: "main" }), editFails: true });
   assert.equal(gh.cli("pr", "request-reviewers", "plan", "001").status, 1);
-  const failed = gh.cli("pr", "request-reviewers", "plan", "001", "--pr", "7");
-  assert.equal(failed.status, 1);
-  assert.match(failed.stderr, /レビュアーの依頼に失敗しました: alice/);
-  assert.match(failed.stderr, /PR 自体は作成済み/);
+  const failed = gh.cli("pr", "request-reviewers", "plan", "001", "--pr", "7", "--json");
+  assert.equal(failed.status, 0, failed.stderr);
+  const output = JSON.parse(failed.stdout);
+  assert.deepEqual([output.applied, output.reason, output.stage, output.requested], [false, "gh-failed", "gh pr edit", false]);
+  assert.match(output.manual, /PR #7 の画面で/);
+  assert.match(output.manual, /alice/);
+});
+
+test("CLI: pr request-reviewers は gh api graphql の失敗も止めずに stage を返す", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["alice"]\n');
+  const gh = useGh(t, directory, { view: prView({ baseRefName: "main" }), graphql: { data: null } });
+  const result = gh.cli("pr", "request-reviewers", "plan", "001", "--pr", "7", "--json");
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.deepEqual([output.applied, output.reason, output.stage], [false, "gh-failed", "gh api graphql"]);
+  assert.match(output.manual, /^GitHub の PR #7 の画面で[^\n]*\n {2}alice$/, "マージ先が分かっていれば一覧は1つ");
+  assert.equal(gh.calls().some((call) => call.startsWith("pr edit")), false);
+});
+
+test("CLI: gh が無い環境で pr request-reviewers は止めず、マージ先が分からなければ両方の一覧を示す", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["alice"]\n[conductor]\nphase_reviewers = ["@copilot"]\n');
+  const result = withoutGh(t, directory, "pr", "request-reviewers", "build-01", "001", "--pr", "7", "--json");
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.deepEqual([output.applied, output.reason, output.stage], [false, "gh-unavailable", "gh pr view"]);
+  assert.match(output.manual, /phase_reviewers: @copilot/);
+  assert.match(output.manual, /\[pr\] reviewers: alice/);
+});
+
+test("CLI: phase_reviewers が空でも、マージ先が分からなければ conductor ブランチ向けは依頼しないと示す", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["alice"]\n');
+  const output = JSON.parse(withoutGh(t, directory, "pr", "request-reviewers", "build-01", "001", "--pr", "7", "--json").stdout);
+  assert.match(output.manual, /phase_reviewers: （依頼しない）/);
+  assert.match(output.manual, /\[pr\] reviewers: alice/);
+});
+
+test("CLI: pr request-reviewers は gh pr view の応答が JSON でなければ終了コード 1", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["alice"]\n');
+  assert.equal(useGh(t, directory, { view: "not json" }).cli("pr", "request-reviewers", "plan", "001", "--pr", "7").status, 1);
+});
+
+test("CLI: gh が無い環境でも、オフ・空の一覧なら gh を呼ばずに何もしない", (t) => {
+  const directory = workspace(t, true);
+  const empty = withoutGh(t, directory, "pr", "request-reviewers", "plan", "001", "--pr", "7", "--json");
+  assert.equal(empty.status, 0, empty.stderr);
+  assert.deepEqual([JSON.parse(empty.stdout).source, JSON.parse(empty.stdout).applied], ["none", true]);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["alice"]\nreviewers_skip = ["build"]\n');
+  const skipped = withoutGh(t, directory, "pr", "request-reviewers", "build-01", "001", "--pr", "7", "--json");
+  assert.equal(skipped.status, 0, skipped.stderr);
+  assert.equal(JSON.parse(skipped.stdout).skipped, true);
+});
+
+test("planWithoutPr: オフなら skip、どちらの一覧も空なら none、片方でもあれば決めない", () => {
+  const base = { phase: "build-03", conductorBranch: "hikyaku/001-test/conductor", reviewers: [] as string[], skip: [] as string[], phaseReviewers: [] as string[] };
+  assert.equal(planWithoutPr({ ...base, skip: ["build"], reviewers: ["alice"] })?.skipped, true);
+  assert.equal(planWithoutPr(base)?.source, "none");
+  assert.equal(planWithoutPr({ ...base, phaseReviewers: ["@copilot"] }), undefined);
+  assert.equal(planWithoutPr({ ...base, conductorBranch: undefined, phaseReviewers: ["@copilot"] })?.source, "none");
 });
 
 test("CLI: conductor check-pr は gh の結果で取り込めるかを返し、満たさなければ終了コード 2", (t) => {

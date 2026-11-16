@@ -58,11 +58,27 @@ function same(reviewer: string, login: string): boolean {
   return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
 }
 
-export function planReviewers(input: ReviewerInput): ReviewerPlan {
+/**
+ * PR の状態（gh）を読む前に決まる結果。このフェーズがオフか、マージ先がどちらでも一覧が空なら決まる。
+ * 決まらなければ undefined。gh が使えない環境でも、依頼するものが無いなら何も失敗させないため
+ */
+export function planWithoutPr(
+  input: Pick<ReviewerInput, "phase" | "conductorBranch" | "reviewers" | "skip" | "phaseReviewers">,
+): ReviewerPlan | undefined {
   const target = skipTargetOf(input.phase);
   if (target !== undefined && input.skip.includes(target)) {
     return { source: "none", skipped: true, request: [], excluded: [] };
   }
+  const conductorList = input.conductorBranch === undefined ? [] : input.phaseReviewers;
+  if (input.reviewers.length === 0 && conductorList.length === 0) {
+    return { source: "none", skipped: false, request: [], excluded: [] };
+  }
+  return undefined;
+}
+
+export function planReviewers(input: ReviewerInput): ReviewerPlan {
+  const decided = planWithoutPr(input);
+  if (decided?.skipped === true) return decided;
 
   // conductor ブランチ向けの PR だけ別の一覧を使う。人間のレビュアーを入れると、
   // フェーズごとの取り込みが止まるため、通常の PR とは分けて持つ

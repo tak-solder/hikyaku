@@ -153,6 +153,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `hikyaku tokens session` の出力と retrospective.md の「セッションの実測」表から「ウィンドウ」を外した（記録していたのは Codex だけだった）。表に「ウィンドウ」の行がある既存の retrospective.md も `tokens history` で読める
 - **承認を確認と同意に分け、同意はどの設定でも省かない。** ステップ定義の gate が `consent`（その回が同意か）と `enabled`（確認としてのプロファイル・個別キーのオン・オフ）を持ち、同意の回は `*_gate = false` や express でも手順から外れない。G1・G10・patch の P1 / P2 は同意、G3・G4 は差し戻しからの再設計の回（`step restart architect --round return`）だけ同意、それ以外は確認。`step next` の directive に `approval`（`confirm` / `consent`）と `approvalReason` が付き、テキストには「承認: 確認 / 同意（理由）」の行が出る。`step lint` は承認の種類を持たない gate を検出する
 - architect の options・adr・pr の `designChoiceGate` は、設定の値ではなく「その回に G3 が手順に入るか」になった（express でも再設計の回は true）
+- **行き詰まりの報告の形式を CLI が確かめる。** 新しい `scripts/lib/escalation.mts` が、試したこと（1項目以上）・問題を変える選択肢（各項目に `失うもの:`）・推奨がそろっているかだけを判定する。差し戻しの `return.md` が欠けていれば builder は欠けを示して止まり、`step restart architect --round return` は回を区切らない。builder・patch の implement・verify の `failed --reason` は欠けていれば受け付けない（ステップ定義の `escalates`。`step lint` は gate に付いたものを検出する）。`conductor parse` は欠けた `<hikyaku-blocked>` を `violation` にし、`reason` に欠けを出す。return.md・retry-policy・headless-protocol のテンプレートをこの3つの節にそろえた。`cycle status --json` などの `returned` に `problems` が付く
+- **`pr request-reviewers` と `pr ready` は `gh` が使えなくても手順を止めない。** `gh` の失敗（無い・認証・GraphQL・`gh pr edit` / `gh pr ready`）では、`applied: false`・`reason`（`gh-unavailable` / `gh-failed`）・`stage`・`manual`（ユーザーが代わりに行うこと）を返し、終了コード 0 で終わる（`external sync` にそろえた）。`pr request-reviewers` はアサインがオフか一覧が空なら `gh` を呼ばない。`pr ready` は conductor の子では `gh` を呼ばずに Draft のまま返す。監督の `pr ready --for-merge` と、`gh pr view` の応答の形が想定外のときは、従来どおり終了コード 1（`gh api graphql` の失敗は応答の形によるものも `gh-failed`）
 - conductor: 同意ゲートは常にユーザーに上がり、`escalate` / `delegate` で変えられない。G6・G8 は確認に分類を改め、既定で監督が答える。`conductor parse` は子の手順のゲートの `approval` で振り分け（`step.approval` / `step.approvalReason` を返す）、`conductor asks` の JSON に `consentWhen` が付く。`ask.handler` の値 `human` は `user` になった。conductor スキルは Step 0 で同意ゲートを監督に委任しなくなり、G10 を監督が承認する手順を除いた
 
 ### Removed
@@ -179,6 +181,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - サイクルを省略する設定参照では、active が1件だけという理由でサイクル設定を重ねない。既存サイクルの設定を使う場合は、サイクルを明示するか、ブランチ・`cycle use` で選択する
 - 自分で確認してから Ready にする場合は `[pr] auto_ready = false` にする。conductor が取り込むフェーズの PR は、監督が設定に関わらず Ready にする。公開は再実行でき、既に Ready の PR に重ねて切り替えない
 - 異議と `delegation` の導入に対応は不要。既存の `decisions.jsonl` と `progress.jsonl` はそのまま読める。design-conflict の事項が無いビルドと、差し戻しでない設計の回では `delegation` は手順に入らない。`[conductor] delegate` に `delegation` を書くとエラーになる
+- 差し戻し中のブランチの `return.md` が旧テンプレート（「architect で決め直すこと」）のままだと、builder が止まり再設計の回を始められない。「試したこと」「問題を変える選択肢」（各項目に `失うもの:`）「推奨」を書き足す。conductor の監督が子に独自の blocked の書式を指示している場合も、この3つの節を含める（欠けると violation）
+- `pr request-reviewers` / `pr ready` の終了コード 1 で `gh` の失敗を判定していた独自のスクリプトは、出力の `applied: false` を読むよう直す
 
 
 - **BP は予測ピークに置き換わり、換算できないので自動では移行しない。** リポジトリルートの `.hikyaku.config` の `bp_max` を削除する（閉じたサイクルの `.hikyaku.config` に残った `bp_max` / `[bp_actual]` は履歴として読み飛ばす。進行中のサイクルに残っていると、そのサイクルの `step`・`tokens estimate`・`tasklist` の書き込みが止まり、`validate` も知らせる）（分割の境目は `[context] split_above`、既定 450k）。`{HIKYAKU_ROOT}/bp-guide/README.md` にリポジトリ固有の数え方を書いていたら、`/hikyaku:token-guide` で見積もりのガイドに書き直してから `bp-guide/` を削除する。`[pr] reviewers_skip` の `bp-guide` は `token-guide` に直す（`docs/migration/v2-to-v3.md`）

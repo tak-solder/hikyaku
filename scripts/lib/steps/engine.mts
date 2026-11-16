@@ -105,6 +105,11 @@ export interface StepDefinition {
   reason?: (ctx: StepContext) => string;
   /** 理由を添えればスキップできるか。省略を記録に残すため、既定ではできない */
   skippable?: boolean;
+  /**
+   * 行き詰まりでユーザーに上げるステップ（リトライの上限で止まる implement / verify）。failed の --reason が
+   * 行き詰まりの報告の形式（escalation.mts）を満たさなければ受け付けない。gate は持てない
+   */
+  escalates?: boolean;
   /** このステップに入るときに、コンテキストを目安と比べる区切り（#68） */
   checkpoint?: keyof ContextBudget;
   /** 報告で予測ピークを添えるか。required なら done に --peak が必須、optional なら任意 */
@@ -206,6 +211,10 @@ export function lintApproval(skill: Pick<SkillSteps, "skill" | "steps">): string
     if (definition.kind === "gate") {
       if (definition.consent === undefined) {
         problems.push(`${skill.skill}: ゲート ${definition.id} が承認の種類（consent）を持っていません。確認なら consent: false を明示してください`);
+      }
+      // ゲートは failed を報告できないので、行き詰まりの報告の検査が働かない
+      if (definition.escalates !== undefined) {
+        problems.push(`${skill.skill}: ゲート ${definition.id} は escalates を持てません（failed を報告しないため）`);
       }
       continue;
     }

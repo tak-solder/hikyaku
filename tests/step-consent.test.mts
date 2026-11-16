@@ -21,7 +21,7 @@ import { PATCH_STEPS } from "../scripts/lib/steps/patch.mts";
 import { ARCHITECT_STEPS } from "../scripts/lib/steps/architect.mts";
 import { SKILL_STEPS } from "../scripts/lib/steps/index.mts";
 import { CONSENT_WHEN, DEFAULT_CONDUCTOR, resolveAsk, type AskSettings } from "../scripts/lib/conductor.mts";
-import { cli, cliWith, repository, snapshot, succeeds, temporaryDirectory, write } from "./helpers.mts";
+import { cli, cliWith, repository, returnRecord, snapshot, succeeds, temporaryDirectory, write } from "./helpers.mts";
 
 const CYCLE = "docs/hikyaku/cycles/001-test";
 const DESIGN = `${CYCLE}/design`;
@@ -257,7 +257,7 @@ test("設定: 解決した gates に userStories は無く、表示は G1 を常
 
 /** 差し戻しからの再設計の回を区切り、options まで報告する。返り値は options の報告の次の1手 */
 function redesignUpToOptions(t: TestContext, directory: string): { options: Directive; next: Directive } {
-  write(directory, `${CYCLE}/return.md`, "# 差し戻し: build-01\n");
+  write(directory, `${CYCLE}/return.md`, returnRecord());
   step(t, directory, "restart", "architect", "001", "--round", "return", "--reason", "build-01 からの差し戻し");
   step(t, directory, "report", "architect", "delegation", "001", "--result", "approved", "--input", "委任を続ける");
   write(directory, `${DESIGN}/codebase-survey.md`);
@@ -306,7 +306,7 @@ test("architect: 全ゲートを off にしても再設計の回は G3・G4 が�
 
 test("architect: 再設計の回でも options をスキップすれば G3 は返らない", (t) => {
   const directory = workspaceWith(t, "express");
-  write(directory, `${CYCLE}/return.md`, "# 差し戻し: build-01\n");
+  write(directory, `${CYCLE}/return.md`, returnRecord());
   step(t, directory, "restart", "architect", "001", "--round", "return", "--reason", "x");
   step(t, directory, "report", "architect", "delegation", "001", "--result", "approved", "--input", "委任を続ける");
   write(directory, `${DESIGN}/codebase-survey.md`);

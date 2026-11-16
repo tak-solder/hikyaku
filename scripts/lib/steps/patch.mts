@@ -86,8 +86,9 @@ export const PATCH_STEPS: SkillSteps = {
       consent: () => ({ timing: "now", reason: "対応方針の合意（意図を決める判断）" }),
     },
     { id: "pr", kind: "run", title: "Draft PR の作成（依頼と合意した挙動を本文に）", recordsPr: true },
-    { id: "implement", kind: "run", title: "実装とテスト" },
-    { id: "verify", kind: "run", title: "ローカル検証" },
+    // builder と同じ retry-policy に従うので、failed --reason に行き詰まりの報告を添える
+    { id: "implement", kind: "run", title: "実装とテスト", escalates: true },
+    { id: "verify", kind: "run", title: "ローカル検証", escalates: true },
     {
       id: "review",
       kind: "run",

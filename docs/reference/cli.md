@@ -193,8 +193,8 @@ build-manager や retrospective のような内部スキルは、`--skill` を�
 | `pr title <phase> [<cycle>]` | PR タイトルを生成するとき |
 | `pr base <phase> [<cycle>]` | PR のマージ先を決めるとき。PR を作る直前。`--ref` でローカルに解決できる ref（レビューの差分基準）を返す |
 | `session title <phase> [<cycle>]` | セッション名を生成するとき |
-| `pr ready` | 設定と実行元に従って Draft PR を公開するとき。conductor は取り込み前の公開にも使う |
-| `pr request-reviewers <phase> [<cycle>] --pr <PR>` | PR を作った直後に、設定のレビュアーをアサインするとき（通常は各スキルが呼ぶ） |
+| `pr ready` | 設定と実行元に従って Draft PR を公開するとき。conductor は取り込み前の公開にも使う。`gh` が使えなくても止めず、代わりに行うことを示す（取り込み前の `--for-merge` だけは止める） |
+| `pr request-reviewers <phase> [<cycle>] --pr <PR>` | PR を作った直後に、設定のレビュアーをアサインするとき（通常は各スキルが呼ぶ）。`gh` が使えなくても止めず、代わりに依頼するレビュアーを示す |
 
 `branch verify` は生成と検証を兼ねています。名前を生成するだけのコマンドを別に持つと、生成しただけで確認しないまま作業する余地が残るためです。
 

@@ -26,6 +26,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { loadCycles } from "../cycles.mts";
 import { pluginRoot } from "../paths.mts";
+import { describeEscalationProblems } from "../escalation.mts";
 import { readReturn, RETURN_FILE } from "../phase.mts";
 import { buildDirName, loadTasklist } from "../tasklist.mts";
 import {
@@ -131,6 +132,15 @@ export const ARCHITECT_STEPS: SkillSteps = {
     if (roundOf(ctx) === "return" && !resolved) return undefined;
     const build = record.buildId === undefined ? "build-NN" : buildDirName(record.buildId);
     const cli = `node "${join(pluginRoot(), "scripts", "hikyaku.mts")}"`;
+    if (record.problems.length > 0) {
+      // 欠けたままでは step restart --round return が受け付けない。区切る前に直させる
+      return [
+        `このブランチは architect に差し戻されていますが、差し戻しの記録が欠けています（${RETURN_FILE}）。`,
+        describeEscalationProblems(record.problems),
+        `${RETURN_FILE} を直してから、再設計の回を区切ってください:`,
+        `  ${cli} step restart architect ${ctx.cycle.name} --round return --reason "${build} からの差し戻し"`,
+      ].join("\n");
+    }
     return [
       resolved
         ? `前の再設計で差し戻しを解決したあと、もう一度 architect に差し戻されています（${RETURN_FILE}）。新しい再設計の回を区切ってから始めてください:`

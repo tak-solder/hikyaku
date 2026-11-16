@@ -82,7 +82,7 @@ builder から差し戻された場合は、`/hikyaku:architect {cycle} build-NN
 
 差し戻しは委任の前提が崩れた出来事なので、再設計の回の最初に、委任を続けるかを尋ねられます（`delegation`）。プロファイルに関わらず、conductor で進めていてもユーザーが答えます。この回では G3 と G4 もユーザーが行います。
 
-`design/progress.jsonl` には通常の設計の記録が完了済みで残っているので、再設計は `hikyaku step restart architect {cycle} --round return --reason "<理由>"` で再設計の回を区切ってから始めます。`step next` は通常の設計と同じ順に手順を返しながら、PR の代わりに差し戻しの解決（`return.md` などの削除）を返します。差し戻し中なのに回を区切っていなければ、`step next` はこのコマンドを示して止まります。
+`design/progress.jsonl` には通常の設計の記録が完了済みで残っているので、再設計は `hikyaku step restart architect {cycle} --round return --reason "<理由>"` で再設計の回を区切ってから始めます。`step next` は通常の設計と同じ順に手順を返しながら、PR の代わりに差し戻しの解決（`return.md` などの削除）を返します。差し戻し中なのに回を区切っていなければ、`step next` はこのコマンドを示して止まります。`return.md` に試したこと、問題を変える選択肢とそれぞれで失うもの、推奨のどれかが欠けていれば、`step restart` は回を区切らずに欠けを示します。`return.md` を直してから区切り直してください。
 
 最後に PR は作らず、`return.md` と差し戻し元のビルドの `plan.md`・`test-spec.md` を削除してコミットします。この削除が差し戻しの解決の記録になり、同じブランチで builder を起動し直せば実装計画からやり直せます。
 

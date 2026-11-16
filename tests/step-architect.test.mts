@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { cli, succeeds, workspace, write } from "./helpers.mts";
+import { cli, returnRecord, succeeds, workspace, write } from "./helpers.mts";
 
 const CYCLE = "docs/hikyaku/cycles/001-test";
 const DESIGN = `${CYCLE}/design`;
@@ -266,7 +266,7 @@ function restart(directory: string, round: string, reason: string): Directive {
 
 test("architect: 差し戻し中は、再設計の回を区切るまで止まる。区切れば build-manager も進められる", (t) => {
   const directory = designed(t);
-  write(directory, `${CYCLE}/return.md`, "# 差し戻し: build-01\n");
+  write(directory, `${CYCLE}/return.md`, returnRecord());
   const stopped = next(directory);
   assert.equal(stopped.kind, "stop");
   assert.match(stopped.message ?? "", /step restart architect 001-test --round return/);
@@ -299,7 +299,7 @@ test("architect: 差し戻し中は、再設計の回を区切るまで止まる
   assert.ok(ids.includes("pr:off"), ids.join(", "));
 
   // 同じブランチで、もう一度差し戻された。前の回のまま新しい return.md を消すだけでは解決できない
-  write(directory, `${CYCLE}/return.md`, "# 差し戻し: build-01（2回目）\n");
+  write(directory, `${CYCLE}/return.md`, returnRecord("# 差し戻し: build-01（2回目）"));
   const again = next(directory);
   assert.equal(again.kind, "stop");
   assert.match(again.message ?? "", /もう一度 architect に差し戻されています/);

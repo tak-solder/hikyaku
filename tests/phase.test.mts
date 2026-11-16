@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { deriveState, phaseLabel, readReturn, RETURN_FILE, suggestFor } from "../scripts/lib/phase.mts";
-import { build, cycle, temporaryDirectory, write } from "./helpers.mts";
+import { build, cycle, returnRecord, temporaryDirectory, write } from "./helpers.mts";
 
 function designed(directory: string): void {
   for (const path of ["planning/user-stories.md", "design/design-delta.md", "tasklist.md"]) write(directory, path);
@@ -72,10 +72,10 @@ test("差し戻し: return.md があれば building のまま差し戻し元の�
   designed(directory);
   write(directory, "build-01/issue.md");
   write(directory, "build-01/questions.md");
-  write(directory, RETURN_FILE, "# 差し戻し: build-01\n\n## 何が崩れたか\n");
+  write(directory, RETURN_FILE, returnRecord());
   const state = deriveState(directory, cycle(), [build("1"), build("2")]);
   assert.equal(state.phase, "building");
-  assert.deepEqual(state.returned, { buildId: "1" });
+  assert.deepEqual(state.returned, { buildId: "1", problems: [] });
   assert.equal(state.resumeAt, undefined);
   assert.deepEqual(
     state.artifacts.filter((artifact) => artifact.present).map((artifact) => artifact.path),
@@ -87,8 +87,14 @@ test("差し戻し: return.md があれば building のまま差し戻し元の�
 
 test("差し戻し: 見出しの全角コロンとゼロ埋めを正規化して読む", (t) => {
   const directory = temporaryDirectory(t);
-  write(directory, RETURN_FILE, "#差し戻し：build-012\n");
-  assert.deepEqual(readReturn(directory), { buildId: "12" });
+  write(directory, RETURN_FILE, returnRecord("#差し戻し：build-012"));
+  assert.deepEqual(readReturn(directory), { buildId: "12", problems: [] });
+});
+
+test("差し戻し: 行き詰まりの報告の欠けを problems に返す（差し戻し中であることは変わらない）", (t) => {
+  const directory = temporaryDirectory(t);
+  write(directory, RETURN_FILE, returnRecord().replace("CSV 出力を外す\n", "\n"));
+  assert.deepEqual(readReturn(directory), { buildId: "1", problems: ["「推奨」が空です"] });
 });
 
 test("差し戻し: 見出しから差し戻し元を読めなければビルドを付けずに案内する", (t) => {
@@ -96,7 +102,7 @@ test("差し戻し: 見出しから差し戻し元を読めなければビルド
   designed(directory);
   write(directory, RETURN_FILE, "# 差し戻し\n\nbuild-01 の本文中の言及は読まない\n");
   const state = deriveState(directory, cycle(), [build("1")]);
-  assert.deepEqual(state.returned, { buildId: undefined });
+  assert.equal(state.returned?.buildId, undefined);
   assert.deepEqual(state.artifacts, []);
   assert.equal(phaseLabel(state), "building（差し戻し中）");
   assert.equal(suggestFor(state, "001-test"), "/hikyaku:architect 001-test");
@@ -109,7 +115,7 @@ test("差し戻し: 全ビルドがマージ済みでも return.md があれば 
   const builds = [build("1", { pr: "https://example.com/pull/1" })];
   const state = deriveState(directory, cycle(), builds, new Set(["1"]));
   assert.equal(state.phase, "building");
-  assert.deepEqual(state.returned, { buildId: "1" });
+  assert.equal(state.returned?.buildId, "1");
 });
 
 test("差し戻し: 設計成果物がそろう前の return.md はフェーズの導出に影響しない", (t) => {
