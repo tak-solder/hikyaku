@@ -59,6 +59,8 @@ interface Directive {
 | P2（patch） | `writesDocs` | — | `false` |
 | init / token-guide のゲート | 既存のまま | — | `false` |
 
+architect の options・adr・pr の args の `designChoiceGate` は、`gates.designChoice` ではなく「その回に G3 が手順に入るか」（`isOn(G3 の定義, ctx)`）にする。express の再設計回で G3 が同意として現れたとき、options が推奨案を黙って採らず、adr がユーザーの選択を書くようにするため（指示ファイル `options.md`・`adr.md`・`pr.md` は値の意味が変わらないので直さない）。
+
 ### `scripts/lib/config.mts`
 
 - `Gates` から `userStories` を除き、`PROFILES` の各 `gates` からも除く
@@ -81,12 +83,12 @@ export function resolveAsk(
 ): ResolvedAsk;
 ```
 
-`approval` が渡されたら、その値をカテゴリにする（静的な分類より、回ごとの判定を優先する）。`consent` なら `escalate`・`delegate` に関わらず `user`・`source: "fixed"`。`ResolvedAsk` に `approvalReason?` は持たせず、理由は parse の `step` に載せる。
+`approval` が渡されたら、その値をカテゴリにし、`enabled` を true にする（そのゲートで止まっているので出ている。静的な分類より、回ごとの判定を優先する）。`consent` なら `escalate`・`delegate` に関わらず `user`・`source: "fixed"`。`ResolvedAsk` に `approvalReason?` は持たせず、理由は parse の `step` に載せる。固定カテゴリのエラーメッセージ（`checkConductorAsks`）の「人間」を「ユーザー」にする。
 
 ### `scripts/commands/conductor.mts`
 
 - `conductor parse`: `childStep` を先に求め、`step.kind === "gate" && step.ask === parsed.id` なら `step.approval` を `resolveAsk` に渡す。`ChildStep` に `approval`・`approvalReason` を足す
-- `conductor asks`・`parse` の表示の「人間」を「ユーザー」に、「監督が判断する同意ゲート」の行を「ユーザーに上げる同意ゲート」に改める
+- `conductor asks`・`parse` の表示の「人間」を「ユーザー」に、「監督が判断する同意ゲート」の行を「ユーザーに上げる同意ゲート」に改める。G3・G4 は差し戻しからの再設計の回に同意としてユーザーに上がることを1行で示す（JSON には `consentWhen: { G3: "...", G4: "..." }` の形で載せる）
 
 ### `scripts/commands/step.mts`（step lint）
 
@@ -97,7 +99,11 @@ export function resolveAsk(
 
 - `docs/configuration/profiles.md`: ゲート表に「承認」列（確認 / 同意、条件付きの同意は条件を添える）。G1 は設定で外せない旨。確認と同意の段落を実装に合わせる
 - `docs/configuration/config-file.md`: `user_stories_gate` の行を除き、廃止の一文を足す
-- `skills/conductor/SKILL.md`: Step 0 の「監督が判断する同意ゲート」の行と「委任される」の段落を除き、同意ゲートはユーザーに上がることを示す。`human` → `user`
+- `docs/configuration/config-file.md` の `[conductor] delegate` の説明: 同意のゲートも指定できない
+- `docs/workflow/conductor.md`（58・67・86・102 行あたり）: 同意ゲートはユーザーに上がる、G6・G8 は確認で監督が答える、express でも再設計回は G3・G4 で止まる
+- `docs/workflow/plan.md`（19 行あたり）: G1 はどのプロファイル・設定でも止まる
+- `skills/conductor/SKILL.md`: Step 0 の「監督が判断する同意ゲート」の行と「委任される」の段落を除き、同意ゲートはユーザーに上がることを示す。`human` → `user`。最後の PR の本文の「監督が判断した同意ゲート」（341 行）を「監督が答えた確認ゲート」に、G10 の答え方と G10 の前の検証（416・429 行）を除く。「監督に任せる」と答えたらその問いを監督が判断する（442-443 行）は、同意の問いには効かないと明記する
+- `skills/conductor/references/headless-protocol.md`（88 行）: 「同意ゲート（G6 / G8 / G10）の判断も含まれます」を、確認ゲート（G6 / G8）に改める
 - `CHANGELOG.md` の `[3.0.0]`
 
 ## 非機能要件
@@ -110,45 +116,47 @@ export function resolveAsk(
 | 段階 | 予測ピーク |
 |------|------------|
 | architectフェーズ段階 | 360k |
-| builderフェーズ段階 | 350k |
+| builderフェーズ段階 | 395k |
 
 **読むファイル**
 
 - `design/design-delta.md` の「1. 承認の種類と上限」、ADR `20261116-approval-kind-in-step-definitions.md`
-- `scripts/lib/steps/engine.mts`（281 行）・`directive.mts`（303 行）
+- `scripts/lib/steps/engine.mts`（281 行）・`directive.mts`（303 行）・`index.mts`
 - `scripts/lib/steps/` の `architect.mts`・`planner.mts`・`builder.mts`・`build-manager.mts`・`close-cycle.mts`・`patch.mts`・`init.mts`・`token-guide.mts`
 - `scripts/lib/conductor.mts`（662 行の前半）・`scripts/commands/conductor.mts`（parse まで）
 - `scripts/lib/config.mts`（Gates・PROFILES・廃止キー・finalize）・`scripts/commands/config.mts`・`scripts/commands/step.mts`（lint）
 - `tests/step*.test.mts`・`tests/conductor.test.mts`・`tests/config.test.mts`
-- `docs/configuration/profiles.md`・`config-file.md`、`skills/conductor/SKILL.md`
+- `skills/architect/steps/options.md`・`adr.md`・`pr.md`（`designChoiceGate` の読み方の確認）
+- `docs/configuration/profiles.md`・`config-file.md`、`docs/workflow/conductor.md`・`plan.md`
+- `skills/conductor/SKILL.md`・`references/headless-protocol.md`、`CHANGELOG.md` の `[3.0.0]`
 
 **作成するファイル**
 
 - 上記の lib・commands の変更
-- `tests/step-consent.test.mts`（新規。同意を外せない・directive の approval・lint）
+- `tests/step-consent.test.mts`（新規。同意を外せない・express の再設計回の `designChoiceGate`・directive の approval・lint）
 - `tests/conductor.test.mts`・`tests/config.test.mts` の追加と期待値の書き換え
-- docs 2本・`skills/conductor/SKILL.md`・`CHANGELOG.md`
+- docs 4本・`skills/conductor/SKILL.md`・`headless-protocol.md`・`CHANGELOG.md`
 
 **builderフェーズ段階の内訳**
 
 | 成分 | 予測 | 根拠 |
 |------|------|------|
 | 固定費 | 90k | — |
-| 読み込み | 100k | engine/directive（約580行）・architect/planner/builder/close-cycle/patch/init/token-guide の steps 定義・lib/commands の conductor（約1270行のうち振り分けと parse）・config.mts の Gates/PROFILES/retired/finalize・commands/step.mts の lint・commands/config.mts の表示・関連テスト（step 系・conductor・config）・profiles.md・config-file.md・conductor SKILL.md の Step 0 と振り分けの節。ここまでで約 60k を読了済み |
-| 実装 | 70k | engine に consent/enabled と評価式、directive に approval、各 gate 定義の when→enabled と consent、Gates.userStories の削除と user_stories_gate の廃止エラー、ASKS の再分類・Handler の user 化・consent の固定・resolveAsk の approval、parse の順序入れ替え、step lint の検査、docs 2本・SKILL.md・CHANGELOG |
-| テスト | 60k | 同意を外せない（G1・再設計回の G3/G4 を express と全ゲート off で）、directive の approval、廃止キーのエラー、conductor の振り分け（consent 固定・delegate 不可・G6/G8 confirm）、step lint、既存の human の期待値の書き換え |
-| 未知の領域 | 30k | ゲート定義の when を分けたときに巻き戻る結合テストの調整と、conductor parse の結合テストの組み立て |
-| **予測ピーク** | **350k** | 狙いの帯（300k〜450k） |
+| 読み込み | 130k | engine/directive（約580行）・各スキルの steps 定義と index.mts・lib/commands の conductor・config.mts の Gates/PROFILES/廃止キー/finalize・commands/step.mts と config.mts・テスト（step 系約1,660行・conductor 1,148行・config 216行）・architect の options/adr/pr.md・conductor SKILL.md（443行）と headless-protocol.md・docs の profiles/config-file/workflow の conductor・plan・CHANGELOG [3.0.0]。約 60k は読了済み |
+| 実装 | 75k | engine の consent/enabled/isOn、directive の approval、各 gate 定義の when→enabled と consent、architect の designChoiceGate を G3 の on に、Gates.userStories の削除と廃止エラー、ASKS・Handler・固定・resolveAsk の approval と enabled、asks の表示、parse の順序、step lint、conductor SKILL.md 4箇所と headless-protocol、docs 5本、CHANGELOG |
+| テスト | 60k | 同意を外せない（G1・express と全ゲート off の再設計回の G3/G4）、express の再設計回の designChoiceGate、directive の approval、廃止キーのエラー、conductor の振り分け（consent 固定・delegate 不可・G6/G8 confirm・approval の上書き）、step lint、human の期待値の書き換え |
+| 未知の領域 | 40k | Gates と Handler の型の変更が conductor の CLI 結合テストに波及する修正のループと、when を分けたときに巻き戻る結合テストの調整 |
+| **予測ピーク** | **395k** | 狙いの帯（300k〜450k） |
 | ガイド | 標準 v2 | 03897ac0 |
 
 ## 実装ステップ
 
 - [ ] Step 1: engine に `consent`・`enabled`・`consentOf`・`isOn` を足し、`evaluate` を `isOn` に切り替える
-- [ ] Step 2: 各スキルのゲート定義に `consent` を付け、`gates.*` の条件を `when` から `enabled` に移す
+- [ ] Step 2: 各スキルのゲート定義に `consent` を付け、`gates.*` の条件を `when` から `enabled` に移す。architect の `designChoiceGate` を G3 の on に
 - [ ] Step 3: directive に `approval`・`approvalReason` を出す
 - [ ] Step 4: `Gates.userStories` の削除と `user_stories_gate` の廃止エラー、`config` の表示
 - [ ] Step 5: conductor の `Handler`・既定・固定・ASKS・`resolveAsk` の `approval`、parse の順序
 - [ ] Step 6: step lint の検査
 - [ ] Step 7: テスト（新規と期待値の書き換え）
-- [ ] Step 8: profiles.md・config-file.md・conductor SKILL.md・CHANGELOG
+- [ ] Step 8: profiles.md・config-file.md・workflow の conductor.md・plan.md・conductor SKILL.md・headless-protocol.md・CHANGELOG
 - [ ] Step 9: ローカル検証（`npx tsc --noEmit`・`npm test`・`step lint`・`conductor lint`）
