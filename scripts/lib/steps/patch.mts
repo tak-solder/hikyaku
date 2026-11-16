@@ -78,7 +78,12 @@ export const PATCH_STEPS: SkillSteps = {
         };
       },
     },
-    { id: "P1", kind: "gate", title: "対応方針の合意" },
+    {
+      id: "P1",
+      kind: "gate",
+      title: "対応方針の合意",
+      consent: () => ({ timing: "now", reason: "対応方針の合意（意図を決める判断）" }),
+    },
     { id: "pr", kind: "run", title: "Draft PR の作成（依頼と合意した挙動を本文に）", recordsPr: true },
     { id: "implement", kind: "run", title: "実装とテスト" },
     { id: "verify", kind: "run", title: "ローカル検証" },
@@ -96,7 +101,14 @@ export const PATCH_STEPS: SkillSteps = {
       accepts: handoffWritten,
       args: (ctx) => ({ cycle: ctx.cycle?.name ?? null }),
     },
-    { id: "P2", kind: "gate", title: "永続ドキュメントの更新の承認", when: writesDocs },
+    {
+      id: "P2",
+      kind: "gate",
+      title: "永続ドキュメントの更新の承認",
+      when: writesDocs,
+      // decisions・constraints の変更を含みうるので、G10 と同じく同意の側に倒す
+      consent: () => ({ timing: "now", reason: "永続ドキュメントの更新（decisions・constraints の変更を含みうる）" }),
+    },
     { id: "write", kind: "run", title: "永続ドキュメントの書き込みと検証", when: writesDocs },
     publicationStep("patch"),
   ],

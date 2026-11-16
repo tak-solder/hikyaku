@@ -32,6 +32,15 @@ import type { CycleContext } from "../workspace.mts";
 
 export type StepKind = "run" | "gate" | "call";
 
+/**
+ * 同意の時機。now はその場で取る同意で、どの設定でも手順から外さない。deferred は同意の部分を
+ * マージの前の同意ゲートへ遅らせる回で、その回のゲート自体は確認として enabled で決まる
+ */
+export type ConsentTiming = "now" | "deferred";
+
+/** その回の同意の判定。false は確認（プロファイルで省ける） */
+export type ConsentJudgement = { timing: ConsentTiming; reason: string } | false;
+
 /** 定義の条件・成果物を評価するときに渡すもの */
 export interface StepContext {
   config: ResolvedConfig;
@@ -48,8 +57,18 @@ export interface StepDefinition {
   kind: StepKind;
   /** step status に出す短い説明 */
   title: string;
-  /** 実行するか。false なら手順に含めない（設定で無効なステップ） */
+  /**
+   * 構造の条件（options をスキップした、追加設計の回、など）。false なら手順に含めない。
+   * プロファイルや個別キーによるゲートのオン・オフは enabled に書く（同意の回に外さないため）
+   */
   when?: (ctx: StepContext) => boolean;
+  /**
+   * gate の承認の種類（原則11）。gate は必ず持つ（step lint が検査する）。false は常に確認。
+   * 関数なら回ごとに判定する（差し戻しからの再設計の回の G3・G4 など）
+   */
+  consent?: false | ((ctx: StepContext) => ConsentJudgement);
+  /** gate の確認のオン・オフ（プロファイル・個別キー）。省略は有効。同意（now）の回には効かない */
+  enabled?: (ctx: StepContext) => boolean;
   /** 完了に要る成果物（作業単位のディレクトリからの相対パス） */
   produces?: string[];
   /** 成果物で判定できない完了の条件（tasklist の PR 列など）。成果物と同じ扱い */
@@ -142,6 +161,45 @@ export function allowedResults(definition: StepDefinition): StepResult[] {
   return definition.skippable === true ? ["done", "skipped", "failed"] : ["done", "failed"];
 }
 
+/** その回の同意の判定。consent が無い・false なら確認（false） */
+export function consentOf(definition: StepDefinition, ctx: StepContext): ConsentJudgement {
+  return typeof definition.consent === "function" ? definition.consent(ctx) : false;
+}
+
+/**
+ * 手順に含めるか。when（構造）を満たし、その場の同意の回か、確認として有効なとき。
+ * 同意（now）の回はどのプロファイル・個別キーでも外さない（原則11）
+ */
+export function isOn(definition: StepDefinition, ctx: StepContext): boolean {
+  if (definition.when !== undefined && !definition.when(ctx)) return false;
+  const consent = consentOf(definition, ctx);
+  if (consent !== false && consent.timing === "now") return true;
+  return definition.enabled === undefined || definition.enabled(ctx);
+}
+
+/**
+ * 承認の種類の検査（step lint）。gate は consent を必ず持ち（確認なら false を明示する）、
+ * gate でないステップは consent / enabled を持たない。書き忘れた gate が黙って確認になり、
+ * 同意の回にプロファイルで外れるのを防ぐ
+ */
+export function lintApproval(skill: Pick<SkillSteps, "skill" | "steps">): string[] {
+  const problems: string[] = [];
+  for (const definition of skill.steps) {
+    if (definition.kind === "gate") {
+      if (definition.consent === undefined) {
+        problems.push(`${skill.skill}: ゲート ${definition.id} が承認の種類（consent）を持っていません。確認なら consent: false を明示してください`);
+      }
+      continue;
+    }
+    for (const key of ["consent", "enabled"] as const) {
+      if (definition[key] !== undefined) {
+        problems.push(`${skill.skill}: ${definition.id} は gate でないのに ${key} を持っています（条件は when に書きます）`);
+      }
+    }
+  }
+  return problems;
+}
+
 export function hasEvidence(definition: StepDefinition, ctx: StepContext): boolean {
   if (definition.produces !== undefined) {
     if (!definition.produces.every((path) => existsSync(join(ctx.unitDirectory, path)))) return false;
@@ -170,7 +228,7 @@ export function evaluate(skill: SkillSteps, ctx: StepContext): Evaluation {
   const indexed = ctx.events.map((event, index) => ({ event, index }));
 
   for (const definition of skill.steps) {
-    if (definition.when !== undefined && !definition.when(ctx)) {
+    if (!isOn(definition, ctx)) {
       steps.push({ definition, status: "off", event: undefined, note: undefined, revise: undefined });
       continue;
     }

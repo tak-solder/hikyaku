@@ -34,6 +34,7 @@ import {
   allowedResults,
   evaluate,
   hasEvidence,
+  lintApproval,
   missingRequirement,
   type EvaluatedStep,
   type Evaluation,
@@ -351,6 +352,8 @@ register({
     "scripts/lib/steps/ の各ステップに skills/<skill>/steps/<id>.md があるか、",
     "定義に無い指示ファイルが残っていないかを検査します。",
     `区切りの定義（${Object.keys(CHECKPOINT_STEPS).join(" / ")}）が実在するステップを指しているかも見ます。`,
+    "gate が承認の種類（consent。確認なら false）を持つか、gate でないステップが consent / enabled を",
+    "持っていないかも検査します。",
   ].join("\n"),
   run: () => {
     const problems: string[] = [];
@@ -359,6 +362,7 @@ register({
       const ids = skill.steps.map((step) => step.id);
       const duplicated = ids.filter((id, index) => ids.indexOf(id) !== index);
       for (const id of new Set(duplicated)) problems.push(`${skill.skill}: ステップ ${id} が重複しています`);
+      problems.push(...lintApproval(skill));
       for (const id of ids) {
         if (!existsSync(instructionPath(skill.skill, id))) problems.push(`skills/${skill.skill}/steps/${id}.md がありません`);
       }

@@ -21,7 +21,7 @@
   - 観点の例: Minimal（既存資産の最大活用・低リスク）/ Clean（関心分離・長期保守性）/ Pragmatic（中間）
   - 各案に「影響ファイル」「主要コンポーネントの責務」「Trade-off」を返させる
 - [ ] trade-off表にまとめ、推奨案と理由を明記する
-- [ ] 値 `designChoiceGate` が false（express）なら、推奨案をそのまま採用し、ユーザーに確認を求めない
+- [ ] 値 `designChoiceGate` が false（G3 を行わない回。express の通常の回など。差し戻しからの再設計の回は express でも true）なら、推奨案をそのまま採用し、ユーザーに確認を求めない
   - trade-off表と推奨理由は破棄せず、`adr` で ADR の「検討した案」「採用理由」に残す
     （承認を省いた以上、判断を後から追える場所は ADR だけになる）
 - [ ] trade-off表と推奨案は G3 の提示・ADR・PR 本文で使うので、このセッションに残しておく

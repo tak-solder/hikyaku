@@ -17,7 +17,7 @@ import { formatTokens, measureCurrent, type CurrentContext } from "../session.mt
 import { requirePhase, scopeFor } from "../stack.mts";
 import type { CycleContext } from "../workspace.mts";
 import { checkpointsOf, CHECKPOINT_LABELS, type Overrun } from "./checkpoints.mts";
-import { allowedResults, type Evaluation, type SkillSteps, type StepContext } from "./engine.mts";
+import { allowedResults, consentOf, type Evaluation, type SkillSteps, type StepContext } from "./engine.mts";
 import { instructionPath, ownerOf, SKILL_STEPS, stepsOf } from "./index.mts";
 
 export const CLI = `node "${join(pluginRoot(), "scripts", "hikyaku.mts")}"`;
@@ -133,6 +133,10 @@ export interface Directive {
   /** 差し戻されたゲートの、ユーザーの答え */
   revise?: string;
   ask?: string;
+  /** gate の承認の種類。deferred の回は、同意をマージの前へ遅らせるので確認として示す */
+  approval?: "confirm" | "consent";
+  /** 同意の理由（確認なら null） */
+  approvalReason?: string | null;
   call?: string;
   reason?: string;
   /** 呼ぶ内部スキルが step に移っていれば、そのスキルが最初に呼ぶコマンド */
@@ -240,6 +244,10 @@ export function buildDirective(opened: Opened, evaluation: Evaluation, options: 
   if (current.revise !== undefined) directive.revise = current.revise;
   if (definition.kind === "gate") {
     directive.ask = definition.ask ?? definition.id;
+    const consent = consentOf(definition, ctx);
+    const now = consent !== false && consent.timing === "now";
+    directive.approval = now ? "consent" : "confirm";
+    directive.approvalReason = now ? consent.reason : null;
   }
   if (definition.kind === "call") {
     directive.call = definition.call ?? "";
@@ -269,6 +277,7 @@ export function renderDirective(directive: Directive): string {
   lines.push(head, "", `${directive.kind}: ${directive.step}（${directive.title}）`, `指示: ${directive.read} を読んで行う`);
   if (directive.kind === "gate") {
     lines.push(`問いの ID: ${directive.ask}`);
+    lines.push(directive.approval === "consent" ? `承認: 同意（${directive.approvalReason ?? ""}）` : "承認: 確認");
   }
   if (directive.kind === "call") {
     lines.push(`呼ぶスキル: /hikyaku:${directive.call}`, `理由: ${directive.reason}`);

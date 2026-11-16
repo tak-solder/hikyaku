@@ -84,8 +84,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor asks {cycle} --json
 ```
 サイクル {cycle}（profile: {profile}）を {ARCHITECT / BUILD / CLOSE} から進めます。
 planning/user-stories.md を承認済みの要件として扱います。
-監督が判断する同意ゲート: {asks の出力}
-人間に上げる問い: {asks の出力}、およびスコープを広げる回答が要る問い
+監督が判断する問い: {asks の出力}
+ユーザーに上げる問い: {asks の出力（同意ゲートを含む）}、回によって同意になるゲート（consentWhen）、およびスコープを広げる回答が要る問い
 子のモデル: {asks の出力の models。null は「既定」と書く}
 フェーズの PR のレビュアーと、待つ上限: {asks の出力の review}
 最後の PR のレビュアー: {asks の出力の review.finalReviewers}
@@ -94,7 +94,7 @@ planning/user-stories.md を承認済みの要件として扱います。
 PR を作って止まります。
 ```
 
-同意ゲートは、ここでの合意によって監督に**委任**される（省かれるのではない）。断られたら**終了**する。
+同意ゲートは監督に委任しない。子がそこで止まったら、ユーザーに上げる。断られたら**終了**する。
 想定と違う振り分けを望まれたら、`.hikyaku.config` の `[conductor] escalate` / `delegate` を案内する。
 
 → Step 1 へ。
@@ -192,9 +192,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor parse {resultFile} {c
 `ask.handler` で分岐する。
 
 - **`supervisor`**: 「問いへの答え方」に従って判断する。ただし、そこに書いた「人間に上げる」条件に
-  当たれば `human` と同じに扱う。ゲート（`step.kind` が `gate`）なら、承認の観点と読む成果物は `step.read` の
+  当たれば `user` と同じに扱う。ゲート（`step.kind` が `gate`）なら、承認の観点と読む成果物は `step.read` の
   指示ファイルにある（成果物のパスは `step.directory` から辿る）
-- **`human`**: 子の問い（`body`）を要約せずに `AskUserQuestion` で人間に示し、回答を得る
+- **`user`**: 子の問い（`body`）を要約せずに `AskUserQuestion` でユーザーに示し、回答を得る。同意ゲート
+  （`ask.category` が `consent`。理由は `step.approvalReason`）はこちらに固定され、監督は答えない
 
 回答をスクラッチパッドのファイルに書き、同じ session-id で再開する。
 
@@ -338,8 +339,8 @@ gh pr list --head {conductor ブランチ} --base {baseBranch} --state open --js
 - [ ] conductor ブランチ → デフォルトブランチの PR を作る
   - タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title conductor {cycle}` で生成する
   - `gh pr create --draft` で作る。Draft に対応していない場合だけ通常の PR で作り、その旨を案内する
-  - 本文に、取り込んだフェーズの PR を順に並べ、それぞれで**監督が判断した同意ゲート**を1行ずつ示す
-    （人間がレビューで確認するため）
+  - 本文に、取り込んだフェーズの PR を順に並べ、それぞれで**監督が答えた確認ゲート**と、子が解釈で
+    決めた振る舞いを1行ずつ示す（ユーザーがレビューで確認するため）
   - 外部連携が有効なら、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref conductor {cycle}` の行
     （サイクルの issue への `Refs #12`）を本文の末尾に入れる。issue は CLOSE の PR で閉じる
 - [ ] 設定に従って公開する（失敗したら、再実行のコマンドと Draft のままであることを案内する）
@@ -407,13 +408,12 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr ready close {cycle} --pr {CL
 | `branch` | Step 2 で用意したブランチなら「Hikyaku の規則に従う」。食い違いの理由が分からなければ人間に上げる |
 | `build-select` | Step 1 で選んだビルドを答える |
 | `overlap` | このサイクルの design-delta で分担を決められるなら答える。**他のサイクルの設計を変える必要があれば人間に上げる** |
-| `G3` | 推奨案が user-stories と `constraints` に反していなければ推奨案を選ぶ |
-| `G2` / `G4` / `G7` | 成果物を読み、承認観点（スキルが示すもの）に沿って承認するか差し戻す |
+| `G3` | 推奨案が user-stories と `constraints` に反していなければ推奨案を選ぶ（同意の回は `handler` が `user` になり、答えない） |
+| `G2` / `G4` / `G7` | 成果物を読み、承認観点（スキルが示すもの）に沿って承認するか差し戻す（G4 の同意の回は答えない） |
 | `retrospective` | 実施する |
 | `docs-link` | `--dry-run` の差分がマーカーで囲まれた索引ブロックの中だけなら承認する |
 | `G6` | 分割・依存が design-delta と矛盾せず、各ビルドの予測ピークが `split_above` 以下（超えるなら issue.md に許容する理由がある）なら承認する。「マージ時点で残る危険」を書いたビルドがあれば、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json` の `unsafeSplit.allowed` が true であることも確かめる |
 | `G8` | 「検証の義務」の G8 を行い、満たしていれば承認する |
-| `G10` | 「検証の義務」の G10 を行い、除外すべき候補を外して承認する |
 | `questions` | 成果物から導けるものだけ答える。導けないものは人間に上げる |
 | `adr-status` | 既存の形式に欄を足さない（挙動を狭める側） |
 | `design-conflict` | 「architect に差し戻す」を選ぶ。**「設計に合わせる（要件を改める）」が必要なら人間に上げる**。ビルドの中で設計を改めるのは、変更が plan.md の範囲に収まり ADR を覆さない場合だけ |
@@ -426,7 +426,6 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr ready close {cycle} --pr {CL
 |---|---|
 | G8 の前 | plan.md と test-spec.md が、issue.md の受け入れ基準をすべて網羅しているかを読む |
 | builder の done の後 | テストを自分で再実行する。差分（`git diff {conductor}...HEAD --stat` と主要ファイル）が plan.md の範囲に収まっているかを読む |
-| G10 の前 | 昇格候補に「監督がその場で決めた運用」や「すでに事実でない前提」が混ざっていないかを読み、混ざっていれば除外する。削除と置き換えは、根拠の出どころ（handoff・振り返り）を1件ずつ確かめ、このサイクルの記録に根拠の無いものは除外する（人間が確かめる場は PR になるので、根拠の薄い削除を通さない） |
 
 テストのコマンドは handoff.md / plan.md から引く。再実行に許可が要れば人間に案内する。
 
@@ -440,4 +439,5 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr ready close {cycle} --pr {CL
 - 選択肢（子が示したもの）
 
 人間の回答は「回答（人間の判断）」として子に渡す。人間が「監督に任せる」と答えたら、
-その問いに限って監督が判断し、「委任された判断」として渡す。
+その問いに限って監督が判断し、「委任された判断」として渡す。ただし同意の問い（`ask.category` が
+`consent`）は、ユーザーが「監督に任せる」と答えても監督は判断せず、ユーザーに答えを求める。
