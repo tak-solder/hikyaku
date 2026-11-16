@@ -69,7 +69,8 @@ export const BUILDER_STEPS: SkillSteps = {
       id: "G7",
       kind: "gate",
       title: "plan.md 単独の承認",
-      when: (ctx) => ctx.config.gates.plan,
+      enabled: (ctx) => ctx.config.gates.plan,
+      consent: false,
       ask: "G7",
     },
     {
@@ -89,6 +90,7 @@ export const BUILDER_STEPS: SkillSteps = {
       id: "G8",
       kind: "gate",
       title: "plan.md と test-spec.md の承認",
+      consent: false,
       ask: "G8",
       checkpoint: "approval",
     },

@@ -33,7 +33,8 @@ export const PLANNER_STEPS: SkillSteps = {
       id: "G1",
       kind: "gate",
       title: "user-stories.md の承認",
-      when: (ctx) => ctx.config.gates.userStories,
+      // 要件の合意は意図を決める判断なので、どのプロファイル・設定でも外さない
+      consent: () => ({ timing: "now", reason: "要件の合意（意図を決める判断）" }),
       ask: "G1",
     },
     {

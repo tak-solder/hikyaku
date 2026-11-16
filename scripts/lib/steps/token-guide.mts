@@ -71,7 +71,7 @@ export const TOKEN_GUIDE_STEPS: SkillSteps = {
     { id: "start", kind: "run", title: "回の開始とブランチの確認" },
     { id: "collect", kind: "run", title: "予測と実測の収集", skippable: true },
     { id: "propose", kind: "run", title: "ガイドの変更案の作成", when: collected, skippable: true },
-    { id: "approve", kind: "gate", title: "ガイドの変更の承認", when: (ctx) => proposed(ctx) && !auto(ctx) },
+    { id: "approve", kind: "gate", title: "ガイドの変更の承認", when: (ctx) => proposed(ctx) && !auto(ctx), consent: false },
     { id: "write", kind: "run", title: "ガイドの書き込みと版の更新", when: proposed, requires: guideWritten },
     { id: "pr", kind: "run", title: "コミットと PR", recordsPr: true, requires: guideConsistent },
   ],

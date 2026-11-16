@@ -111,7 +111,6 @@ security_review = "on"
 
 | キー | 型 | 対応するもの |
 |---|---|---|
-| `user_stories_gate` | bool | G1 user-stories 承認 |
 | `codebase_survey_gate` | bool | G2 codebase-survey 確認 |
 | `design_choice_gate` | bool | G3 設計案の選択 |
 | `architecture_gate` | bool | G4 設計ドキュメント承認 |
@@ -126,7 +125,7 @@ security_review = "on"
 | `retrospective` | `skip` / `prompt` / `auto` | 振り返りの実行 |
 | `validate` | `manual` / `phase` / `step` | `hikyaku validate` の実行タイミング |
 
-プロファイルごとの既定値は [プロファイル](profiles.md) にあります。
+プロファイルごとの既定値は [プロファイル](profiles.md) にあります。ゲートのキーで外せるのは確認の回だけで、差し戻しからの再設計の回の G3 / G4 のような同意の回は外れません。G1 は常に同意なので、v2 までの `user_stories_gate` は廃止しました。書かれているとエラーになるので削除してください。
 
 ## [branch]
 
@@ -341,7 +340,7 @@ review_timeout = 15       # レビューの依頼や CI を待つ上限（分）
 
 [conductor](../workflow/conductor.md) で子セッションを動かすときの設定です。使わないなら書く必要はありません。
 
-`escalate` と `delegate` には問いの ID（`G8`、`review-findings` など）を並べます。使える ID と現在の振り分けは `hikyaku conductor asks <cycle>` で確認できます。表に無い ID や、同じ ID を両方に書いた場合はエラーになります。サイクルの中止（`abandon`）と ID の無い問い（`other`）は常に人間に上げるので、`delegate` には書けません。
+`escalate` と `delegate` には問いの ID（`G8`、`review-findings` など）を並べます。使える ID と現在の振り分けは `hikyaku conductor asks <cycle>` で確認できます。表に無い ID や、同じ ID を両方に書いた場合はエラーになります。同意ゲート（`G10`）、サイクルの中止（`abandon`）、ID の無い問い（`other`）は常にユーザーに上げるので、`escalate` にも `delegate` にも書けません。確認のゲートでも、差し戻しからの再設計の回の `G3` / `G4` のように、その回が同意になるときは `delegate` に書いてあってもユーザーに上がります。
 
 `allowed_tools` は `--allowedTools` に渡す書式で書きます（`"Bash(npm test:*)"` など）。子はこの設定を起動のたびに読むので、作業ツリーで一時的に足すのではなくコミットしておいてください。
 

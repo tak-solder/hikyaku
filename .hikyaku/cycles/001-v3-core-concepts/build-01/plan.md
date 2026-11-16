@@ -151,12 +151,12 @@ export function resolveAsk(
 
 ## 実装ステップ
 
-- [ ] Step 1: engine に `consent`・`enabled`・`consentOf`・`isOn` を足し、`evaluate` を `isOn` に切り替える
-- [ ] Step 2: 各スキルのゲート定義に `consent` を付け、`gates.*` の条件を `when` から `enabled` に移す。architect の `designChoiceGate` を G3 の on に
-- [ ] Step 3: directive に `approval`・`approvalReason` を出す
-- [ ] Step 4: `Gates.userStories` の削除と `user_stories_gate` の廃止エラー、`config` の表示
-- [ ] Step 5: conductor の `Handler`・既定・固定・ASKS・`resolveAsk` の `approval`、parse の順序
-- [ ] Step 6: step lint の検査
-- [ ] Step 7: テスト（新規と期待値の書き換え）
-- [ ] Step 8: profiles.md・config-file.md・workflow の conductor.md・plan.md・conductor SKILL.md・headless-protocol.md・CHANGELOG
+- [x] Step 1: engine に `consent`・`enabled`・`consentOf`・`isOn` を足し、`evaluate` を `isOn` に切り替える
+- [x] Step 2: 各スキルのゲート定義に `consent` を付け、`gates.*` の条件を `when` から `enabled` に移す。architect の `designChoiceGate` を G3 の on に
+- [x] Step 3: directive に `approval`・`approvalReason` を出す
+- [x] Step 4: `Gates.userStories` の削除と `user_stories_gate` の廃止エラー、`config` の表示
+- [x] Step 5: conductor の `Handler`・既定・固定・ASKS・`resolveAsk` の `approval`、parse の順序
+- [x] Step 6: step lint の検査
+- [x] Step 7: テスト（新規と期待値の書き換え）
+- [x] Step 8: profiles.md・config-file.md・workflow の conductor.md・plan.md・conductor SKILL.md・headless-protocol.md・CHANGELOG
 - [ ] Step 9: ローカル検証（`npx tsc --noEmit`・`npm test`・`step lint`・`conductor lint`）

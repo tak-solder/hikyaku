@@ -25,7 +25,7 @@ import { planReviewers, skipTargetOf, type ReviewerInput } from "../scripts/lib/
 import { cli, snapshot, succeeds, testEnvironment, workspace, write } from "./helpers.mts";
 
 const settings: AskSettings = {
-  gates: { userStories: true, codebaseSurvey: false, designChoice: true, architecture: true, plan: false },
+  gates: { codebaseSurvey: false, designChoice: true, architecture: true, plan: false },
   reviews: {
     userStories: true, architecture: true, tasklist: true, plan: true, testSpec: true, code: true,
     security: "recommended", retrospective: "auto", validate: "manual",
@@ -56,19 +56,30 @@ function result(text: string, extra: Record<string, unknown> = {}): string {
   });
 }
 
-test("conductor: 既定では同意ゲートを監督に、障害・中止・分類できない問いを人間に振り分ける", () => {
-  const handlers = Object.fromEntries(resolveAllAsks(conductor(), settings).map((ask) => [ask.id, ask.handler]));
-  for (const id of ["cycle", "branch", "G3", "G6", "G8", "G10", "questions", "review-findings", "docs-link"]) {
+test("conductor: 既定では確認ゲートを監督に、同意・障害・中止・分類できない問いをユーザーに振り分ける", () => {
+  const asks = resolveAllAsks(conductor(), settings);
+  const handlers = Object.fromEntries(asks.map((ask) => [ask.id, ask.handler]));
+  for (const id of ["cycle", "branch", "G3", "G6", "G8", "questions", "review-findings", "docs-link"]) {
     assert.equal(handlers[id], "supervisor", id);
   }
-  for (const id of ["retry-limit", "abandon", "other"]) assert.equal(handlers[id], "human", id);
+  for (const id of ["G10", "retry-limit", "abandon", "other"]) assert.equal(handlers[id], "user", id);
+  assert.ok(asks.every((ask) => ask.handler === "supervisor" || ask.handler === "user"));
 });
 
-test("conductor: escalate と delegate で振り分けを上書きし、中止は常に人間に上げる", () => {
+test("conductor: G10 は同意でユーザーに固定し、G6・G8 は確認で既定では監督が答える", () => {
+  const g10 = resolveAsk("G10", conductor(), settings);
+  assert.deepEqual([g10.category, g10.handler, g10.source], ["consent", "user", "fixed"]);
+  for (const id of ["G6", "G8"]) {
+    const ask = resolveAsk(id, conductor(), settings);
+    assert.deepEqual([ask.category, ask.handler, ask.source], ["confirm", "supervisor", "default"], id);
+  }
+});
+
+test("conductor: escalate と delegate で振り分けを上書きし、中止は常にユーザーに上げる", () => {
   const config = conductor({ escalate: ["G8"], delegate: ["retry-limit"] });
   assert.deepEqual(
     [resolveAsk("G8", config, settings).handler, resolveAsk("G8", config, settings).source],
-    ["human", "escalate"],
+    ["user", "escalate"],
   );
   assert.deepEqual(
     [resolveAsk("retry-limit", config, settings).handler, resolveAsk("retry-limit", config, settings).source],
@@ -76,14 +87,37 @@ test("conductor: escalate と delegate で振り分けを上書きし、中止�
   );
   assert.deepEqual(
     [resolveAsk("abandon", config, settings).handler, resolveAsk("abandon", config, settings).source],
-    ["human", "fixed"],
+    ["user", "fixed"],
   );
 });
 
-test("conductor: 表に無い ID は分類できない問いとして人間に上げる", () => {
+test("conductor: 子の手順の approval が同意なら、escalate・delegate に関わらずユーザーに固定する", () => {
+  const express = { ...settings, gates: { ...settings.gates, designChoice: false, architecture: false } };
+  const redesign = resolveAsk("G3", conductor(), express, "consent");
+  assert.deepEqual(
+    [redesign.category, redesign.handler, redesign.source, redesign.enabled],
+    ["consent", "user", "fixed", true],
+  );
+  assert.deepEqual(
+    [resolveAsk("G4", conductor({ delegate: ["G4"] }), express, "consent").handler, resolveAsk("G4", conductor({ delegate: ["G4"] }), express, "consent").source],
+    ["user", "fixed"],
+  );
+  assert.equal(resolveAsk("G3", conductor({ escalate: ["G3"] }), express, "consent").source, "fixed");
+});
+
+test("conductor: approval が確認なら監督に振り、そのゲートで止まっているので enabled にする", () => {
+  const off = { ...settings, gates: { ...settings.gates, designChoice: false, architecture: false } };
+  const confirm = resolveAsk("G4", conductor(), off, "confirm");
+  assert.deepEqual([confirm.category, confirm.handler, confirm.enabled], ["confirm", "supervisor", true]);
+  const statically = resolveAsk("G3", conductor(), off);
+  assert.deepEqual([statically.category, statically.handler, statically.enabled], ["confirm", "supervisor", false]);
+});
+
+test("conductor: 表に無い ID は分類できない問いとしてユーザーに上げる", () => {
   const ask = resolveAsk("G1", conductor(), settings);
   assert.equal(ask.category, "unknown");
-  assert.equal(ask.handler, "human");
+  assert.equal(ask.handler, "user");
+  assert.equal(resolveAsk("Z9", conductor(), settings).source, "fixed");
 });
 
 test("conductor: profile と振り返りの設定で出ない問いを enabled: false にする", () => {
@@ -101,11 +135,21 @@ for (const [name, config, pattern] of [
   ["delegate の abandon", conductor({ delegate: ["abandon"] }), /指定できません/],
   ["delegate の other", conductor({ delegate: ["other"] }), /指定できません/],
   ["両方に同じ ID", conductor({ escalate: ["G8"], delegate: ["G8"] }), /両方/],
+  ["delegate の同意ゲート G10", conductor({ delegate: ["G10"] }), /指定できません/],
+  ["escalate の同意ゲート G10", conductor({ escalate: ["G10"] }), /指定できません/],
 ] as const) {
   test(`conductor: 設定の検査で${name}を拒否する`, () => {
     assert.throws(() => checkConductorAsks(config, "[conductor]"), pattern);
   });
 }
+
+test("conductor: 同意ゲートを delegate に書いたエラーは、ユーザーが判断することを示す", () => {
+  assert.throws(
+    () => checkConductorAsks(conductor({ delegate: ["G10"] }), "[conductor]"),
+    (error: Error & { hint?: string }) => /ユーザー/.test(`${error.message}\n${error.hint ?? ""}`) && !/人間/.test(`${error.message}\n${error.hint ?? ""}`),
+  );
+  assert.doesNotThrow(() => checkConductorAsks(conductor({ delegate: ["G8"] }), "[conductor]"));
+});
 
 test("conductor: 最終出力の末尾にある gate / done / blocked を取り出す", () => {
   assert.deepEqual(parseFinalText('plan を書きました。\n\n<hikyaku-gate id="G8">\n承認しますか？\n</hikyaku-gate>\n'), {
@@ -309,8 +353,11 @@ test("CLI: conductor parse は gate の振り分けまで返す", (t) => {
 
   write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[conductor]\nescalate = ["G8"]\n');
   const escalated = JSON.parse(succeeds(directory, "conductor", "parse", "r.json", "001", "--expect-digest", digest(directory), "--json"));
-  assert.equal(escalated.ask.handler, "human");
+  assert.equal(escalated.ask.handler, "user");
   assert.equal(escalated.ask.source, "escalate");
+  const text = succeeds(directory, "conductor", "parse", "r.json", "001", "--expect-digest", digest(directory));
+  assert.match(text, /ユーザーに上げる/);
+  assert.doesNotMatch(text, /人間/);
 });
 
 test("CLI: 合意したときから委任の設定が変わっていれば launch / parse を止める", (t) => {

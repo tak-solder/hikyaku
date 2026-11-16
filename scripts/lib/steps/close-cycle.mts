@@ -54,7 +54,14 @@ export const CLOSE_CYCLE_STEPS: SkillSteps = {
   steps: [
     { id: "collect", kind: "run", title: "候補の収集（hikyaku promotions）" },
     // 候補は会話の中で整理して提示するのでファイルに結びつけない。profile の管轄外で、常に行う
-    { id: "G10", kind: "gate", title: "候補の整理と、昇格の承認", ask: "G10" },
+    {
+      id: "G10",
+      kind: "gate",
+      title: "候補の整理と、昇格の承認",
+      // decisions・constraints の変更は同意。候補ごとに確認と分けるまでは、同意の側に倒す
+      consent: () => ({ timing: "now", reason: "永続ドキュメントへの昇格（decisions・constraints の変更を含みうる）" }),
+      ask: "G10",
+    },
     {
       // フックの候補があるときだけ、G10 の決定を記録する。採らないなら理由を添えてスキップする
       id: "hooks",

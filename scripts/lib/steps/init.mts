@@ -136,7 +136,7 @@ export const INIT_STEPS: SkillSteps = {
     },
     // 移行の回: 振り分けの結果は会話の中で提示するので、ファイルに結びつけない
     { id: "triage", kind: "run", title: "既存文書の振り分け（doc-triager）", when: migrating },
-    { id: "triage-approval", kind: "gate", title: "振り分けの承認", when: migrating },
+    { id: "triage-approval", kind: "gate", title: "振り分けの承認", when: migrating, consent: false },
     {
       id: "triage-write",
       kind: "run",
@@ -148,6 +148,7 @@ export const INIT_STEPS: SkillSteps = {
       id: "link-approval",
       kind: "gate",
       title: "AGENTS.md への索引の承認",
+      consent: false,
     },
     { id: "link", kind: "run", title: "AGENTS.md への索引の書き込み", requires: indexStale },
     {

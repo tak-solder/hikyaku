@@ -15,7 +15,10 @@ import { HikyakuError } from "./errors.mts";
 import { reviewerLogin } from "./github.mts";
 
 export type AskCategory = "route" | "confirm" | "consent" | "spec" | "failure" | "abandon" | "unknown";
-export type Handler = "supervisor" | "human";
+export type Handler = "supervisor" | "user";
+
+/** 子の手順のゲートが、その回に確認か同意か（directive の approval） */
+export type Approval = "confirm" | "consent";
 
 export const CATEGORY_LABELS: Record<AskCategory, string> = {
   route: "経路の判断",
@@ -30,15 +33,17 @@ export const CATEGORY_LABELS: Record<AskCategory, string> = {
 const DEFAULT_HANDLERS: Record<AskCategory, Handler> = {
   route: "supervisor",
   confirm: "supervisor",
-  consent: "supervisor",
+  consent: "user",
   spec: "supervisor",
-  failure: "human",
-  abandon: "human",
-  unknown: "human",
+  failure: "user",
+  abandon: "user",
+  unknown: "user",
 };
 
-/** 設定で振り分けを変えられない種別。中止と分類できない問いは常に人間が判断する */
-const FIXED_CATEGORIES: AskCategory[] = ["abandon", "unknown"];
+/**
+ * 設定で振り分けを変えられない種別。同意（原則11）・中止・分類できない問いは常にユーザーが判断する
+ */
+const FIXED_CATEGORIES: AskCategory[] = ["consent", "abandon", "unknown"];
 
 export interface AskDefinition {
   id: string;
@@ -75,8 +80,8 @@ export const ASKS: AskDefinition[] = [
     enabledWhen: (s) => s.reviews.retrospective === "prompt",
   },
   { id: "docs-link", category: "confirm", where: "close-cycle: AGENTS.md の索引の更新" },
-  { id: "G6", category: "consent", where: "build-manager: tasklist / issue の変更" },
-  { id: "G8", category: "consent", where: "builder: plan + test-spec の承認" },
+  { id: "G6", category: "confirm", where: "build-manager: tasklist / issue の変更" },
+  { id: "G8", category: "confirm", where: "builder: plan + test-spec の承認" },
   { id: "G10", category: "consent", where: "close-cycle: 永続ドキュメントへの昇格" },
   { id: "questions", category: "spec", where: "architect / builder: 質問ループ" },
   { id: "adr-status", category: "spec", where: "architect / close-cycle: ADR に status 欄が無い" },
@@ -89,6 +94,15 @@ export const ASKS: AskDefinition[] = [
 ];
 
 export const ASK_IDS: string[] = ASKS.map((ask) => ask.id);
+
+/**
+ * 静的には確認だが、回によって同意になるゲートと、その条件（conductor asks の表示用）。
+ * 判定の正はステップ定義の consent で、ここは説明だけを持つ
+ */
+export const CONSENT_WHEN: Record<string, string> = {
+  G3: "差し戻しからの再設計の回は同意（ユーザーに上げる）",
+  G4: "差し戻しからの再設計の回は同意（ユーザーに上げる）",
+};
 
 /** 子として動くスキル。conductor lint はこれらの SKILL.md と references/・steps/ からタグを集める */
 export const CONDUCTED_SKILLS = ["architect", "builder", "build-manager", "close-cycle", "retrospective"];
@@ -185,7 +199,7 @@ export function checkConductorAsks(config: ConductorConfig, where: string): void
       if (isFixed(id)) {
         throw new HikyakuError(
           `${where}.${key} に ${id} は指定できません`,
-          `${CATEGORY_LABELS[ask.category]}は常に人間が判断します。`,
+          `${CATEGORY_LABELS[ask.category]}は常にユーザーが判断します。`,
         );
       }
     }
@@ -222,23 +236,33 @@ export interface ResolvedAsk {
 }
 
 /**
- * 問いの ID を振り分ける。表に無い ID は「分類できない問い」として人間に上げる
- * （子が規約にない ID を出したとき、監督が推測で答えないようにするため）
+ * 問いの ID を振り分ける。表に無い ID は「分類できない問い」としてユーザーに上げる
+ * （子が規約にない ID を出したとき、監督が推測で答えないようにするため）。
+ *
+ * approval は、子の手順がそのゲートで止まっているときの、その回の承認の種類（directive の approval）。
+ * 渡されたら ASKS の静的な分類より優先する。同意なら escalate / delegate に関わらずユーザーに固定する。
+ * そのゲートで止まっているので、profile で無効な問いでも enabled にする
  */
-export function resolveAsk(id: string, conductor: ConductorConfig, settings: AskSettings): ResolvedAsk {
+export function resolveAsk(
+  id: string,
+  conductor: ConductorConfig,
+  settings: AskSettings,
+  approval?: Approval,
+): ResolvedAsk {
   const ask = findAsk(id) ?? { id, category: "unknown" as const, where: "表に無い ID" };
+  const category: AskCategory = approval ?? ask.category;
   const base = {
     id,
-    category: ask.category,
-    categoryLabel: CATEGORY_LABELS[ask.category],
+    category,
+    categoryLabel: CATEGORY_LABELS[category],
     where: ask.where,
-    enabled: ask.enabledWhen === undefined ? true : ask.enabledWhen(settings),
+    enabled: approval !== undefined || ask.enabledWhen === undefined ? true : ask.enabledWhen(settings),
   };
 
-  if (FIXED_CATEGORIES.includes(ask.category)) {
-    return { ...base, handler: "human", source: "fixed" };
+  if (FIXED_CATEGORIES.includes(category)) {
+    return { ...base, handler: "user", source: "fixed" };
   }
-  if (conductor.escalate.includes(id)) return { ...base, handler: "human", source: "escalate" };
+  if (conductor.escalate.includes(id)) return { ...base, handler: "user", source: "escalate" };
   if (conductor.delegate.includes(id)) return { ...base, handler: "supervisor", source: "delegate" };
   return { ...base, handler: DEFAULT_HANDLERS[ask.category], source: "default" };
 }

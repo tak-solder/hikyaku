@@ -10,6 +10,7 @@ import {
   collectTags,
   CONDUCTED_SKILLS,
   CONDUCTOR_PHASES,
+  CONSENT_WHEN,
   type ConductorPhase,
   defaultAllowedTools,
   judgePr,
@@ -46,20 +47,22 @@ const DISALLOWED_TOOLS = ["AskUserQuestion", "ScheduleWakeup", "CronCreate"];
 
 register({
   name: "conductor asks",
-  summary: "子セッションが出しうる問いと、監督・人間への振り分けを一覧する",
+  summary: "子セッションが出しうる問いと、監督・ユーザーへの振り分けを一覧する",
   usage: "hikyaku conductor asks [<cycle>] [--root <path>] [--json]",
   details: [
     "サイクルの profile と [conductor] の escalate / delegate を重ねた結果を返します。",
-    "監督は起動時にこれを読み、どの問いを自分が判断するかを人間に示します。",
+    "監督は起動時にこれを読み、どの問いを自分が判断するかをユーザーに示します。",
     "",
-    "  handler   supervisor（監督が答える）| human（人間に上げる）",
+    "  handler   supervisor（監督が答える）| user（ユーザーに上げる）",
     "  source    default | escalate | delegate | fixed（設定で変えられない）",
     "  enabled   false なら、この profile ではそのゲートが無効で問いは出ない",
     "",
-    "サイクルの中止（abandon）と ID の無い問い（other）は常に人間に上げます。",
+    "同意ゲート（G10）、サイクルの中止（abandon）、ID の無い問い（other）は常にユーザーに上げます。",
+    "G3 / G4 は、差し戻しからの再設計の回は同意としてユーザーに上がります（consentWhen）。",
+    "回ごとの判定は conductor parse が子の手順の位置から行います。",
     "",
     "JSON 出力には、子に許可するツールの一覧（allowedTools）と、委任の範囲を決める",
-    "設定のダイジェスト（digest）も含みます。監督は人間と合意したときの digest を、",
+    "設定のダイジェスト（digest）も含みます。監督はユーザーと合意したときの digest を、",
     "以後の conductor launch / parse に --expect-digest で渡します。",
   ].join("\n"),
   run: ({ args, operands }) => {
@@ -79,16 +82,18 @@ register({
       skipped: config.pr.reviewersSkip,
     };
 
-    emit({ cycle: context.name, profile: config.profile, digest, allowedTools, models, review, asks }, () => {
+    const consentWhen = CONSENT_WHEN;
+    emit({ cycle: context.name, profile: config.profile, digest, allowedTools, models, review, asks, consentWhen }, () => {
       const ids = (filter: (ask: ResolvedAsk) => boolean): string =>
         asks.filter(filter).map((ask) => ask.id).join(" / ") || "なし";
       const consent = (ask: ResolvedAsk): boolean => ask.category === "consent";
       return [
         `サイクル ${context.name}（profile: ${config.profile}）`,
         "",
-        `監督が判断する同意ゲート: ${ids((a) => consent(a) && a.enabled && a.handler === "supervisor")}`,
-        `監督が判断するその他の問い: ${ids((a) => !consent(a) && a.enabled && a.handler === "supervisor")}`,
-        `人間に上げる問い: ${ids((a) => a.enabled && a.handler === "human")}`,
+        `ユーザーに上げる同意ゲート: ${ids((a) => consent(a) && a.enabled)}`,
+        `回によって同意になるゲート: ${Object.entries(consentWhen).map(([id, when]) => `${id}（${when}）`).join(" / ")}`,
+        `監督が判断する問い: ${ids((a) => a.enabled && a.handler === "supervisor")}`,
+        `ユーザーに上げるその他の問い: ${ids((a) => !consent(a) && a.enabled && a.handler === "user")}`,
         `この profile では出ない問い: ${ids((a) => !a.enabled)}`,
         `子に許可するツール: ${allowedTools.join(" ")}`,
         `子のモデル: ${CONDUCTOR_PHASES.map((phase) => `${phase}=${models[phase] ?? "既定"}`).join(" / ")}`,
@@ -100,7 +105,7 @@ register({
           asks.map((ask) => [
             ask.id,
             ask.categoryLabel,
-            ask.enabled ? (ask.handler === "supervisor" ? "監督" : "人間") : "（無効）",
+            ask.enabled ? (ask.handler === "supervisor" ? "監督" : "ユーザー") : "（無効）",
             ask.source,
             ask.where,
           ]),
@@ -244,7 +249,7 @@ register({
   details: [
     "conductor launch が組み立てたコマンドの結果ファイルを読みます。",
     "",
-    "  gate       問いで止まった。id と、監督・人間のどちらが答えるか（ask）を返す",
+    "  gate       問いで止まった。id と、監督・ユーザーのどちらが答えるか（ask）を返す",
     "  done       フェーズを終えた。next に子が案内した次のコマンド",
     "  blocked    子が続行できないと判断した。cycle status で次を決める",
     "  violation  規約どおりのブロックが無い。監督は自由文から推測せず、人間に上げる",
@@ -261,7 +266,9 @@ register({
     "",
     "どの場合も sessionId と costUsd（その呼び出しの費用）を返します。再開しても",
     "session-id は変わらないので、次の conductor launch --resume にそのまま渡せます。",
-    "問いの振り分けは conductor asks と同じ規則です。",
+    "問いの振り分けは conductor asks と同じ規則です。ただし、子の手順がそのゲートで止まっていれば、",
+    "その回の承認の種類（step.approval）を優先します。同意なら escalate / delegate に関わらずユーザーに上げます",
+    "（差し戻しからの再設計の回の G3 / G4 など）。",
   ].join("\n"),
   run: ({ args, operands }) => {
     const file = operands[0];
@@ -271,18 +278,23 @@ register({
     const { config, context } = openCycle(args, operands[1]);
     requireDigest(args, config);
     const parsed = parseResultJson(readFileSync(file, "utf8"));
+    const step = childStep(parsed, config, context, flagString(args, "root"));
+    // 子の手順がそのゲートで止まっていれば、その回の承認の種類（同意か確認か）で振り分ける
+    const position = step.position;
+    const approval =
+      position !== null && position.kind === "gate" && position.ask === parsed.id && position.approval !== null
+        ? position.approval
+        : undefined;
     const ask =
       parsed.outcome === "gate" && parsed.id !== undefined
-        ? resolveAsk(parsed.id, config.conductor, config)
+        ? resolveAsk(parsed.id, config.conductor, config, approval)
         : undefined;
-
-    const step = childStep(parsed, config, context, flagString(args, "root"));
 
     emit({ cycle: context.name, ...parsed, ask: ask ?? null, step: step.position, stepProblems: step.problems }, () => {
       const lines = [`結果: ${parsed.outcome}`];
       if (ask !== undefined) {
         lines.push(
-          `問い: ${ask.id}（${CATEGORY_LABELS[ask.category]}）→ ${ask.handler === "supervisor" ? "監督が答える" : "人間に上げる"}`,
+          `問い: ${ask.id}（${CATEGORY_LABELS[ask.category]}）→ ${ask.handler === "supervisor" ? "監督が答える" : "ユーザーに上げる"}`,
         );
       }
       if (parsed.next) lines.push(`次: ${parsed.next}`);
@@ -308,6 +320,10 @@ interface ChildStep {
   title: string | null;
   /** gate なら問いの ID */
   ask: string | null;
+  /** gate なら、その回の承認の種類 */
+  approval: "confirm" | "consent" | null;
+  /** 同意の理由（確認なら null） */
+  approvalReason: string | null;
   /** そのステップの指示ファイル。監督は承認の観点と読む成果物をここから読む */
   read: string | null;
   directory: string;
@@ -351,6 +367,8 @@ function childStep(
     step: directive.step ?? null,
     title: directive.title ?? null,
     ask: directive.ask ?? null,
+    approval: directive.approval ?? null,
+    approvalReason: directive.approvalReason ?? null,
     read: directive.read ?? null,
     directory: located.unit.directory,
     message: directive.message ?? null,

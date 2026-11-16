@@ -56,19 +56,15 @@ export function checkExternalTarget(value: string, where: string): ExternalTarge
 export const PROFILE_NAMES: ProfileName[] = ["express", "economy", "standard", "thorough"];
 
 /**
- * 承認ゲート。ここに無いゲートは profile の管轄外で、常に有効:
+ * 確認ゲートのオン・オフ。ここに無いゲートは profile の管轄外で、常に有効:
+ *   G1  user-stories 承認（planner。要件の合意なので常に同意で、設定で外せない）
  *   G6  tasklist / issue 変更承認（build-manager）
  *   G8  plan + test-spec 承認（builder）
  *   G10 永続ドキュメント昇格の承認（close-cycle）
- * profile で外せるのは「確認」であって「同意」ではない。
+ * profile で外せるのは「確認」であって「同意」ではない。同意の回（差し戻しからの再設計の
+ * G3・G4 など）は、ここが false でもステップ定義の consent が手順に残す。
  */
 export interface Gates {
-  /**
-   * G1 planner: user-stories 承認。
-   * どのプロファイルでも on。要件の合意は後段の承認では代替できない
-   * （設計も plan も「その要件で正しいか」を前提に置くため）。
-   */
-  userStories: boolean;
   /** G2 architect: codebase-survey 確認 */
   codebaseSurvey: boolean;
   /**
@@ -190,7 +186,6 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
   // 委ねるぶん、security と retrospective は AI 側で回して担保を戻す
   express: {
     gates: {
-      userStories: true,
       codebaseSurvey: false,
       designChoice: false,
       architecture: false,
@@ -214,7 +209,6 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
   // security も落とさない（節約の対象にしてよい観点ではないため、既定は recommended）
   economy: {
     gates: {
-      userStories: true,
       codebaseSurvey: false,
       designChoice: true,
       architecture: true,
@@ -236,7 +230,6 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
   // 完成した成果物の単位で、人間も AI も見る
   standard: {
     gates: {
-      userStories: true,
       codebaseSurvey: false,
       designChoice: true,
       architecture: true,
@@ -260,7 +253,6 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
   // 条件付きの security も該当判定を挟まず常に実行する
   thorough: {
     gates: {
-      userStories: true,
       codebaseSurvey: true,
       designChoice: true,
       architecture: true,
@@ -948,7 +940,7 @@ function readPeakBands(table: TomlTable | undefined): PeakBands {
 }
 
 /** v3 で廃止したキー */
-const RETIRED_KEYS = ["bp_max", "bp_actual"] as const;
+const RETIRED_KEYS = ["bp_max", "bp_actual", "user_stories_gate"] as const;
 
 /**
  * v3 で廃止したキーの、移行先を示すエラー。黙って無視すると「設定したのに効かない」になるので、
@@ -970,6 +962,15 @@ function retiredKeyErrors(table: TomlTable, where: string): HikyakuError[] {
     errors.push(new HikyakuError(
       `${where}: [bp_actual] は [diff] に改名しました`,
       "exclude / tests の書き方は同じです。テーブル名を [diff] に変えてください。",
+    ));
+  }
+  if (table["user_stories_gate"] !== undefined) {
+    errors.push(new HikyakuError(
+      `${where}: user_stories_gate は v3 で廃止しました`,
+      [
+        "G1（user-stories の承認）は要件の合意なので同意として扱い、どのプロファイル・設定でも外せません。",
+        "user_stories_gate を削除してください（docs/configuration/profiles.md）。",
+      ].join("\n"),
     ));
   }
   const review = table["review"];
@@ -1221,7 +1222,6 @@ function finalize(
   const preset = PROFILES[profile];
 
   const gates: Gates = {
-    userStories: readBoolean(merged, "user_stories_gate", "config") ?? preset.gates.userStories,
     codebaseSurvey:
       readBoolean(merged, "codebase_survey_gate", "config") ?? preset.gates.codebaseSurvey,
     designChoice: readBoolean(merged, "design_choice_gate", "config") ?? preset.gates.designChoice,

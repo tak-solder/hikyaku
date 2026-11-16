@@ -132,6 +132,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `hikyaku config --json` の `review.<種類>.providers`（優先順の規則の列）を `provider`（決まった値と出所）にした。`hikyaku config` の表示も、使われるプロバイダだけを出す
 - 進行中のサイクルの設定に廃止したキー（`provider_for`・`target = "asana"`）が残っていると、`review resolve` / `review run`・`external sync` / `external ref` も止まる。黙ってルートの設定に戻って動かさないため
 - `hikyaku tokens session` の出力と retrospective.md の「セッションの実測」表から「ウィンドウ」を外した（記録していたのは Codex だけだった）。表に「ウィンドウ」の行がある既存の retrospective.md も `tokens history` で読める
+- **承認を確認と同意に分け、同意はどの設定でも省かない。** ステップ定義の gate が `consent`（その回が同意か）と `enabled`（確認としてのプロファイル・個別キーのオン・オフ）を持ち、同意の回は `*_gate = false` や express でも手順から外れない。G1・G10・patch の P1 は同意、G3・G4 は差し戻しからの再設計の回（`step restart architect --round return`）だけ同意、それ以外は確認。`step next` の directive に `approval`（`confirm` / `consent`）と `approvalReason` が付き、テキストには「承認: 確認 / 同意（理由）」の行が出る。`step lint` は承認の種類を持たない gate を検出する
+- architect の options・adr・pr の `designChoiceGate` は、設定の値ではなく「その回に G3 が手順に入るか」になった（express でも再設計の回は true）
+- conductor: 同意ゲートは常にユーザーに上がり、`escalate` / `delegate` で変えられない。G6・G8 は確認に分類を改め、既定で監督が答える。`conductor parse` は子の手順のゲートの `approval` で振り分け（`step.approval` / `step.approvalReason` を返す）、`conductor asks` の JSON に `consentWhen` が付く。`ask.handler` の値 `human` は `user` になった。conductor スキルは Step 0 で同意ゲートを監督に委任しなくなり、G10 を監督が承認する手順を除いた
 
 ### Removed
 
@@ -147,6 +150,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Codex のクラウド環境（`CODEX_ENVIRONMENT_ID`）でのプロバイダの固定、`tokens session` の Codex の rollout の計測と `--host`、区切りでの小さいウィンドウの注意を削除した
 - **ビルドごとの外部起票を廃止した。** 子 issue の作成・更新、build-manager の `external-sync` ステップ、builder の PR 作成後の同期、`hikyaku tasklist link`、`tasklist add --issue` を削除した
 - **Asana への投影を廃止した。** `[external] target` は `none` / `github` だけになり、`asana_project_gid` と `cycle new --external-project` も無くなった
+- `user_stories_gate`。G1 は常に同意で外せない。`hikyaku config --json` の `gates.userStories` も無くなった
 
 ### Migration
 
@@ -172,6 +176,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `review resolve` / `review run` の `--self` と `tokens session` の `--host` はエラーになる。独自のスクリプトから呼んでいれば外す
 - `hikyaku config --json` の `review.<種類>.providers` を読んでいる独自のツールは、`review.<種類>.provider`（`{ source, provider }`）を読むよう直す
 - `[external] target = "asana"` と `asana_project_gid` はエラーになる。`"github"` か `"none"` にし、`asana_project_gid` を削除する。閉じたサイクルの設定に残っているものは読み飛ばす
+- `user_stories_gate` はエラーになる（値に関わらず）。ルートの設定では読んだ時点で、サイクルの設定では v3 の作業に使うときに止まるので、削除する
+- `[conductor] escalate` / `delegate` に `G10` を書いているとエラーになる。同意ゲートはどちらにも書けないので削除する。`delegate` に `G3` / `G4` を書いていても、差し戻しからの再設計の回はユーザーに上がる
+- `conductor asks` / `parse` の `handler` の `human` を読んでいる独自のツールは `user` を読むよう直す
 - 起票済みのビルドの issue（子 issue）は Hikyaku からは閉じなくなる。不要なら GitHub 側で閉じる。`tasklist.md` の `issue` 列は、次に `tasklist` のコマンドで書き込んだときに落ちる（`docs/migration/v2-to-v3.md#ビルドごとの外部起票の廃止`）
 
 ## [2.8.0]

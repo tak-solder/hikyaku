@@ -27,7 +27,15 @@ import { loadCycles } from "../cycles.mts";
 import { pluginRoot } from "../paths.mts";
 import { readReturn, RETURN_FILE } from "../phase.mts";
 import { buildDirName, loadTasklist } from "../tasklist.mts";
-import { currentEvents, currentRound, type SkillSteps, type StepContext } from "./engine.mts";
+import {
+  currentEvents,
+  currentRound,
+  isOn,
+  type ConsentJudgement,
+  type SkillSteps,
+  type StepContext,
+  type StepDefinition,
+} from "./engine.mts";
 
 export type ArchitectRound = "design" | "return" | "add";
 
@@ -83,6 +91,26 @@ function designChanges(ctx: StepContext): boolean {
 
 const mode = (ctx: StepContext) => ({ round: roundOf(ctx) });
 
+/** 差し戻しからの再設計の回は、委任の前提が崩れたあとなので G3・G4 をユーザーが行う（US-14.4） */
+const consentOnReturn = (ctx: StepContext): ConsentJudgement =>
+  roundOf(ctx) === "return" ? { timing: "now", reason: "差し戻しからの再設計の回" } : false;
+
+const G3: StepDefinition = {
+  id: "G3",
+  kind: "gate",
+  title: "設計案の選択",
+  when: (ctx) => designChanges(ctx) && !skipped(ctx, "options"),
+  enabled: (ctx) => ctx.config.gates.designChoice,
+  consent: consentOnReturn,
+  ask: "G3",
+};
+
+/**
+ * その回に G3 が手順に入るか。options・adr は、入らなければ推奨案をそのまま採る。
+ * express でも再設計の回は G3 が同意として入るので、設定の値ではなくこれを渡す
+ */
+const designChoiceGate = (ctx: StepContext) => ({ designChoiceGate: isOn(G3, ctx) });
+
 export const ARCHITECT_STEPS: SkillSteps = {
   skill: "architect",
   unit: (phase) => (phase === "architect" ? "design" : undefined),
@@ -133,7 +161,9 @@ export const ARCHITECT_STEPS: SkillSteps = {
       id: "G2",
       kind: "gate",
       title: "codebase-survey.md の確認",
-      when: (ctx) => roundOf(ctx) !== "add" && ctx.config.gates.codebaseSurvey && !skipped(ctx, "survey"),
+      when: (ctx) => roundOf(ctx) !== "add" && !skipped(ctx, "survey"),
+      enabled: (ctx) => ctx.config.gates.codebaseSurvey,
+      consent: false,
       ask: "G2",
     },
     { id: "questions", kind: "run", title: "設計に関する質問（反復ループ）", when: designChanges, args: mode },
@@ -144,21 +174,15 @@ export const ARCHITECT_STEPS: SkillSteps = {
       when: designChanges,
       // 分岐がある判断が無ければ、案の生成・G3・ADR を行わない
       skippable: true,
-      args: (ctx) => ({ designChoiceGate: ctx.config.gates.designChoice }),
+      args: designChoiceGate,
     },
-    {
-      id: "G3",
-      kind: "gate",
-      title: "設計案の選択",
-      when: (ctx) => designChanges(ctx) && ctx.config.gates.designChoice && !skipped(ctx, "options"),
-      ask: "G3",
-    },
+    G3,
     {
       id: "adr",
       kind: "run",
       title: "採用案を ADR に追記",
       when: (ctx) => designChanges(ctx) && !skipped(ctx, "options"),
-      args: (ctx) => ({ designChoiceGate: ctx.config.gates.designChoice }),
+      args: designChoiceGate,
     },
     {
       id: "design-delta",
@@ -178,7 +202,9 @@ export const ARCHITECT_STEPS: SkillSteps = {
       id: "G4",
       kind: "gate",
       title: "設計ドキュメントの承認",
-      when: (ctx) => designChanges(ctx) && ctx.config.gates.architecture,
+      when: designChanges,
+      enabled: (ctx) => ctx.config.gates.architecture,
+      consent: consentOnReturn,
       ask: "G4",
     },
     {
@@ -218,7 +244,7 @@ export const ARCHITECT_STEPS: SkillSteps = {
       title: "PR の作成とレビュアーのアサイン",
       when: (ctx) => roundOf(ctx) !== "return",
       recordsPr: true,
-      args: (ctx) => ({ designChoiceGate: ctx.config.gates.designChoice, round: roundOf(ctx) }),
+      args: (ctx) => ({ ...designChoiceGate(ctx), round: roundOf(ctx) }),
     },
     publicationStep("architect", (ctx) => roundOf(ctx) !== "return"),
   ],
