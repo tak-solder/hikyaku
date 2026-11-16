@@ -214,7 +214,8 @@ function ledgerNotices(opened: Opened, evaluation: Evaluation): string[] {
   if (cycle === undefined) return [];
   try {
     const ledger = readLedger(cycle.directory);
-    if (ledger.items.length === 0) return [];
+    // 未決の事項が無ければ、全単位の評価をしない（notices に載るのは未決の事項だけ）
+    if (!ledger.items.some((item) => item.latest === undefined)) return [];
     const timeline = cycleTimeline(opened.ctx.config, cycle);
     if (opened.skill.internal !== true) timeline.current.set(opened.phase, evaluation.current?.definition.id ?? null);
     return noticeLines(summarize(ledger, timeline));

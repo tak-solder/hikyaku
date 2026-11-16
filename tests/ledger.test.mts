@@ -88,6 +88,7 @@ test("parseWho / whoLabel: 3種を受け付け、語彙外とフェーズでな�
   assert.equal(whoLabel(parseWho("ai:build-03")), "AI（build-03）");
   assert.equal(whoLabel(parseWho("supervisor")), "監督");
   assert.equal(whoLabel("user"), "ユーザー");
+  assert.equal(parseWho("ai:build-3"), "ai:build-03", "--when と同じくビルド番号を正規化する");
   for (const raw of ["human", "ai", "ai:", "ai:reviewer", "conductor"]) assert.throws(() => parseWho(raw), Error, raw);
 });
 
@@ -110,8 +111,9 @@ test("assertDecider: who=user はユーザーだけ（答えが必須）、ほ�
   assert.throws(() => assertDecider(user, "user", undefined), /--input/);
   assert.doesNotThrow(() => assertDecider(user, "user", "その方針で進めて"));
   const ai = { id: "x.2", who: "ai:architect" as const };
-  assert.doesNotThrow(() => assertDecider(ai, "ai:build-02", undefined));
+  assert.doesNotThrow(() => assertDecider(ai, "ai:architect", undefined));
   assert.doesNotThrow(() => assertDecider(ai, "user", "OK"));
+  assert.throws(() => assertDecider(ai, "ai:build-02", undefined), /AI（build-02） は決められません/);
   assert.throws(() => assertDecider(ai, "supervisor", undefined));
   const supervisor = { id: "x.3", who: "supervisor" as const };
   assert.doesNotThrow(() => assertDecider(supervisor, "supervisor", undefined));
@@ -229,6 +231,17 @@ test("timingOf: phase の来た・過ぎた", () => {
   assert.equal(timing("phase:patch-202611-fix-typo", timeline({ "patch-202611-fix-typo": [ev("11:00", "patch", "start"), ev("12:00", "patch", "publish")] })), "due");
   assert.equal(timing("phase:close", timeline({ close: [ev("11:00", "close-cycle", "collect")] })), "due");
   assert.equal(timing("phase:close", timeline({ close: [ev("11:00", "close-cycle", "collect")] }, { active: false })), "overdue");
+  // 記録した単位自身の記録では過ぎない（build-02 で記録した phase:architect）
+  assert.equal(timing("phase:architect", timeline({ "build-02": [ev("11:00", "builder", "plan")] })), "pending");
+  // 記録した時点でフェーズが終わっていたら過ぎた
+  assert.equal(timing("phase:plan", timeline({ plan: [ev("09:00", "planner", "pr")] }, { current: { plan: null } })), "overdue");
+});
+
+test("timingOf: 記録した時点でもう過ぎていたゲートは過ぎた", () => {
+  // build-02 で記録した gate:G1@plan。plan は記録の前に終わっている
+  assert.equal(timing("gate:G1@plan", timeline({ plan: [ev("09:00", "planner", "G1", "approved")] }, { current: { plan: null } })), "overdue");
+  // 近似でも、現在地が G より後ろなら過ぎた
+  assert.equal(timing("gate:G7@build-02", timeline({ "build-02": [ev("09:00", "builder", "G8", "approved")] })), "overdue");
 });
 
 test("timingOf: close は close-cycle の記録で来て、active でなくなって過ぎた", () => {
@@ -405,15 +418,15 @@ test("ledger decide: 決めた単位に書き、付け替えと答えの無い u
 test("ledger decide: 2ブランチが同じ事項に決定を足してもマージで衝突しない", (t) => {
   const directory = cycleWorkspace(t);
   write(directory, `${CYCLE}/build-01/issue.md`);
-  const id = openId(directory, "architect", "001", "--type", "provisional", "--when", "close", "--who", "ai:architect", "--summary", "暫定");
+  const id = openId(directory, "architect", "001", "--type", "provisional", "--when", "close", "--who", "user", "--summary", "暫定");
   commitAll(directory, "base");
   git(directory, "branch", "a");
   git(directory, "branch", "b");
   git(directory, "checkout", "-q", "a");
-  succeeds(directory, "ledger", "decide", "build-01", id, "001", "--decision", "decided", "--by", "ai:build-01");
+  succeeds(directory, "ledger", "decide", "build-01", id, "001", "--decision", "decided", "--by", "user", "--input", "A で決めた");
   commitAll(directory, "a");
   git(directory, "checkout", "-q", "b");
-  succeeds(directory, "ledger", "decide", "build-02", id, "001", "--decision", "rejected", "--by", "ai:build-02");
+  succeeds(directory, "ledger", "decide", "build-02", id, "001", "--decision", "rejected", "--by", "user", "--input", "B で退けた");
   commitAll(directory, "b");
   git(directory, "checkout", "-q", "main");
   git(directory, "-c", "user.name=t", "-c", "user.email=t@example.com", "merge", "-q", "--no-edit", "a");

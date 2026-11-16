@@ -103,7 +103,8 @@ register({
   usage:
     "hikyaku ledger open <phase> [<cycle>] --type <type> --when <when> --who <who> --summary <text> [--premises <ref,...>] [--loses <text>] [--harm 高|中] [--ask <id>] [--dry-run] [--json]",
   details: [
-    "記録はその作業単位の decisions.jsonl に1行追記します。ID は {作業単位}.{連番} です。",
+    "記録はその作業単位の decisions.jsonl に1行追記します。ID は {作業単位}.{連番}-{4桁の16進}（例: build-03.1-a3f9）で、",
+    "出力の ID をそのまま ledger decide / show に渡します（末尾の乱数は、別のブランチの採番と重ならないため）。",
     `--type: ${ITEM_TYPES.join(" / ")}`,
     "",
     ...WHEN_DETAILS,
@@ -188,7 +189,8 @@ register({
     `--decision: ${DECISIONS.join(" / ")}（rejected は「未解決の退け」として、resolved を記録するまで示し続けます）`,
     "",
     "ユーザーが決める事項（who=user）は --by user でしか決められません。--by user には --input（ユーザーの答え）が必須です。",
-    "AI・監督が決める事項は、同じ種類の決め手か、ユーザーが決められます。決める人を付け替える手順はありません。",
+    "AI・監督が決める事項は、who と同じ決め手（ai:<フェーズ> は同じフェーズ）か、ユーザーが決められます。",
+    "--by ai:<フェーズ> は、決めた作業単位 <phase> と同じフェーズだけです。決める人を付け替える手順はありません。",
   ].join("\n"),
   writes: true,
   options: ["decision", "by", "input", "accepts", "reason"],
@@ -202,6 +204,9 @@ register({
       throw new HikyakuError(`--decision の値が不正です: ${decision}`, `使用できる値: ${DECISIONS.join(" / ")}`);
     }
     const by = parseWho(required(args, "by"));
+    if (by.startsWith("ai:") && by !== `ai:${opened.phase}`) {
+      throw new HikyakuError(`--by ${by} は ${opened.phase} の記録には書けません`, `AI が決めるなら、決めた作業単位と同じ ai:${opened.phase} を指定してください。`);
+    }
     const input = flagString(args, "input");
     const accepts = flagString(args, "accepts");
     const reason = flagString(args, "reason");
@@ -251,8 +256,9 @@ register({
   usage: "hikyaku ledger list [<cycle>] [--json]",
   details: [
     "サイクルの全作業単位の decisions.jsonl を読み、事項と決定を ID で結びます。",
-    "期限は progress.jsonl の記録から導きます（マージ済みかは導かないので、merge の事項は決まるまで「期限が来た」で示します。",
-    "マージ済みのビルドの判定は cycle status が行います）。別のブランチの事項は、マージまで見えません。",
+    "期限は progress.jsonl の記録から導きます。merge の事項は、同意ゲートか PR の手前に来たら「期限が来た」になり、",
+    "ここではマージ済みかを導かないので、決まるまで「期限が来た」のままです（マージ済みのビルドで過ぎたとするのは cycle status）。",
+    "別のブランチの事項は、マージまで見えません。",
   ].join("\n"),
   options: [],
   maxOperands: 1,

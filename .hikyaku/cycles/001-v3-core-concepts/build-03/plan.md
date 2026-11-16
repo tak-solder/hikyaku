@@ -79,7 +79,7 @@ export function ledgerDirectoryOf(cycleDirectory: string, phase: Phase): string;
 export function nextItemId(items: LedgerItem[], unit: string): string;            // `{unit}.{n}-{4桁の16進}`（コードレビューの指摘: 2つのブランチの採番が重ならないように乱数を添える）
 export function openItem(cycleDirectory: string, record: OpenRecord, items: LedgerItem[]): void;   // 同じ ID の2回目は HikyakuError
 export function decideItem(cycleDirectory: string, record: DecideRecord, items: LedgerItem[]): void;
-/** 付け替えの禁止: who=user の事項は by=user だけ。by=user は input 必須。ai の事項は ai:* か user、supervisor の事項は supervisor か user */
+/** 付け替えの禁止: who=user の事項は by=user だけ。by=user は input 必須。それ以外は who と同じ決め手（ai:<phase> は同じフェーズ）か user（コードレビュー2回目の指摘で ai:* から改めた） */
 export function assertDecider(item: OpenRecord, by: Who, input: string | undefined): void;
 
 /** 期限の判定 */

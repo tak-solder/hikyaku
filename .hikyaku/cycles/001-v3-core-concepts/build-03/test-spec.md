@@ -133,8 +133,8 @@
 ### assertDecider: ai の事項は ai か user が、supervisor の事項は supervisor か user が決められる（解釈）
 - 対応: US-19.7
 - Given: `who:"ai:architect"` と `who:"supervisor"` の OpenRecord
-- When: ai の事項に `ai:build-02`・`user`（input あり）・`supervisor`、supervisor の事項に `supervisor`・`user`（input あり）・`ai:build-02`
-- Then: ai の事項への `supervisor` と、supervisor の事項への `ai:build-02` だけが HikyakuError
+- When: ai の事項に `ai:architect`・`ai:build-02`・`user`（input あり）・`supervisor`、supervisor の事項に `supervisor`・`user`（input あり）・`ai:build-02`
+- Then: ai の事項への `ai:build-02`（別のフェーズの AI。コードレビュー2回目の指摘で、同じフェーズだけに改めた）と `supervisor`、supervisor の事項への `ai:build-02` が HikyakuError。CLI では `--by ai:<フェーズ>` は決めた作業単位と同じフェーズだけ
 
 ## scripts/lib/ledger.mts — 読み書きと状態の導出
 

@@ -123,7 +123,8 @@ function isRecord(value: unknown): value is LedgerRecord {
 export function parseWho(raw: string): Who {
   const value = raw.trim();
   if (value === "user" || value === "supervisor") return value;
-  if (value.startsWith("ai:") && isPhase(value.slice(3))) return value as Who;
+  const phase = value.startsWith("ai:") ? normalizeUnit(value.slice(3)) : undefined;
+  if (phase !== undefined) return `ai:${phase}`;
   throw new HikyakuError(
     `「誰が」の値が不正です: ${raw}`,
     "使用できる値: user | ai:<フェーズ>（ai:architect / ai:build-03 など）| supervisor",
@@ -139,7 +140,8 @@ export function whoLabel(who: string): string {
 
 /**
  * 付け替えの禁止。who=user の事項はユーザーだけが決められる。ユーザーはどの事項も決められる
- * （ai・supervisor の事項でも、決める権限をユーザーから取り上げない）。by=user は答え（input）が必須
+ * （ai・supervisor の事項でも、決める権限をユーザーから取り上げない）。それ以外は who と同じ決め手だけ
+ * （ai:architect の事項を ai:build-05 は決められない）。by=user は答え（input）が必須
  */
 export function assertDecider(item: Pick<OpenRecord, "id" | "who">, by: Who, input: string | undefined): void {
   if (by === "user") {
@@ -148,8 +150,7 @@ export function assertDecider(item: Pick<OpenRecord, "id" | "who">, by: Who, inp
     }
     return;
   }
-  const category = (who: string): string => (who.startsWith("ai:") ? "ai" : who);
-  if (category(item.who) !== category(by)) {
+  if (item.who !== by) {
     throw new HikyakuError(
       `${item.id} は ${whoLabel(item.who)} が決める事項です。${whoLabel(by)} は決められません`,
       item.who === "user"
@@ -514,14 +515,20 @@ function mergeAnchor(skill: SkillSteps): string {
   return "pr";
 }
 
-function phaseTiming(phase: string, at: string, timeline: CycleTimeline): Timing {
-  if (phase === "close") return closeTiming(at, timeline);
+/**
+ * phase の期限。後のフェーズの記録で過ぎたとするとき、事項を記録した単位自身の記録は数えない
+ * （build-03 で記録した phase:architect が、build-03 の次の報告で過ぎたにならないように）。
+ * 記録した時点でそのフェーズがもう終わっていたら（engine の評価で完了、その後の記録なし）、過ぎたとする
+ */
+function phaseTiming(phase: string, item: OpenRecord, timeline: CycleTimeline): Timing {
+  if (phase === "close") return closeTiming(item.at, timeline);
   const later = (predicate: (unit: string) => boolean): boolean =>
-    [...timeline.events.keys()].some((unit) => predicate(unit) && eventsAfter(unit, at, timeline).length > 0);
+    [...timeline.events.keys()].some((unit) => unit !== item.unit && predicate(unit) && eventsAfter(unit, item.at, timeline).length > 0);
   if (phase === "plan" && later((unit) => unit === "architect")) return "overdue";
   if (phase === "architect" && later((unit) => unit.startsWith("build-"))) return "overdue";
   if (phase.startsWith("build-") && timeline.merged?.has(phase) === true) return "overdue";
-  return eventsAfter(phase, at, timeline).length > 0 ? "due" : "pending";
+  if (eventsAfter(phase, item.at, timeline).length > 0) return "due";
+  return timeline.current.get(phase) === null ? "overdue" : "pending";
 }
 
 function closeTiming(at: string, timeline: CycleTimeline): Timing {
@@ -541,7 +548,9 @@ function gateTiming(gate: string, unit: string, at: string, timeline: CycleTimel
   // 外れたゲート: 記録が無いまま、事項より後に G より後ろのステップが完了した
   const passed = after.some((event) => event.skill === skill.skill && COMPLETED.has(event.result) && stepIndex(skill, event.step) > index);
   if (passed) return "overdue";
-  return timeline.current.has(unit) ? "pending" : currentIndex(unit, skill, timeline) === index ? "due" : "pending";
+  // 今回の回の現在地が G より後ろ（記録した時点でもう過ぎていた・外れていた）なら過ぎた
+  const position = currentIndex(unit, skill, timeline);
+  return position > index ? "overdue" : position === index ? "due" : "pending";
 }
 
 function mergeTiming(unit: string, timeline: CycleTimeline): Timing {
@@ -559,7 +568,7 @@ export function timingOf(item: LedgerItem, timeline: CycleTimeline): Timing {
   if (when === undefined) return "pending";
   if (when.kind === "now") return "due";
   if (when.kind === "close") return closeTiming(item.open.at, timeline);
-  if (when.kind === "phase") return phaseTiming(when.phase, item.open.at, timeline);
+  if (when.kind === "phase") return phaseTiming(when.phase, item.open, timeline);
   if (when.kind === "gate") return gateTiming(when.gate, when.unit, item.open.at, timeline);
   return mergeTiming(when.unit, timeline);
 }
