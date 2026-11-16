@@ -51,6 +51,7 @@ for (const [name, source] of [
   ["既存の値を [[x]] で開く", "x = 1\n[[x]]"],
   ["テーブル配列を [x] で開く", "[[areas]]\nname = 'a'\n[areas]\nname = 'b'"],
   ["閉じていないテーブル配列", "[[x]\ny = 1"],
+  ["ドット区切りのキーでテーブル配列の要素を書く", "[[app.areas]]\nname = 'auth'\n[app]\nareas.paths = ['x/**']"],
 ] as const) {
   test(`TOML: ${name}を黙って無視しない`, () => {
     assert.throws(() => parseToml(source), TomlError);

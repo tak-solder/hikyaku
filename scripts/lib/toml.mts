@@ -270,7 +270,7 @@ export function parseToml(source: string): TomlTable {
   };
 
   /** キーパスをたどって最終セグメントの親テーブルを返す */
-  const descend = (table: TomlTable, path: string[]): TomlTable => {
+  const descend = (table: TomlTable, path: string[], intoArrays = true): TomlTable => {
     let node = table;
     for (const segment of path) {
       const existing = node[segment];
@@ -280,8 +280,9 @@ export function parseToml(source: string): TomlTable {
         node = created;
       } else if (typeof existing === "object" && existing !== null && !Array.isArray(existing)) {
         node = existing;
-      } else if (Array.isArray(existing) && tableArrays.has(existing)) {
-        // テーブル配列の途中のセグメントは、最後の要素へ降りる（TOML 仕様）
+      } else if (intoArrays && Array.isArray(existing) && tableArrays.has(existing)) {
+        // テーブル名の途中のセグメントは、テーブル配列の最後の要素へ降りる（TOML 仕様）。
+        // ドット区切りのキー（a.b = 1）では降りない（別の節から要素を書き換えられてしまう）
         node = existing[existing.length - 1] as TomlTable;
       } else {
         fail(`キー ${segment} は既に値として定義されています`);
@@ -339,7 +340,7 @@ export function parseToml(source: string): TomlTable {
     const value = readValue();
 
     const leaf = path[path.length - 1] as string;
-    const parent = descend(current, path.slice(0, -1));
+    const parent = descend(current, path.slice(0, -1), false);
     if (parent[leaf] !== undefined) fail(`キーが重複しています: ${path.join(".")}`);
     parent[leaf] = value;
 

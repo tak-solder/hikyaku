@@ -153,23 +153,41 @@ function within(prefix: string, directory: string): boolean {
   return prefix === directory || prefix.startsWith(`${directory}/`);
 }
 
+function basenameOf(path: string): string {
+  return path.split("/").pop() ?? "";
+}
+
 function hasLiteralBasename(path: string): boolean {
-  const basename = path.split("/").pop() ?? "";
+  const basename = basenameOf(path);
   return basename !== "" && !WILDCARD.test(basename);
 }
 
+/** 素の名前（`/` もワイルドカードも無い `config.mts`）。どのディレクトリにもありうるので、見本の材料にしない */
+function isBareName(path: string): boolean {
+  return !path.includes("/") && !WILDCARD.test(path);
+}
+
 function pairOverlaps(x: string, y: string, files: string[]): boolean {
+  if (isLiteral(x) && isLiteral(y)) return x === y || within(x, y) || within(y, x);
+  if (isLiteral(y)) return pairOverlaps(y, x, files);
   const rx = ruleGlobToRegExp(x);
   const ry = ruleGlobToRegExp(y);
-  // 字義どおりのパスは、もう片方のパターンで照合する。ディレクトリとして書かれていれば、その下も当たる
-  if (isLiteral(x)) return ry.test(x) || (isLiteral(y) ? within(y, x) || within(x, y) : within(staticPrefix(y), x));
-  if (isLiteral(y)) return rx.test(y) || within(staticPrefix(x), y);
+  if (isLiteral(x)) {
+    if (ry.test(x)) return true;
+    // 拡張子の無い字義どおりのパスはディレクトリかもしれない。その下すべての glob として照合し直す
+    return !/\.[A-Za-z0-9]+$/.test(basenameOf(x)) && pairOverlaps(`${x}/**`, y, files);
+  }
   if (files.some((file) => rx.test(file) && ry.test(file))) return true;
-  if (ry.test(sample(x)) || rx.test(sample(y))) return true;
+  // 見本: 片方のワイルドカードを置き換えたパスと、片方のディレクトリにもう片方のファイル名を置いたパス。
+  // どちらにも当たる見本があれば、まだ無いファイルでも重なりうる
+  const candidates = [sample(x), sample(y)];
+  if (!isBareName(x)) candidates.push([staticPrefix(y), sample(basenameOf(x))].filter(Boolean).join("/"));
+  if (!isBareName(y)) candidates.push([staticPrefix(x), sample(basenameOf(y))].filter(Boolean).join("/"));
+  if (candidates.some((candidate) => rx.test(candidate) && ry.test(candidate))) return true;
   // 迷う形（どちらもファイル名を決めておらず、ディレクトリが重なる）は当たるに倒す。
-  // 素の名前（`config.mts`）はファイル一覧と見本だけで照合する（どのディレクトリにも当たりうるとすると、
+  // 素の名前（`config.mts`）はファイル一覧だけで照合する（どのディレクトリにも当たりうるとすると、
   // 設計の文書が触れる名前がすべての重い領域に当たってしまう）
-  if (!x.includes("/") || !y.includes("/")) return false;
+  if (isBareName(x) || isBareName(y)) return false;
   if (hasLiteralBasename(x) || hasLiteralBasename(y)) return false;
   const px = staticPrefix(x);
   const py = staticPrefix(y);
@@ -223,6 +241,8 @@ export interface Baseline {
   declaration: AppDeclaration | undefined;
   /** 読めなかった理由 */
   unavailable: string | undefined;
+  /** 設定ファイルはあるのに、宣言を読めなかった（壊れている・この版の検査を通らない） */
+  unreadableDeclaration?: boolean;
 }
 
 export interface EffectiveDeclaration {
@@ -231,6 +251,11 @@ export interface EffectiveDeclaration {
   baselines: Baseline[];
   /** 読めなかった基準の説明 */
   notices: string[];
+  /**
+   * 設定ファイルがあるのに宣言を読めなかった基準がある。その基準がどれだけ厳しいかが分からないので、
+   * ゲートの判定（build-15）は上げる向き（同意）に倒す
+   */
+  incomplete: boolean;
 }
 
 const CONFIG_FILE = ".hikyaku.config";
@@ -242,7 +267,7 @@ function resolveRef(repoRoot: string, branch: string): string | undefined {
 
 function readBaseline(config: ResolvedConfig, branch: string): Baseline {
   const miss = (unavailable: string, ref?: string, commit?: string): Baseline => ({ branch, ref, commit, declaration: undefined, unavailable });
-  if (parseBranch(config.branch, branch) !== undefined) {
+  if (isHikyakuBranch(config, branch)) {
     return miss("Hikyaku のブランチはユーザーのマージを経ていないので、基準にしません");
   }
   const ref = resolveRef(config.repoRoot, branch);
@@ -261,8 +286,16 @@ function readBaseline(config: ResolvedConfig, branch: string): Baseline {
     if (app !== undefined && (typeof app !== "object" || Array.isArray(app))) throw new Error("[app] がテーブルではありません");
     return { branch, ref, commit, declaration: readAppDeclaration(app as TomlTable | undefined), unavailable: undefined };
   } catch (error) {
-    return miss(`${ref} の ${CONFIG_FILE} の宣言を読めません: ${error instanceof Error ? error.message : String(error)}`, ref, commit);
+    const baseline = miss(`${ref} の ${CONFIG_FILE} の宣言を読めません: ${error instanceof Error ? error.message : String(error)}`, ref, commit);
+    return { ...baseline, unreadableDeclaration: true };
   }
+}
+
+/** 既定の命名規則（サイクルごとに規則を変えていても、既定の規則のブランチは Hikyaku のもの） */
+const DEFAULT_NAMING = { prefix: "hikyaku", separator: "/" };
+
+function isHikyakuBranch(config: ResolvedConfig, branch: string): boolean {
+  return parseBranch(config.branch, branch) !== undefined || parseBranch(DEFAULT_NAMING, branch) !== undefined;
 }
 
 const effectiveCache = new WeakMap<ResolvedConfig, EffectiveDeclaration>();
@@ -292,7 +325,9 @@ export function effectiveDeclaration(config: ResolvedConfig): EffectiveDeclarati
     }
     declaration = strictest(declaration, baseline.declaration);
   }
-  const result: EffectiveDeclaration = { declaration, baselines, notices };
+  const result: EffectiveDeclaration = {
+    declaration, baselines, notices, incomplete: baselines.some((baseline) => baseline.unreadableDeclaration === true),
+  };
   effectiveCache.set(config, result);
   return result;
 }
@@ -329,11 +364,12 @@ export function cycleAdrs(config: ResolvedConfig): string[] {
   const found = new Set<string>();
   const add = (paths: string[]) => paths.forEach((path) => found.add(path));
   const repo = config.repoRoot;
+  // -z で読む（既定では日本語のファイル名が引用符と8進のエスケープで返る）
   if (commits.length === 0) {
-    add(lines(gitSync(repo, ["ls-files", "--cached", "--others", "--exclude-standard", "--", location])));
+    add(lines(gitSync(repo, ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", location]), "\0"));
   } else {
-    for (const commit of commits) add(lines(gitSync(repo, ["diff", "--name-only", "--diff-filter=d", commit, "--", location])));
-    add(lines(gitSync(repo, ["ls-files", "--others", "--exclude-standard", "--", location])));
+    for (const commit of commits) add(lines(gitSync(repo, ["diff", "-z", "--name-only", "--diff-filter=d", commit, "--", location]), "\0"));
+    add(lines(gitSync(repo, ["ls-files", "-z", "--others", "--exclude-standard", "--", location]), "\0"));
   }
   return [...found].sort();
 }

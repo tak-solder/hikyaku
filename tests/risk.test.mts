@@ -132,6 +132,18 @@ test("overlaps: glob どうしはファイル一覧・見本・接頭辞で判�
   assert.equal(overlaps("src/{api,auth}/**", "src/auth/x.ts", []), true, "波括弧は展開して照合する");
 });
 
+test("overlaps: 拡張子の無い字義どおりのパスはディレクトリとしても照合する", () => {
+  assert.equal(overlaps("db/migrations", "**/migrations/**", []), true);
+  assert.equal(overlaps("src/db", "src/**/*.sql", []), true);
+  assert.equal(overlaps("src/ui", "src/auth/**", []), false);
+});
+
+test("overlaps: まだ無いファイルでも、片方のディレクトリにもう片方のファイル名を置いた見本で重なりを見る", () => {
+  assert.equal(overlaps("*.sql", "db/migrations/**", []), true, "/ を含まない glob の領域と、新しいディレクトリ");
+  assert.equal(overlaps("src/**/schema.prisma", "src/db/**", []), true, "名前を決めた深い glob と、ディレクトリの glob");
+  assert.equal(overlaps("src/**/schema.prisma", "lib/**", []), false);
+});
+
 test("touchedPaths: バッククォートで囲んだパスと glob を拾う", () => {
   const markdown = "`scripts/lib/risk.mts` を足し、`src/auth/**` と `package.json` を触る。`*.sql` も。`./docs/a.md` も";
   assert.deepEqual(touchedPaths(markdown), ["scripts/lib/risk.mts", "src/auth/**", "package.json", "*.sql", "docs/a.md"]);
@@ -355,7 +367,20 @@ test("effectiveDeclaration: 基準の TOML が壊れている・値が不正な�
     assert.equal(effective.declaration?.axes.exposure, "internal");
     assert.ok(effective.baselines[0]?.unavailable !== undefined);
     assert.equal(effective.notices.length, 1);
+    assert.equal(effective.incomplete, true, "厳しさの分からない基準があることを、判定が同意に倒せるように返す");
   }
+});
+
+test("effectiveDeclaration: 既定の命名規則の Hikyaku のブランチは、サイクルの規則が違っても基準にしない", (t) => {
+  const directory = repoWith(t, appConfig("public", "none", "low"));
+  withOrigin(t, directory);
+  const other = "hikyaku/002-y/conductor";
+  loosen(directory, other, appConfig("personal", "none", "low"));
+  git(directory, "checkout", "-q", "-b", "feat/001-x/build-01");
+  const config = { ...configOf(directory, appConfig("personal", "none", "low"), other), branch: { prefix: "feat", separator: "/" } } as ResolvedConfig;
+  const effective = effectiveDeclaration(config);
+  assert.equal(effective.declaration?.axes.exposure, "public");
+  assert.ok(effective.notices.some((notice) => notice.includes(other)));
 });
 
 // ---------------------------------------------------------------------------
@@ -383,6 +408,16 @@ test("cycleAdrs: 基準から変わった・足された decisions と、追跡�
   commit(directory, "adrs");
   put(directory, ".hikyaku/decisions/d.md", "# d\n");
   assert.deepEqual(cycleAdrs(configOf(directory, "")), [".hikyaku/decisions/b.md", ".hikyaku/decisions/c.md", ".hikyaku/decisions/d.md"]);
+});
+
+test("cycleAdrs: 日本語のファイル名を、引用符やエスケープの無い実際のパスで返す", (t) => {
+  const directory = adrRepo(t, DECISIONS);
+  withOrigin(t, directory);
+  git(directory, "checkout", "-q", "-b", "feature");
+  put(directory, ".hikyaku/decisions/20261116-上限.md", "# 上限\n");
+  commit(directory, "jp");
+  put(directory, ".hikyaku/decisions/20261116-追跡外.md", "# x\n");
+  assert.deepEqual(cycleAdrs(configOf(directory, "")), [".hikyaku/decisions/20261116-上限.md", ".hikyaku/decisions/20261116-追跡外.md"]);
 });
 
 test("cycleAdrs: 2つの基準それぞれからの差分の和を返す", (t) => {

@@ -1,8 +1,8 @@
 /** config — 解決済みの設定を出力する */
 
 import { flagBoolean, flagString } from "../lib/args.mts";
-import { describeProvider, loadConfig, type AppDeclaration, type Boundaries } from "../lib/config.mts";
-import { ceilingOf } from "../lib/risk.mts";
+import { describeProvider, loadConfig, type AppDeclaration, type ResolvedConfig } from "../lib/config.mts";
+import { ceilingOf, effectiveDeclaration } from "../lib/risk.mts";
 import { DEFAULT_BRANCH_MARK, resolveUnsafeSplit } from "../lib/integrity.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { emit, warn } from "../lib/output.mts";
@@ -43,7 +43,8 @@ register({
     "デフォルトブランチ（origin/HEAD）が分からなければ allowed: false に倒します。",
     "",
     "[app]・[[app.areas]]・[boundaries] はアプリケーションの状況と境界の宣言で、ルート設定でのみ書けます。",
-    "表示する上限は作業ツリーの宣言から求めたものです。この版では宣言は検査と表示だけで、",
+    "上限は、作業ツリーの宣言からのものと、base_branch・デフォルトブランチとの merge-base にある宣言",
+    "（ユーザーがマージした宣言）と比べた最も厳しいものを並べます。この版では宣言は検査と表示だけで、",
     "ゲートの判定にはまだ使いません。",
   ].join("\n"),
   run: ({ args, operands }) => {
@@ -122,7 +123,7 @@ register({
         `  allow_unsafe_split  ${config.dataIntegrity.allowUnsafeSplit}`,
         `  安全でない分割      ${unsafeSplit.allowed ? "許す" : "許さない"}（${unsafeSplit.message}）`,
         "",
-        ...describeDeclaration(config.app, config.boundaries),
+        ...describeDeclaration(config),
         "",
         "[diff]（tokens history build-NN の差分の集計）:",
         `  exclude  ${config.diff.exclude.join(", ")}`,
@@ -161,23 +162,37 @@ function onOff(value: boolean): string {
   return value ? "on" : "off";
 }
 
-/** [app]・[[app.areas]]・[boundaries] の表示。上限は作業ツリーの宣言から求める（基準側との比較は risk.mts） */
-function describeDeclaration(app: AppDeclaration | undefined, boundaries: Boundaries): string[] {
+function describeCeiling(declaration: AppDeclaration | undefined): string {
+  if (declaration === undefined) return "上限を設けない（宣言なし）";
+  const ceiling = ceilingOf(declaration.axes);
+  return ceiling === "なし" ? "なし（何も任せない）" : `害「${ceiling}」まで`;
+}
+
+/**
+ * [app]・[[app.areas]]・[boundaries] の表示。宣言は作業ツリーのもの。上限は、作業ツリーの宣言からのものと、
+ * 基準（ユーザーがマージした宣言）と比べた最も厳しい宣言からのものを並べる
+ */
+function describeDeclaration(config: ResolvedConfig): string[] {
+  const { app, boundaries } = config;
+  const effective = effectiveDeclaration(config);
   const lines = ["[app]（アプリケーションの状況。この版では検査と表示だけで、ゲートの判定にはまだ使わない）:"];
   if (app === undefined) {
     lines.push("  宣言なし（上限を設けない）");
   } else {
-    const ceiling = ceilingOf(app.axes);
     lines.push(
       `  exposure / data / impact  ${app.axes.exposure} / ${app.axes.data} / ${app.axes.impact}`,
       `  merge_gate                ${app.mergeGate ?? "(未宣言)"}`,
-      `  上限（作業ツリーの宣言）  ${ceiling === "なし" ? "なし（何も任せない）" : `害「${ceiling}」まで`}`,
+      `  上限（作業ツリーの宣言）  ${describeCeiling(app)}`,
     );
     for (const area of app.areas) {
       const axes = (["exposure", "data", "impact"] as const).flatMap((axis) => (area[axis] === undefined ? [] : [`${axis}=${area[axis]}`]));
       lines.push(`  重い領域 ${area.name}  ${area.paths.join(", ")}${axes.length > 0 ? `（${axes.join(" ")}）` : ""}`);
     }
   }
+  if (app !== undefined || effective.declaration !== undefined) {
+    lines.push(`  上限（基準と比べた最も厳しい宣言）  ${describeCeiling(effective.declaration)}${effective.incomplete ? "（読めない基準があるので、判定では同意に倒す）" : ""}`);
+  }
+  for (const notice of effective.notices) lines.push(`  注意: ${notice}`);
   lines.push(
     "[boundaries]:",
     `  external  ${boundaries.external.length === 0 ? "(なし)" : boundaries.external.join(", ")}`,
