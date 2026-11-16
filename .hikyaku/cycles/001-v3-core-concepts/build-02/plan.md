@@ -124,7 +124,8 @@ export function cycleAdrs(config: ResolvedConfig): string[];
 - `effectiveDeclaration`・`repositoryFiles` は `ResolvedConfig` を鍵にした `WeakMap` でキャッシュする（build-15 で1回の step の評価から何度も呼ばれる）
 - glob の正規表現は `rules.mts` の `ruleGlobToRegExp` / `expandBraces` を使う（`/` を含まないパターンはどの階層のファイル名にも当たる）
 - `overlaps`: どちらかが字義どおりのパス（`/` を含み、ワイルドカードが無い）なら、もう片方の正規表現で照合する。両方 glob なら、ファイル一覧のどれかに両方が当たるか、片方のワイルドカードを置き換えた見本にもう片方が当たるか、どちらかの静的な接頭辞（最初のワイルドカードより前のディレクトリ）がもう片方の接頭辞に含まれるか。迷う形は「当たる」に倒す
-- ADR の所在は `loadGuide` の `decisions`（管理が `未作成` / `対象外` なら無い）。このサイクルの ADR は、読めた基準の merge-base からの `git diff --name-only` と追跡外のファイル
+- 基準のブランチ（デフォルトブランチ・`defaultBase` のどちらも）が Hikyaku のブランチ名（`parseBranch` で当たるもの。conductor・フェーズ・patch のブランチ）なら、その基準は読めない扱いにする（`origin/HEAD` も `git remote set-head` で向け直せるため。plan-review の懸念）
+- ADR の所在は `loadGuide` の `decisions`（管理が `未作成` / `対象外` なら無い）。このサイクルの ADR は、読めた基準それぞれの merge-base からの `git diff --name-only` の和と追跡外のファイル（多めに拾う側に倒す）
 
 ### `scripts/commands/config.mts`
 
@@ -151,8 +152,8 @@ export function cycleAdrs(config: ResolvedConfig): string[];
 
 **読むファイル**
 
-- 読了: design-delta 1節、ADR 2本、build-01 の handoff、`scripts/lib/steps/` の engine・directive・architect、`scripts/commands/step.mts`、`scripts/lib/progress.mts`・`toml.mts`・`git.mts`・`stack.mts`・`rules.mts`・`config.mts` の該当部、`tests/helpers.mts`、`tests/config.test.mts`・`toml.test.mts` の一部、`docs/configuration/config-file.md` の冒頭と `[data_integrity]` 節
-- これから: `scripts/commands/config.mts` の表示部、`CHANGELOG.md` の `[3.0.0]` Added
+- 読了: design-delta 1節、ADR 2本、build-01 の handoff、`scripts/lib/steps/` の engine・directive・architect、`scripts/commands/step.mts`、`scripts/lib/progress.mts`・`toml.mts`・`git.mts`・`stack.mts`・`rules.mts`・`config.mts` の該当部、`tests/helpers.mts`（読了）、`tests/config.test.mts`・`toml.test.mts` の一部、`docs/configuration/config-file.md` の冒頭と `[data_integrity]` 節、`scripts/lib/docs.mts` の `loadGuide`
+- これから: `tests/config.test.mts`・`toml.test.mts` の残り、`scripts/lib/branch.mts` の `parseBranch`、`scripts/commands/config.mts` の表示部、`docs/configuration/config-file.md` の残り、`CHANGELOG.md` の `[3.0.0]` Added
 
 **作成するファイル**
 

@@ -11,3 +11,4 @@
 {"at":"2026-11-16T17:58:44.407Z","skill":"build-manager","step":"G6","result":"approved","input":"委任された判断（監督）: 承認。tasklist と issue.md を書き込み、build-02 は縮めたスコープで plan から報告し直す","context":274176,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
 {"at":"2026-11-16T17:59:20.847Z","skill":"build-manager","step":"write","result":"done","context":283016,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
 {"at":"2026-11-16T18:00:16.152Z","skill":"builder","step":"plan","result":"done","peak":420000,"context":291233,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
+{"at":"2026-11-16T18:01:20.848Z","skill":"builder","step":"plan-review","result":"done","peak":420000,"context":310672,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
