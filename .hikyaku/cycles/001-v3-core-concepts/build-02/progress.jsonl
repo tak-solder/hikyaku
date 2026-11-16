@@ -1,2 +1,10 @@
 {"at":"2026-11-16T17:45:32.201Z","skill":"builder","step":"plan","result":"done","peak":415000,"context":171534,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
 {"at":"2026-11-16T17:52:41.675Z","skill":"builder","step":"plan-review","result":"done","peak":550000,"context":217257,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
+{"at":"2026-11-16T17:52:59.016Z","skill":"build-manager","step":"load","result":"done","context":229926,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
+{"at":"2026-11-16T17:53:12.977Z","skill":"build-manager","step":"scope","result":"done","context":235013,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
+{"at":"2026-11-16T17:53:32.783Z","skill":"build-manager","step":"estimate","result":"done","context":240124,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
+{"at":"2026-11-16T17:53:50.108Z","skill":"build-manager","step":"dry-run","result":"done","context":246499,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
+{"at":"2026-11-16T17:56:38.023Z","skill":"build-manager","step":"scope","result":"done","context":257776,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
+{"at":"2026-11-16T17:57:01.721Z","skill":"build-manager","step":"estimate","result":"done","context":264687,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
+{"at":"2026-11-16T17:57:04.486Z","skill":"build-manager","step":"dry-run","result":"done","context":265449,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
+{"at":"2026-11-16T17:57:24.223Z","skill":"build-manager","step":"tasklist-review","result":"done","context":267571,"session":"4bb9619d-170f-4c0d-8a04-24248f70557d","hikyaku":"3.0.0"}
