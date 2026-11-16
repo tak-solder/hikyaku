@@ -119,7 +119,7 @@ export function repositoryFiles(config: ResolvedConfig): string[];
 export function cycleAdrs(config: ResolvedConfig): string[];
 ```
 
-- 基準: `base_branch` は作業ツリーの設定にあり、セッションが書き換えられる。基準のブランチを2つ取る: デフォルトブランチ（`origin/HEAD`）と `defaultBaseOf(config)`（ADR の `defaultBase`。同じなら1つ）。それぞれ `origin/<branch>` を先に、無ければローカルの `<branch>` を ref にし（ローカルのブランチには PR を経ないコミットが載りうる）、`git merge-base HEAD <ref>` → `git show <merge-base>:.hikyaku.config` → `parseToml` → `readAppDeclaration`。作業ツリーと読めた基準すべての `strictest` を使う。ファイルが無ければその基準は「宣言なし」として読めた扱い。ref が無い・merge-base が無い・TOML が壊れている・値が不正ならその基準は読めない扱いにし、理由を `notices` に入れる。デフォルトブランチが分からない（`origin/HEAD` が無い）ことも `notices` に入れる
+- 基準: `base_branch` は作業ツリーの設定にあり、セッションが書き換えられる。基準のブランチを2つ取る: デフォルトブランチ（`origin/HEAD`）と `defaultBaseOf(config)`（ADR の `defaultBase`。同じなら1つ）。それぞれ `origin/<branch>` とローカルの `<branch>` の両方を読めるだけ読み（コードレビューの指摘で、origin を先に採る形から改めた。PR を経ないローカルのコミットで緩めることも、古い origin が厳しいローカルに勝つことも防ぐ。questions.md の Q3）、`git merge-base HEAD <ref>` → `git show <merge-base>:.hikyaku.config` → `parseToml` → `readAppDeclaration`。作業ツリーと読めた基準すべての `strictest` を使う。ファイルが無ければその基準は「宣言なし」として読めた扱い。ref が無い・merge-base が無い・TOML が壊れている・値が不正ならその基準は読めない扱いにし、理由を `notices` に入れる。デフォルトブランチが分からない（`origin/HEAD` が無い）ことも `notices` に入れる
 - これは ADR の定義（`defaultBase` との merge-base）にデフォルトブランチの基準を足す補強で、厳しくする向きだけ。ADR は書き換えず handoff の「永続化すること」に残す（G6 で監督が受け入れ、`questions.md` の Q1）
 - `effectiveDeclaration`・`repositoryFiles` は `ResolvedConfig` を鍵にした `WeakMap` でキャッシュする（build-15 で1回の step の評価から何度も呼ばれる）
 - glob の正規表現は `rules.mts` の `ruleGlobToRegExp` / `expandBraces` を使う（`/` を含まないパターンはどの階層のファイル名にも当たる）

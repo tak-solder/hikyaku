@@ -225,8 +225,7 @@ test("effectiveDeclaration: 作業ブランチで宣言を緩めても、基準�
   const effective = effectiveDeclaration(configOf(directory, source));
   assert.equal(effective.declaration?.axes.impact, "high");
   assert.equal(ceilingOf(effective.declaration?.axes as AppAxes), "なし");
-  assert.equal(effective.baselines.length, 1, "デフォルトブランチと defaultBase がどちらも main");
-  assert.equal(effective.baselines[0]?.ref, "origin/main");
+  assert.deepEqual(effective.baselines.map((baseline) => baseline.ref), ["origin/main", "main"], "デフォルトブランチと defaultBase がどちらも main で、origin とローカルの両方を読む");
   assert.deepEqual(effective.notices, []);
 });
 
@@ -286,7 +285,7 @@ test("effectiveDeclaration: 2つの基準が両方読めて食い違えば、作
   git(directory, "checkout", "-q", "-b", "feature-y", "develop");
   const effective = effectiveDeclaration(configOf(directory, appConfig("personal", "none", "low"), "develop"));
   assert.deepEqual(effective.declaration?.axes, axes("public", "none", "high"));
-  assert.deepEqual(effective.baselines.map((baseline) => baseline.branch), ["main", "develop"]);
+  assert.deepEqual([...new Set(effective.baselines.map((baseline) => baseline.branch))], ["main", "develop"]);
   assert.deepEqual(effective.notices, []);
 });
 
@@ -300,15 +299,39 @@ test("effectiveDeclaration: remote が無ければローカルのブランチを
   assert.match(effective.notices[0] ?? "", /origin\/HEAD/);
 });
 
-test("effectiveDeclaration: origin のブランチがあれば、PR を経ないローカルのコミットより先に読む", (t) => {
+test("effectiveDeclaration: PR を経ないローカルのコミットで緩めても、origin の厳しい宣言で決まる", (t) => {
   const directory = repoWith(t, appConfig("personal", "none", "high"));
   withOrigin(t, directory);
   put(directory, ".hikyaku.config", appConfig("personal", "none", "low"));
   commit(directory, "local main loosened");
   git(directory, "checkout", "-q", "-b", "feature-w");
   const effective = effectiveDeclaration(configOf(directory, appConfig("personal", "none", "low")));
-  assert.equal(effective.baselines[0]?.ref, "origin/main");
+  assert.deepEqual(effective.baselines.map((baseline) => baseline.ref), ["origin/main", "main"]);
   assert.equal(effective.declaration?.axes.impact, "high");
+});
+
+test("effectiveDeclaration: fetch していない古い origin が緩くても、ローカルでマージ済みの厳しい宣言で決まる", (t) => {
+  const directory = repoWith(t, appConfig("personal", "none", "low"));
+  withOrigin(t, directory);
+  put(directory, ".hikyaku.config", appConfig("personal", "none", "high"));
+  commit(directory, "stricter declaration merged locally");
+  git(directory, "checkout", "-q", "-b", "feature-s");
+  const effective = effectiveDeclaration(configOf(directory, appConfig("personal", "none", "low")));
+  assert.equal(effective.declaration?.axes.impact, "high");
+  assert.deepEqual(effective.notices, []);
+});
+
+test("effectiveDeclaration: origin とローカルのどちらか一方だけ読めれば、それで決める", (t) => {
+  const directory = repoWith(t, appConfig("personal", "none", "low"));
+  withOrigin(t, directory);
+  git(directory, "checkout", "-q", "-b", "feature-o");
+  put(directory, ".hikyaku.config", appConfig("public", "none", "low"));
+  commit(directory, "feature");
+  git(directory, "branch", "-q", "-D", "main");
+  const effective = effectiveDeclaration(configOf(directory, appConfig("personal", "none", "low")));
+  assert.deepEqual(effective.baselines.map((baseline) => baseline.ref), ["origin/main"]);
+  assert.equal(effective.declaration?.axes.exposure, "personal");
+  assert.deepEqual(effective.notices, []);
 });
 
 test("effectiveDeclaration: 作業ツリーにも基準にも宣言が無ければ未定義（上限なしで、「なし」とは区別する）", (t) => {

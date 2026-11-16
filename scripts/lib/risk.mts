@@ -234,7 +234,7 @@ export function touchedPaths(markdown: string): string[] {
 export interface Baseline {
   /** 基準のブランチ */
   branch: string;
-  /** 読んだ ref（origin/<branch> か <branch>） */
+  /** 読んだ ref（origin/<branch> か <branch>。両方あれば両方を別の Baseline として読む） */
   ref: string | undefined;
   /** merge-base のコミット */
   commit: string | undefined;
@@ -261,18 +261,24 @@ export interface EffectiveDeclaration {
 
 const CONFIG_FILE = ".hikyaku.config";
 
-function resolveRef(repoRoot: string, branch: string): string | undefined {
-  // マージ済みの写し（origin/）を先に採る。ローカルのブランチには PR を経ないコミットが載りうる
-  return [`origin/${branch}`, branch].find((ref) => gitSync(repoRoot, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]) !== undefined);
+/**
+ * 基準のブランチの宣言を、origin/<branch> とローカルの <branch> の両方から読めるだけ読む。
+ * どちらか一方だけを採ると、PR を経ないローカルのコミットで緩めるか、fetch していない古い origin/ が
+ * ローカルでマージ済みのより厳しい宣言に勝つかのどちらかが起きる。両方を厳しいほうで重ねれば、どちらも防げる
+ */
+function readBaselines(config: ResolvedConfig, branch: string): Baseline[] {
+  if (isHikyakuBranch(config, branch)) {
+    return [{ branch, ref: undefined, commit: undefined, declaration: undefined, unavailable: "Hikyaku のブランチはユーザーのマージを経ていないので、基準にしません" }];
+  }
+  const refs = [`origin/${branch}`, branch].filter((ref) => gitSync(config.repoRoot, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]) !== undefined);
+  if (refs.length === 0) {
+    return [{ branch, ref: undefined, commit: undefined, declaration: undefined, unavailable: `${branch} も origin/${branch} もありません` }];
+  }
+  return refs.map((ref) => readBaselineAt(config, branch, ref));
 }
 
-function readBaseline(config: ResolvedConfig, branch: string): Baseline {
+function readBaselineAt(config: ResolvedConfig, branch: string, ref: string): Baseline {
   const miss = (unavailable: string, ref?: string, commit?: string): Baseline => ({ branch, ref, commit, declaration: undefined, unavailable });
-  if (isHikyakuBranch(config, branch)) {
-    return miss("Hikyaku のブランチはユーザーのマージを経ていないので、基準にしません");
-  }
-  const ref = resolveRef(config.repoRoot, branch);
-  if (ref === undefined) return miss(`${branch} も origin/${branch} もありません`);
   const commit = gitSync(config.repoRoot, ["merge-base", "HEAD", ref])?.trim();
   if (commit === undefined || commit === "") return miss(`HEAD と ${ref} に共通の祖先がありません`, ref);
   // ls-tree は、ファイルが無ければ空を返して成功し、git が失敗したときだけ失敗する（cat-file -e は両方で失敗し、
@@ -322,14 +328,23 @@ export function effectiveDeclaration(config: ResolvedConfig): EffectiveDeclarati
   const base = config.baseBranch ?? fallback;
   if (base !== undefined && !branches.includes(base)) branches.push(base);
 
-  const baselines = branches.map((branch) => readBaseline(config, branch));
+  const baselines: Baseline[] = [];
   let declaration = config.app;
-  for (const baseline of baselines) {
-    if (baseline.unavailable !== undefined) {
-      notices.push(`基準 ${baseline.branch} の宣言を読めません: ${baseline.unavailable}`);
-      continue;
+  for (const branch of branches) {
+    const read = readBaselines(config, branch);
+    baselines.push(...read);
+    const failed = read.filter((baseline) => baseline.unavailable !== undefined);
+    if (failed.length === read.length) {
+      notices.push(`基準 ${branch} の宣言を読めません: ${failed.map((baseline) => baseline.unavailable).join(" / ")}`);
+    } else {
+      // 片方の ref だけ読めないときも、設定ファイルがあるのに読めなかったものは知らせる
+      for (const baseline of failed) {
+        if (baseline.unreadableDeclaration === true) notices.push(`基準 ${baseline.ref ?? branch} の宣言を読めません: ${baseline.unavailable}`);
+      }
     }
-    declaration = strictest(declaration, baseline.declaration);
+    for (const baseline of read) {
+      if (baseline.unavailable === undefined) declaration = strictest(declaration, baseline.declaration);
+    }
   }
   // 厳しさの分からない基準がある: 設定ファイルはあるのに宣言を読めなかったか、作業ツリーが宣言しているのに
   // 基準を1つも読めなかった（作業ツリーの宣言だけで、セッションが自分の上限を緩められる）
