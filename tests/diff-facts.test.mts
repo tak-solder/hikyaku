@@ -9,6 +9,7 @@ import {
   declarationConfigChanges,
   parseUnifiedDiff,
   renderFactsPr,
+  unquoteCPath,
   type DiffFacts,
   type FileHunks,
 } from "../scripts/lib/diff-facts.mts";
@@ -43,6 +44,19 @@ test("findMarker: 識別子の文字で始まる印は、直前が識別子の�
   assert.equal(findMarker(DEFAULT_TEST_DECLARATIONS, "  const v = latest(items);"), undefined);
   assert.equal(findMarker(DEFAULT_TEST_DECLARATIONS, 'it("adds", () => {'), "it(");
   assert.equal(findMarker(DEFAULT_TEST_DECLARATIONS, '  t.test("x", ...)'), "test(");
+});
+
+test("findMarker: 正規表現リテラルの .test( と require.resolve( は印として数えない", () => {
+  assert.equal(findMarker(DEFAULT_TEST_DECLARATIONS, "  if (/foo/.test(name)) {"), undefined);
+  assert.equal(findMarker(DEFAULT_TEST_DECLARATIONS, "  if (/foo/i.test(name)) {"), undefined);
+  assert.equal(findMarker(DEFAULT_ASSERTION_MARKERS, '  const p = require.resolve("x");'), undefined);
+  assert.equal(findMarker(DEFAULT_TEST_DECLARATIONS, '  t.test("x", ...)'), "test(");
+});
+
+test("unquoteCPath: git の C 形式の引用を戻す", () => {
+  assert.equal(unquoteCPath('"a/x\\"y.test.ts"'), 'a/x"y.test.ts');
+  assert.equal(unquoteCPath('"a/x\\\\y\\tz.ts"'), "a/x\\y\tz.ts");
+  assert.equal(unquoteCPath('"a/\\346\\227\\245.ts"'), "a/日.ts");
 });
 
 test("findMarker: 記号で始まる印は直前の文字を問わない部分文字列", () => {
@@ -388,6 +402,26 @@ test("diff facts: 未追跡の新しいテストファイルのスキップを�
   assert.equal(git(directory, ["diff", "--cached", "--name-only"]), "");
 });
 
+test("diff facts: 新しく足したテストのアサーションは並べず、既存テストから消したアサーションは並べる", (t) => {
+  const directory = branched(t);
+  write(directory, "tests/keep.test.ts", 'it("keeps", () => {\n});\n');
+  write(directory, "tests/added.test.ts", 'it("a", () => {\n  assert.equal(1, 1);\n});\n');
+  commitAll(directory, "work");
+  write(directory, "tests/untracked.test.ts", 'it("u", () => {\n  assert.equal(2, 2);\n});\n');
+  const result = facts(directory);
+  assert.deepEqual(result.assertionChanges.map((fact) => [fact.path, fact.side]), [["tests/keep.test.ts", "-"]]);
+});
+
+test("diff facts: 0 を足したビルド ID でも同じビルドのディレクトリを見る", (t) => {
+  const directory = branched(t);
+  write(directory, `${BUILD}/issue.md`, "# 書き換えた\n");
+  write(directory, `${BUILD}/progress.jsonl`, "x\n");
+  const result = JSON.parse(succeeds(directory, "diff", "facts", "build-001", "001", "--format", "json", "--no-fetch")) as DiffFacts;
+  assert.equal(result.issueChanged, true);
+  assert.equal(result.phase, "build-01");
+  assert.ok(!result.files.some((file) => file.path.endsWith("progress.jsonl")));
+});
+
 test("diff facts: テストファイルの削除と、リネームでテストから外したもの", (t) => {
   const directory = branched(t, (d) => {
     write(d, "tests/a.test.ts", 'it("a", () => {});\n');
@@ -609,8 +643,12 @@ test("review.md: スコープとデータ安全の自己確認が agreement-revi
   const review = readFileSync(join(root, "skills/builder/steps/review.md"), "utf8");
   assert.doesNotMatch(review, /スコープ準拠を自分で確認する|マージ時点のデータ安全を自分で確認する/);
   const agent = readFileSync(join(root, "agents/doc-reviewer.md"), "utf8");
-  for (const label of ["合意に無いテストの後退", "スコープ外の変更", "マージ時点のデータ安全の不備"]) {
+  for (const label of ["合意に無いテストの後退", "スコープ外の変更", "計画に無い変更", "マージ時点のデータ安全の不備"]) {
     assert.match(agent.split("### context: agreement で報告する")[1] ?? "", new RegExp(label));
   }
   assert.match(readFileSync(join(root, "skills/builder/steps/pr.md"), "utf8"), /diff facts build-\{NN\} \{cycle\} --format pr/);
+  const agreement = readFileSync(join(root, "skills/builder/steps/agreement-review.md"), "utf8");
+  assert.match(agreement, /deferUncertain/);
+  assert.match(agreement, /ledger open/);
+  assert.match(agreement, /push はしない/);
 });

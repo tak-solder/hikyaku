@@ -327,8 +327,8 @@ register({
     "有限回で自動修正できる指摘が無ければ、懸念だけで同じ差分を再レビューしません。",
     "deferUncertain が true なら懸念を保留し、nextRound が null なら PR・完了案内で参照先を伝えます。",
     "",
-    "doc は --context agreement（builder の agreement-review の指摘）でだけ使えます。agreement は",
-    "[review.doc] max_rounds に関わらず1回で終え、confirm を返しません（指摘は直すか理由を返し、止めない）。",
+    "doc は --context agreement（builder の agreement-review の指摘）でだけ使えます。doc のレビューは",
+    "常に1回なので、agreement は confirm を返しません（指摘は直すか理由を返し、止めない）。",
   ].join("\n"),
   run: ({ args, operands }) => {
     const kind = requireKind(operands[0]);
@@ -344,8 +344,8 @@ register({
     }
     const phase = requirePhase(operands[1]);
     const { config } = scopeFor(args, phase, operands[2]);
-    // agreement は止めない（US-2.6）。1回で終えれば confirm にならない
-    const settings = agreement ? { ...config.review.doc, maxRounds: 1 } : config.review[kind];
+    // agreement は止めない（US-2.6）。doc の回数は設定が 1 に固定しているので、confirm にならない
+    const settings = config.review[kind];
     const round = flagInteger(args, "round");
     if (round === undefined || round < 1 || (settings.maxRounds > 0 && round > settings.maxRounds)) {
       throw new HikyakuError("--round は 1 以上で max_rounds 以下の整数を指定してください（max_rounds = 0 は上限なし）");

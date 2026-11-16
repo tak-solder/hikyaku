@@ -66,11 +66,39 @@ export interface FileHunks {
   lines: HunkLine[];
 }
 
+const C_ESCAPES: Record<string, string> = { n: "\n", t: "\t", r: "\r", '"': '"', "\\": "\\", a: "\x07", b: "\b", f: "\f", v: "\v" };
+
+/**
+ * git の C 形式の引用（`"a/x\"y"`）を戻す。8進のエスケープ（core.quotePath を切っていても制御文字に付く）は
+ * バイト列として UTF-8 に戻す。`-z` の一覧のパスと突き合わせるため
+ */
+export function unquoteCPath(quoted: string): string {
+  const bytes: number[] = [];
+  const inner = quoted.slice(1, -1);
+  for (let index = 0; index < inner.length; index += 1) {
+    const char = inner[index] as string;
+    if (char !== "\\") {
+      bytes.push(...Buffer.from(char, "utf8"));
+      continue;
+    }
+    const next = inner[index + 1] ?? "";
+    const octal = /^[0-7]{3}/.exec(inner.slice(index + 1));
+    if (octal !== null) {
+      bytes.push(Number.parseInt(octal[0], 8));
+      index += 3;
+    } else {
+      bytes.push(...Buffer.from(C_ESCAPES[next] ?? next, "utf8"));
+      index += 1;
+    }
+  }
+  return Buffer.from(bytes).toString("utf8");
+}
+
 /** `--- a/x` / `+++ b/x` のパス。/dev/null は undefined。git が付ける末尾のタブと引用符を外す */
 function headerPath(raw: string, prefix: string): string | undefined {
   let value = raw.replace(/\t$/, "");
   if (value === "/dev/null") return undefined;
-  if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+  if (value.startsWith('"') && value.endsWith('"') && value.length >= 2) value = unquoteCPath(value);
   return value.startsWith(prefix) ? value.slice(prefix.length) : value;
 }
 
@@ -123,8 +151,8 @@ export function parseUnifiedDiff(diff: string): FileHunks[] {
     }
     if (current === undefined) continue;
     if (raw.startsWith("\\")) continue;
-    if (raw.startsWith("rename from ")) renameFrom = raw.slice("rename from ".length);
-    else if (raw.startsWith("rename to ")) renameTo = raw.slice("rename to ".length);
+    if (raw.startsWith("rename from ")) renameFrom = headerPath(raw.slice("rename from ".length), "");
+    else if (raw.startsWith("rename to ")) renameTo = headerPath(raw.slice("rename to ".length), "");
     else if (raw.startsWith("--- ")) minus = headerPath(raw.slice(4), "a/");
     else if (raw.startsWith("+++ ")) {
       const plus = headerPath(raw.slice(4), "b/");
@@ -529,9 +557,15 @@ export async function collectDiffFacts(input: DiffFactsInput): Promise<DiffFacts
     }
   }
 
-  const hunks = [...parseUnifiedDiff(diff ?? ""), ...untracked.map((path) => untrackedHunks(repoRoot, path))];
+  // 未追跡のファイルは、印を見るテストファイルだけを読む
+  const untrackedTests = untracked.filter((path) => classifyPath(patterns, path) === "test");
+  const hunks = [...parseUnifiedDiff(diff ?? ""), ...untrackedTests.map((path) => untrackedHunks(repoRoot, path))];
   // 削除したファイルは、ファイルの削除そのものを事実にする（宣言を1行ずつ並べ直さない）
   const markerFacts = collectMarkerFacts(hunks, patterns, new Set(deletedTestFiles.filter((file) => file.to === undefined).map((file) => file.path)));
+  // 新しく足したテストファイルのアサーションは、既存のテストを変えたものではない。全部並べると、
+  // 既存のテストから消したアサーションが PR の節の打ち切りに隠れるので並べない（スキップの追加は並べる）
+  const added = new Set([...entries.filter((entry) => entry.status === "A").map((entry) => entry.path), ...untrackedTests]);
+  markerFacts.assertionChanges = markerFacts.assertionChanges.filter((fact) => !added.has(fact.path));
 
   const configChanges: ConfigChange[] = [];
   for (const absolute of [join(repoRoot, CONFIG_FILE), join(input.cycleDirectory, CONFIG_FILE)]) {

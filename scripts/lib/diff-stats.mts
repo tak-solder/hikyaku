@@ -102,7 +102,14 @@ const IDENTIFIER = /[A-Za-z0-9_$]/;
  * 行に印が現れるか。印が識別子の文字で始まるときは、直前が識別子の文字でない位置だけを数える
  * （`it(` が `submit(` に、`test(` が `latest(` に当たらないように）
  */
-export function findMarker(markers: string[], line: string): string | undefined {
+/**
+ * 印に見えるが印ではない書き方。照合の前に行から消す（正規表現リテラルの `.test(`、`require.resolve(`）。
+ * 既定の印の誤検出を防ぐためのもので、[diff] の追加の印にも同じく効く
+ */
+const NOT_MARKERS = [/\/[gimsuyd]*\.test\(/g, /\brequire\.resolve\(/g];
+
+export function findMarker(markers: string[], rawLine: string): string | undefined {
+  const line = NOT_MARKERS.reduce((text, pattern) => text.replace(pattern, (match) => " ".repeat(match.length)), rawLine);
   // 当たる印のうち最も長いもの（`@pytest.mark.skip(` に `.skip(` ではなく `@pytest.mark.skip` を返す）
   let found: string | undefined;
   for (const marker of markers) {

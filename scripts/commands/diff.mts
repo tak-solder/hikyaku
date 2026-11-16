@@ -8,6 +8,7 @@ import { HikyakuError } from "../lib/errors.mts";
 import { emit, isJsonMode } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { requirePhase, resolvePrBase, scopeFor } from "../lib/stack.mts";
+import { buildDirName, normalizeBuildId } from "../lib/tasklist.mts";
 
 const FORMATS = ["text", "json", "pr"] as const;
 type Format = (typeof FORMATS)[number];
@@ -61,10 +62,11 @@ register({
       base = { name: "(決められない)", ref: undefined };
       notices.push(`PR のマージ先を決められないので、差分を調べていません: ${error.message}`);
     }
-    const buildDirectory = join(scope.context.directory, phase);
+    // build-001 と build-01 は同じビルド。ディレクトリ名はほかのコマンドと同じく正規化して引く
+    const buildDirectory = join(scope.context.directory, buildDirName(normalizeBuildId(phase)));
     const facts = await collectDiffFacts({
       config: scope.config,
-      phase,
+      phase: buildDirName(normalizeBuildId(phase)),
       buildDirectory,
       cycleDirectory: scope.context.directory,
       base,
