@@ -113,7 +113,7 @@ export function noticeLines(summary: LedgerSummary): string[];     // 1事項1�
   - `close`: サイクル直下に close-cycle の記録があれば来た。cycles.md の status が active でなくなったら過ぎた
   - 参照先の実在: build-NN は tasklist.md に、patch はサイクルの patches/ に在ること。plan / architect / close は常に在る
   - **他の単位の現在のステップ**（cycle status と、directive で自分以外の単位）: 最後の restart の後で完了したステップのうち、定義の並びで最も後ろのものの次。内部スキルの記録は呼び出し元の単位の記録として数え、G6 の記録があれば来た・承認で過ぎたとする
-- **決まったか**: 最新の `decide`（`at` 順、同時刻はファイル順）。`decide` が無ければ未決。最新が `rejected` なら「未解決の退け」（`resolved` で消える）。期限の判定は未決の事項だけ
+- **決まったか**: 最新の `decide`（`at` 順。同時刻は読み順で後のもの。読み順はサイクル直下 → planning → design → build-NN（番号順）→ patches（パス順）、ファイルの中は行順）。`decide` が無ければ未決。最新が `rejected` なら「未解決の退け」（`resolved` で消える）。期限の判定は未決の事項だけ
 - **置き場**: `open` は記録した作業単位のファイル、`decide` は決めた作業単位（`ledger decide` に渡したフェーズ）のファイル
 
 ### `scripts/commands/ledger.mts`（新規）

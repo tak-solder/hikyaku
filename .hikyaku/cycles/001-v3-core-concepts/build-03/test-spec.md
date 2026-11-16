@@ -14,6 +14,12 @@
 - When: `parseJsonl` を呼ぶ
 - Then: HikyakuError が投げられ、メッセージに source と「2行目」が含まれる（黙って捨てない）
 
+### parseJsonl: JSON として正しいが形の合わない行は行番号つきでエラー
+- 対応: —
+- Given: 1行目が正しいレコード、2行目が `{"record":"bogus"}`（isRecord が false）
+- When: `parseJsonl` を呼ぶ
+- Then: HikyakuError が投げられ、メッセージに source と「2行目」が含まれる
+
 ### readJsonl / appendJsonl: ファイルが無ければ空、追記でディレクトリを作る
 - 対応: —
 - Given: 存在しない `build-09/decisions.jsonl` のパス
@@ -98,7 +104,7 @@
 - When: `app.owner`、`area:`、`constraints`、`docs/foo.md`、`assumption:` を parsePremise
 - Then: どれも HikyakuError
 
-### parsePremises: カンマ区切りで配列にし、要素ごとに検査する
+### parsePremises: カンマ区切りで配列にし、要素ごとに検査する（解釈）
 - 対応: —
 - Given: `--premises "app.exposure,adr:20261116-pending-items-ledger.md"`
 - When: parsePremises
@@ -124,7 +130,7 @@
 - When: `assertDecider(item, "user", undefined)` と `assertDecider(item, "user", "その方針で進めて")`
 - Then: 前者は HikyakuError、後者は通る
 
-### assertDecider: ai の事項は ai か user が、supervisor の事項は supervisor か user が決められる
+### assertDecider: ai の事項は ai か user が、supervisor の事項は supervisor か user が決められる（解釈）
 - 対応: US-19.7
 - Given: `who:"ai:architect"` と `who:"supervisor"` の OpenRecord
 - When: ai の事項に `ai:build-02`・`user`（input あり）・`supervisor`、supervisor の事項に `supervisor`・`user`（input あり）・`ai:build-02`
@@ -152,9 +158,15 @@
 
 ### readLedger: 最新の decide で決まったかを導く
 - 対応: US-19.4
-- Given: `architect.1` に decide が3件（`rejected`@10:00、`resolved`@11:00 が別ファイル、`decided`@09:00）
+- Given: `architect.1` に decide が3件（design/ に `decided`@09:00 と `rejected`@10:00、build-01/ に `resolved`@11:00）
 - When: readLedger
-- Then: latest は `at` が最も遅い `resolved`。同時刻の2件ならファイル順で後のもの
+- Then: latest は `at` が最も遅い `resolved`（ファイルの読み順ではなく `at` で決まる）
+
+### readLedger: 同時刻の決定は読み順で後のものを最新とする（解釈）
+- 対応: US-19.4
+- Given: `architect.1` に同じ `at`（10:00）の decide が2件。design/ に `rejected`、build-02/ に `decided`。読み順はサイクル直下 → planning → design → build-NN（番号順）→ patches（パス順）
+- When: readLedger
+- Then: latest は build-02/ の `decided`。同じファイルに同時刻の2件があれば、行の後のもの
 
 ### readLedger: decide が無い事項は未決で、状態の列を持たない
 - 対応: US-19.4
@@ -170,11 +182,23 @@
 
 ## scripts/lib/ledger.mts — 期限の判定（timingOf）
 
-### timingOf: now は記録した時点から来ていて過ぎない
+### timingOf: now は記録した時点から来ていて過ぎない（解釈）
 - 対応: US-19.5
 - Given: `when:"now"` の未決の事項、どの単位にも事項より後の記録がある
 - When: timingOf
 - Then: `due`（`overdue` にはならない）
+
+### timingOf: phase:plan は plan の記録で来て、architect の記録で過ぎた（解釈）
+- 対応: US-19.6
+- Given: create で記録した `phase:plan` の事項（at=09:00）
+- When: planning に 09:10 の記録だけ / さらに design に 10:00 の記録 で timingOf
+- Then: `due` / `overdue`
+
+### timingOf: phase:close は close-cycle の記録で来て、active でなくなって過ぎた（解釈）
+- 対応: US-19.6
+- Given: build-02 で記録した `phase:close` の事項（at=09:00）
+- When: 直下に事項より後の close-cycle の記録あり・cycles.md が active / active でない で timingOf
+- Then: `due` / `overdue`
 
 ### timingOf: phase:architect は architect に事項より後の記録があれば来た（解釈）
 - 対応: US-19.5
@@ -192,7 +216,7 @@
 - 対応: US-19.6
 - Given: `phase:build-02` の事項、build-02 に事項より後の記録、`merged` に build-02
 - When: timingOf
-- Then: `overdue`。`merged` が空なら `due`
+- Then: `overdue`。`merged` が空なら `due`、undefined（directive）でも `due`
 
 ### timingOf: phase:patch は過ぎない（解釈）
 - 対応: US-19.5
@@ -202,9 +226,15 @@
 
 ### timingOf: 回は事項の at より後の記録だけを見る（解釈）
 - 対応: US-19.5
-- Given: architect の add の回（restart の後）で 12:00 に記録した `gate:G4@architect` の事項。G4 の `approved` は前の回の 09:00 だけ
+- Given: architect の add の回（11:00 に restart）で 12:00 に記録した `gate:G4@architect` の事項。restart の後に完了したのは survey（G4 より前）だけで、現在のステップは G4 より前。G4 の `approved` は前の回の 09:00 だけ
 - When: timingOf
 - Then: `pending`（前の回の承認で過ぎたにならない）
+
+### timingOf: 前の回の pr の記録で merge が来たにならない（解釈）
+- 対応: US-19.5
+- Given: architect の add の回で 12:00 に記録した `merge@architect` の事項。pr の完了は前の回の 09:00 だけで、今の回の現在のステップは pr より前
+- When: timingOf
+- Then: `pending`
 
 ### timingOf: gate は現在のステップが G なら来た（解釈）
 - 対応: US-19.5
@@ -232,7 +262,7 @@
 
 ### timingOf: merge の区切りは pr（解釈）
 - 対応: US-19.5
-- Given: `merge@build-02` の事項、consent のステップが無い builder
+- Given: `merge@build-02` の事項、consent のステップが無い builder、`merged` は空
 - When: build-02 の現在のステップが pr の手前 / pr / 完了のときに timingOf
 - Then: `pending` / `due` / `due`
 
@@ -254,11 +284,11 @@
 - When: `merged` が空 / `{build-02}` / undefined（directive）で timingOf
 - Then: `due` / `overdue` / `due`
 
-### timingOf: plan・architect の merge は決まるまで来たのまま（解釈）
+### timingOf: plan・architect・patch・close の merge は決まるまで来たのまま（解釈）
 - 対応: US-19.6
-- Given: `merge@architect` の事項、architect が完了、`merged` に build-01・build-02
+- Given: `merge@architect` と `merge@patch-202611-fix-typo` の事項、どちらの単位も完了、`merged` に build-01・build-02
 - When: timingOf
-- Then: `due`（`overdue` にならず示され続ける）
+- Then: どちらも `due`（`overdue` にならず示され続ける）
 
 ### timingOf: close は close-cycle の記録で来て、active でなくなって過ぎた（解釈）
 - 対応: US-19.6
@@ -294,9 +324,15 @@
 
 ### ledger open: 語彙外の値・存在しない参照先・書式外の前提を拒否する
 - 対応: US-19.2
-- Given: 同上
-- When: `--when "gate:G9"`、`--when "after-review"`、`--who human`、`--premises app.owner`、`--harm 低`、`--ask nonexistent` をそれぞれ付けて open。別に `--ask P1` で open
-- Then: `--ask P1`（ゲートの ID）以外はどれも非0で終了し、decisions.jsonl は作られない
+- Given: 同上（build-02/decisions.jsonl はまだ無い）
+- When: `--when "gate:G9"`、`--when "after-review"`、`--who human`、`--premises app.owner`、`--harm 低`、`--ask nonexistent` をそれぞれ付けて open
+- Then: どれも非0で終了し、decisions.jsonl は作られない
+
+### ledger open: --ask は ASKS の ID とゲートの ID を受け付ける
+- 対応: —
+- Given: 上の拒否のシナリオの後の同じリポジトリ
+- When: `--ask design-conflict`（ASKS）と `--ask P1`（ASKS に無いゲートの ID）でそれぞれ open
+- Then: どちらも終了コード0で記録され、show の ask にその値が出る
 
 ### ledger open: サイクルに属さない patch は拒否する
 - 対応: —
@@ -315,6 +351,12 @@
 - Given: `plan.1`（who=ai:plan）が planning/decisions.jsonl にある
 - When: `ledger decide build-02 plan.1 --decision consented --by user --input "それでよい" --accepts "再試行が無いことを受け入れる"`
 - Then: build-02/decisions.jsonl に decide が1行、planning/decisions.jsonl は変わらない。`ledger show plan.1 --json` で決定の input・accepts・by が読める
+
+### ledger decide: --dry-run は書き込まない
+- 対応: —
+- Given: who=user の `build-02.1`
+- When: `ledger decide build-02 build-02.1 --decision decided --by user --input "OK" --dry-run`
+- Then: 終了コード0で記録予定が表示され、`snapshot` の前後でファイルが変わらない
 
 ### ledger decide: who=user の事項を supervisor / ai で決められない
 - 対応: US-19.7
@@ -366,9 +408,9 @@
 - 対応: US-19.5
 - Given: due の事項1件、未決で期限前の事項1件、rejected が最新の事項1件
 - When: `cycle status 001 --json`
-- Then: `ledger.due`・`ledger.open`・`ledger.rejected` があり、要素に id・unit・type・summary・when・who・timing（rejected は最新の決定）が入る
+- Then: `ledger.due`・`ledger.open`・`ledger.rejected` があり、要素に id・unit・type・summary・when・who・timing（rejected は最新の決定）が入る。due の事項は `due` と `open` の両方に、期限前の事項は `open` だけに、rejected の事項は `rejected` だけに入る（open は未決の全件で、テキストの「未決の総数」はその件数）
 
-### cycle status: マージ済みのビルドで merge の事項が過ぎたになる
+### cycle status: マージ済みのビルドで merge の事項が過ぎたになる（解釈）
 - 対応: US-19.6
 - Given: build-01 がベースブランチへマージ済み（views.mergedIds に build-01）、`merge@build-01` の未決事項
 - When: `cycle status 001 --json`
