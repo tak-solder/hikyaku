@@ -50,14 +50,25 @@ register({
     const format = raw as Format;
     const scope = scopeFor(args, phase, operands[1]);
     if (scope.context === undefined) throw new HikyakuError("対象のサイクルを決められません");
-    const prBase = await resolvePrBase(scope, phase, { fetch: !flagBoolean(args, "no-fetch") });
+    // マージ先を決められなくても止めない（agreement-review と PR の手順が事実の欠けを注意として読めるように）
+    let base: { name: string; ref: string | undefined };
+    const notices: string[] = [];
+    try {
+      const prBase = await resolvePrBase(scope, phase, { fetch: !flagBoolean(args, "no-fetch") });
+      base = { name: prBase.base, ref: prBase.ref };
+    } catch (error) {
+      if (!(error instanceof HikyakuError)) throw error;
+      base = { name: "(決められない)", ref: undefined };
+      notices.push(`PR のマージ先を決められないので、差分を調べていません: ${error.message}`);
+    }
     const buildDirectory = join(scope.context.directory, phase);
     const facts = await collectDiffFacts({
       config: scope.config,
       phase,
       buildDirectory,
       cycleDirectory: scope.context.directory,
-      base: { name: prBase.base, ref: prBase.ref },
+      base,
+      notices,
     });
     if (format === "pr") {
       const agreementPath = join(buildDirectory, AGREEMENT_FILE);

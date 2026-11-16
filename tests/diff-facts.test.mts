@@ -259,6 +259,7 @@ test("agreementReasons: 「## 返した理由」の箇条書きだけを取り�
 function emptyFacts(overrides: Partial<DiffFacts> = {}): DiffFacts {
   return {
     phase: "build-01",
+    complete: true,
     base: { name: "main", ref: "main", mergeBase: "0123456789" },
     files: [],
     deletedTests: [],
@@ -293,6 +294,13 @@ test("renderFactsPr: 事実が全く無ければ「該当なし」", () => {
   const out = renderFactsPr(emptyFacts(), "## 返した理由\n\nなし\n");
   assert.match(out, /該当なし/);
   assert.doesNotMatch(out, /^### (?!合意に無い)/m);
+});
+
+test("renderFactsPr: 調べきれなかったときは「該当なし」と書かず、調べられなかったことを示す", () => {
+  const out = renderFactsPr(emptyFacts({ complete: false, notices: ["HEAD と main の merge-base を求められません"] }), undefined);
+  assert.doesNotMatch(out, /該当なし/);
+  assert.match(out, /最後まで調べられませんでした/);
+  assert.match(out, /merge-base を求められません/);
 });
 
 // ---------------------------------------------------------------------------
@@ -334,9 +342,11 @@ function facts(directory: string): DiffFacts & { afterG8: { approvedAt?: string 
   return JSON.parse(succeeds(directory, "diff", "facts", "build-01", "001", "--format", "json", "--no-fetch")) as DiffFacts;
 }
 
-function approveG8(directory: string, ...at: string[]): void {
-  const lines = at.map((value) => JSON.stringify({ at: value, skill: "builder", step: "G8", result: "approved" }));
-  write(directory, `${BUILD}/progress.jsonl`, `${lines.join("\n")}\n`);
+/** G8 の承認を progress.jsonl に追記する（コミットは呼び出し元が行う） */
+function approveG8(directory: string, at: string): void {
+  const path = join(directory, BUILD, "progress.jsonl");
+  const before = existsSync(path) ? readFileSync(path, "utf8") : "";
+  write(directory, `${BUILD}/progress.jsonl`, `${before}${JSON.stringify({ at, skill: "builder", step: "G8", result: "approved" })}\n`);
 }
 
 test("diff facts: 変更ファイルと種類を並べ、スコープの内外は判定しない", (t) => {
@@ -423,14 +433,16 @@ test("diff facts: G8 の承認後の test-spec.md と plan.md の書き換え（
   const directory = branched(t);
   write(directory, `${BUILD}/test-spec.md`, "# v1\n");
   write(directory, `${BUILD}/plan.md`, "# v1\n");
-  commitAll(directory, "before", "2026-11-16T09:00:00+09:00");
+  commitAll(directory, "before");
   approveG8(directory, "2026-11-16T10:00:00+09:00");
+  commitAll(directory, "record G8");
   write(directory, `${BUILD}/test-spec.md`, "# v2\n");
-  commitAll(directory, "rewrite test-spec", "2026-11-16T11:00:00+09:00");
+  commitAll(directory, "rewrite test-spec");
   write(directory, `${BUILD}/plan.md`, "# v2\n");
-  commitAll(directory, "rewrite plan", "2026-11-16T11:30:00+09:00");
+  commitAll(directory, "rewrite plan");
   write(directory, `${BUILD}/test-spec.md`, "# v3\n");
   const result = facts(directory);
+  assert.equal(result.complete, true);
   assert.equal(result.afterG8.approvedAt, "2026-11-16T10:00:00+09:00");
   const spec = result.afterG8.files.find((file) => file.path === `${BUILD}/test-spec.md`);
   assert.deepEqual(spec?.commits.map((commit) => commit.subject), ["rewrite test-spec"]);
@@ -440,16 +452,49 @@ test("diff facts: G8 の承認後の test-spec.md と plan.md の書き換え（
   assert.equal(plan?.uncommitted, false);
 });
 
-test("diff facts: 基準は最後の G8 承認で、同じ秒のコミットは並ばない", (t) => {
+test("diff facts: 承認の記録と同じコミットに入った書き換え（G8 の差し戻しで直したもの）は並べない", (t) => {
   const directory = branched(t);
-  approveG8(directory, "2026-11-16T10:00:00+09:00", "2026-11-16T12:00:00+09:00");
-  for (const [index, at] of ["2026-11-16T11:00:00+09:00", "2026-11-16T12:00:00+09:00", "2026-11-16T12:00:01+09:00"].entries()) {
-    write(directory, `${BUILD}/test-spec.md`, `# v${index}\n`);
-    commitAll(directory, at, at);
-  }
+  write(directory, `${BUILD}/plan.md`, "# v1\n");
+  commitAll(directory, "plan");
+  write(directory, `${BUILD}/plan.md`, "# 差し戻しで直した\n");
+  approveG8(directory, "2026-11-16T10:00:00+09:00");
+  commitAll(directory, "G8 approved with fix");
+  assert.deepEqual(facts(directory).afterG8.files, []);
+});
+
+test("diff facts: 基準は最後の G8 承認で、日時ではなく履歴の前後で決める（rebase で日時が変わっても前を後と数えない）", (t) => {
+  const directory = branched(t);
+  approveG8(directory, "2026-11-16T10:00:00+09:00");
+  commitAll(directory, "first G8");
+  write(directory, `${BUILD}/test-spec.md`, "# before second\n");
+  // 2回目の承認より前のコミットだが、コミット日時は後（rebase で書き換わった状態）
+  commitAll(directory, "between", "2030-01-01T00:00:00+09:00");
+  approveG8(directory, "2026-11-16T12:00:00+09:00");
+  commitAll(directory, "second G8", "2030-01-01T00:00:01+09:00");
+  write(directory, `${BUILD}/test-spec.md`, "# after\n");
+  commitAll(directory, "after", "2020-01-01T00:00:00+09:00");
   const result = facts(directory);
   assert.equal(result.afterG8.approvedAt, "2026-11-16T12:00:00+09:00");
-  assert.deepEqual(result.afterG8.files[0]?.commits.map((commit) => commit.subject), ["2026-11-16T12:00:01+09:00"]);
+  assert.deepEqual(result.afterG8.files[0]?.commits.map((commit) => commit.subject), ["after"]);
+});
+
+test("diff facts: G8 の承認の記録が未コミットなら、判定できないことを注意に出す", (t) => {
+  const directory = branched(t);
+  approveG8(directory, "2026-11-16T10:00:00+09:00");
+  write(directory, `${BUILD}/plan.md`, "# 直した\n");
+  const result = facts(directory);
+  assert.deepEqual(result.afterG8.files, []);
+  assert.equal(result.complete, false);
+  assert.match(result.notices.join("\n"), /まだコミットされていない/);
+});
+
+test("diff facts: 利用者の diff.mnemonicPrefix に左右されずにパスを読む", (t) => {
+  const directory = branched(t);
+  git(directory, ["config", "diff.mnemonicPrefix", "true"]);
+  git(directory, ["config", "diff.noprefix", "true"]);
+  write(directory, "tests/keep.test.ts", 'it.skip("keeps", () => {\n  assert.equal(1, 1);\n});\n');
+  const result = facts(directory);
+  assert.deepEqual(result.addedSkips.map((fact) => fact.path), ["tests/keep.test.ts"]);
 });
 
 test("diff facts: G8 の承認記録が無ければ書き換えを並べない", (t) => {
@@ -468,7 +513,17 @@ test("diff facts: 基準を解決できないときは notices に出して止�
   write(directory, "src/a.ts", "export const a = 2;\n");
   const result = facts(directory);
   assert.ok(result.notices.length >= 1);
+  assert.equal(result.complete, false);
   assert.deepEqual([result.files, result.deletedTests, result.addedSkips], [[], [], []]);
+});
+
+test("diff facts: マージ先を決められないリポジトリでも終了コード 0 で、注意に理由を出す", (t) => {
+  const directory = branched(t);
+  const config = join(directory, ".hikyaku.config");
+  writeFileSync(config, readFileSync(config, "utf8").replace('base_branch = "main"\n', ""));
+  const result = facts(directory);
+  assert.equal(result.complete, false);
+  assert.match(result.notices.join("\n"), /マージ先|基準/);
 });
 
 test("diff facts --format pr: agreement.md の返した理由を並べ、無ければその旨を出す", (t) => {

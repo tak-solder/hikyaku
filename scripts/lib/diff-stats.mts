@@ -58,6 +58,7 @@ export const DEFAULT_DIFF_TESTS: string[] = [
 export const DEFAULT_TEST_DECLARATIONS: string[] = [
   // JS / TS（node:test・Jest・Vitest・Mocha）
   "it(", "test(", "describe(", "it.only(", "test.only(",
+  "it.each(", "test.each(", "describe.each(", "test.concurrent(", "it.concurrent(",
   // Python
   "def test_", "class Test",
   // Go
@@ -67,18 +68,19 @@ export const DEFAULT_TEST_DECLARATIONS: string[] = [
   // Java / Kotlin（JUnit）・C#
   "@Test", "@ParameterizedTest", "[Test]", "[Fact]", "[TestMethod]",
   // Rust
-  "#[test]",
+  "#[test]", "#[tokio::test", "#[rstest",
   // PHP（PHPUnit）
   "public function test",
 ];
 
 export const DEFAULT_SKIP_MARKERS: string[] = [
-  // JS / TS
-  ".skip(", ".todo(", "xit(", "xdescribe(", "xtest(", "{ skip:", "{ todo:", "t.skip(", "t.todo(",
+  // JS / TS。.only・fit・fdescribe は、ほかのテストを走らせなくする（絞り込み）のでスキップと同じく並べる
+  ".skip(", ".skipIf(", ".todo(", "xit(", "xdescribe(", "xtest(", "{ skip:", "{ todo:", "t.skip(", "t.todo(",
+  ".only(", "fit(", "fdescribe(", "ftest(",
   // Python
   "@pytest.mark.skip", "@pytest.mark.xfail", "@unittest.skip", "pytest.skip(", "self.skipTest(",
   // Go
-  "t.Skip(", "t.SkipNow(", "b.Skip(",
+  "t.Skip(", "t.Skipf(", "t.SkipNow(", "b.Skip(", "b.Skipf(",
   // Ruby
   "skip(", "skip \"", "skip '", "pending \"", "pending '", "xit \"", "xit '",
   // Java / Kotlin・C#

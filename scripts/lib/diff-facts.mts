@@ -19,6 +19,7 @@ import { join, relative } from "node:path";
 import type { ResolvedConfig } from "./config.mts";
 import { classifyPath, findMarker, type DiffPatterns, type FileKind } from "./diff-stats.mts";
 import {
+  commitIntroducing,
   commitsTouchingSince,
   hasUncommittedChange,
   mergeBaseOf,
@@ -355,6 +356,11 @@ export interface AfterApproval {
 
 export interface DiffFacts extends MarkerFacts {
   phase: string;
+  /**
+   * 差分を最後まで調べられたか。false なら、空の項目は「無かった」ではなく「調べられなかった」
+   * （基準を解決できない・git が失敗した）。PR の節で「該当なし」と書かない
+   */
+  complete: boolean;
   base: { name: string; ref: string | undefined; mergeBase: string | undefined };
   files: FactFile[];
   deletedTestFiles: DeletedTestFile[];
@@ -373,12 +379,16 @@ export interface DiffFactsInput {
   buildDirectory: string;
   /** サイクルのディレクトリ（サイクルの .hikyaku.config の場所） */
   cycleDirectory: string;
+  /** PR のマージ先。解決できなかったときは name に理由の要約、ref に undefined */
   base: { name: string; ref: string | undefined };
+  /** 呼び出し元で分かった注意（マージ先を決められなかった理由など） */
+  notices?: string[];
 }
 
 function emptyFacts(input: DiffFactsInput, mergeBase: string | undefined, notices: string[]): DiffFacts {
   return {
     phase: input.phase,
+    complete: false,
     base: { ...input.base, mergeBase },
     files: [],
     deletedTests: [],
@@ -416,6 +426,43 @@ function untrackedHunks(repoRoot: string, path: string): FileHunks {
   }
 }
 
+/**
+ * G8 の承認より後の plan.md・test-spec.md の書き換え。
+ *
+ * 「後」は日時ではなく履歴で決める。承認の記録（progress.jsonl の at）を初めて含んだコミットを境に、
+ * それより後のコミットと未コミットの変更を並べる。承認の記録と同じコミットに入った書き換え
+ * （G8 の差し戻しで直して、承認と一緒にコミットしたもの）は承認前の変更なので並べない。
+ * rebase でコミット日時が書き換わっても前後は変わらない
+ */
+async function afterApproval(
+  repoRoot: string,
+  buildDirectory: string,
+  buildRelative: string,
+  notices: string[],
+): Promise<DiffFacts["afterG8"]> {
+  const approvedAt = lastG8Approval(buildDirectory, notices);
+  if (approvedAt === undefined) return { approvedAt, files: [] };
+  const recorded = await commitIntroducing(repoRoot, `${buildRelative}/progress.jsonl`, approvedAt);
+  if (recorded === undefined) {
+    notices.push("progress.jsonl の履歴を読めないので、G8 の承認後の書き換えを並べられません");
+    return { approvedAt, files: [] };
+  }
+  if (recorded === null) {
+    notices.push("G8 の承認の記録がまだコミットされていないので、承認後の書き換えを判定できません（承認の記録をコミットしてから取り直してください）");
+    return { approvedAt, files: [] };
+  }
+  const files: AfterApproval[] = [];
+  for (const name of ["test-spec.md", "plan.md"]) {
+    const path = `${buildRelative}/${name}`;
+    const commits = await commitsTouchingSince(repoRoot, path, recorded);
+    if (commits === undefined) notices.push(`${path} の履歴を読めません`);
+    const uncommitted = await hasUncommittedChange(repoRoot, path);
+    if (uncommitted === undefined) notices.push(`${path} の未コミットの変更を確かめられません`);
+    if ((commits?.length ?? 0) > 0 || uncommitted === true) files.push({ path, commits: commits ?? [], uncommitted: uncommitted === true });
+  }
+  return { approvedAt, files };
+}
+
 function lastG8Approval(buildDirectory: string, notices: string[]): string | undefined {
   try {
     return readProgress(buildDirectory).findLast((event) => event.skill === "builder" && event.step === "G8" && event.result === "approved")?.at;
@@ -428,9 +475,9 @@ function lastG8Approval(buildDirectory: string, notices: string[]): string | und
 export async function collectDiffFacts(input: DiffFactsInput): Promise<DiffFacts> {
   const { config } = input;
   const repoRoot = config.repoRoot;
-  const notices: string[] = [];
+  const notices: string[] = [...(input.notices ?? [])];
   if (input.base.ref === undefined) {
-    notices.push(`差分の基準（${input.base.name}）をローカルで解決できません。fetch してから実行し直してください`);
+    if (notices.length === 0) notices.push(`差分の基準（${input.base.name}）をローカルで解決できません。fetch してから実行し直してください`);
     return emptyFacts(input, undefined, notices);
   }
   const mergeBase = await mergeBaseOf(repoRoot, input.base.ref);
@@ -443,13 +490,28 @@ export async function collectDiffFacts(input: DiffFactsInput): Promise<DiffFacts
   const excluded = BUILD_ARTIFACTS.map((name) => `${buildRelative}/${name}`);
   const patterns = config.diff;
 
-  const entries = await nameStatus(repoRoot, mergeBase, excluded);
-  const diff = await unifiedDiff(repoRoot, mergeBase, excluded);
-  if (entries === undefined || diff === undefined) {
-    notices.push("git diff を実行できませんでした");
+  const [entries, listedUntracked] = await Promise.all([nameStatus(repoRoot, mergeBase, excluded), untrackedFiles(repoRoot, excluded)]);
+  if (entries === undefined) {
+    notices.push("git diff --name-status を実行できませんでした");
     return emptyFacts(input, mergeBase, notices);
   }
-  const untracked = await untrackedFiles(repoRoot, excluded);
+  let complete = true;
+  if (listedUntracked === undefined) {
+    complete = false;
+    notices.push("未追跡のファイルを列挙できなかったので、未追跡のファイルは調べていません");
+  }
+  const untracked = listedUntracked ?? [];
+
+  // 印を見るのはテストファイルだけなので、行の差分もテストファイルに絞って取る
+  // （大きなロックファイルや生成コードで git diff が上限を超え、事実ごと失わないように）
+  const testPaths = entries
+    .filter((entry) => entry.status !== "D" && classifyPath(patterns, entry.path) === "test")
+    .flatMap((entry) => (entry.from === undefined ? [entry.path] : [entry.from, entry.path]));
+  const diff = await unifiedDiff(repoRoot, mergeBase, testPaths);
+  if (diff === undefined) {
+    complete = false;
+    notices.push("テストファイルの git diff を実行できなかったので、テストの宣言・スキップ・アサーションの行は調べていません");
+  }
 
   const files: FactFile[] = entries.map((entry) => ({
     status: entry.status,
@@ -467,7 +529,7 @@ export async function collectDiffFacts(input: DiffFactsInput): Promise<DiffFacts
     }
   }
 
-  const hunks = [...parseUnifiedDiff(diff), ...untracked.map((path) => untrackedHunks(repoRoot, path))];
+  const hunks = [...parseUnifiedDiff(diff ?? ""), ...untracked.map((path) => untrackedHunks(repoRoot, path))];
   // 削除したファイルは、ファイルの削除そのものを事実にする（宣言を1行ずつ並べ直さない）
   const markerFacts = collectMarkerFacts(hunks, patterns, new Set(deletedTestFiles.filter((file) => file.to === undefined).map((file) => file.path)));
 
@@ -476,7 +538,8 @@ export async function collectDiffFacts(input: DiffFactsInput): Promise<DiffFacts
     const path = relative(repoRoot, absolute);
     const before = await readFileAtRef(repoRoot, mergeBase, path);
     if (before.state === "unreadable") {
-      notices.push(`基準の ${path} を読めません: ${before.unavailable ?? "理由不明"}`);
+      complete = false;
+      notices.push(`基準の ${path} を読めないので、設定の宣言の変更は調べていません: ${before.unavailable ?? "理由不明"}`);
       continue;
     }
     configChanges.push(...declarationConfigChanges(path, before.content, readWorking(absolute)));
@@ -485,27 +548,20 @@ export async function collectDiffFacts(input: DiffFactsInput): Promise<DiffFacts
   const issuePath = `${buildRelative}/issue.md`;
   const issueChanged = files.some((file) => file.path === issuePath || file.from === issuePath);
 
-  const approvedAt = lastG8Approval(input.buildDirectory, notices);
-  const afterFiles: AfterApproval[] = [];
-  if (approvedAt !== undefined) {
-    for (const name of ["test-spec.md", "plan.md"]) {
-      const path = `${buildRelative}/${name}`;
-      const commits = await commitsTouchingSince(repoRoot, path, approvedAt);
-      if (commits === undefined) notices.push(`${path} の履歴を読めません`);
-      const uncommitted = await hasUncommittedChange(repoRoot, path);
-      if ((commits?.length ?? 0) > 0 || uncommitted) afterFiles.push({ path, commits: commits ?? [], uncommitted });
-    }
-  }
+  const noticesBefore = notices.length;
+  const afterG8 = await afterApproval(repoRoot, input.buildDirectory, buildRelative, notices);
+  if (notices.length > noticesBefore) complete = false;
 
   return {
     phase: input.phase,
+    complete,
     base: { ...input.base, mergeBase },
     files,
     ...markerFacts,
     deletedTestFiles,
     configChanges,
     issueChanged,
-    afterG8: { approvedAt, files: afterFiles },
+    afterG8,
     notices,
   };
 }
@@ -598,6 +654,7 @@ export function renderFactsText(facts: DiffFacts): string {
     `差分の事実: ${facts.phase}`,
     `基準: ${facts.base.ref ?? facts.base.name}${facts.base.mergeBase === undefined ? "" : `（merge-base ${facts.base.mergeBase.slice(0, 7)}）`} から作業ツリーまで`,
     "スコープの内外や、アサーションの変更が緩和かどうかは判定していません。",
+    ...(facts.complete ? [] : ["差分を最後まで調べられませんでした。「なし」は無かったことを意味しません（理由は「注意」）。"]),
     "",
     "## 変更ファイル",
     "",
@@ -611,7 +668,7 @@ export function renderFactsText(facts: DiffFacts): string {
   for (const section of factSections(facts)) {
     out.push("", `## ${section.title}`, "", ...(section.lines.length === 0 ? ["なし"] : section.lines));
   }
-  if (facts.afterG8.approvedAt === undefined) out.push("", "G8 の承認の記録が無いので、承認後の書き換えは並べていません。");
+  if (facts.complete && facts.afterG8.approvedAt === undefined) out.push("", "G8 の承認の記録が無いので、承認後の書き換えは並べていません。");
   if (facts.notices.length > 0) out.push("", "## 注意", "", ...facts.notices.map((notice) => `- ${notice}`));
   return out.join("\n");
 }
@@ -625,7 +682,9 @@ export function renderFactsPr(facts: DiffFacts, agreement: string | undefined): 
   const out = ["## 差分の事実と合意の突き合わせ", ""];
   out.push(`スクリプトが差分から並べた事実です。緩和やスコープの内外は判定していません（全件は \`hikyaku diff facts ${facts.phase}\`）。`);
   const sections = factSections(facts).filter((section) => section.lines.length > 0);
-  if (sections.length === 0) {
+  if (!facts.complete) {
+    out.push("", "**差分を最後まで調べられませんでした。** 下に無い事実が無かったとは限りません（理由は「注意」）。");
+  } else if (sections.length === 0) {
     out.push("", "該当なし（テストの削除・スキップ・アサーションの変更・設定の宣言の変更・合意の文書の書き換えはありません）。");
   }
   for (const section of sections) {
