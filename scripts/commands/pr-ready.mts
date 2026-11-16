@@ -38,11 +38,13 @@ register({
       throw new HikyakuError("--for-merge は監督が architect / build-NN の PR を取り込むときだけ指定できます");
     }
     const dryRun = flagBoolean(args, "dry-run");
-    // 子では Ready にしないので、GitHub の状態を読む必要が無い（gh が使えない環境でも止めない）
+    // GitHub を読まない経路でも、pr は他の経路と同じく番号で返す（読めなければ渡された値のまま）
+    const number = /^#?(\d+)$|\/pull\/(\d+)/.exec(pr.trim());
+    const prNumber = number === null ? pr : Number(number[1] ?? number[2]);
+    // 子では Ready にしないので、GitHub の状態を読む必要が無い（gh が使えない環境でも止めない）。
+    // PR の存在と状態は、監督が取り込む直前の --for-merge と check-pr で確かめる
     if (child) {
-      // PR の存在と状態は確かめない（監督が取り込む直前の --for-merge と check-pr で確かめる）。pr は他の経路と同じく番号で返す
-      const number = /(\d+)\/?$/.exec(pr.trim())?.[1];
-      emit({ pr: number === undefined ? pr : Number(number), ready: false, applied: true, reason: "conductor-child", dryRun }, () => "Draft のまま監督へ渡します");
+      emit({ pr: prNumber, ready: false, applied: true, reason: "conductor-child", dryRun }, () => "Draft のまま監督へ渡します");
       return;
     }
     const retry = `hikyaku pr ready ${phase} ${cycle ?? ""} --pr ${shellQuote(pr)}${forMerge ? " --for-merge" : ""}`;
@@ -56,7 +58,7 @@ register({
       }
       const manual = `PR ${pr} は Draft のままです。gh pr ready ${shellQuote(pr)} を実行するか、GitHub の PR の画面で Ready for review にしてください。`;
       emit(
-        { pr, ready: false, applied: false, reason: failure.reason, stage: failure.stage, error: failure.error, manual, dryRun },
+        { pr: prNumber, ready: false, applied: false, reason: failure.reason, stage: failure.stage, error: failure.error, manual, dryRun },
         () => [`Ready への切り替えをできませんでした（${failure.stage}: ${failure.error}）。`, manual].join("\n"),
       );
     };

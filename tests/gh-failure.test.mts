@@ -14,5 +14,12 @@ test("ghFailure: gh の設定ファイルの ENOENT などは gh-failed（gh 自
   const config = Object.assign(new Error("Command failed: gh pr view 7\nopen /home/u/.config/gh/hosts.yml: ENOENT"), { code: 1 });
   const failure = ghFailure("gh pr view", config);
   assert.equal(failure.reason, "gh-failed");
-  assert.equal(failure.error, "Command failed: gh pr view 7");
+  assert.equal(failure.error, "open /home/u/.config/gh/hosts.yml: ENOENT");
+});
+
+test("ghFailure: 理由は stderr の1行目から取る（gh auth login を促す文面がユーザーに届く）", () => {
+  const auth = Object.assign(new Error("Command failed: gh pr view 7 --json number"), {
+    code: 4, stderr: "To get started with GitHub CLI, please run:  gh auth login\n",
+  });
+  assert.equal(ghFailure("gh pr view", auth).error, "To get started with GitHub CLI, please run:  gh auth login");
 });

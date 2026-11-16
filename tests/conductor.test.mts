@@ -971,6 +971,7 @@ test("CLI: pr request-reviewers は gh api graphql の失敗も止めずに stag
   assert.equal(result.status, 0, result.stderr);
   const output = JSON.parse(result.stdout);
   assert.deepEqual([output.applied, output.reason, output.stage], [false, "gh-failed", "gh api graphql"]);
+  assert.match(output.manual, /^GitHub の PR #7 の画面で[^\n]*\n {2}alice$/, "マージ先が分かっていれば一覧は1つ");
   assert.equal(gh.calls().some((call) => call.startsWith("pr edit")), false);
 });
 

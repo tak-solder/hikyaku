@@ -20,7 +20,7 @@ export interface EscalationCheck {
 }
 
 /** 見出し（# 〜 ######）。名前を含む見出しを節の始まりと読む（「問題を変える選択肢」も選択肢） */
-const HEADING = /^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$/;
+const HEADING = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
 /**
  * 行頭のラベル（`試したこと:` / `**推奨**：`）。コロンの後の同じ行の本文も中身。リストの項目（`- 推奨: …`）は
  * ほかの節の中身として読み、節を切り替えない
@@ -31,7 +31,8 @@ const ITEM = /^\s{0,1}(?:(?:[-*+]|\d+[.)])\s+|・\s*)(.*)$/;
 const LOSS = /失うもの\s*[:：]/;
 /** テンプレートの置き場所の印（（…））。埋めずに出した報告を通さない */
 const PLACEHOLDER_GROUP = /（[^（）]*）/g;
-const MARKER = /^\s*(?:[-*+・]|\d+[.)])?\s*/;
+/** リストの印と、テンプレートの項目のラベル（`A:`） */
+const MARKER = /^\s*(?:[-*+・]|\d+[.)])?\s*(?:[A-Za-z][:：]\s*)?/;
 
 /** 置き場所の印とリストの印を除いた本文が空か */
 function blank(text: string): boolean {
@@ -57,18 +58,28 @@ function sectionOfLabel(name: string): SectionKey {
 function splitSections(text: string): Map<SectionKey, string[]> {
   const sections = new Map<SectionKey, string[]>();
   let current: string[] | undefined;
+  // 節を開いた見出しの深さ。ラベルで開いた節は 0（どの見出しでも閉じる）
+  let level = 0;
   for (const line of text.replace(/\r\n?/g, "\n").split("\n")) {
     const heading = HEADING.exec(line);
     if (heading !== null) {
-      const key = sectionOfHeading(heading[1] ?? "");
+      const depth = (heading[1] ?? "#").length;
+      const key = sectionOfHeading(heading[2] ?? "");
+      // 節の中の小見出し（`### A: スコープを削る`）は、その節の項目として読む
+      if (key === undefined && current !== undefined && level > 0 && depth > level) {
+        current.push(`- ${heading[2] ?? ""}`);
+        continue;
+      }
       current = key === undefined ? undefined : sections.get(key) ?? [];
       if (key !== undefined && current !== undefined) sections.set(key, current);
+      level = depth;
       continue;
     }
     const label = LABEL.exec(line);
     if (label !== null) {
       const key = sectionOfLabel(label[1] ?? "");
       current = sections.get(key) ?? [];
+      level = 0;
       sections.set(key, current);
       if ((label[2] ?? "").trim() !== "") current.push(label[2] ?? "");
       continue;

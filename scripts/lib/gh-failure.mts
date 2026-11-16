@@ -22,7 +22,10 @@ export function ghFailure(stage: string, error: unknown): GhFailure {
   // 包んだエラー（HikyakuError）は hint に gh の元のエラーを持つので、そちらを理由に出す
   const cause = typeof hint === "string" && hint.trim() !== "" ? hint : message;
   const unavailable = code === "ENOENT" || /\bspawn gh ENOENT\b/.test(`${message}\n${cause}`);
-  return { reason: unavailable ? "gh-unavailable" : "gh-failed", stage, error: firstLine(cause) };
+  // execFile のエラーの1行目は「Command failed: gh …」で、原因（gh auth login を促すなど）は stderr にある
+  const stderr = typeof error === "object" && error !== null ? (error as { stderr?: unknown }).stderr : undefined;
+  const detail = typeof stderr === "string" && stderr.trim() !== "" ? stderr : cause.replace(/^Command failed:[^\n]*\n?/, "");
+  return { reason: unavailable ? "gh-unavailable" : "gh-failed", stage, error: firstLine(detail.trim() === "" ? cause : detail) };
 }
 
 function firstLine(message: string): string {

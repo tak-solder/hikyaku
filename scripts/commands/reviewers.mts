@@ -60,6 +60,9 @@ register({
       phaseReviewers: config.conductor.phaseReviewers,
     };
 
+    const names = (list: unknown): string[] =>
+      (Array.isArray(list) ? list : []).map(reviewerLogin).filter((name): name is string => name !== undefined);
+
     const decided = planWithoutPr(settings);
     if (decided !== undefined) {
       emitPlan({ phase, pr: null, base: null, dryRun, requested: false, applied: true, ...decided });
@@ -71,7 +74,7 @@ register({
       const target = number === undefined ? `PR ${pr}` : `PR #${number}`;
       const lists =
         plan !== undefined
-          ? [`${plan.request.join(", ")}`]
+          ? [plan.request.join(", ") || "（新しく依頼するレビュアーはいません）"]
           : conductorBranch !== undefined
             ? [
                 // conductor ブランチ向けに [pr] reviewers を依頼すると、監督の取り込みがレビュー待ちで止まる
@@ -111,12 +114,10 @@ register({
     try {
       graphql = await fetchPrGraphql(config.repoRoot, state.number);
     } catch (error) {
-      fail(ghFailure("gh api graphql", error), undefined, state.number);
+      // マージ先は分かっているので、依頼済みを除けないだけの一覧を示す
+      fail(ghFailure("gh api graphql", error), planReviewers({ ...settings, baseRefName: state.baseRefName, author: state.author, requested: [], reviewed: names(state.latestReviews) }), state.number);
       return;
     }
-
-    const names = (list: unknown): string[] =>
-      (Array.isArray(list) ? list : []).map(reviewerLogin).filter((name): name is string => name !== undefined);
 
     const plan = planReviewers({
       ...settings,

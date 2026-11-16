@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { checkEscalation, describeEscalationProblems } from "../scripts/lib/escalation.mts";
+import { stopReason } from "../scripts/lib/steps/hook.mts";
 import { ESCALATION_BODY } from "./helpers.mts";
 
 test("checkEscalation: 見出しの形で3つの節がそろっていれば通る", () => {
@@ -77,6 +78,23 @@ test("checkEscalation: 見出しは節の名前で終わるものだけを読む
 test("checkEscalation: 「・」の項目も1件ずつ数える", () => {
   const text = "## 試したこと\n- 直した\n## 選択肢\n・A: 別案 失うもの: X\n・B: やめる\n## 推奨\nA";
   assert.deepEqual(checkEscalation(text).problems, ["「選択肢」の2件目に「失うもの:」がありません"]);
+});
+
+test("checkEscalation: 選択肢の節の小見出しは項目として読む", () => {
+  const text = "## 試したこと\n- 直した\n## 問題を変える選択肢\n### A: スコープを削る\n失うもの: US-3\n### B: やめる\n失うもの: 機能\n## 推奨\nA";
+  assert.deepEqual(checkEscalation(text).problems, []);
+});
+
+test("checkEscalation: テンプレートの「A:」だけを残した選択肢は空とみなす", () => {
+  const text = "## 試したこと\n- 直した\n## 選択肢\n- A: （別のアプローチ） 失うもの: 時間\n## 推奨\nA";
+  assert.deepEqual(checkEscalation(text).problems, ["「選択肢」の1件目の選択肢が空です"]);
+});
+
+test("Stop フック: 欠けた blocked で終えようとしたら、続きではなく欠けた節の書き足しを促す", () => {
+  const reason = stopReason({ session_id: "s", stop_hook_active: false, last_assistant_message: "<hikyaku-blocked>\n止まります\n</hikyaku-blocked>" });
+  assert.match(reason ?? "", /行き詰まりの報告に欠けがあります/);
+  assert.match(reason ?? "", /出し直して終えてください/);
+  assert.equal(stopReason({ session_id: "s", stop_hook_active: true, last_assistant_message: "<hikyaku-blocked>\n止まります\n</hikyaku-blocked>" }), undefined);
 });
 
 test("describeEscalationProblems: 欠けと書き直しの案内を複数行で返す", () => {

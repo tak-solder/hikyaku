@@ -40,8 +40,12 @@ export function stopReason(input: StopInput): string | undefined {
   if (input.stop_hook_active === true) return undefined;
   if (typeof input.session_id !== "string" || input.session_id === "") return undefined;
   if (typeof input.last_assistant_message === "string") {
-    const outcome = parseFinalText(input.last_assistant_message).outcome;
-    if (outcome === "gate" || outcome === "done" || outcome === "blocked") return undefined;
+    const parsed = parseFinalText(input.last_assistant_message);
+    if (parsed.outcome === "gate" || parsed.outcome === "done" || parsed.outcome === "blocked") return undefined;
+    // blocked を出したが行き詰まりの報告が欠けている。続きを促さず、欠けた節を書き足すよう返す（1回だけ）
+    if (parsed.outcome === "violation" && /<hikyaku-blocked>/.test(input.last_assistant_message) && /行き詰まりの報告/.test(parsed.reason ?? "")) {
+      return `${parsed.reason}\n欠けた節を書き足した blocked を出し直して終えてください。`;
+    }
   }
 
   const from = typeof input.cwd === "string" && input.cwd !== "" ? input.cwd : process.cwd();
