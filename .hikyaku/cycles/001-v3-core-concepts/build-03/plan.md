@@ -194,10 +194,10 @@ hikyaku ledger show <id> [<cycle>] [--json] # 事項と決定の全欄
 
 ## 実装ステップ
 
-- [ ] Step 1: `jsonl.mts` の切り出しと `progress.mts` の置き換え
-- [ ] Step 2: `ledger.mts`（steps/ の評価に依存する部分は引数で受け、循環 import を避ける。欄・語彙・前提の参照・参照先の検査・付け替えの禁止・読み書き・導出・期限）
-- [ ] Step 3: `commands/ledger.mts`（open / decide / list / show）と登録
-- [ ] Step 4: directive の notices（Stop フックの経路は読まない）、cycle status の節、navigator の1行
-- [ ] Step 5: テスト（unit・CLI 結合・2ブランチのマージ・回と外れたゲートの期限・壊れた decisions.jsonl があっても `step hook stop` と `step where` が失敗しない）
-- [ ] Step 6: docs・CHANGELOG
+- [x] Step 1: `jsonl.mts` の切り出しと `progress.mts` の置き換え
+- [x] Step 2: `ledger.mts`（steps/ の評価に依存する部分は引数で受け、循環 import を避ける。欄・語彙・前提の参照・参照先の検査・付け替えの禁止・読み書き・導出・期限）
+- [x] Step 3: `commands/ledger.mts`（open / decide / list / show）と登録
+- [x] Step 4: directive の notices（Stop フックの経路は読まない）、cycle status の節、navigator の1行
+- [x] Step 5: テスト（unit・CLI 結合・2ブランチのマージ・回と外れたゲートの期限・壊れた decisions.jsonl があっても `step hook stop` と `step where` が失敗しない）
+- [x] Step 6: docs・CHANGELOG
 - [ ] Step 7: ローカル検証（`npx tsc --noEmit`・`npm test`・`step lint`・`conductor lint`）

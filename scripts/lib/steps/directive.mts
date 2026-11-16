@@ -11,6 +11,7 @@ import { flagString, type ParsedArgs } from "../args.mts";
 import type { Phase } from "../branch.mts";
 import type { ContextBudget } from "../config.mts";
 import { HikyakuError } from "../errors.mts";
+import { cycleTimeline, noticeLines, readLedger, summarize } from "../ledger.mts";
 import { pluginRoot } from "../paths.mts";
 import { readProgress, type StepResult } from "../progress.mts";
 import { formatTokens, measureCurrent, type CurrentContext } from "../session.mts";
@@ -196,6 +197,22 @@ export interface BuildOptions {
    * 読みに行くので遅く、読む側のセッションを測ってしまうため
    */
   measure?: boolean;
+  /**
+   * 期限が来た・過ぎた未決事項（decisions.jsonl）を notices に載せるか（既定 true）。手順の位置だけを
+   * 読む側（Stop フック・step where・conductor parse）は読まない。壊れた記録でフックが止まらないように
+   */
+  notices?: boolean;
+}
+
+/** 期限が来た・過ぎた未決事項の行。自分の単位の現在のステップは engine の評価で上書きする */
+function ledgerNotices(opened: Opened, evaluation: Evaluation): string[] {
+  const cycle = opened.ctx.cycle;
+  if (cycle === undefined) return [];
+  const ledger = readLedger(cycle.directory);
+  if (ledger.items.length === 0) return [];
+  const timeline = cycleTimeline(cycle.directory, cycle.record.status === "active");
+  timeline.current.set(opened.phase, evaluation.current?.definition.id ?? null);
+  return noticeLines(summarize(ledger, timeline));
 }
 
 export function buildDirective(opened: Opened, evaluation: Evaluation, options: BuildOptions = {}): Directive {
@@ -223,6 +240,8 @@ export function buildDirective(opened: Opened, evaluation: Evaluation, options: 
       ].join("\n"),
     };
   }
+
+  if (options.notices !== false) base.notices.push(...ledgerNotices(opened, evaluation));
 
   const overruns = checkpointsOf(ctx.events, ctx.config.context).filter((entry) => entry.over);
   const current = evaluation.current;

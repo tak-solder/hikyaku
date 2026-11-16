@@ -97,6 +97,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step where {cycle} --json
 | `building` かつ `available` が空で `inProgress` あり | 他のセッションが作業中の可能性。スキルは勧めず、そのブランチ名を伝える |
 | `building` かつ `mergePending` のみ | PR のマージ待ち。人間の作業として伝える |
 | `completed` | `/hikyaku:close-cycle {cycle}` |
+| `cycle status` の `ledger.due` か `ledger.rejected` が1件以上 | 上の行で決めた次の一手に添えて、期限が来た・過ぎた未決事項と未解決の退けを、ID・「いつ」・決める人とともに伝える（スキルは変えない） |
 
 `step where` の作業単位とスキルの対応（`directive.unit` で引く）:
 
