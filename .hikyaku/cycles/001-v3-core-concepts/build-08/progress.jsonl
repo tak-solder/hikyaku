@@ -5,3 +5,5 @@
 {"at":"2026-11-16T22:04:52.171Z","skill":"builder","step":"G8","result":"approved","input":"承認（委任された判断・監督）。G8 前に実装を始めた逸脱は retrospective に記録し、作業ツリーの変更を plan と test-spec に照らして確かめ直す","context":230011,"session":"0c7899e1-7a3c-49e8-a558-284732df3fb6","hikyaku":"3.0.0"}
 {"at":"2026-11-16T22:19:11.865Z","skill":"builder","step":"implement","result":"done","context":288450,"session":"0c7899e1-7a3c-49e8-a558-284732df3fb6","hikyaku":"3.0.0"}
 {"at":"2026-11-16T22:23:42.182Z","skill":"builder","step":"verify","result":"done","context":290883,"session":"0c7899e1-7a3c-49e8-a558-284732df3fb6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T22:47:50.998Z","skill":"builder","step":"review","result":"done","context":347035,"session":"0c7899e1-7a3c-49e8-a558-284732df3fb6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T22:48:28.308Z","skill":"builder","step":"handoff","result":"done","context":354309,"session":"0c7899e1-7a3c-49e8-a558-284732df3fb6","hikyaku":"3.0.0"}
