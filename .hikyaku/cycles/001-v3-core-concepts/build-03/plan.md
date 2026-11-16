@@ -78,10 +78,14 @@ export function assertDecider(item: OpenRecord, by: Who, input: string | undefin
 
 /** 期限の判定 */
 export type Timing = "pending" | "due" | "overdue";
-export interface UnitPosition { events: ProgressEvent[]; current: string | undefined /* 現在のステップ。done なら undefined */; done: boolean }
+export interface UnitPosition { events: ProgressEvent[]; skill: SkillSteps; current: string | undefined /* 現在のステップ。done なら undefined */; done: boolean }
 export interface CycleTimeline { active: boolean; units: Map<string, UnitPosition> }
 export function timingOf(item: LedgerItem, timeline: CycleTimeline): Timing;
-/** サイクルの作業単位の位置を engine で評価して集める（cycle status 用。directive は自分の評価を上書きで渡す） */
+/**
+ * サイクルの作業単位の位置を progress.jsonl の記録から近似で集める（cycle status 用）。現在のステップは、最後の
+ * restart の後で完了したステップのうち定義の並びで最も後ろのものの次とする（engine で全単位を評価すると、G3・G4 の
+ * consent が git を読み、他の単位の評価の失敗で status が止まるため）。directive は自分の単位を engine の評価で上書きする
+ */
 export function cycleTimeline(config: ResolvedConfig, cycle: CycleContext): CycleTimeline;
 export interface LedgerSummary { due: Array<LedgerItem & { timing: "due" | "overdue" }>; open: LedgerItem[]; rejected: LedgerItem[] }
 export function summarize(items: LedgerItem[], timeline: CycleTimeline): LedgerSummary;
@@ -92,7 +96,7 @@ export function noticeLines(summary: LedgerSummary): string[];     // 1事項1�
   - `now`: 記録した時点から来ている（過ぎない。決まるまで示す）
   - `phase:<P>`: P の作業単位に記録があれば来た。P の `pr` が記録されたら過ぎた（`phase:close` は cycles.md の status が active でなくなったら過ぎた）。P は plan / architect / build-NN（tasklist に在る）/ close
   - `gate:<G>[@<unit>]`: unit の現在のステップが G か、G の記録があれば来た。G の最新の記録が `approved` なら過ぎた。@unit を省くと、G を持つスキルが固定のフェーズ（G1→plan、G2〜G4→architect、G10→close）ならそのフェーズ、そうでなければ（G6・G7・G8・P1・P2）事項を記録した作業単位。G を持つスキルがその unit を担わないならエラー
-  - `merge[@<unit>]`: unit の現在のステップが `pr` 以降（`pr`・`publication`・完了）なら来た。`pr` の記録（PR の URL）があれば過ぎた（PR を作るまでに決める機会を過ぎた。マージの前に決めるべき事項は、PR の本文とその後の `cycle status` に出続ける）。@unit 省略は記録した作業単位
+  - `merge[@<unit>]`: unit の現在のステップが、`consent`（build-06 が `pr` の直前に置く同意ゲート）か `pr` のうち先にあるもの以降（完了を含む）なら来た。`pr` の記録（PR の URL）があれば過ぎた（PR を作るまでに決める機会を過ぎた。マージの前に決めるべき事項は、PR の本文とその後の `cycle status` に出続ける）。@unit 省略は記録した作業単位
   - `close`: サイクル直下に close-cycle の記録があれば来た。cycles.md の status が active でなくなったら過ぎた
   - 参照先の実在: build-NN は tasklist.md に、patch はサイクルの patches/ に在ること。plan / architect / close は常に在る
 - **決まったか**: 最新の `decide`（`at` 順、同時刻はファイル順）。`decide` が無ければ未決。最新が `rejected` なら「未解決の退け」（`resolved` で消える）。期限の判定は未決の事項だけ
@@ -110,7 +114,7 @@ hikyaku ledger show <id> [<cycle>] [--json] # 事項と決定の全欄
 ```
 
 - `<phase>` は `requirePhase` + `scopeFor`。サイクルに属さない patch はエラー（スコープ外 Q13）
-- `--ask` は `conductor.mts` の `ASK_IDS` に在ること。`--harm` は 高 / 中
+- `--ask` は `conductor.mts` の `ASK_IDS` か、ゲートの ID（G1・P1・P2 は ASKS に無いため）に在ること。build-04 は異議の事項に `ask`（ゲートの ID）を入れ、「そのステップの高の異議」をこの欄で引く。`--harm` は 高 / 中
 - `open` の `--when` は `--who` と合わせて検査。`--premises` は書式の検査
 - `decide` は `assertDecider`、決めた作業単位のファイルに追記
 - 記録に `session`（CLAUDE_CODE_SESSION_ID）と `hikyaku`（版）を添える（progress と同じ）
