@@ -1,4 +1,4 @@
-/** ledger open / decide / object / list / show / consent-list / pr-section — 未決事項と決定の記録（decisions.jsonl） */
+/** ledger open / decide / object / list / show / consent-list / pr-section / return-draft —未決事項と決定の記録（decisions.jsonl） */
 
 import { flagString, type ParsedArgs } from "../lib/args.mts";
 import { ASK_IDS } from "../lib/conductor.mts";
@@ -608,6 +608,85 @@ register({
     const section = prSection(readLedger(opened.cycle.directory), cycleTimeline(opened.ctx.config, opened.cycle), opened.phase);
     const { markdown, ...ids } = section;
     emit({ phase: opened.phase, cycle: opened.cycle.name, section: markdown, ...ids }, () => markdown);
+  },
+});
+
+// ---------------------------------------------------------------------------
+// 退けからの差し戻しの下書き（build-17）
+
+/** 退けからの差し戻しの return.md の下書き。選択肢と推奨は置き場所のまま（LLM が書く。下書きのままでは検査を通らない） */
+export function returnDraft(phase: string, items: LedgerItem[]): string {
+  const rejection = (item: LedgerItem) => item.latest as DecideRecord;
+  return [
+    `# 差し戻し: ${phase}`,
+    "",
+    "## 何が崩れたか",
+    "",
+    `同意ゲートで、前のフェーズで記録した判断をユーザーが退けました（下の「退けた項目」）。${phase} の中では作り直せないので、architect に差し戻します。`,
+    "",
+    "## 退けた項目",
+    "",
+    ...items.map((item) => `- ${item.open.id}: ${item.open.summary}（記録: ${item.open.unit}${item.open.step === undefined ? "" : `・${item.open.step}`}）`),
+    "",
+    "## 試したこと",
+    "",
+    ...items.map((item) => {
+      const d = rejection(item);
+      return `- ${item.open.id} の受け入れ「${item.open.summary}」を同意ゲートで示し、ユーザーが退けた（答え「${d.input ?? "記録なし"}」）。拠り所: ${premisesText(item)}。失うもの: ${item.open.loses ?? "（なし）"}`;
+    }),
+    "",
+    "## 問題を変える選択肢",
+    "",
+    "- （退けた判断をどう決め直すか。スコープを削る・前提を変える・別の案を採る など） 失うもの: （この選択肢で失うもの）",
+    "",
+    "## 推奨",
+    "",
+    "（どの選択肢を勧めるかと理由）",
+    "",
+    "## このビルドの状態",
+    "",
+    "- 進んだところ: （plan.md / test-spec.md / 実装の有無。どこまでコミット済みか）",
+    "- 作り直しが要るもの: handoff.md（完了の印として読まれるので削除する）、（ほかに再設計の後に捨てるべき成果物）",
+    "",
+  ].join("\n");
+}
+
+register({
+  name: "ledger return-draft",
+  summary: "同意ゲートで前のフェーズの判断を退けたときの return.md の下書きを出す（書き込まない）",
+  usage: "hikyaku ledger return-draft <phase> [<cycle>] --items <id,...> [--json]",
+  details: [
+    "<phase> は build-NN だけです（return.md は builder が書きます）。",
+    "--items の事項は、最新の決定が rejected で、記録した作業単位が <phase> と別（前のフェーズ）のものだけを受け付けます。",
+    "同じ作業単位の事項は差し戻さず、同意ゲートの args.reworkFrom のステップを作り直します。",
+    "下書きは「退けた項目」「試したこと」（退けた受け入れ・拠り所・失うもの・ユーザーの答え）をそろえ、",
+    "「問題を変える選択肢」「推奨」は置き場所のままにします。下書きのままでは行き詰まりの報告の検査を通りません。",
+  ].join("\n"),
+  options: ["items"],
+  maxOperands: 2,
+  run: ({ args, operands }) => {
+    const opened = openUnit(args, operands[0], operands[1]);
+    if (!opened.phase.startsWith("build-")) {
+      throw new HikyakuError(`${opened.phase} では差し戻しの下書きを出せません`, "return.md は builder（build-NN）が書きます。");
+    }
+    const ids = required(args, "items").split(",").map((id) => id.trim()).filter((id) => id !== "");
+    if (ids.length === 0) throw new HikyakuError("--items に事項の ID を指定してください");
+    const ledger = readLedger(opened.cycle.directory);
+    const items = ids.map((id) => {
+      const item = findItem(ledger, id);
+      if (item.latest?.decision !== "rejected") {
+        throw new HikyakuError(`${id} の最新の決定が rejected ではありません`, "差し戻すのは、同意ゲートで退けた項目だけです。");
+      }
+      if (item.open.unit === opened.phase) {
+        throw new HikyakuError(
+          `${id} は ${opened.phase} で記録した事項です`,
+          "同じ作業単位の事項は差し戻さず、同意ゲートの args.reworkFrom のステップを作り直して done で報告し直してください。",
+        );
+      }
+      return item;
+    });
+    const draft = returnDraft(opened.phase, items);
+    emit({ phase: opened.phase, cycle: opened.cycle.name, items: ids, draft }, () => draft);
   },
 });
 

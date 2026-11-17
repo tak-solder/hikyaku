@@ -33,5 +33,28 @@ handoff.md はビルドの完了の印として読まれ、`tasklist done` は�
 `return.md` と、古い設計の上で書かれた plan.md / test-spec.md を削除する。そのあと builder を
 起動し直せば、`cycle status` が plan.md からの再開を返すので、Step 3 からやり直す。
 
+## 同意ゲートで前のフェーズの判断を退けたとき
+
+同意ゲート（`steps/consent.md`）でユーザーが退けた項目が前のフェーズで記録したもの（directive の `args.returns`）
+なら、このビルドでは作り直せないので architect に差し戻す。退けたのはユーザーなので、上の「方針の確認」
+（design-conflict の記録と delegation のゲート）は行わない。
+
+- [ ] 下書きを出す（書き込まない）。退けた項目と「試したこと」（退けた受け入れ・拠り所・失うもの・ユーザーの答え）がそろう
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger return-draft build-{NN} {cycle} --items <ID,...>
+```
+
+- [ ] 下書きを `cycles/{cycle}/return.md` に書き、「問題を変える選択肢」（各項目に `失うもの:`）と「推奨」を埋める。
+  「退けた項目」の節は消さない（architect が再設計で決め直す事項の ID）
+- [ ] `build-{NN}/handoff.md` を削除する。同意ゲートは handoff の後ろにあるので、古い設計の上で書いた handoff.md が
+  もうある。完了の印として読まれるため残さない（振り返りの記録は事実の記録なので残す）
+- [ ] コミット & push し、`/hikyaku:architect {cycle} build-{NN}` を案内して終了する（PR・`tasklist done` は行わない）
+
+再設計のあと builder を起動し直すと plan.md から作り直し、同意ゲートに戻る。退けた項目は、作り直しが済んだと
+ユーザーが認めて `resolved` を記録するまで、ゲートも PR も受け付けない。
+
+## 差し戻しの検出
+
 `return.md` を他のブランチやセッションから検出する仕組みは無い。差し戻しに気づくのは、
 差し戻しを受けたユーザーと、このブランチで動くスキルだけでよい。

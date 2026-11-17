@@ -92,9 +92,9 @@
 
 ## 実装ステップ
 
-- [ ] Step 1: `consent.mts` に `reworkStepOf`・`consentRejections` を足し、`consentProblem` と同意ゲートの `args` を改める
-- [ ] Step 2: `ledger return-draft` を足す
-- [ ] Step 3: テスト（戻り先の対応・同じ単位の作り直しで承認と pr が通る・前のフェーズは resolved まで止まる・未解決の退けが PR 本文と cycle status に出続ける・return-draft に選択肢と推奨を書けば restart --round return が通る）
-- [ ] Step 4: 指示文（consent.md 3つ・return.md・templates.md）
-- [ ] Step 5: docs・CHANGELOG
-- [ ] Step 6: `conductor lint`・`step lint`・`npx tsc --noEmit`・`npm test`
+- [x] Step 1: `consent.mts` に `reworkStepOf`・`consentRejections` を足し、`consentProblem` と同意ゲートの `args` を改める
+- [x] Step 2: `ledger return-draft` を足す
+- [x] Step 3: テスト（`tests/consent-rework.test.mts`。戻り先の対応・同じ単位の作り直しで承認と pr が通る・前のフェーズは resolved まで止まる・未解決の退けが PR 本文と cycle status に出続ける・return-draft に選択肢と推奨を書けば restart --round return が通る）
+- [x] Step 4: 指示文（consent.md 3つ・return.md・templates.md・patch の pr.md）
+- [x] Step 5: docs・CHANGELOG
+- [x] Step 6: `conductor lint`・`step lint`（`npm test` の中で実行。リポジトリの CLI は権限で直接実行できない）・`npx tsc --noEmit`・`npm test`
