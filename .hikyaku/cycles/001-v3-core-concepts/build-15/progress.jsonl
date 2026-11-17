@@ -5,3 +5,5 @@
 {"at":"2026-11-17T03:18:56.694Z","skill":"builder","step":"G8","result":"approved","input":"承認（実装に進む）。委任された判断（conductor の監督）。根拠は questions.md","context":183829,"session":"7ec5ef71-a134-4b24-b96e-f543aaa4c003","hikyaku":"3.0.0"}
 {"at":"2026-11-17T03:30:11.308Z","skill":"builder","step":"implement","result":"done","context":223206,"session":"7ec5ef71-a134-4b24-b96e-f543aaa4c003","hikyaku":"3.0.0"}
 {"at":"2026-11-17T03:35:57.635Z","skill":"builder","step":"verify","result":"done","context":224187,"session":"7ec5ef71-a134-4b24-b96e-f543aaa4c003","hikyaku":"3.0.0"}
+{"at":"2026-11-17T03:56:31.188Z","skill":"builder","step":"review","result":"done","context":262923,"session":"7ec5ef71-a134-4b24-b96e-f543aaa4c003","hikyaku":"3.0.0"}
+{"at":"2026-11-17T03:56:59.884Z","skill":"builder","step":"handoff","result":"done","context":266149,"session":"7ec5ef71-a134-4b24-b96e-f543aaa4c003","hikyaku":"3.0.0"}
