@@ -78,7 +78,9 @@ defers?: (ctx: StepContext) => DeferredRisk | undefined   // gate でないス�
 | 段階 | 予測ピーク |
 |------|------------|
 | architectフェーズ段階 | 430k |
-| builderフェーズ段階 | 435k（G6 で分割したあとの範囲。分割前は plan-review の指摘で 510k、最初の見積もりは 445k） |
+| builderフェーズ段階 | 390k（新しいセッションで test-spec から再開する前提。G6 で分割したあとの範囲。分割前は plan-review の指摘で 510k、最初の見積もりは 445k） |
+
+plan と分割の検討を行ったこのセッションは、plan-review（分割後）の時点で約 320k に達した。コードレビューの修正ループ（2ラウンド）を含めてこのまま実装まで続けると、約 460k（固定費 90k・読み込み 215k・実装 55k・テスト 45k・未知の領域 55k）になり split_above を超える。範囲をさらに分けてもこのセッションの消費は減らないので、build-06 と同じく、test-spec から新しいセッションで再開する前提で見積もった（分割後の plan-review の指摘）
 
 **読むファイル**
 
@@ -90,16 +92,16 @@ defers?: (ctx: StepContext) => DeferredRisk | undefined   // gate でないス�
 - `scripts/lib/deferred-consent.mts`（約 200 行）
 - `tests/deferred-consent.test.mts`（約 350 行）
 
-**builderフェーズ段階の内訳**（issue.md と同じ見積もり）
+**builderフェーズ段階の内訳**（新しいセッションで test-spec から再開する前提）
 
 | 成分 | 予測 | 根拠 |
 |------|------|------|
-| 固定費 | 90k | 標準ガイドの出発点 80k〜100k の中央（分割前のセッションで計測した開始時の固定分 59k に手順の進行分） |
-| 読み込み | 215k | 分割の検討までの実測 約 200k（design-delta 1・3節、ADR、依存ビルドの handoff、build-06 の分割前の plan、steps と commands と lib の該当ファイル）に、残り約 15k（tests の config・step-planner-close の該当部分、docs の workflow の plan・architect・reference/cli.md、CHANGELOG の [3.0.0]） |
+| 固定費 | 100k | 新しいセッションで test-spec から再開する前提。標準ガイドの出発点 90k に、残りの手順の進行分（test-spec・G8・実装・検証・コードレビュー2ラウンド・handoff・retrospective・pr）10k |
+| 読み込み | 140k | plan.md・issue.md・design-delta 1節・3節・ADR deferred-consent・approval-kind-in-step-definitions・risk-ceiling-table の該当節、build-02・06・12・15 の handoff、scripts/lib/config.mts（ResolvedConfig・loadConfig・finalize・assertCycleOverridable）・risk.mts（基準の宣言・strictest・effectiveDeclaration）・progress.mts・ledger.mts（OpenRecord・openItem・readUnitLedger）、steps/engine.mts・architect.mts・planner.mts・directive.mts（buildDirective）、commands/step.mts・config.mts、tests/helpers.mts・step-risk-gates.test.mts・config と step-planner-close の該当部分、skills の G1.md・options.md・design-delta.md、docs の config-file・profiles・workflow の plan・architect・reference/cli.md、CHANGELOG の [3.0.0] |
 | 実装 | 55k | 新規 lib/deferred-consent.mts（約 200 行）、config.mts の [consent]、progress.mts、step.mts（G1 の記録・defers と --loses・risk の自動記録・help）、engine.mts の defers と lint、architect.mts の G3・G4 の deferred と defers、risk.mts の ceilingAxes、ledger.mts の source 欄、directive の notices、config の出力、指示文 3つ、docs 5つ、CHANGELOG |
 | テスト | 45k | tests/deferred-consent.test.mts（一時 Git リポジトリの結合テスト、約 350 行）と既存テストの期待値の修正 |
-| 未知の領域 | 30k | step report の報告後の評価の模擬、merge-base のサイクル設定の読み出し、architect.mts の循環 import、npm test の修正ループ |
-| **予測ピーク** | **435k** | 狙いの帯（300k〜450k） |
+| 未知の領域 | 50k | step report の報告後の評価の模擬、merge-base のサイクル設定の読み出し、architect.mts の循環 import、npm test の修正ループ、コードレビューの修正ループ（2ラウンド） |
+| **予測ピーク** | **390k** | 狙いの帯（300k〜450k） |
 | ガイド | 標準 v2 | 03897ac0 |
 
 ## 実装ステップ

@@ -11,3 +11,4 @@
 {"at":"2026-11-17T06:52:31.003Z","skill":"build-manager","step":"G6","result":"approved","input":"承認（委任された判断・監督）: この分割で tasklist と issue.md を書き込み、build-07 の issue.md への追記も行う","context":344229,"session":"2699a422-6c09-4ad2-b7ef-22c08b5b7753","hikyaku":"3.0.0"}
 {"at":"2026-11-17T06:53:03.422Z","skill":"build-manager","step":"write","result":"done","context":349951,"session":"2699a422-6c09-4ad2-b7ef-22c08b5b7753","hikyaku":"3.0.0"}
 {"at":"2026-11-17T06:54:03.725Z","skill":"builder","step":"plan","result":"done","peak":435000,"context":362782,"session":"2699a422-6c09-4ad2-b7ef-22c08b5b7753","hikyaku":"3.0.0"}
+{"at":"2026-11-17T06:58:47.781Z","skill":"builder","step":"plan-review","result":"done","peak":390000,"context":369842,"session":"2699a422-6c09-4ad2-b7ef-22c08b5b7753","hikyaku":"3.0.0"}
