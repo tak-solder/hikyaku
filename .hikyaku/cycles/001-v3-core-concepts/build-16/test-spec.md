@@ -15,7 +15,7 @@
 - When: `loadConfig` でサイクル 001 の設定を解決する
 - Then: `ResolvedConfig.consent` が `{ deferred: true }` になる
 
-### loadConfig: `[consent]` を書かなければ undefined
+### loadConfig: `[consent]` を書かなければ `{ deferred: undefined }`
 - 対応: —
 - Given: ルートにもサイクル設定にも `[consent]` が無い
 - When: `loadConfig` でサイクル 001 の設定を解決する
@@ -45,11 +45,11 @@
 - When: `hikyaku config 001` を実行する
 - Then: 終了コード 1 で、stderr に `deferred` は真偽値である旨が出る
 
-### readConsent: merge-base のサイクル設定の読み出しでも同じ検査を使う
+### readConsent: merge-base のサイクル設定の不正な値は (b) を不成立にする
 - 対応: —
-- Given: `main` にコミットしたサイクル設定の `[consent]` が `deferred = 1`（真偽値でない）
-- When: 事後同意の有効の判定で (b) を評価する
-- Then: 例外で落ちず、(b) は不成立（`effective: false`）で、`reason` に基準のサイクル設定を読めない旨が入る
+- Given: 前提の宣言あり。`main` にコミットして origin へ push したサイクル設定の `[consent]` が `deferred = 1`（真偽値でない）。作業ブランチを `main` から切り、作業ツリーのサイクル設定は `deferred = true`。G1 の承認の記録は無い
+- When: `deferredConsent(config, cycleDirectory)` を呼ぶ
+- Then: 例外で落ちず、`requested: true`・`effective: false` で、`reason` に基準のサイクル設定を読めない旨（(b) が成立しない理由）が入る
 
 ## deferred-consent.mts（deferredConsent: 有効の判定）
 
@@ -91,15 +91,15 @@
 
 ### deferredConsent: 作業ツリーにだけ `merge_gate` を書いても有効にならない
 - 対応: US-20.3
-- Given: `main` のルート `[app]` には `merge_gate` が無く、作業ツリーのルート `[app]` にだけ `merge_gate = "user"` を足した（未コミット）。G1 の記録は true
+- Given: `main`（origin へ push 済み、`origin/HEAD → origin/main`）のルート `[app]` は 3 軸だけで `merge_gate` が無く、作業ツリーのルート `[app]` にだけ `merge_gate = "user"` を足した（未コミット）。サイクル設定に `[consent] deferred = true`。G1 の承認の記録は `deferredConsent: true`
 - When: `deferredConsent` を呼ぶ
-- Then: `effective: false`（`strictest` の論理積で `mergeGate` が undefined）
+- Then: `requested: true`・`effective: false` で、`reason` はマージがユーザーの関門である前提（`merge_gate`）が宣言に無い旨（`strictest` の論理積で `mergeGate` が undefined になり、merge_gate の段階で落ちる。G1 の記録の段階まで進まない）
 
 ### deferredConsent: 基準の宣言を読めない（incomplete）なら有効にならない
 - 対応: US-20.3
-- Given: origin を作らず、作業ツリーのルート `[app]` に `merge_gate = "user"` を書いた。サイクル設定に `deferred = true`、G1 の記録は true
+- Given: origin を作らず、作業ツリーのルート `[app]` に 3 軸と `merge_gate = "user"` を書いた。サイクル設定に `[consent] deferred = true`、G1 の承認の記録は `deferredConsent: true`
 - When: `deferredConsent` を呼ぶ
-- Then: `effective: false`、`reason` に基準の宣言を読めない旨が入る（作業ツリーの `merge_gate` だけで有効にしない）
+- Then: `requested: true`・`effective: false` で、`reason` は基準の宣言を読めない（`incomplete`）旨の1つだけ（作業ツリーの `merge_gate` だけで有効にしない）
 
 ### deferredConsent: conductor の子では有効にならない
 - 対応: US-20.1
@@ -115,63 +115,72 @@
 
 ### deferredConsent: G1 の後に作業ブランチで足した値は効かない
 - 対応: US-20.1
-- Given: 前提の宣言あり。サイクル設定に `[consent]` が無い状態で planner の G1 を approved で記録した（`deferredConsent: false`）。そのあと作業ブランチでサイクル設定に `deferred = true` を足してコミットした
+- Given: 前提の宣言あり（ルートに `[app] merge_gate = "user"`、`origin/main` にマージ済み）。サイクル設定に `[consent]` が無い状態で planner の G1 を approved で記録した（`deferredConsent: false`）。そのあと作業ブランチでサイクル設定に `[consent] deferred = true` を足してコミットした（`main` には無い）
 - When: `deferredConsent` を呼ぶ
-- Then: `requested: true`・`effective: false`
+- Then: `requested: true`・`effective: false` で、`reason` は G1 の記録にも merge-base のサイクル設定にも値が無い旨
+- 対照: 同じ状態でサイクル設定の変更を `main` にマージして origin へ push し、作業ブランチに取り込むと `effective: true` になる
 
 ### deferredConsent: 最後の G1 の記録だけを見る
 - 対応: —
-- Given: `planning/progress.jsonl` に planner G1 の approved が2件あり、1件目が `deferredConsent: true`、2件目（後）が `deferredConsent: false`。merge-base には `[consent]` が無い
+- Given: 前提の宣言あり（ルートに `[app] merge_gate = "user"`、`origin/main` にマージ済み）。サイクル設定に `[consent] deferred = true`。`planning/progress.jsonl` に planner G1 の approved が2件あり、1件目が `deferredConsent: true`、2件目（後）が `deferredConsent: false`。merge-base のサイクル設定には `[consent]` が無い
 - When: `deferredConsent` を呼ぶ
-- Then: `effective: false`
+- Then: `effective: false` で、`reason` は G1 の記録にも merge-base のサイクル設定にも値が無い旨
+- 対照: 2件目を `deferredConsent: true` に変えると `effective: true` になる
 
 ### deferredConsent: G1 の記録に欄が無い（従来の記録）なら (a) は不成立
 - 対応: —
-- Given: planner G1 の approved の記録に `deferredConsent` 欄が無い。サイクル設定は `deferred = true`、merge-base には無い
+- Given: 前提の宣言あり（ルートに `[app] merge_gate = "user"`、`origin/main` にマージ済み）。planner G1 の approved の記録に `deferredConsent` 欄が無い。サイクル設定は `[consent] deferred = true`、merge-base のサイクル設定には無い
 - When: `deferredConsent` を呼ぶ
-- Then: `effective: false`
+- Then: `effective: false` で、`reason` は G1 の記録にも merge-base のサイクル設定にも値が無い旨
 
 ### deferredConsent: スタックした前フェーズのブランチに入っているだけでは有効にならない
 - 対応: US-20.1
-- Given: 前提の宣言あり。`main` から切った前フェーズのブランチ `hikyaku/001/architect` にサイクル設定の `deferred = true` をコミットし（`main` には未マージ）、そこから `hikyaku/001/build-01` を切った。G1 の記録は無い
+- Given: 前提の宣言あり（ルートに `[app] merge_gate = "user"`、`origin/main` にマージ済み）。`main` から切った前フェーズのブランチ `hikyaku/001/architect` にサイクル設定の `[consent] deferred = true` をコミットし（`main` には未マージ）、そこから `hikyaku/001/build-01` を切った。G1 の承認の記録は無い
 - When: `hikyaku/001/build-01` で `deferredConsent` を呼ぶ
-- Then: `effective: false`（merge-base は `main` 上なので値が無い）
+- Then: `requested: true`・`effective: false` で、`reason` は merge-base のサイクル設定に値が無い旨（merge-base は `main` 上）
+- 対照: `hikyaku/001/architect` を `main` にマージして origin へ push し、build ブランチに取り込むと `effective: true` になる
 
 ### deferredConsent: conductor ブランチに入っているだけでは有効にならない
 - 対応: US-20.1
-- Given: conductor ブランチにだけサイクル設定の `deferred = true` をコミットし、そこから build ブランチを切った（`main` には無い）。G1 の記録は無い。`HIKYAKU_CONDUCTOR_CHILD` は未設定
+- Given: 前提の宣言あり（ルートに `[app] merge_gate = "user"`、`origin/main` にマージ済み）。`main` から切った conductor ブランチ `hikyaku/001/conductor` にだけサイクル設定の `[consent] deferred = true` をコミットし、そこから build ブランチを切った（`main` には無い）。G1 の承認の記録は無い。`HIKYAKU_CONDUCTOR_CHILD` は未設定
 - When: build ブランチで `deferredConsent` を呼ぶ
-- Then: `effective: false`
+- Then: `requested: true`・`effective: false` で、`reason` は merge-base のサイクル設定に値が無い旨
+- 対照: 同じ値を `main` にマージして origin へ push し、build ブランチに取り込むと `effective: true` になる
 
 ### deferredConsent: サイクル設定の base_branch を向け直しても有効にならない
 - 対応: US-20.1
-- Given: ブランチ `staging` にサイクル設定の `deferred = true` をコミットし origin へ push（`main` には無い）。作業ブランチは `staging` から切り、サイクル設定の `base_branch = "staging"` に向け直した。G1 の記録は無い
+- Given: 前提の宣言あり（ルートに `[app] merge_gate = "user"`、`origin/main` にマージ済み）。`main` から切ったブランチ `staging` にサイクル設定の `[consent] deferred = true` をコミットし origin へ push（`main` には無い）。作業ブランチは `staging` から切り、サイクル設定の `base_branch = "staging"` に向け直した。G1 の承認の記録は無い
 - When: `deferredConsent` を呼ぶ
-- Then: `effective: false`（デフォルトブランチ `main` の merge-base に値が無い。PR のマージ先 `staging` は使わない）
+- Then: `requested: true`・`effective: false` で、`reason` は merge-base のサイクル設定に値が無い旨（デフォルトブランチ `main` の merge-base に値が無い。PR のマージ先 `staging` は使わない）
+- 対照: `staging` を `main` にマージして origin へ push すると `effective: true` になる
 
 ### deferredConsent: デフォルトブランチと defaultBase の両方に値があるときだけ成立する
 - 対応: US-20.1
-- Given: ルート設定の `base_branch = "develop"`（defaultBase）。`develop` にはサイクル設定の `deferred = true` がマージ済みで、デフォルトブランチ `main` には無い。G1 の記録は無い
+- Given: 前提の宣言あり（ルートに `[app] merge_gate = "user"` を `main` と `develop` の両方にマージ済みで origin へ push）。ルート設定の `base_branch = "develop"`（defaultBase）。`develop` にはサイクル設定の `[consent] deferred = true` がマージ済みで、デフォルトブランチ `main` には無い。作業ツリーのサイクル設定も `deferred = true`。G1 の承認の記録は無い
 - When: `deferredConsent` を呼ぶ
-- Then: `effective: false`。続けて `main` にも同じ値をマージして push すると `effective: true` になる
+- Then: `requested: true`・`effective: false` で、`reason` は merge-base のサイクル設定に値が無い旨（`main` の基準）
+- 対照: 続けて `main` にも同じ値をマージして push すると `effective: true` になる
 
 ### deferredConsent: ローカルの ref だけに値があっても成立しない
 - 対応: US-20.1
-- Given: ローカルの `main` にサイクル設定の `deferred = true` をコミットしたが origin へ push していない（`origin/main` には無い）。作業ブランチをローカルの `main` から切った
+- Given: 前提の宣言あり（ルートに `[app] merge_gate = "user"`、`origin/main` にマージ済み）。ローカルの `main` にサイクル設定の `[consent] deferred = true` をコミットしたが origin へ push していない（`origin/main` には無い）。作業ブランチをローカルの `main` から切った。G1 の承認の記録は無い
 - When: `deferredConsent` を呼ぶ
-- Then: `effective: false`（`origin/main` の merge-base に値が無い）
+- Then: `requested: true`・`effective: false` で、`reason` は merge-base のサイクル設定に値が無い旨（`origin/main` の基準に値が無い）
+- 対照: ローカルの `main` を origin へ push すると `effective: true` になる
 
 ### deferredConsent: デフォルトブランチが分からなければ (b) は不成立
 - 対応: —
-- Given: origin を作らず、ローカルの `main` にサイクル設定の `deferred = true` と前提の宣言をコミットした。G1 の記録は無い
+- Given: 前提の宣言（ルートに `[app] merge_gate = "user"`）とサイクル設定の `[consent] deferred = true` を `main` にコミットし、bare の origin を作って push した。ルート設定の `base_branch = "main"`（defaultBase の基準から宣言を読めるので `incomplete` にはならない）。`git remote set-head` はせず、`origin/HEAD` が無い。G1 の承認の記録は無い
 - When: `deferredConsent` を呼ぶ
-- Then: `effective: false`、`reason` にベースブランチの値を確かめられない旨（基準を読めない旨）が入る
+- Then: `requested: true`・`effective: false` で、`reason` はデフォルトブランチ（origin/HEAD）が分からない旨の1つだけ
+- 対照: `git remote set-head origin main` を実行すると `effective: true` になる
 
 ### deferredConsent: 基準の ref が Hikyaku のブランチなら (b) は不成立
 - 対応: —
-- Given: ルート設定の `base_branch` が `hikyaku/001/architect`（Hikyaku のブランチ）で、その merge-base にはサイクル設定の `deferred = true` がある。G1 の記録は無い
+- Given: 前提の宣言あり（ルートに `[app] merge_gate = "user"`、`origin/main` にマージ済み）。ルート設定の `base_branch` が `hikyaku/001/architect`（Hikyaku のブランチ）で、`main` と `hikyaku/001/architect` の両方の merge-base にサイクル設定の `[consent] deferred = true` がある。G1 の承認の記録は無い
 - When: `deferredConsent` を呼ぶ
-- Then: `effective: false`（baselines の1つが `unavailable`）
+- Then: `requested: true`・`effective: false` で、`reason` は基準を読めない旨（baselines の1つが `unavailable`）
+- 対照: ルート設定の `base_branch` を `main` に戻すと `effective: true` になる
 
 ### deferredConsent: 結果をキャッシュする
 - 対応: —
@@ -219,9 +228,15 @@
 
 ### g1ConsentRecord: git を読めなければ false
 - 対応: —
-- Given: サイクルのディレクトリが Git リポジトリの外（または git が実行できない）で、サイクル設定は `deferred = true`
-- When: 呼ぶ
+- Given: Git リポジトリでない一時ディレクトリにサイクル設定（`[consent] deferred = true`）を置き、その設定を読んだ `ResolvedConfig` を持つ
+- When: `g1ConsentRecord(config, そのディレクトリ, "2026-11-17T01:00:00Z")` を呼ぶ
 - Then: `value: false` と、git を読めない旨の `note`
+
+### g1ConsentRecord: presentedAfter が無ければ false
+- 対応: —
+- Given: サイクル設定の `[consent] deferred = true` をコミット済みで、未コミットの変更が無い
+- When: `g1ConsentRecord(config, dir, undefined)` を呼ぶ（G1 の直前に完了のステップの記録が無い）
+- Then: `value: false` と、提示の時刻が分からない旨の `note`（安全側）
 
 ## planner の G1（step next の args と step report の記録）
 
@@ -246,8 +261,8 @@
 ### step report: G1 の値は LLM の引数では受け取らない
 - 対応: US-20.1
 - Given: サイクル設定に `[consent]` が無い状態で G1 にいる
-- When: `step report planner G1 001 --result approved --input OK --deferred-consent true` のように値を渡そうとする
-- Then: 未知のオプションとしてエラーになるか、渡しても記録は `false`（設定から読んだ値だけが残る）
+- When: `step report planner G1 001 --result approved --input OK --deferred-consent true` を実行する
+- Then: 終了コード 1 で、stderr に `不明なオプションです: --deferred-consent` が出る（registry の既存の検査）。`planning/progress.jsonl` に G1 の行は追記されない
 
 ### step report: G1 の approved 以外では deferredConsent を書かない
 - 対応: —
@@ -293,7 +308,7 @@
 - 対応: US-10.5
 - Given: 前の シナリオと同じ状態で profile を `standard`（確認のゲートを省かない）にした
 - When: options の done（`--loses` 付き）の後に `step next architect 001 --json` を実行する
-- Then: G3 の directive の `approval` が `consent` ではなく、`approvalReason` が null
+- Then: G3 の directive の `approval` が `"confirm"` で、`approvalReason` が null
 
 ### G3: 上限が「なし」なら最上段の軸を前提に入れる
 - 対応: US-20.4
@@ -312,6 +327,12 @@
 - Given: 重い領域 auth を宣言し、事後同意が有効
 - When: options を `--harm 高 --paths src/auth/** --loses "..."` で done にする
 - Then: `premises` が `app.exposure` と `area:auth` の両方を含み、G3 は deferred（止まらない）
+
+### G3: 重い領域だけに当たれば、前提は `area:<name>` だけ
+- 対応: US-20.4
+- Given: 重い領域 auth を宣言し（上限「中」）、事後同意が有効
+- When: options を `--harm 中 --paths src/auth/** --loses "..."` で done にする
+- Then: 事項の `premises` が `["area:auth"]` だけ（害は上限以内なので `app.<axis>` を含まない）で、G3 は止まらずに `adr` へ進む
 
 ### G3: 上限以内なら defers は値を返さず、--loses は要らない
 - 対応: —
@@ -391,7 +412,7 @@
 - 対応: US-20.2
 - Given: 事後同意が有効。`[boundaries]` に外との境界 `src/api/public/**` を宣言し、design-delta.md がそのパスに触れ、さらに申告に無い重い領域 auth にも触れる
 - When: design-delta を `--loses "..."` 付きで done にして `step next` を実行する
-- Then: G4 は `approval: "consent"` で、`approvalReason` は外との境界の理由（境界の判定が裏取りの deferred より先）
+- Then: G4 は `approval: "consent"` で、`approvalReason` は外との境界の理由（境界の判定が裏取りの deferred より先）。`design/decisions.jsonl` に `ask: "G4"` の事項は積まれない
 
 ### G4: 差し戻しからの再設計の回は now のまま
 - 対応: US-20.2
@@ -459,11 +480,17 @@
 - When: planner を G1 まで進めて `step next planner 001 --json` を実行する
 - Then: G1 は `approval: "consent"`（deferred にならない）
 
-### G10: decisions・constraints の変更は事後同意が有効でも同意のまま
+### G10: decisions の変更は事後同意が有効でも同意のまま
 - 対応: US-20.2
-- Given: 事後同意が有効。close-cycle で `decisions` への昇格を含む
-- When: close-cycle を G10 まで進めて `step next close-cycle 001 --json` を実行する
-- Then: G10 は `approval: "consent"`
+- Given: 事後同意が有効（merge-base のサイクル設定に `deferred = true`）。document-guide.md に `decisions` を `docs/adr/` で登録済み。close-cycle を G10 の直前まで進め、作業ツリーに新しい ADR `docs/adr/20261117-new.md` を足した（未コミット）
+- When: `step next close-cycle 001 --json` を実行する
+- Then: G10 は `approval: "consent"`・`approvalReason` は decisions・constraints の変更を含む昇格の旨（deferred にならない）
+
+### G10: constraints の変更は事後同意が有効でも同意のまま
+- 対応: US-20.2
+- Given: 事後同意が有効。document-guide.md に `constraints` を `docs/constraints.md` で登録し、その本文をコミット済み。close-cycle を G10 の直前まで進め、作業ツリーで `docs/constraints.md` の本文に1行足した（未コミット）
+- When: `step next close-cycle 001 --json` を実行する
+- Then: G10 は `approval: "consent"`・`approvalReason` は decisions・constraints の変更を含む昇格の旨
 
 ## 手順の位置だけを読む経路との一致
 
