@@ -40,12 +40,22 @@ export function safeAnswerOf(id: string): SafeAnswer | undefined
 
 `conductor launch` に次を足す。
 
-- `--from user|supervisor` — 回答を渡す再開（`--message`）に必須。子のコマンドの前に `HIKYAKU_ANSWER_FROM=<値>` を置く。回答の無い起動（初回・`--escalate`）は `HIKYAKU_ANSWER_FROM` を置かない
+- `--from user|supervisor` — 回答を渡す再開（`--message`）に必須。子のコマンドの前に、答えの環境変数（下の表）を置く。回答の無い起動（初回・`--escalate`）は置かない
+
+子に渡す答えの環境変数（`answerEnv(...)`。launch だけが組み立てる。G8 1回目のユーザーの判断で、子の中の記録をこの値に縛る）:
+
+| 変数 | 値 | 使う側 |
+|---|---|---|
+| `HIKYAKU_ANSWER_FROM` | `user` / `supervisor` | `ledger decide` / `object` の検査と `from` |
+| `HIKYAKU_ANSWER_ITEMS` | `--from user` の `--closes` の ID（カンマ区切り） | 子の中の `--by user` は、この ID の事項にだけ書ける |
+| `HIKYAKU_ANSWER_ASK` | `--ask` の値 | 決定のレコードの `ask` |
+| `HIKYAKU_ANSWER_RISK` | `--from supervisor` のリスクの申告。`none`（`--no-risk`）か `<害>:<前提,...>`。申告の無い問いでは置かない | 決定のレコードの `risk`（子が省けない） |
+| `HIKYAKU_ANSWER_TOKEN` | 起動ごとの乱数（launch の JSON の `answerToken`） | 決定のレコードの `token`。`conductor parse --expect-answer <token>` が、監督の答えの記録が残ったかを確かめる |
 - `--ask <id>` — `--from supervisor` と `--escalate` に必須（`--from user` では任意）
 - `--choice <値>` — `--from supervisor` で、`--ask` の問いに `SAFE_ANSWERS` があれば必須
 - `--harm 高|中` と `--premises <ref,...>` / `--no-risk` — `--from supervisor` の答えが受け入れるリスクの申告。`declaresRisk` の問い（questions・review-findings の `proceed`）では、どちらかが無ければ拒む（付け忘れで上げる向きと逆に倒れないため）。ほかの問いでは任意
 - `--escalate` — ユーザーに上げる問いを記録させる固定文で子を再開する（`--message` を取らない）
-- `--closes <ID,...>` — `--from user` で、ユーザーの答えで閉じる待ちの事項。子への回答の先頭に、その ID に `ledger decide <unit> <ID> --decision decided --by user --input "<ユーザーの答え>"` を記録する固定文を足す（新しく起動して子が ID を知らないときも閉じられる）
+- `--closes <ID,...>` — `--from user` に必須（1件以上）。ユーザーの答えで閉じる待ちの事項。作業ツリーの記録に、その ID の未決の事項があることを確かめる（無ければ拒む）。子への回答の先頭に、その ID に `ledger decide <unit> <ID> --decision decided --by user --input "<ユーザーの答え>"` を記録する固定文を足す（新しく起動して子が ID を知らないときも閉じられる）。`HIKYAKU_ANSWER_ITEMS` に入れる
 
 `--from supervisor` の検査（`checkSupervisorAnswer`。拒むときは `HikyakuError` で、ユーザーに上げる案内を添える）:
 
@@ -61,15 +71,28 @@ export function safeAnswerOf(id: string): SafeAnswer | undefined
 ### `ledger decide` の検査（`scripts/commands/ledger.mts`）
 
 ```ts
-/** conductor の子で、ユーザーの決定を書いてよいか。だめなら理由（US-19.7） */
-export function answerSourceProblem(by: Who, env?: NodeJS.ProcessEnv): string | undefined
-export function answerSource(env?: NodeJS.ProcessEnv): string | undefined // HIKYAKU_ANSWER_FROM の値
+/** 子に渡された答え（環境変数を読む。conductor の子でなければ undefined） */
+export interface ChildAnswer { from: "user" | "supervisor" | undefined; items: string[]; ask?: string; risk?: RiskDeclaration; token?: string }
+export type RiskDeclaration = { kind: "none" } | { kind: "declared"; harm: Harm; premises: string[] }
+export function childAnswer(env?: NodeJS.ProcessEnv): ChildAnswer | undefined
+/** conductor の子で、この決定を書いてよいか。だめなら理由（US-19.7・G8 1回目のユーザーの判断） */
+export function answerProblem(by: Who, itemId: string, answer: ChildAnswer | undefined): string | undefined
+/** 決定のレコードに足す欄（from・ask・risk・token）。子でなければ空 */
+export function answerFields(by: Who, answer: ChildAnswer | undefined): Partial<DecideRecord>
 ```
 
-- `HIKYAKU_CONDUCTOR_CHILD=1` で `--by user` かつ `HIKYAKU_ANSWER_FROM !== "user"` なら拒む（`--dry-run` でも）。`ledger object` の決定つきの記録（`--defer` でない）も同じ
-- `HIKYAKU_ANSWER_FROM` があれば、`DecideRecord.from` に残す（`ledger decide` と `ledger object`）
-- 置き場は `scripts/lib/ledger.mts`（commands と tests から使う）
+- 置き場は `scripts/lib/ledger.mts`（commands と tests から使う）。`DecideRecord` に任意欄 `from`（既存）・`ask`・`risk`・`token`・`answers`（下の object）を足す
+- **conductor の子（`HIKYAKU_CONDUCTOR_CHILD=1`）の `--by user`**: `HIKYAKU_ANSWER_FROM=user` で、かつ決める事項の ID が `HIKYAKU_ANSWER_ITEMS` にあるときだけ書ける（`--dry-run` でも同じ検査）。ユーザーが答えていない事項に、同じ実行の中で書けない
+- **`ledger object` の決定つきの記録（`--defer` でない）**: 異議の事項はその場で作るので ID が前もって無い。conductor の子では `--answers <ID>`（ユーザーの答えで閉じる待ちの事項）を必須にし、その ID が `HIKYAKU_ANSWER_ITEMS` にあるときだけ書ける。決定のレコードに `answers` を残す。子でなければ `--answers` は任意で、検査しない
+- **conductor の子の `--by supervisor`**: `HIKYAKU_ANSWER_FROM=supervisor` が要る。決定のレコードに `from`・`ask`・`risk`・`token` を環境変数から必ず書く（引数では渡せず、子が省けない）。`HIKYAKU_ANSWER_RISK` が無い起動で、`ask` が `declaresRisk` の問いなら拒む
+- **ユーザーが直接立てたセッション**（`HIKYAKU_CONDUCTOR_CHILD` が無い）の振る舞いは変えない（検査しない。環境変数があっても `from` だけを残す）
 - 子が環境変数を自分で付ける偽装は防がない（ADR pending-items-ledger で受け入れ済み）
+
+### 監督の答えの記録の確かめと PR 本文（`conductor parse`・`ledger answers`）
+
+- `conductor parse --expect-answer <token>`: 監督の答えで再開した子の結果を読むとき、監督が launch の `answerToken` を渡す。作業ツリーのサイクルの記録に、その `token` を持つ `by: supervisor` の決定が無ければ `stepProblems` に入れる（子が監督の答えを記録せずに進めた。SKILL.md の stepProblems の扱い＝1回目は再開、2回目はユーザーに上げる）
+- `hikyaku ledger answers [<cycle>] [--format pr] [--json]`（新規・読み取り専用）: サイクル全体の `by: supervisor` の決定を、問い（`ask`）・リスクの申告（`risk`）つきで並べる。`--format pr` は「監督が答えた問い」の節を Markdown で出し、`risk` が `none` の答えは「リスクなしと申告」と明示する。`risk` の無い決定（このビルドより前の記録）はそのまま出す
+- SKILL.md の Step 4 は、最後の PR の本文に `ledger answers {cycle} --format pr` の出力を貼る（監督が書き写さない）
 
 ### 答えを待つ blocked（`scripts/lib/conductor.mts`）
 
@@ -117,15 +140,16 @@ export async function deriveWaiting(config: ResolvedConfig, cycle: CycleContext,
   - 「人間に上げるとき」: ユーザーが「監督に任せる」と答えたら監督が判断する経路を消す。handler が user の問いを監督が答える経路は launch が拒むので（US-15.3・US-21.4）、ユーザーに答えを求める
   - error・2回目の violation・check-pr の不合格は従来どおりその場でユーザーに上げる
   - 「問いへの答え方」の表に `--choice` の値を添える
-  - Step 4 の最後の PR の本文の「監督が答えた確認ゲート」の一覧に、`--no-risk`（リスクなしと申告した答え）で答えた問いを1行ずつ並べる（LLM の申告で上限の検査を外した答えを、ユーザーが後から見つけられるようにする）。launch の JSON に `riskDeclaration`（`none` か、害と前提）を出す
+  - Step 3: 監督の答えで再開した子の結果は `conductor parse --expect-answer <launch の answerToken>` で読む
+  - Step 4: 最後の PR の本文の「監督が答えた問い」は、`ledger answers {cycle} --format pr` の出力を貼る（`--no-risk` で答えた問いは、スクリプトが決定のレコードの `risk` から「リスクなしと申告」と示す。監督は書き写さない。G8 1回目のユーザーの判断）
 - `skills/conductor/references/headless-protocol.md`: ユーザーに上げる問いの記録と `waiting:` の blocked、`HIKYAKU_ANSWER_FROM` と `--by user`（最後のビルドの同意ゲートは build-19）
 - `docs/workflow/conductor.md`・`docs/reference/cli.md`（いつ・なぜだけ）、CHANGELOG の `[3.0.0]`
 
 ## 実装ステップ
 
 1. `SAFE_ANSWERS`・`resolveAsk` の `safe`・`parseFinalText` の waiting（lib/conductor.mts）
-2. `answerSourceProblem` / `answerSource`（ledger.mts）、`ledger decide` / `object` の検査と `from`
-3. launch の `--from` / `--ask` / `--choice` / `--harm` / `--premises` / `--no-risk` / `--escalate` / `--closes`、parse の waiting、asks の `queueing`
+2. `childAnswer` / `answerProblem` / `answerFields`（ledger.mts）、`ledger decide` / `object`（`--answers`）の検査と `from`・`ask`・`risk`・`token`、`ledger answers`
+3. launch の `--from` / `--ask` / `--choice` / `--harm` / `--premises` / `--no-risk` / `--escalate` / `--closes` と答えの環境変数、parse の waiting と `--expect-answer`、asks の `queueing`
 4. waiting.mts と `conductor waiting`・`next --json` の `waiting`
 5. テスト（`tests/conductor.test.mts`・`tests/ledger.test.mts` に追加）
 6. SKILL.md・headless-protocol.md・docs・CHANGELOG
@@ -137,11 +161,11 @@ export async function deriveWaiting(config: ResolvedConfig, cycle: CycleContext,
 - **状態を保存しない**: 待ちは作業ツリーと origin のブランチから毎回導く。session-id は保存しない
 - **互換**: `conductor launch` の `--resume --message` は `--from` が必須になる（監督の手順と同じ PR で直す）
 - **build-19 より前のマージ時点**: conductor の子は従来どおり同意ゲートを置かず、決定の無い同意の項目は pr の `accepts` で止まってユーザーに上がる。上限を超える監督の申告は、事後同意の有無に関わらず拒否する（監督と子の判定が割れない）
-- **受け入れたこと（G8 で示す）**: `HIKYAKU_ANSWER_FROM=user` は、ユーザーの答えで再開した子のプロセス全体に効く。その実行の中で、ユーザーが答えていない事項にも `--by user` を書ける。検査は取り違え（監督の答えをユーザーの答えとして記録する）を防ぐもので、子の振る舞いの偽装は防がない（ADR pending-items-ledger）。答えた事項に限るには、launch が `--closes` の ID を環境変数で渡し `ledger decide` が照合する形があるが、同意ゲートでは一覧の項目ごとに決定を書くので ID の列挙が増える。このビルドでは足さない案とし、受け入れるかはユーザーが決める（受け入れたリスクはユーザーが持つもの。原則 9・11）。G8 の提示で「ユーザーが決める受け入れ」として示し、監督に判断を求めない（conductor では監督がユーザーに上げる）。ユーザーが受け入れなければ、`--closes` の ID を環境変数で渡して `ledger decide --by user` が照合する形をこのビルドに足す
+- **G8 1回目のユーザーの判断（questions.md）**: (1) `HIKYAKU_ANSWER_FROM=user` がプロセス全体に効く隙間は受け入れない。conductor の子の `--by user` は `--closes` で渡した ID の事項にだけ書ける（上の「`ledger decide` の検査」）。(2) `--no-risk` は残し、リスクの申告は launch が環境変数で渡して決定のレコードに必ず残し、最後の PR の本文はスクリプト（`ledger answers`）が組み立てる。build-19 の同意ゲートでは、監督が一覧の全項目の ID を `--closes` に渡す（build-19 の issue.md に影響を書く必要は無い。`--closes` は ID の列挙を受け付ける）
 
 ## 予測ピーク
 
-G6 で build-19 を分けた後の見積もり（issue.md の 420k と同じ成分）。
+G6 で build-19 を分けた後の見積もり（issue.md の 420k）に、G8 1回目のユーザーの判断（答えの環境変数・`--answers`・`--expect-answer`・`ledger answers`）の実装 10k とテスト 5k を足した。
 
 読むファイル: `skills/conductor/SKILL.md`・`references/headless-protocol.md`、`scripts/lib/conductor.mts`・`scripts/commands/conductor.mts`、`scripts/commands/next.mts`、`scripts/lib/ledger.mts`・`scripts/commands/ledger.mts`（該当部分）、`scripts/lib/tasklist.mts`・`risk.mts`・`escalation.mts`・`branch.mts`・`git.mts`・`steps/locate.mts`・`steps/engine.mts`（該当部分）、build-06・09・16・17・18 の handoff、`docs/workflow/conductor.md`・`docs/reference/cli.md`、`tests/conductor.test.mts`・`tests/ledger.test.mts`（該当部分）
 作成・変更するファイル: 上記の lib・commands・手順・docs、`scripts/lib/waiting.mts`（新規）、`tests/conductor.test.mts`・`tests/ledger.test.mts`、`CHANGELOG.md`
@@ -150,10 +174,10 @@ G6 で build-19 を分けた後の見積もり（issue.md の 420k と同じ成�
 |------|------|------|
 | 固定費 | 90k | — |
 | 読み込み | 160k | 読んだもの（約 110k）: conductor の lib・commands・SKILL.md・headless-protocol、next、ledger と commands/ledger の該当部分、consent・directive・builder steps、deferred-consent・git の一部、handoff 5件と ADR。残り（約 50k）: tasklist・risk・escalation・locate・engine・branch の該当部分、docs/workflow/conductor.md・docs/reference/cli.md、tests/conductor.test.mts・tests/ledger.test.mts の該当部分 |
-| 実装 | 80k | lib/conductor.mts（SAFE_ANSWERS・waiting の解析 約120行）、commands/conductor.mts（launch の検査・--escalate/--closes・waiting コマンド 約180行）、waiting.mts 新規（約150行）、ledger の出どころの検査と from（約40行）、next（約30行）、SKILL.md Step 0/1/3・headless-protocol・docs・CHANGELOG（約150行） |
-| テスト | 50k | conductor.test.mts（launch の拒否・リスクの申告・--escalate・waiting の blocked・waiting の導出・`next --json` の available と waiting）、ledger.test.mts（出どころの検査と from） |
+| 実装 | 90k | lib/conductor.mts（SAFE_ANSWERS・waiting の解析 約120行）、commands/conductor.mts（launch の検査・--escalate/--closes・答えの環境変数・parse の --expect-answer・waiting コマンド 約220行）、waiting.mts 新規（約150行）、ledger の答えの検査と from・ask・risk・token・object の --answers・ledger answers（約110行）、next（約30行）、SKILL.md Step 0/1/3/4・headless-protocol・docs・CHANGELOG（約160行） |
+| テスト | 55k | conductor.test.mts（launch の拒否・リスクの申告・--escalate・答えの環境変数・--expect-answer・waiting の blocked・waiting の導出・`next --json` の available と waiting）、ledger.test.mts（子の --by user の ID の縛り・object の --answers・supervisor の決定の risk と token・ledger answers） |
 | 未知の領域 | 40k | 子の再開と取り込みの手順、既存の conductor の結合テストの調整（--from 必須化）、origin のブランチを使う waiting の結合テストの準備 |
-| **予測ピーク** | **420k** | 狙いの帯（300k〜450k） |
+| **予測ピーク** | **435k** | 狙いの帯（300k〜450k） |
 | ガイド | 標準 v2 | 03897ac0 |
 
 ## 付録: build-19 へ移した設計（このビルドでは実装しない）
