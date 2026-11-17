@@ -43,7 +43,23 @@ test("CLI: init を再実行しても既存文書を上書きせず、gitignore 
   assert.deepEqual(snapshot(directory), before);
   assert.equal(readFileSync(join(directory, "docs/hikyaku/document-guide.md"), "utf8"), "# 手書きのガイド\n");
   assert.match(readFileSync(join(directory, "docs/hikyaku/.gitignore"), "utf8"), /^custom-entry\n/);
+  const lines = readFileSync(join(directory, "docs/hikyaku/.gitignore"), "utf8").split("\n");
+  assert.equal(lines.filter((line) => line === ".hikyaku.local").length, 1);
+  assert.equal(lines.filter((line) => line === "feedback/").length, 1);
+});
+
+test("CLI: init は .gitignore に無い除外の行だけを足す（先頭の / 付きも揃っているとみなす）", (t) => {
+  const directory = repository(t);
+  write(directory, "docs/hikyaku/.gitignore", ".hikyaku.local\n");
+  const appended = JSON.parse(succeeds(directory, "init", "--root", "docs/hikyaku", "--json"));
+  assert.equal(appended.files.find((file: { path: string }) => file.path.endsWith(".gitignore")).status, "append");
   assert.equal(readFileSync(join(directory, "docs/hikyaku/.gitignore"), "utf8").split("\n").filter((line) => line === ".hikyaku.local").length, 1);
+  assert.match(readFileSync(join(directory, "docs/hikyaku/.gitignore"), "utf8"), /^feedback\/$/m);
+
+  const other = repository(t);
+  write(other, "docs/hikyaku/.gitignore", "/.hikyaku.local\n/feedback\n");
+  const skipped = JSON.parse(succeeds(other, "init", "--root", "docs/hikyaku", "--json"));
+  assert.equal(skipped.files.find((file: { path: string }) => file.path.endsWith(".gitignore")).status, "skip");
 });
 
 test("CLI: 正規化するとリポジトリルートになる init のパスを拒否する", (t) => {

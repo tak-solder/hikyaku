@@ -95,6 +95,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `step report` はゲートの承認に `approval`（`consent` / `confirm`）を記録する。ステップ定義に `reopens`（承認では足りないときに現在地へ戻す。gate だけ）と `recordsPr: "optional"`・`prHint` を足した。テキストの directive は、配列・オブジェクトの値を JSON で出す
 - **基準を試しに消す候補と、消した PR のマージ前後の指標の比較。** `hikyaku rules candidates [<cycle>]` が、試しに消す候補（JSON の `removals`）として、一致しない rule・frontmatter の `prevents` か `basis` が欠けた rule・そのサイクルの「役に立たなかった記述」に挙がった記述（rule か文書の箇条書きの1行）を並べる。重要度が高の基準と、重要度を読めない基準（理由の欄が崩れた行、importance が不正な rule）は入らない。close-cycle の followups の args に `ruleRemovals`・`g10Input`・`metricsComparison` を足し、G10 で試しに消すと決まった基準を `{close のブランチ}-criteria` の別の PR にする（ゲートは無い。PR は followups の done の `--pr` に任意で残す）。新しい `scripts/lib/quality-metrics.mts` が、closed のサイクルの followups の PR と、ベースブランチ（`origin/<base>` を優先）の first-parent の履歴で、件名が `Merge pull request #N ` か末尾が `(#N)` の最も古いコミット（revert は除く）をマージの時点とし、そのコミットと第1親の差分から消した基準（消えた rule のファイルと、登録された文書から削除だけの hunk で消えた箇条書きの行）を導く。マージの日はローカルの日付に直して cycles.md の日付と比べる。比較するのは、マージ前後それぞれ直近 `[metrics] window`（既定 2）の closed のサイクルの、差し戻し・rejected の決定・重要度が高の落とし穴・重い指摘の数。揃わなければ「比較できない」
 - `[metrics] window` 設定（正の整数。サイクル設定で上書きできる）
+- **`hikyaku feedback export [--dry-run]`**: `{HIKYAKU_ROOT}/feedback/{YYYYMMDD}.md` に、Hikyaku へのフィードバックを書き出す。progress.jsonl から読むのは `at` / `skill` / `step` / `result` / `round` / `hikyaku` の欄だけで、スキルとステップの単位で「止まった手順」（failed の件数）と「ゲートにかかった時間」（ゲートの記録と直前の記録の差の中央値）を集計する。あわせて、「永続化すること」の宛先 `upstream` の本文と、起票の下書きの枠も書き出す。ユーザーの答え・理由・PR・セッション・サイクル名・ビルド番号・patch の slug は含めない。外部に送る処理は持たない。書き出し先が git の追跡対象なら書き出さずに止まる
+- **document-guide.md のパスにアンカーを付けられる**（`docs/concepts.md#用語`）。`DocEntry` は `path`（アンカーを除く）と `anchor` を分けて持つ。`context`・`docs list`・AGENTS.md の索引・異議の照合先のポインタはアンカー付きで示し、存在の確認と自動読み込みの判定はアンカーを除いたパスで行う。`validate` / `docs validate` は、見出しから GitHub 式に作ったアンカーと照らして、節が消えたことを検出する
 
 ### Changed
 
@@ -218,6 +220,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - express では、`decisions`・`constraints` の変更を含まない G10 が省かれる。これまでどおり止めたいなら `promotion_gate = true` を書く。進行中の close-cycle の G10 の承認（`approval` の無い記録）は同意として扱うので、巻き戻らない
 - `conductor asks` / `parse` の `handler` の `human` を読んでいる独自のツールは `user` を読むよう直す
 - `validate` に警告が加わったが、終了コードは変わらない。`--json` の出力に `warnings` が増える。`validate` は知らないオプションをエラーにするようになった（受け付けるのは `--base` とグローバルオプション）。既存の ADR・`constraints` を新しいテンプレートに書き直す必要はない（「受け入れたこと」の節が無ければ何も読まない）。節がある文書で警告が出たら、1件1行の箇条書きにし、拠り所を `（拠り所: \`<参照>\`）` の形で行末に書く
+- `init` は `{HIKYAKU_ROOT}/.gitignore` に `feedback/` も足す（既存の `.gitignore` には無い行だけを追記する）。既存のワークスペースで `feedback export` を使うときは、`hikyaku init --root <HIKYAKU_ROOT>` を再実行するか、`feedback/` の1行を手で足す
 - 起票済みのビルドの issue（子 issue）は Hikyaku からは閉じなくなる。不要なら GitHub 側で閉じる。`tasklist.md` の `issue` 列は、次に `tasklist` のコマンドで書き込んだときに落ちる（`docs/migration/v2-to-v3.md#ビルドごとの外部起票の廃止`）
 
 ## [2.8.0]

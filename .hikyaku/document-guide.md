@@ -16,4 +16,4 @@ Hikyaku はこのファイルを唯一の手がかりとして永続ドキュメ
 | decisions   | hikyaku | `.hikyaku/decisions/` | 設計判断（ADR）。コードから復元できない唯一の情報。1判断1ファイル（`{YYYYMMDD}-{slug}.md`） |
 | constraints | 未作成 | —    | 設計を縛る条件（性能・可用性・セキュリティ・互換性・外部サービスの上限） |
 | conventions | repo   | AGENTS.md | リポジトリ全体に効く取り決め（設計の原則 v3・スクリプト規約・ドキュメントの役割・バージョン運用） |
-| glossary    | repo   | docs/concepts.md | 「用語」節だけが対象の用語集。AGENTS.md が唯一の正と宣言している。ほかの節は利用者向けの説明なので、Hikyaku は追記しない |
+| glossary    | repo   | `docs/concepts.md#用語` | 「用語」節だけが対象の用語集。AGENTS.md が唯一の正と宣言している。ほかの節は利用者向けの説明なので、Hikyaku は追記しない |

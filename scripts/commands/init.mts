@@ -20,7 +20,7 @@ interface PlannedFile {
    * create 生成 / skip 既存のため何もしない / append 既存の末尾へ追記
    *
    * 既存ファイルの内容は決して書き換えない。append は .gitignore だけの例外で、
-   * 1行足すだけ（既存行の削除・整理はしない）。
+   * 無い行を足すだけ（既存行の削除・整理はしない）。
    */
   status: "create" | "skip" | "append";
 }
@@ -36,7 +36,7 @@ register({
     "  リポジトリルート/.hikyaku.config   設定の唯一のベース。hikyaku_root を記録する",
     "  {HIKYAKU_ROOT}/cycles.md           サイクル索引",
     "  {HIKYAKU_ROOT}/document-guide.md   ドキュメントガイドの雛形（全て『未作成』）",
-    "  {HIKYAKU_ROOT}/.gitignore          .hikyaku.local だけを除外する（既存があれば追記）",
+    "  {HIKYAKU_ROOT}/.gitignore          .hikyaku.local と feedback/ を除外する（既存があれば無い行だけ追記）",
     "",
     "既存の設計ドキュメントを検出して document-guide.md へ登録するのは",
     "/hikyaku:init スキルの役割です（対話が必要なため）。",
@@ -47,7 +47,7 @@ register({
     "設定を置ける場所はリポジトリルートとサイクルディレクトリの2箇所だけです。",
     "{HIKYAKU_ROOT}/.hikyaku.config は作りません（読み込まれません）。",
     "",
-    ".gitignore が除外するのは .hikyaku.local の1行だけです。サイクル文書はすべて",
+    ".gitignore が除外するのは .hikyaku.local と feedback/ の2行だけです。サイクル文書はすべて",
     "コミット対象にします。close-cycle が別セッションで retrospective.md を素材として",
     "読むため、まとめて除外すると読めなくなります。"
   ].join("\n"),
@@ -104,7 +104,7 @@ register({
             file.status === "create"
               ? "生成"
               : file.status === "append"
-                ? `${LOCAL_FILE} の除外を追記`
+                ? "足りない除外の行を追記"
                 : "既存のため変更しません";
           lines.push(`${mark} ${relative(root, file.path).padEnd(40)} ${note}`);
         }
@@ -137,28 +137,46 @@ function plan(path: string, content: string): PlannedFile {
   return { path, content, status: existsSync(path) ? "skip" : "create" };
 }
 
-/** .gitignore に .hikyaku.local が入っているか */
-function ignoresLocal(source: string): boolean {
+interface IgnoredEntry {
+  line: string;
+  comment: string;
+}
+
+/**
+ * HIKYAKU_ROOT の .gitignore が除外する行。どれもコミットされると困るローカルの書き出し。
+ *   .hikyaku.local — 作業の栞。コミットされると他メンバーの栞を掴む
+ *   feedback/      — hikyaku feedback export の書き出し。コミットされると、送るかをユーザーが決める前に共有される
+ */
+const IGNORED_ENTRIES: IgnoredEntry[] = [
+  { line: LOCAL_FILE, comment: "最後に作業したサイクルを記録するローカル専用ファイル" },
+  { line: "feedback/", comment: "hikyaku feedback export の書き出し（送るかはユーザーが決める。コミットしない）" },
+];
+
+/** .gitignore にその行が入っているか（先頭の `/` と、ディレクトリの末尾の `/` の有無は問わない） */
+function ignores(source: string, entry: IgnoredEntry): boolean {
+  const bare = entry.line.replace(/\/$/, "");
   return source
     .split("\n")
-    .some((line) => line.trim() === LOCAL_FILE || line.trim() === `/${LOCAL_FILE}`);
+    .map((line) => line.trim().replace(/^\//, "").replace(/\/$/, ""))
+    .some((line) => line === bare);
 }
 
 /**
  * .gitignore だけは既存があっても追記する。
  *
- * skip にすると、v1 から移行したリポジトリ（v1 は {DOC_ROOT}/.gitignore を生成していた）で
- * .hikyaku.local が永久に追跡対象のままになる。作業の栞がコミットされると、
- * 他メンバーの栞を掴む事故になる。追記するのは1行だけで、既存行には手を出さない。
+ * skip にすると、v1 から移行したリポジトリ（v1 は {DOC_ROOT}/.gitignore を生成していた）や、
+ * feedback/ が足される前に導入したワークスペースで、除外すべきファイルが追跡対象のままになる。
+ * 足すのは無い行だけで、既存行には手を出さない。
  */
 function planGitignore(path: string): PlannedFile {
   if (!existsSync(path)) return { path, content: renderGitignore(), status: "create" };
 
   const source = readFileSync(path, "utf8");
-  if (ignoresLocal(source)) return { path, content: source, status: "skip" };
+  const missing = IGNORED_ENTRIES.filter((entry) => !ignores(source, entry));
+  if (missing.length === 0) return { path, content: source, status: "skip" };
 
   const separator = source === "" || source.endsWith("\n") ? "" : "\n";
-  return { path, content: `${source}${separator}\n${renderGitignore()}`, status: "append" };
+  return { path, content: `${source}${separator}\n${renderGitignore(missing)}`, status: "append" };
 }
 
 /**
@@ -310,14 +328,10 @@ function renderRepoConfig(hikyakuRoot: string): string {
 /**
  * HIKYAKU_ROOT の .gitignore。
  *
- * 除外するのは作業の栞（.hikyaku.local）だけ。包括パターンは書かない。
+ * 除外するのは作業の栞（.hikyaku.local）とフィードバックの書き出し（feedback/）だけ。包括パターンは書かない。
  * サイクル文書はすべてコミット対象で、とくに retrospective.md は close-cycle が
  * 別セッションから昇格素材として読むため、除外すると読めなくなる。
  */
-function renderGitignore(): string {
-  return [
-    "# 最後に作業したサイクルを記録するローカル専用ファイル",
-    ".hikyaku.local",
-    "",
-  ].join("\n");
+function renderGitignore(entries: IgnoredEntry[] = IGNORED_ENTRIES): string {
+  return entries.flatMap((entry) => [`# ${entry.comment}`, entry.line, ""]).join("\n");
 }

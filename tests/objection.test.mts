@@ -324,6 +324,18 @@ test("directive: 登録して実在する decisions・constraints だけをポ�
   assert.doesNotMatch(pointers(), /constraints: |overview/);
 });
 
+test("directive: 節を指して登録した constraints は、アンカーを落とさずにポインタに載せる", (t) => {
+  const directory = built(t);
+  upToG8(directory);
+  const guidePath = join(directory, "docs/hikyaku/document-guide.md");
+  writeFileSync(join(directory, "docs/constraints.md"), "# 制約\n\n## 制約\n\n- 例\n");
+  writeFileSync(
+    guidePath,
+    readFileSync(guidePath, "utf8").replace(/^\| constraints .*$/m, "| constraints | repo | `docs/constraints.md#制約` | 制約 |"),
+  );
+  assert.match(next(directory).objection?.pointers.join("\n") ?? "", /constraints: docs\/constraints\.md#制約/);
+});
+
 test("directive: サイクルに属さない patch の P1 には異議の指示が載らない（解釈）", (t) => {
   const directory = workspace(t);
   const resolved = JSON.parse(succeeds(directory, "patch", "resolve", "fix-typo", "--json")) as { phase: string; unitDirectory: string };

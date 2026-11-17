@@ -19,7 +19,7 @@ import { join, relative } from "node:path";
 import { isCyclelessPhase, isPatchPhase, isPhase, type Phase } from "../lib/branch.mts";
 import type { ResolvedConfig } from "../lib/config.mts";
 import { scopeFor } from "../lib/stack.mts";
-import { loadGuide, type DocEntry } from "../lib/docs.mts";
+import { docRef, loadGuide, type DocEntry } from "../lib/docs.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { emit, table } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
@@ -276,7 +276,8 @@ function collectDocSuggestions(config: ResolvedConfig, phase: Phase): { suggesti
     suggestions.push({
       ref: entry.name,
       origin: "doc",
-      path,
+      // 存在の検査はアンカーを除いたパスで行い、返すのは節まで指したポインタ
+      path: docRef(entry) ?? path,
       ownership: entry.ownership,
       reason: docReasons(phase)[entry.name] as string,
       summary: entry.summary,

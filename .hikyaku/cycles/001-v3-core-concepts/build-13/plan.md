@@ -110,9 +110,9 @@
 
 ## 実装ステップ
 
-- [ ] Step 1: `docs.mts` に anchor・`githubAnchor`・`markdownAnchors`・節の検査を足し、context・directive・docs list・索引をアンカー付きの表示にする
-- [ ] Step 2: `.hikyaku/document-guide.md` の glossary を `docs/concepts.md#用語` にする（AGENTS.md の索引は close-cycle に回す）
-- [ ] Step 3: `feedback.mts` と `feedback export` を足す。`planGitignore` を行ごとの判定にし、`feedback/` を足す（このリポジトリの `.hikyaku/.gitignore` にも足す）
-- [ ] Step 4: テスト（フィクスチャの記録に cycle 名・ビルド番号・slug・input・reason・pr を入れ、出力に現れないことを確かめる。`feedback/` が無い状態から check-ignore の判定を確かめる。`.gitignore` の追記が重複しないこと）
-- [ ] Step 5: docs（documents.md・cli.md・directory-layout.md・getting-started.md）・init のスキル（SKILL.md・cleanup.md）と CHANGELOG の `[3.0.0]`
+- [x] Step 1: `docs.mts` に anchor・`githubAnchor`・`markdownAnchors`・節の検査を足し、context・directive・docs list・索引をアンカー付きの表示にする
+- [x] Step 2: `.hikyaku/document-guide.md` の glossary を `docs/concepts.md#用語` にする（AGENTS.md の索引は close-cycle に回す）
+- [x] Step 3: `feedback.mts` と `feedback export` を足す。`planGitignore` を行ごとの判定にし、`feedback/` を足す（このリポジトリの `.hikyaku/.gitignore` にも足す）
+- [x] Step 4: テスト（フィクスチャの記録に cycle 名・ビルド番号・slug・input・reason・pr を入れ、出力に現れないことを確かめる。`feedback/` が無い状態から check-ignore の判定を確かめる。`.gitignore` の追記が重複しないこと）
+- [x] Step 5: docs（documents.md・cli.md・directory-layout.md・getting-started.md）・init のスキル（SKILL.md・cleanup.md）と CHANGELOG の `[3.0.0]`
 - [ ] Step 6: `npx tsc --noEmit`・`npm test`

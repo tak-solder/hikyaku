@@ -11,7 +11,7 @@ import { flagString, type ParsedArgs } from "../args.mts";
 import type { Phase } from "../branch.mts";
 import type { ContextBudget } from "../config.mts";
 import { HikyakuError } from "../errors.mts";
-import { loadGuide } from "../docs.mts";
+import { docRef, loadGuide } from "../docs.mts";
 import { cycleTimeline, noticeLines, readLedger, summarize } from "../ledger.mts";
 import { pluginRoot } from "../paths.mts";
 import { readProgress, type StepResult } from "../progress.mts";
@@ -176,7 +176,7 @@ function objectionPointers(opened: Opened, cycle: CycleContext): string[] {
   try {
     for (const entry of loadGuide(opened.ctx.config.hikyakuRoot)) {
       if ((entry.name === "constraints" || entry.name === "decisions") && entry.path !== undefined) {
-        pointers.push(`${entry.name}: ${entry.path}`);
+        pointers.push(`${entry.name}: ${docRef(entry)}`);
       }
     }
   } catch {

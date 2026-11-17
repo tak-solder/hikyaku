@@ -2,3 +2,6 @@
 {"at":"2026-11-17T02:24:21.326Z","skill":"builder","step":"plan-review","result":"done","peak":320000,"context":145114,"session":"b9286b9b-c623-46fe-a0fe-1826244e92bb","hikyaku":"3.0.0"}
 {"at":"2026-11-17T02:26:27.941Z","skill":"builder","step":"test-spec","result":"done","context":156226,"session":"b9286b9b-c623-46fe-a0fe-1826244e92bb","hikyaku":"3.0.0"}
 {"at":"2026-11-17T02:27:55.863Z","skill":"builder","step":"test-spec-review","result":"done","context":162417,"session":"b9286b9b-c623-46fe-a0fe-1826244e92bb","hikyaku":"3.0.0"}
+{"at":"2026-11-17T02:28:48.389Z","skill":"builder","step":"G8","result":"approved","input":"委任された判断（監督）: 承認（実装に進む）。根拠は build-13/questions.md","context":167682,"session":"b9286b9b-c623-46fe-a0fe-1826244e92bb","hikyaku":"3.0.0"}
+{"at":"2026-11-17T02:35:12.464Z","skill":"builder","step":"implement","result":"done","context":233525,"session":"b9286b9b-c623-46fe-a0fe-1826244e92bb","hikyaku":"3.0.0"}
+{"at":"2026-11-17T02:39:24.170Z","skill":"builder","step":"verify","result":"done","context":245433,"session":"b9286b9b-c623-46fe-a0fe-1826244e92bb","hikyaku":"3.0.0"}

@@ -66,7 +66,7 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 |---|---|
 | `doctor` | 環境が動く状態かを確認したいとき。導入直後と、動かないとき |
 | `validate [<cycle>]` | ファイルの整合性を確認したいとき。[CI](../operations/ci.md) から呼ぶと効く。`token-guide/guide.md` の版の宣言と本文の食い違い、受け入れ基準の割り当て漏れ、「マージ時点で残る危険」の記録の不備も見る。ポインタに添えた ID の範囲と、「受け入れたこと」の読めない行は警告（終了コードは 0 のまま）。`--base <ref>` で宣言の変更も警告する |
-| `docs validate` | ドキュメントガイドのパスだけを確認したいとき |
+| `docs validate` | ドキュメントガイドのパス（アンカー付きなら、その節）だけを確認したいとき |
 | `rules check` | パス指定の rule（`.claude/rules/`）を足したり直したりしたあと。glob が広すぎて本文が長い rule と、どのファイルにも一致しなくなった rule を見つける |
 | `rules candidates` | 知見の置き場を決めるときと、rule を整理するとき（builder の handoff、close-cycle の collect）。レビューの記録で何度も引かれた rule（機械の検査やリファクタへ移す候補）と、一致しない rule を、最終変更からの日数と理由とともに並べる。試しに消す候補（一致しない rule、理由の欠けた rule、役に立たなかった記述。重要度が高は除く）も並べる。移すか消すかは決めない |
 | `areas dormant --paths <glob,...>` | 設計の前（architect の survey の後、builder の plan）。変えるパスのうち長く触られていなかった領域と、結び付いた rule・ADR・constraints の項目を示す |
@@ -89,6 +89,14 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | `promotions [<cycle>]` | サイクルを締めるとき。各ビルドの `handoff.md` と各フェーズの `retrospective.md` から、永続化の候補と「役に立たなかった記述」を集めて束ねる |
 
 `promotions` は集めて束ねるだけで、取捨選択はしません。重複の判定、マージ済みのコードとの照合、重要度の見直しは close-cycle が行います。書式どおりに読めなかった行も捨てずに返すので、候補を落としたまま気づかないことはありません。考え方は [知見の置き場](../configuration/persistence.md) にあります。
+
+| コマンド | いつ使うか |
+|---|---|
+| `feedback export` | Hikyaku 自体への要望や不具合を伝えたいとき。`{HIKYAKU_ROOT}/feedback/{YYYYMMDD}.md` に、止まった手順・ゲートにかかった時間・`upstream` 宛ての記録と、起票の下書きの枠を書き出す |
+
+`feedback export` は、作業の記録（progress.jsonl）のうち中身を含まない欄（日時・スキル・ステップ・結果・版）だけを読み、スキルとステップの単位で集計します。ユーザーの答え・理由・PR・サイクル名・ビルド番号・patch の名前は書き出しに含めません。ただし `upstream` 宛ての記録は自由文をそのまま載せるので、リポジトリの中身が混ざっていることがあります。外部に送る処理は持たないので、送る前に全文を読み、送るかどうかを決めて起票するのはユーザーです。下書きの文面を整えたいときは、このファイルを AI に読ませて頼めます。
+
+書き出し先が git の追跡対象だと、書き出さずに止まります。コミットされると、送るかを決める前にリポジトリの中で共有されてしまうためです。`init` は `{HIKYAKU_ROOT}/.gitignore` に `feedback/` を足すので、既存のワークスペースでは `hikyaku init` を再実行するか、1行を手で足してください。
 
 ## サイクル
 

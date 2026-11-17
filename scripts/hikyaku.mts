@@ -29,6 +29,7 @@ import "./commands/tasklist.mts";
 import "./commands/next.mts";
 import "./commands/context.mts";
 import "./commands/promotions.mts";
+import "./commands/feedback.mts";
 import "./commands/rules.mts";
 import "./commands/areas.mts";
 import "./commands/validate.mts";
