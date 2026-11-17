@@ -84,6 +84,12 @@ test("reworkStepOf: 同意ゲートより後ろ（pr）で記録した事項は�
   assert.equal(reworkStepOf(BUILDER_STEPS, "pr", ctx), "handoff");
   assert.equal(reworkStepOf(BUILDER_STEPS, "publish", ctx), "handoff");
   assert.equal(reworkStepOf(PATCH_STEPS, "publish", ctx), "persist", "サイクルに属す patch では write が外れる");
+  // 同意ゲートの無いスキルは、PR を作るステップより前の run
+  const planner: SkillSteps = {
+    skill: "planner",
+    steps: [{ id: "write", kind: "run", title: "t" }, { id: "G1", kind: "gate", title: "t", consent: false }, { id: "pr", kind: "run", title: "t" }],
+  };
+  assert.equal(reworkStepOf(planner, "pr", {} as StepContext), "write");
 });
 
 test("reworkStepOf: 同じ ID を持つ内部スキル（write）は、記録の時刻までに最後に記録を残した内部スキルで見分ける", (t) => {
@@ -155,11 +161,16 @@ test("consentRejections: 同じ単位は戻り先を退けより後に done で�
   const same = rejected(open("build-01.1-aaaa", { step: "G8" }));
   const other = rejected(open("architect.1-bbbb", { unit: "architect", step: "options" }));
   const before = consentRejections("builder", [same, other], builderContext(t, { events: [done("plan", 5)] }));
-  assert.deepEqual(before, { rework: [{ id: same.open.id, step: "plan" }], reworked: [], returns: [other.open.id] });
+  assert.deepEqual(before, { rework: [{ id: same.open.id, step: "plan" }], reworked: [], returns: [other.open.id], resumed: [] }, "退けの前の報告は再開に数えない");
+  const resumed = consentRejections("builder", [other], builderContext(t, { events: [done("plan", 11)] }));
+  assert.deepEqual(resumed.resumed, [other.open.id], "退けのあとに報告がある（再開した）");
+  // skippable な戻り先を作り直しで skipped にした回も作り直しに数える
+  const skipped = consentRejections("builder", [same], builderContext(t, { events: [{ at: at(11), skill: "builder", step: "plan", result: "skipped" as const, reason: "x" }] }));
+  assert.deepEqual(skipped.reworked, [same.open.id]);
   const equal = consentRejections("builder", [same], builderContext(t, { events: [done("plan", 10)] }));
   assert.deepEqual(equal.reworked, [], "同じ時刻は作り直していない扱い");
   const after = consentRejections("builder", [same], builderContext(t, { events: [done("plan", 11)] }));
-  assert.deepEqual(after, { rework: [], reworked: [same.open.id], returns: [] });
+  assert.deepEqual(after, { rework: [], reworked: [same.open.id], returns: [], resumed: [] });
   // step restart の区切りより前の報告し直しは数えない
   const restart = { at: at(12), skill: "builder", step: "*", result: "restart" as const };
   const restarted = consentRejections("builder", [same], builderContext(t, { events: [done("plan", 11), restart] }));
@@ -203,7 +214,12 @@ test("consentProblem: 作り直していない退けは戻り先、前のフェ�
   const patch = consentProblem("patch")(ctx) ?? "";
   assert.doesNotMatch(patch, /return\.md/);
   assert.match(patch, /記録したフェーズで作り直して/);
-  const resolved: DecideRecord = { record: "decide", at: at(30), id: c.id, unit: "build-01", decision: "resolved", by: "user", input: "作り直した" };
+  // 退けのあとに作業を再開していれば（差し戻しの再設計を経た）、もう一度差し戻さず resolved を尋ねる
+  const resumedProblem = consentProblem("builder")({ ...ctx, events: [done("plan", 20)] }) ?? "";
+  assert.doesNotMatch(resumedProblem, /return\.md/);
+  assert.match(resumedProblem, /作業を再開しています/);
+  assert.match(resumedProblem, /--decision resolved/);
+  const resolved: DecideRecord ={ record: "decide", at: at(30), id: c.id, unit: "build-01", decision: "resolved", by: "user", input: "作り直した" };
   writeLedger(ctx, "build-01", [...rejected(c).decisions, resolved]);
   assert.equal(consentProblem("builder")(ctx), undefined);
 });

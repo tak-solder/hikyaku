@@ -101,7 +101,9 @@ export function reworkStepOf(
   let index = steps.findIndex((definition) => definition.id === step);
   if (index === -1) index = internalCallIndex(steps, step, ctx, at);
   if (index === -1) return first();
-  const gate = steps.findIndex((definition) => definition.id === CONSENT_STEP);
+  // 同意ゲート（無いスキルは PR を作るステップ）から後ろは、決定が足りないあいだ報告し直せないので、その前の run
+  let gate = steps.findIndex((definition) => definition.id === CONSENT_STEP);
+  if (gate === -1) gate = steps.findIndex((definition) => definition.id === "pr" || definition.id === "publish");
   if (gate !== -1 && index >= gate) return previousRun(steps, gate, on) ?? first();
   const definition = steps[index] as StepDefinition;
   if (definition.kind === "gate") {
@@ -120,26 +122,34 @@ export interface ConsentRejections {
   reworked: string[];
   /** 前のフェーズ（記録した作業単位が別）で退けた項目。resolved まで受け付けない */
   returns: string[];
+  /**
+   * returns のうち、退けの決定より後にこの単位の手順を報告している項目（差し戻しの再設計を経て作業を再開した）。
+   * 差し戻しの前は、退けたあと手順を報告せずに止まるので、作り直しが済んだかをユーザーに尋ねる段階と見分けられる
+   */
+  resumed: string[];
 }
 
 /** 最新の決定が rejected の項目を、作り直しの経路ごとに分ける */
 export function consentRejections(skill: string, items: LedgerItem[], ctx: StepContext): ConsentRejections {
-  const result: ConsentRejections = { rework: [], reworked: [], returns: [] };
+  const result: ConsentRejections = { rework: [], reworked: [], returns: [], resumed: [] };
   const rejected = items.filter((item) => item.latest?.decision === "rejected");
   if (rejected.length === 0) return result;
   const steps = stepsOf(skill);
   const on = onChecker(ctx);
   // step restart の区切りより前の報告し直しは数えない（区切ったあとの回で作り直していない）
   const events = currentEvents({ skill }, ctx.events);
+  // 完了の報告（skippable なステップを作り直しで skipped にした回も作り直しに数える）
+  const completed = (event: (typeof events)[number]) => event.skill === skill && (event.result === "done" || event.result === "skipped");
   for (const item of rejected) {
+    const at = item.latest?.at ?? "";
     if (item.open.unit !== ctx.unit || steps === undefined) {
       result.returns.push(item.open.id);
+      if (events.some((event) => completed(event) && event.at > at)) result.resumed.push(item.open.id);
       continue;
     }
     const step = reworkStepOf(steps, item.open.step, ctx, item.open.at, on);
-    const at = item.latest?.at ?? "";
-    // 退けの決定より後（同じ時刻は数えない）に、戻り先を done で報告し直したか
-    const redone = events.some((event) => event.skill === skill && event.step === step && event.result === "done" && event.at > at);
+    // 退けの決定より後（同じ時刻は数えない）に、戻り先を報告し直したか
+    const redone = events.some((event) => completed(event) && event.step === step && event.at > at);
     if (redone) result.reworked.push(item.open.id);
     else result.rework.push({ id: item.open.id, step });
   }
@@ -210,12 +220,20 @@ export function consentProblem(skill: string): (ctx: StepContext) => string | un
         `退けた項目を作り直していません（${list}）。戻り先のステップ（${earliestStep(skill, rejections.rework.map((entry) => entry.step))}）を作り直して done で報告し直してください（そこから後ろはやり直しになります）。作り直したら、resolved の前でも承認と PR の作成を受け付けます。`,
       );
     }
-    if (rejections.returns.length > 0) {
+    const resumed = new Set(rejections.resumed);
+    const notYet = rejections.returns.filter((id) => !resumed.has(id));
+    if (notYet.length > 0) {
       const how = skill === "builder"
         ? "skills/builder/references/return.md の「同意ゲートで前のフェーズの判断を退けたとき」に従い、architect へ差し戻してください。"
         : "記録したフェーズで作り直してください。";
       problems.push(
-        `前のフェーズで記録した項目を退けています（${rejections.returns.join(", ")}）。${how}作り直しが済んでユーザーが resolved を記録するまで受け付けません。`,
+        `前のフェーズで記録した項目を退けています（${notYet.join(", ")}）。${how}作り直しが済んでユーザーが resolved を記録するまで受け付けません。`,
+      );
+    }
+    if (resumed.size > 0) {
+      // 退けのあとに作業を再開している（差し戻しの再設計を経た）。もう一度差し戻さず、作り直しが済んだかを尋ねる
+      problems.push(
+        `前のフェーズで記録して退けた項目（${rejections.resumed.join(", ")}）は、退けのあとに作業を再開しています。作り直しが済んだかをユーザーに尋ね、認めたら hikyaku ledger decide ${ctx.unit} <ID> --decision resolved --by user --input "<ユーザーの答え>" で記録してから報告し直してください（認めなければ、もう一度差し戻すかをユーザーと決めてください）。`,
       );
     }
     return problems.length === 0 ? undefined : problems.join(" ");
@@ -271,6 +289,8 @@ export function consentStep(skill: string, when?: (ctx: StepContext) => boolean)
           args["rework"] = rejections.rework;
         }
         if (rejections.returns.length > 0) args["returns"] = rejections.returns;
+        // 差し戻しの再設計を経て再開した項目（もう一度差し戻さず、作り直しが済んだかを尋ねる）
+        if (rejections.resumed.length > 0) args["resumed"] = rejections.resumed;
         return args;
       } catch (error) {
         // 空の一覧だけを返すと「同意する項目は無い」と読まれる。読めないことを示す（承認は accepts が拒む）

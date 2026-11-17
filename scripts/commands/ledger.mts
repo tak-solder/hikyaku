@@ -671,7 +671,7 @@ register({
     if (!opened.phase.startsWith("build-")) {
       throw new HikyakuError(`${opened.phase} では差し戻しの下書きを出せません`, "return.md は builder（build-NN）が書きます。");
     }
-    const ids = required(args, "items").split(",").map((id) => id.trim()).filter((id) => id !== "");
+    const ids = [...new Set(required(args, "items").split(",").map((id) => id.trim()).filter((id) => id !== ""))];
     if (ids.length === 0) throw new HikyakuError("--items に事項の ID を指定してください");
     const ledger = readLedger(opened.cycle.directory);
     const items = ids.map((id) => {

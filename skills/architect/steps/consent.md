@@ -14,7 +14,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger consent-list architect {
   - 同意する: `--decision consented`。害が高の異議は、ユーザーが受け入れると自分の言葉で書いたことを `--accepts` に添える（AI が代わりに書かない）
   - 選択を改める: `--decision decided`
   - 退ける: `--decision rejected`。下の「退けたとき」に従って作り直す
-  - 前に退けた項目の作り直しが済んだとユーザーが認めた: `--decision resolved`（PR 本文と `cycle status` の「未解決の退け」から消える）
+  - 前に退けた項目の作り直しが済んだとユーザーが認めた（ask: deferred-consent）: `--decision resolved`（PR 本文と `cycle status` の「未解決の退け」から消える）
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger decide architect <ID> {cycle} --decision <decision> --by user --input "<ユーザーの答え>" [--accepts "<受け入れの言葉>"]

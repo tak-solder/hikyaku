@@ -14,7 +14,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger consent-list build-{NN} 
   - 同意する: `--decision consented`。害が高の異議は、ユーザーが受け入れると自分の言葉で書いたことを `--accepts` に添える（AI が代わりに書かない）
   - 選択を改める: `--decision decided`
   - 退ける: `--decision rejected`。下の「退けたとき」に従って作り直す
-  - 前に退けた項目の作り直しが済んだとユーザーが認めた: `--decision resolved`（PR 本文と `cycle status` の「未解決の退け」から消える）
+  - 前に退けた項目の作り直しが済んだとユーザーが認めた（ask: deferred-consent）: `--decision resolved`（PR 本文と `cycle status` の「未解決の退け」から消える）
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger decide build-{NN} <ID> {cycle} --decision <decision> --by user --input "<ユーザーの答え>" [--accepts "<受け入れの言葉>"]
@@ -32,5 +32,6 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger decide build-{NN} <ID> {
   PR を作れる。項目は `resolved` まで「未解決の退け」として PR 本文に残る）
 - `args.returns`（前のフェーズで記録した項目）: このビルドでは作り直せない。
   `${CLAUDE_PLUGIN_ROOT}/skills/builder/references/return.md`（[return.md](../references/return.md)）の
-  「同意ゲートで前のフェーズの判断を退けたとき」に従って architect へ差し戻す。再設計のあとこのゲートに
-  戻ったら、作り直しが済んだかをユーザーに尋ね、認めたら `resolved` を記録する
+  「同意ゲートで前のフェーズの判断を退けたとき」に従って architect へ差し戻す
+- `args.resumed`（差し戻しの再設計を経て再開した項目）: もう一度差し戻さない。作り直しが済んだかをユーザーに
+  尋ね（ask: deferred-consent）、認めたら `resolved` を記録する
