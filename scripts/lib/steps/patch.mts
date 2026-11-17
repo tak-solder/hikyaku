@@ -85,6 +85,7 @@ export const PATCH_STEPS: SkillSteps = {
       kind: "gate",
       title: "対応方針の合意",
       consent: () => ({ timing: "now", reason: "対応方針の合意（意図を決める判断）" }),
+      reworks: "scope",
     },
     { id: "pr", kind: "run", title: "Draft PR の作成（依頼と合意した挙動を本文に）", recordsPr: true },
     // builder と同じ retry-policy に従うので、failed --reason に行き詰まりの報告を添える

@@ -1,0 +1,15 @@
+{"at":"2026-11-17T08:10:19.568Z","skill":"builder","step":"plan","result":"done","peak":315000,"context":175462,"session":"31d65ef1-f840-4ed8-a10e-937b2a99131d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T08:16:16.093Z","skill":"builder","step":"plan-review","result":"done","peak":345000,"context":192575,"session":"31d65ef1-f840-4ed8-a10e-937b2a99131d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T08:17:29.407Z","skill":"builder","step":"test-spec","result":"done","context":195704,"session":"31d65ef1-f840-4ed8-a10e-937b2a99131d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T08:19:09.457Z","skill":"builder","step":"test-spec-review","result":"done","context":204000,"session":"31d65ef1-f840-4ed8-a10e-937b2a99131d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T08:20:05.311Z","skill":"builder","step":"G8","result":"approved","input":"監督（委任された判断）: 承認（実装に進む）。受け入れ基準 US-20.11 は test-spec に対応し、設計どおり","context":207156,"session":"31d65ef1-f840-4ed8-a10e-937b2a99131d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T08:37:30.480Z","skill":"builder","step":"implement","result":"done","context":251366,"session":"31d65ef1-f840-4ed8-a10e-937b2a99131d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T08:37:39.622Z","skill":"builder","step":"verify","result":"done","context":252973,"session":"31d65ef1-f840-4ed8-a10e-937b2a99131d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T09:11:08.664Z","skill":"builder","step":"review","result":"done","context":297800,"session":"31d65ef1-f840-4ed8-a10e-937b2a99131d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T09:11:50.286Z","skill":"builder","step":"handoff","result":"done","context":302149,"session":"31d65ef1-f840-4ed8-a10e-937b2a99131d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T09:12:06.592Z","skill":"retrospective","step":"peak-actual","result":"done","context":311402,"session":"31d65ef1-f840-4ed8-a10e-937b2a99131d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T09:12:14.171Z","skill":"retrospective","step":"analyze","result":"done","context":312817,"session":"31d65ef1-f840-4ed8-a10e-937b2a99131d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T09:12:31.972Z","skill":"retrospective","step":"write","result":"done","context":316100,"session":"31d65ef1-f840-4ed8-a10e-937b2a99131d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T09:12:37.656Z","skill":"builder","step":"retrospective","result":"done","context":318660,"session":"31d65ef1-f840-4ed8-a10e-937b2a99131d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T09:14:01.873Z","skill":"builder","step":"pr","result":"done","pr":"https://github.com/tak-solder/hikyaku/pull/124","context":323881,"session":"31d65ef1-f840-4ed8-a10e-937b2a99131d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T09:14:08.538Z","skill":"builder","step":"publish","result":"done","context":327498,"session":"31d65ef1-f840-4ed8-a10e-937b2a99131d","hikyaku":"3.0.0"}

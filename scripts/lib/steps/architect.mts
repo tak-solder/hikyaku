@@ -379,6 +379,7 @@ const G3: StepDefinition = {
   enabled: (ctx) => ctx.config.gates.designChoice,
   consent: (ctx) => g3Consent(ctx, true),
   notices: declarationNotices,
+  reworks: "options",
   ask: "G3",
 };
 
@@ -514,6 +515,7 @@ export const ARCHITECT_STEPS: SkillSteps = {
       when: designChanges,
       enabled: (ctx) => ctx.config.gates.architecture,
       consent: g4Consent,
+      reworks: "design-delta",
       // 当たった領域を G4 の提示に使う（宣言が無ければ空）。手順の位置だけを読む経路では組み立てない
       // 提示の正は gate brief G4。args は G4.md と conductor の分岐に使う。境界は [app] の宣言の有無より先に組む
       args: (ctx) => {

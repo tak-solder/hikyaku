@@ -115,6 +115,12 @@ export interface StepDefinition {
    * 無かったものとして現在地に戻る。G10 は、確認として受けた承認のあとに同意が要る変更が出たときに使う
    */
   reopens?: (ctx: StepContext, approval: ProgressEvent) => string | undefined;
+  /**
+   * ゲートで記録した事項を同意ゲートで退けたときの戻り先（そのゲートが承認した成果物を作る run ステップ）。
+   * ゲートは done で報告し直せないため。省略したゲートは、それより前で最も近い run へ戻す（steps/consent.mts）。
+   * gate だけが持てる
+   */
+  reworks?: string;
   /** ゲートの問いの ID（conductor の ASKS） */
   ask?: string;
   /** call で呼ぶ内部スキル */
@@ -261,9 +267,17 @@ export function lintApproval(skill: Pick<SkillSteps, "skill" | "steps">): string
       if (definition.defers !== undefined) {
         problems.push(`${skill.skill}: ゲート ${definition.id} は defers を持てません（done を報告しないため）`);
       }
+      // 戻り先は、そのゲートより前の run（名前を変えたときに黙って古くならないように）
+      if (definition.reworks !== undefined) {
+        const index = skill.steps.indexOf(definition);
+        const target = skill.steps.findIndex((step) => step.id === definition.reworks);
+        if (target === -1 || target >= index || skill.steps[target]?.kind !== "run") {
+          problems.push(`${skill.skill}: ゲート ${definition.id} の reworks（${definition.reworks}）が、それより前の run ステップではありません`);
+        }
+      }
       continue;
     }
-    for (const key of ["consent", "enabled", "interrupt", "reopens"] as const) {
+    for (const key of ["consent", "enabled", "interrupt", "reopens", "reworks"] as const) {
       if (definition[key] !== undefined) {
         problems.push(`${skill.skill}: ${definition.id} は gate でないのに ${key} を持っています（条件は when に書きます）`);
       }

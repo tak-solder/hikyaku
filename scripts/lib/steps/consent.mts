@@ -20,10 +20,147 @@ import {
   undecidedConsentItems,
   unitConsentItemsAfter,
   unitHasConsentItems,
+  type LedgerItem,
 } from "../ledger.mts";
-import { currentEvents, type StepContext, type StepDefinition } from "./engine.mts";
+import { currentEvents, isOn, type SkillSteps, type StepContext, type StepDefinition } from "./engine.mts";
+import { stepsOf } from "./index.mts";
 
 export const CONSENT_STEP = "consent";
+
+// ---------------------------------------------------------------------------
+// 退けた項目の作り直し（build-17・US-20.11）
+
+/**
+ * 手順に入っているかを、1回の判定の中ではステップごとに1度だけ評価する（when・consent は記録や git を読むため）。
+ * 評価が投げたら入っているとみなす（戻り先を手順から外して黙って飛ばさないため）
+ */
+function onChecker(ctx: StepContext): (definition: StepDefinition) => boolean {
+  const cache = new Map<StepDefinition, boolean>();
+  return (definition) => {
+    let on = cache.get(definition);
+    if (on === undefined) {
+      try {
+        on = isOn(definition, ctx);
+      } catch {
+        on = true;
+      }
+      cache.set(definition, on);
+    }
+    return on;
+  };
+}
+
+/**
+ * 内部スキルのステップ ID から、その内部スキルを呼ぶ call の位置。同じ ID を持つ内部スキルが複数あれば
+ * （build-manager と retrospective の write など）、事項を記録した時刻までに最後に記録を残した内部スキルで決め、
+ * 決まらなければ手順で前の call（安全側＝多くやり直す）
+ */
+function internalCallIndex(steps: StepDefinition[], step: string, ctx: StepContext, at: string | undefined): number {
+  const calls = steps
+    .map((definition, index) => ({ definition, index }))
+    .filter(({ definition }) => definition.kind === "call" && definition.call !== undefined &&
+      (stepsOf(definition.call)?.steps.some((inner) => inner.id === step) ?? false));
+  if (calls.length <= 1 || at === undefined) return calls[0]?.index ?? -1;
+  const callees = new Set(calls.map(({ definition }) => definition.call));
+  const last = ctx.events.filter((event) => callees.has(event.skill) && event.at <= at).at(-1);
+  return (calls.find(({ definition }) => definition.call === last?.skill) ?? calls[0])?.index ?? -1;
+}
+
+/** 位置 index より前で最も近い、手順に入っている run ステップ */
+function previousRun(steps: StepDefinition[], index: number, on: (definition: StepDefinition) => boolean): string | undefined {
+  for (let i = index - 1; i >= 0; i -= 1) {
+    const definition = steps[i] as StepDefinition;
+    if (definition.kind === "run" && on(definition)) return definition.id;
+  }
+  return undefined;
+}
+
+/**
+ * 事項を記録したステップ（OpenRecord.step）を、done で報告し直せる戻り先に対応させる。
+ *
+ *   - ゲートは定義の reworks（手順に入っている run のとき）。無ければそのゲートより前で最も近い run
+ *   - run / call で手順に入っていればそのステップ。入っていなければそれより前で最も近い run
+ *   - 内部スキル（build-manager・retrospective）のステップ（G6 など）は、その内部スキルを呼ぶ call ステップとして扱う
+ *     （G6 の受け入れを退けて G2〜G4 まで取り直さないため）
+ *   - 同意ゲートより後ろ（pr / publish）は、ゲートが承認されるまで報告し直せないので、ゲートより前で最も近い run
+ *   - それでも決まらなければ、手順に入っている最初の run（安全側＝全部やり直す）
+ *
+ * at は事項を記録した時刻（同じ ID を持つ内部スキルの見分けに使う）
+ */
+export function reworkStepOf(
+  skill: SkillSteps,
+  step: string | undefined,
+  ctx: StepContext,
+  at?: string,
+  on: (definition: StepDefinition) => boolean = onChecker(ctx),
+): string {
+  const steps = skill.steps;
+  const first = () => steps.find((definition) => definition.kind === "run" && on(definition))?.id ?? steps[0]?.id ?? "";
+  if (step === undefined) return first();
+
+  let index = steps.findIndex((definition) => definition.id === step);
+  if (index === -1) index = internalCallIndex(steps, step, ctx, at);
+  if (index === -1) return first();
+  // 同意ゲート（無いスキルは PR を作るステップ）から後ろは、決定が足りないあいだ報告し直せないので、その前の run
+  let gate = steps.findIndex((definition) => definition.id === CONSENT_STEP);
+  if (gate === -1) gate = steps.findIndex((definition) => definition.id === "pr" || definition.id === "publish");
+  if (gate !== -1 && index >= gate) return previousRun(steps, gate, on) ?? first();
+  const definition = steps[index] as StepDefinition;
+  if (definition.kind === "gate") {
+    const mapped = definition.reworks === undefined ? undefined : steps.find((entry) => entry.id === definition.reworks);
+    if (mapped !== undefined && mapped.kind === "run" && on(mapped)) return mapped.id;
+  } else if (on(definition)) {
+    return definition.id;
+  }
+  return previousRun(steps, index, on) ?? first();
+}
+
+export interface ConsentRejections {
+  /** 同じ作業単位で退け、戻り先をまだ done で報告し直していない項目と、その戻り先 */
+  rework: { id: string; step: string }[];
+  /** 同じ作業単位で退け、戻り先を退けの決定より後に done で報告し直した項目（resolved までは未解決の退け） */
+  reworked: string[];
+  /** 前のフェーズ（記録した作業単位が別）で退けた項目。resolved まで受け付けない */
+  returns: string[];
+  /**
+   * returns のうち、退けの決定より後にこの単位の手順を報告している項目（差し戻しの再設計を経て作業を再開した）。
+   * 差し戻しの前は、退けたあと手順を報告せずに止まるので、作り直しが済んだかをユーザーに尋ねる段階と見分けられる
+   */
+  resumed: string[];
+}
+
+/** 最新の決定が rejected の項目を、作り直しの経路ごとに分ける */
+export function consentRejections(skill: string, items: LedgerItem[], ctx: StepContext): ConsentRejections {
+  const result: ConsentRejections = { rework: [], reworked: [], returns: [], resumed: [] };
+  const rejected = items.filter((item) => item.latest?.decision === "rejected");
+  if (rejected.length === 0) return result;
+  const steps = stepsOf(skill);
+  const on = onChecker(ctx);
+  // step restart の区切りより前の報告し直しは数えない（区切ったあとの回で作り直していない）
+  const events = currentEvents({ skill }, ctx.events);
+  // 完了の報告（skippable なステップを作り直しで skipped にした回も作り直しに数える）
+  const completed = (event: (typeof events)[number]) => event.skill === skill && (event.result === "done" || event.result === "skipped");
+  for (const item of rejected) {
+    const at = item.latest?.at ?? "";
+    if (item.open.unit !== ctx.unit || steps === undefined) {
+      result.returns.push(item.open.id);
+      if (events.some((event) => completed(event) && event.at > at)) result.resumed.push(item.open.id);
+      continue;
+    }
+    const step = reworkStepOf(steps, item.open.step, ctx, item.open.at, on);
+    // 退けの決定より後（同じ時刻は数えない）に、戻り先を報告し直したか
+    const redone = events.some((event) => completed(event) && event.step === step && event.at > at);
+    if (redone) result.reworked.push(item.open.id);
+    else result.rework.push({ id: item.open.id, step });
+  }
+  return result;
+}
+
+/** 戻り先のうち、手順で最も前のもの（そこを報告し直せば、後ろの戻り先もやり直しになる） */
+function earliestStep(skill: string, steps: string[]): string | undefined {
+  const order = stepsOf(skill)?.steps.map((definition) => definition.id) ?? [];
+  return [...steps].sort((a, b) => order.indexOf(a) - order.indexOf(b))[0];
+}
 
 /** conductor の子（非対話）か */
 export function isConductorChild(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -55,22 +192,51 @@ const GATED = new Set(["architect", "builder", "patch"]);
 export function consentProblem(skill: string): (ctx: StepContext) => string | undefined {
   return (ctx) => {
     if (ctx.cycle === undefined) return undefined;
-    let pending;
+    let pending: LedgerItem[];
     try {
       pending = undecidedConsentItems(consentItemsOf(readLedger(ctx.cycle.directory), ctx.unit));
     } catch (error) {
       return `未決事項の記録を読めず、事後同意の決定を確かめられません: ${error instanceof Error ? error.message : String(error)}（hikyaku ledger list で確かめてください）`;
     }
     if (pending.length === 0) return undefined;
-    const ids = pending.map((item) => item.open.id).join(", ");
-    // 同意ゲートが手順に入るのは、この作業単位のファイルに対象があるときだけ。ほかの単位で記録した対象だけなら
-    // ゲートは外れているので、consent.md（承認の報告で終わる）ではなく、その場で示す案内にする
-    const guide = isConductorChild()
-      ? "conductor の子では同意ゲートが手順に入りません。PR を完了にせず、blocked でユーザーに上げてください。"
-      : GATED.has(skill) && unitHasConsentItems(ctx.unitDirectory, ctx.unit) && !gateApproved(skill, ctx)
-        ? `skills/${skill}/steps/consent.md の手順で一覧をユーザーに示し、決定を記録してから報告し直してください。`
-        : `その場で一覧（hikyaku ledger consent-list ${ctx.unit}）をユーザーに示し、項目ごとにユーザーの決定を hikyaku ledger decide ${ctx.unit} <ID> --decision <decision> --by user --input "<ユーザーの答え>" で記録してから報告し直してください。`;
-    return `マージの前にユーザーの同意が要る項目に、ユーザーの決定がありません（${ids}）。${guide}`;
+    // 同じ作業単位で退けて作り直した項目は受け付ける（resolved までは PR 本文と cycle status に未解決の退けとして出る）
+    const rejections = consentRejections(skill, pending, ctx);
+    const undecided = pending.filter((item) => item.latest?.decision !== "rejected");
+    const problems: string[] = [];
+    if (undecided.length > 0) {
+      const ids = undecided.map((item) => item.open.id).join(", ");
+      // 同意ゲートが手順に入るのは、この作業単位のファイルに対象があるときだけ。ほかの単位で記録した対象だけなら
+      // ゲートは外れているので、consent.md（承認の報告で終わる）ではなく、その場で示す案内にする
+      const guide = isConductorChild()
+        ? "conductor の子では同意ゲートが手順に入りません。PR を完了にせず、blocked でユーザーに上げてください。"
+        : GATED.has(skill) && unitHasConsentItems(ctx.unitDirectory, ctx.unit) && !gateApproved(skill, ctx)
+          ? `skills/${skill}/steps/consent.md の手順で一覧をユーザーに示し、決定を記録してから報告し直してください。`
+          : `その場で一覧（hikyaku ledger consent-list ${ctx.unit}）をユーザーに示し、項目ごとにユーザーの決定を hikyaku ledger decide ${ctx.unit} <ID> --decision <decision> --by user --input "<ユーザーの答え>" で記録してから報告し直してください。`;
+      problems.push(`マージの前にユーザーの同意が要る項目に、ユーザーの決定がありません（${ids}）。${guide}`);
+    }
+    if (rejections.rework.length > 0) {
+      const list = rejections.rework.map((entry) => `${entry.id} → ${entry.step}`).join(", ");
+      problems.push(
+        `退けた項目を作り直していません（${list}）。戻り先のステップ（${earliestStep(skill, rejections.rework.map((entry) => entry.step))}）を作り直して done で報告し直してください（そこから後ろはやり直しになります）。作り直したら、resolved の前でも承認と PR の作成を受け付けます。`,
+      );
+    }
+    const resumed = new Set(rejections.resumed);
+    const notYet = rejections.returns.filter((id) => !resumed.has(id));
+    if (notYet.length > 0) {
+      const how = skill === "builder"
+        ? "skills/builder/references/return.md の「同意ゲートで前のフェーズの判断を退けたとき」に従い、architect へ差し戻してください。"
+        : "記録したフェーズで作り直してください。";
+      problems.push(
+        `前のフェーズで記録した項目を退けています（${notYet.join(", ")}）。${how}作り直しが済んでユーザーが resolved を記録するまで受け付けません。`,
+      );
+    }
+    if (resumed.size > 0) {
+      // 退けのあとに作業を再開している（差し戻しの再設計を経た）。もう一度差し戻さず、作り直しが済んだかを尋ねる
+      problems.push(
+        `前のフェーズで記録して退けた項目（${rejections.resumed.join(", ")}）は、退けのあとに作業を再開しています。作り直しが済んだかをユーザーに尋ね、認めたら hikyaku ledger decide ${ctx.unit} <ID> --decision resolved --by user --input "<ユーザーの答え>" で記録してから報告し直してください（認めなければ、もう一度差し戻すかをユーザーと決めてください）。`,
+      );
+    }
+    return problems.length === 0 ? undefined : problems.join(" ");
   };
 }
 
@@ -88,7 +254,10 @@ function gateApproved(skill: string, ctx: StepContext): boolean {
 /** 同意ゲート。when はスキルごとの構造の条件（architect の差し戻しの回を外す、など） */
 export function consentStep(skill: string, when?: (ctx: StepContext) => boolean): StepDefinition {
   return {
-    id: CONSENT_STEP,
+    // CONSENT_STEP と同じ値。steps/<skill>.mts の評価中に呼ばれ、循環 import（consent → ledger・index →
+    // architect / builder / patch → consent）でこのファイルを先に読み始めたときは const がまだ初期化されていないので、
+    // リテラルで書く
+    id: "consent",
     kind: "gate",
     title: "事後同意（マージの前にユーザーが同意する項目）",
     // PR を作るステップをこの回で終えたら、もう手順に入れない。そのとき pr / publish の accepts が決定を確かめ済み。
@@ -111,7 +280,18 @@ export function consentStep(skill: string, when?: (ctx: StepContext) => boolean)
     args: (ctx) => {
       if (ctx.positionOnly === true || ctx.cycle === undefined) return { items: [] };
       try {
-        return { items: consentItemsOf(readLedger(ctx.cycle.directory), ctx.unit).map((item) => item.open.id) };
+        const items = consentItemsOf(readLedger(ctx.cycle.directory), ctx.unit);
+        const args: Record<string, unknown> = { items: items.map((item) => item.open.id) };
+        // 退けた項目があるときだけ、作り直しの戻り先（同じ作業単位）と差し戻す項目（前のフェーズ）を添える
+        const rejections = consentRejections(skill, undecidedConsentItems(items), ctx);
+        if (rejections.rework.length > 0) {
+          args["reworkFrom"] = earliestStep(skill, rejections.rework.map((entry) => entry.step));
+          args["rework"] = rejections.rework;
+        }
+        if (rejections.returns.length > 0) args["returns"] = rejections.returns;
+        // 差し戻しの再設計を経て再開した項目（もう一度差し戻さず、作り直しが済んだかを尋ねる）
+        if (rejections.resumed.length > 0) args["resumed"] = rejections.resumed;
+        return args;
       } catch (error) {
         // 空の一覧だけを返すと「同意する項目は無い」と読まれる。読めないことを示す（承認は accepts が拒む）
         return { items: [], error: `未決事項の記録を読めません: ${error instanceof Error ? error.message : String(error)}` };
