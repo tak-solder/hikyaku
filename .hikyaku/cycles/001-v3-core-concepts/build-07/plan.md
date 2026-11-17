@@ -117,6 +117,7 @@ export async function deriveWaiting(config: ResolvedConfig, cycle: CycleContext,
   - 「人間に上げるとき」: ユーザーが「監督に任せる」と答えたら監督が判断する経路を消す。handler が user の問いを監督が答える経路は launch が拒むので（US-15.3・US-21.4）、ユーザーに答えを求める
   - error・2回目の violation・check-pr の不合格は従来どおりその場でユーザーに上げる
   - 「問いへの答え方」の表に `--choice` の値を添える
+  - Step 4 の最後の PR の本文の「監督が答えた確認ゲート」の一覧に、`--no-risk`（リスクなしと申告した答え）で答えた問いを1行ずつ並べる（LLM の申告で上限の検査を外した答えを、ユーザーが後から見つけられるようにする）。launch の JSON に `riskDeclaration`（`none` か、害と前提）を出す
 - `skills/conductor/references/headless-protocol.md`: ユーザーに上げる問いの記録と `waiting:` の blocked、`HIKYAKU_ANSWER_FROM` と `--by user`（最後のビルドの同意ゲートは build-19）
 - `docs/workflow/conductor.md`・`docs/reference/cli.md`（いつ・なぜだけ）、CHANGELOG の `[3.0.0]`
 
@@ -136,7 +137,7 @@ export async function deriveWaiting(config: ResolvedConfig, cycle: CycleContext,
 - **状態を保存しない**: 待ちは作業ツリーと origin のブランチから毎回導く。session-id は保存しない
 - **互換**: `conductor launch` の `--resume --message` は `--from` が必須になる（監督の手順と同じ PR で直す）
 - **build-19 より前のマージ時点**: conductor の子は従来どおり同意ゲートを置かず、決定の無い同意の項目は pr の `accepts` で止まってユーザーに上がる。上限を超える監督の申告は、事後同意の有無に関わらず拒否する（監督と子の判定が割れない）
-- **受け入れたこと（G8 で示す）**: `HIKYAKU_ANSWER_FROM=user` は、ユーザーの答えで再開した子のプロセス全体に効く。その実行の中で、ユーザーが答えていない事項にも `--by user` を書ける。検査は取り違え（監督の答えをユーザーの答えとして記録する）を防ぐもので、子の振る舞いの偽装は防がない（ADR pending-items-ledger）。答えた事項に限るには、launch が `--closes` の ID を環境変数で渡し `ledger decide` が照合する形があるが、同意ゲートでは一覧の項目ごとに決定を書くので ID の列挙が増える。このビルドでは足さず、G8 で監督に判断を求める
+- **受け入れたこと（G8 で示す）**: `HIKYAKU_ANSWER_FROM=user` は、ユーザーの答えで再開した子のプロセス全体に効く。その実行の中で、ユーザーが答えていない事項にも `--by user` を書ける。検査は取り違え（監督の答えをユーザーの答えとして記録する）を防ぐもので、子の振る舞いの偽装は防がない（ADR pending-items-ledger）。答えた事項に限るには、launch が `--closes` の ID を環境変数で渡し `ledger decide` が照合する形があるが、同意ゲートでは一覧の項目ごとに決定を書くので ID の列挙が増える。このビルドでは足さない案とし、受け入れるかはユーザーが決める（受け入れたリスクはユーザーが持つもの。原則 9・11）。G8 の提示で「ユーザーが決める受け入れ」として示し、監督に判断を求めない（conductor では監督がユーザーに上げる）。ユーザーが受け入れなければ、`--closes` の ID を環境変数で渡して `ledger decide --by user` が照合する形をこのビルドに足す
 
 ## 予測ピーク
 
@@ -150,7 +151,7 @@ G6 で build-19 を分けた後の見積もり（issue.md の 420k と同じ成�
 | 固定費 | 90k | — |
 | 読み込み | 160k | 読んだもの（約 110k）: conductor の lib・commands・SKILL.md・headless-protocol、next、ledger と commands/ledger の該当部分、consent・directive・builder steps、deferred-consent・git の一部、handoff 5件と ADR。残り（約 50k）: tasklist・risk・escalation・locate・engine・branch の該当部分、docs/workflow/conductor.md・docs/reference/cli.md、tests/conductor.test.mts・tests/ledger.test.mts の該当部分 |
 | 実装 | 80k | lib/conductor.mts（SAFE_ANSWERS・waiting の解析 約120行）、commands/conductor.mts（launch の検査・--escalate/--closes・waiting コマンド 約180行）、waiting.mts 新規（約150行）、ledger の出どころの検査と from（約40行）、next（約30行）、SKILL.md Step 0/1/3・headless-protocol・docs・CHANGELOG（約150行） |
-| テスト | 50k | conductor.test.mts（launch の拒否・リスクの申告・--escalate・waiting の blocked・waiting の導出）、ledger.test.mts（出どころの検査と from） |
+| テスト | 50k | conductor.test.mts（launch の拒否・リスクの申告・--escalate・waiting の blocked・waiting の導出・`next --json` の available と waiting）、ledger.test.mts（出どころの検査と from） |
 | 未知の領域 | 40k | 子の再開と取り込みの手順、既存の conductor の結合テストの調整（--from 必須化）、origin のブランチを使う waiting の結合テストの準備 |
 | **予測ピーク** | **420k** | 狙いの帯（300k〜450k） |
 | ガイド | 標準 v2 | 03897ac0 |
