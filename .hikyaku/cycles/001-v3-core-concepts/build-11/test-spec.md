@@ -6,9 +6,9 @@
 
 ### loadConfig: promotion_gate の既定は express だけ false
 - 対応: US-11.2
-- Given: ルート設定に `profile = "express"` を書いたワークスペースと、`profile = "standard"` を書いたワークスペース。どちらも `promotion_gate` は書かない
+- Given: ルート設定に `profile` を express / economy / standard / thorough のそれぞれで書いたワークスペース。どれも `promotion_gate` は書かない
 - When: それぞれ `loadConfig` を呼ぶ
-- Then: express は `gates.promotion === false`、standard は `gates.promotion === true`
+- Then: express は `gates.promotion === false`、economy・standard・thorough は `gates.promotion === true`
 
 ### loadConfig: promotion_gate を明示すればプロファイルの既定を上書きする
 - 対応: US-11.2
@@ -116,13 +116,13 @@
 
 ### consentChanges: このサイクルの ADR の状態だけの書き換えは除く
 - 対応: US-11.2
-- Given: candidates は空。changes は `{ path: "docs/decisions/20261101-cache-layer.md", doc: "decisions", status: "M", before: "status: accepted の ADR", after: "status: implemented にしただけ" }`。`20261101-cache-layer.md` は design-delta.md に現れる
+- Given: candidates は空。cycleAdrs は `new Set(["20261101-cache-layer"])`。changes は `{ path: "docs/decisions/20261101-cache-layer.md", doc: "decisions", status: "M", before: "---\nstatus: accepted\n---\n\n# キャッシュ層を置く\n本文\n", after: "---\nstatus: implemented\n---\n\n# キャッシュ層を置く\n本文\n" }`
 - When: `consentChanges` を呼ぶ
 - Then: `[]`
 
 ### consentChanges: このサイクルの ADR でも本文を変えれば同意
 - 対応: US-11.1
-- Given: 上と同じ ADR で、after は状態に加えて「再評価条件」の行を変えたもの
+- Given: 上と同じ cycleAdrs・before で、after は `"---\nstatus: implemented\n---\n\n# キャッシュ層を置く\n本文を変えた\n"`
 - When: `consentChanges` を呼ぶ
 - Then: 1件、`source: "diff"`、`doc: "decisions"`、`text` に `20261101-cache-layer.md` を含む
 
@@ -140,13 +140,13 @@
 
 ### consentChanges: 他サイクルの ADR は状態だけの書き換えでも同意
 - 対応: US-11.1
-- Given: changes は `20250301-old-auth.md`（サイクルの文書に現れない）の `accepted → implemented` だけの `M`
+- Given: cycleAdrs は `new Set(["20261101-cache-layer"])`。changes は `docs/decisions/20250301-old-auth.md` の `M` で、before と after は上の「状態だけの書き換え」と同じ形の文字列（`status: accepted` → `status: implemented` だけ）
 - When: `consentChanges` を呼ぶ
 - Then: 1件、`source: "diff"`（安全側）
 
 ### consentChanges: constraints の変更は状態の書き換えの形でも同意
 - 対応: US-11.1
-- Given: changes は `{ path: "docs/constraints.md", doc: "constraints", status: "M", before, after }`（before と after の差は1行）
+- Given: changes は `{ path: "docs/constraints.md", doc: "constraints", status: "M", before: "---\nstatus: accepted\n---\n\n# 制約\n", after: "---\nstatus: implemented\n---\n\n# 制約\n" }`。cycleAdrs に `constraints` を入れても同じ
 - When: `consentChanges` を呼ぶ
 - Then: 1件、`doc: "constraints"`
 
@@ -158,9 +158,9 @@
 
 ### docChanges: close-cycle の進捗を最初に足したコミットの親と比べる
 - 対応: US-11.1
-- Given: コミット C1 で `docs/decisions/20261101-cache-layer.md`（accepted）を足し（architect の ADR、design-delta.md にも名前を書く）、コミット C2 でサイクル直下の `progress.jsonl` に close-cycle の collect の記録を初めて足す。作業ツリーで同じ ADR を `implemented` に書き換え、`docs/decisions/20261117-new-index.md` を追跡外のまま置く
+- Given: コミット C1 で `docs/decisions/20261101-cache-layer.md`（accepted、本文「本文」）を足し（architect の ADR、design-delta.md にも名前を書く）、コミット C2 でサイクル直下の `progress.jsonl` に close-cycle の collect の記録を初めて足す。コミット C3 で `progress.jsonl` に G10 の記録を追記し、同時に ADR の本文を「本文を変えた」にする。作業ツリーで同じ ADR を `implemented` に書き換え、`docs/decisions/20261117-new-index.md` を追跡外のまま置く
 - When: `docChanges(config, cycleDirectory)` を呼ぶ
-- Then: 2件を返す: `20261101-cache-layer.md` は `status: "M"`（C1 の内容が before。新しい ADR として数えない）、`20261117-new-index.md` は `status: "A"`
+- Then: 2件を返す: `20261101-cache-layer.md` は `status: "M"` で before が C1 の内容（本文「本文」。C2 の親が基準で、C3 の親ではない）、`20261117-new-index.md` は `status: "A"`
 
 ### docChanges: close-cycle の進捗がまだコミットされていなければ HEAD と比べる
 - 対応: —
@@ -180,15 +180,21 @@
 - When: `docChanges` を呼ぶ
 - Then: `[]`
 
-### docChanges: constraints が未作成のときは document-guide.md の差分で拾う
+### docChanges: constraints を新しく作り、作業ツリーのガイドに登録すれば追加として拾う
 - 対応: US-11.1
-- Given: document-guide.md の `constraints` の `path` が `未作成`。作業ツリーで `docs/constraints.md` を新しく作り、document-guide.md の `constraints` の行を `docs/constraints.md` に書き換える
-- When: `docChanges` を呼んで `consentChanges` に渡す
-- Then: 1件以上の同意が要る変更が返る（document-guide.md の差分による）
+- Given: HEAD の document-guide.md の `constraints` は `未作成`。作業ツリーで `docs/constraints.md` を新しく作り、document-guide.md の `constraints` の行を `hikyaku` / `docs/constraints.md` に書き換える
+- When: `docChanges` を呼ぶ
+- Then: `{ path: "docs/constraints.md", doc: "constraints", status: "A" }` を含む
+
+### docChanges: document-guide.md の constraints 以外の行だけを変えても返さない
+- 対応: US-11.2
+- Given: `constraints` は `未作成` のまま。作業ツリーで document-guide.md の `overview` の行の概要だけを書き換える
+- When: `docChanges` を呼ぶ
+- Then: `[]`
 
 ### docChanges: 対象外の decisions は見ない
 - 対応: —
-- Given: document-guide.md の `decisions` の `path` が `対象外`。`constraints` は変更なし
+- Given: document-guide.md の `decisions` の `path` が `対象外`。作業ツリーの `docs/decisions/` に追跡外の `20261117-new-index.md` を置く。`constraints` は変更なし
 - When: `docChanges` を呼ぶ
 - Then: `[]`（git を呼んでもエラーにならない）
 
@@ -328,7 +334,7 @@
 - When: `step next close 001 --json`
 - Then: G10 に戻らず、close 以降の現在地（`pr` など）を返す
 
-### step where / Stop フック: 位置だけを読む経路でも同じ現在地を返す
+### step where: 位置だけを読む経路でも同じ現在地を返す
 - 対応: —
 - Given: express。確認の候補だけで G10 を省いて write に入り、作業ツリーに新しい ADR を足す
 - When: `step where close 001 --json` と `step next close 001 --json`
@@ -342,9 +348,15 @@
 
 ### followups の args: ruleRemovals と metricsComparison を渡す
 - 対応: US-9.2
-- Given: `.claude/rules/legacy.md`（paths が `src/legacy/**`、一致するファイルなし、`importance: 中`）がある。publish まで進めた
+- Given: standard。`.claude/rules/legacy.md`（paths が `src/legacy/**`、一致するファイルなし、`importance: 中`）がある。G10 を `--input "legacy.md は試しに消す"` で承認し、publish まで進めた
 - When: `step report close publish 001 --result done --json`
-- Then: `step: "followups"`、`args.ruleRemovals` に `location: ".claude/rules/legacy.md"`・`kind: "stale"` の1件、`args.metricsComparison` は配列（消した点が無ければ空）、`args.g10Input` は G10 の `--input` の値
+- Then: `step: "followups"`、`args.ruleRemovals` に `location: ".claude/rules/legacy.md"`・`kind: "stale"` の1件、`args.metricsComparison` は `[]`（消した点が無い）、`args.g10Input === "legacy.md は試しに消す"`
+
+### followups の args: G10 を省いた回の g10Input は空文字
+- 対応: US-11.2
+- Given: express。確認の候補だけで G10 を省き、publish まで進めた
+- When: followups の directive を得る
+- Then: `args.g10Input === ""`
 
 ### followups の recordsPr: --pr 無しでも done を受け付ける
 - 対応: US-9.3
@@ -364,11 +376,11 @@
 - When: `step report close followups 001 --result done --pr abc`
 - Then: 終了コード 1、記録は増えない
 
-### hooks: G10 を省いた回はフックを採らない
+### hooks: G10 を省いた回もフックの候補があれば hooks が現在地になり、skipped で報告すれば followups はフックを作らない
 - 対応: —
-- Given: express。確認の候補だけ。フックの候補が handoff に記録されている
-- When: collect を done で報告し、write まで進める
-- Then: hooks のステップは `skipped` 扱いで、followups の `args.hooks === false`
+- Given: express。確認の候補だけ（フックの候補 `hook` 宛て [中] を1件含む）
+- When: collect を done で報告し、hooks を `--result skipped --reason "G10 を省いた回"` で報告して followups まで進める
+- Then: collect の次は `hooks`、followups の `args.hooks === false`
 
 ## エンジン（`scripts/lib/steps/engine.mts`）
 
@@ -506,9 +518,15 @@
 
 ### CycleMetrics: 4つの指標を集める
 - 対応: US-9.4
-- Given: サイクル `002-a` の `design/progress.jsonl` に architect の `restart`（`round: "return"`）が2行、`decisions.jsonl` に `rejected` の決定が1件、handoff の「永続化すること」に `[高]` の落とし穴が1行と `[中]` が1行、「レビューの記録」に `[重]` 3行・`[軽]` 2行
+- Given: サイクル `002-a` の `design/progress.jsonl` に architect の `restart`（`round: "return"`）が2行、`design/decisions.jsonl` と `build-01/decisions.jsonl` に `rejected` の決定が1件ずつ、handoff の「永続化すること」に `[高]` の落とし穴が1行と `[中]` が1行、「レビューの記録」に `[重]` 3行・`[軽]` 2行
 - When: 指標を集める
-- Then: `{ cycle: "002-a", returns: 2, rejected: 1, highPitfalls: 1, heavyFindings: 3 }`
+- Then: `{ cycle: "002-a", returns: 2, rejected: 2, highPitfalls: 1, heavyFindings: 3 }`
+
+### CycleMetrics: decisions.jsonl と progress.jsonl が無いサイクルは 0 として数える
+- 対応: —
+- Given: サイクル `003-b` のディレクトリに handoff.md だけがある（「レビューの記録」は空）
+- When: 指標を集める
+- Then: `{ cycle: "003-b", returns: 0, rejected: 0, highPitfalls: 0, heavyFindings: 0 }`（比較できない扱いにしない）
 
 ### CycleMetrics: restart でも round が return でなければ数えない
 - 対応: —
@@ -632,9 +650,9 @@
 
 ### metricsComparison: followups の args に一時リポジトリの比較が載る
 - 対応: US-9.4
-- Given: 一時リポジトリ。`cycles.md` に closed の `001-p`（finished 2026-08-01）・`002-q`（finished 2026-09-05、followups の done に `"pr":12`）、closed の `003-r`（started 2026-09-12）、active の `004-s`（started 2026-10-01、いま close-cycle）。`main` の first-parent に件名 `Merge pull request #12 from x/q-close-criteria` のマージコミット（コミット日時 2026-09-10、`.claude/rules/legacy.md` を消す）。各サイクルに restart・decisions.jsonl・handoff を置く
+- Given: 一時リポジトリ。`cycles.md` に closed の `001-p`（finished 2026-08-01）・`002-q`（finished 2026-09-05、followups の done に `"pr":12`）、closed の `003-r`（started 2026-09-12）、active の `004-s`（started 2026-10-01、いま close-cycle）。`main` の first-parent に件名 `Merge pull request #12 from x/q-close-criteria` のマージコミット（コミット日時 2026-09-10、`.claude/rules/legacy.md` を消す）。指標（returns / rejected / highPitfalls / heavyFindings）は、`001-p` が 0/0/1/1、`002-q` が 1/0/0/1、`003-r` が 0/1/0/2、`004-s` が 0/0/1/1 になるように restart・decisions.jsonl・handoff を置く
 - When: `004-s` で followups まで進め、directive を得る
-- Then: `args.metricsComparison` に1件、`cycle: "002-q"`・`pr: 12`・`comparable: true`・消した基準に `.claude/rules/legacy.md`、前後の合計がそろう
+- Then: `args.metricsComparison` に1件、`cycle: "002-q"`・`pr: 12`・`comparable: true`・消した基準に `.claude/rules/legacy.md`。前（`001-p`・`002-q`）の合計は `{ returns: 1, rejected: 0, highPitfalls: 1, heavyFindings: 2 }`、後（`003-r`・`004-s`）の合計は `{ returns: 0, rejected: 1, highPitfalls: 1, heavyFindings: 3 }`、悪くなった指標は `["rejected", "heavyFindings"]`
 
 ### metricsComparison: 後が足りなければ followups の args に比較できないと出る
 - 対応: US-9.4
@@ -646,4 +664,4 @@
 - 対応: —
 - Given: followups の手前まで進めたサイクル
 - When: `step where close 001 --json`
-- Then: 現在地は返るが、`metricsComparison` の計算（git log）は行われない（`positionOnly`。args に `metricsComparison` を含まない）
+- Then: ベースブランチ（`base_branch = "no-such-branch"`）が存在しなくてもエラーにならずに現在地 `followups` を返し、args に `metricsComparison` を含まない（`positionOnly` では計算しない）

@@ -18,13 +18,13 @@
 - `candidateApproval(candidate): "consent" | "confirm"` — 宛先が `decisions`・`constraints` なら同意
 - `isStatusOnlyChange(before: string, after: string): boolean` — frontmatter の `status: accepted` を `status: implemented` に変えただけ（それ以外の行が一致）か
 - `cycleAdrNames(cycleDirectory): Set<string>` — このサイクルの ADR。サイクルのディレクトリの `.md`（design/・tasklist.md・build-NN/issue.md など）にファイル名（`20261116-xxx.md` か拡張子なし）が現れる ADR。現れない ADR の書き換えは、状態だけでも同意にする（安全側）
-- `consentChanges(input: { candidates: Candidate[]; changes: DocChange[] }): ConsentChange[]` — **同意が要る変更の判定の唯一の関数**
+- `consentChanges(input: { candidates: Candidate[]; changes: DocChange[]; cycleAdrs: Set<string> }): ConsentChange[]` — **同意が要る変更の判定の唯一の関数**
   - `DocChange = { path: string; doc: "decisions" | "constraints"; status: "A" | "M" | "D"; before?: string; after?: string }`
   - `ConsentChange = { source: "candidate" | "diff"; doc; text: string }`
   - 候補: 宛先が `decisions`・`constraints` の候補はすべて同意（候補の時点では書き換えの中身が分からないので、同意の側に倒す）
   - 差分: `decisions` の `M` で、このサイクルの ADR（`cycleAdrNames`）かつ `isStatusOnlyChange` を満たすものだけを除き、追加・削除・本文の変更・`superseded` への書き換えは同意
 - `docChanges(config, cycleDirectory): DocChange[] | string`（同期。`gitSync`）— 作業ツリーにある `decisions`・`constraints` の変更
-  - 所在は `loadGuide` の `decisions`・`constraints` の `path`（`未作成`・`対象外` なら見ない。`constraints` が未作成でもファイルが作られれば、ガイドの更新前でも同意にするため、パスが未定の論理名は「document-guide.md の差分」にも当たれば同意: write は document-guide.md も直すので、そちらの差分で拾う）
+  - 所在は作業ツリーの `loadGuide` の `decisions`・`constraints` の `path`（`未作成`・`対象外` なら見ない）。`constraints` を新しく作る write は document-guide.md の行も直すので、直した時点で作業ツリーのガイドからパスが引け、新しいファイルが追加（`A`）として同意になる
   - 比べる基準: close-cycle の進捗（`cycles/{cycle}/progress.jsonl`）を最初に足したコミットの親。まだコミットされていなければ `HEAD`。close-cycle が書く前の状態と比べるので、スタック（conductor ブランチ）でも architect が足した ADR を「新しい ADR」と数えない
   - 追跡外の新しいファイル（`git ls-files --others --exclude-standard`）も追加として数える
   - サイクルが closed になったあと（`cycle close` の後）は差分を見ない（候補だけで判定する）。close の PR のマージ後に後続のサイクルが `decisions` を変えても、閉じたサイクルの G10 が戻らないようにする
