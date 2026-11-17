@@ -582,7 +582,7 @@
 - 対応: —
 - Given: requested、build-02 の consent を承認したあと、design/ に `when: "merge@build-02"` の決定の無い事項が足された
 - When: `step next build-02 001-x` を実行する
-- Then: consent は reopen されず次の手は `pr`。`step report build-02 pr done` は拒まれ、理由にその場で一覧を示す案内（`ledger consent-list build-02`）と足された事項の ID が出る
+- Then: consent は reopen されず次の手は `pr`（pr の拒否と案内は「consentProblem: ゲートの承認後はその場の案内になる」で確かめる）
 
 ## steps/consent.mts（consentProblem の案内）
 
@@ -608,7 +608,7 @@
 - 対応: —
 - Given: requested、build-02 の consent をこの回で承認済み、その後に design/ へ決定の無い `when: "merge@build-02"` の事項が足された
 - When: `step report build-02 pr done` を実行する
-- Then: 拒否の理由がその場の案内（consent.md ではない）
+- Then: 拒否の理由がその場の案内（consent.md ではない）で、`ledger consent-list build-02` と足された事項の ID が出る
 
 ### consentProblem: conductor の子では blocked で上げる案内になる
 - 対応: —
@@ -616,13 +616,25 @@
 - When: `step report build-02 pr done` を実行する
 - Then: 拒否の理由が「conductor の子では同意ゲートが手順に入りません」の案内
 
+### ledger open + ledger decide: 上限を超える異議は受け入れの言葉なしの consented ではゲートを通らない
+- 対応: US-13.3
+- Given: 上限 なし（`exposure = "public"`）、build-02 が G8 の手前
+- When: `ledger open build-02 001-x --type objection --when now --who user --harm 中 --premises app.exposure --summary "…"` を記録し、`ledger decide build-02 <ID> --decision consented --by user --input "進める"` を `--accepts` なしで記録して `step report build-02 G8 approved` を実行する
+- Then: 承認が拒まれる。続けて `--accepts "公開範囲で漏れることを受け入れる"` 付きの決定を足すと承認できる
+
+### help: ledger object の usage と details に --defer と上限を超える異議の扱いが載る
+- 対応: —
+- Given: なし
+- When: `hikyaku help ledger object` を実行する
+- Then: usage に `--defer` が、details に上限を超える異議は害が中でも `--accepts`・`--premises` が要ることが含まれる
+
 ## steps/locate.mts・directive.mts（位置だけの経路）
 
 ### directiveOf: 事後同意が有効で G3 が deferred のとき step where と step next の位置が一致する
 - 対応: US-13.3
 - Given: 上限 なし、事後同意が有効、architect が options を done にし、`step report` が積んだ G3 の risk 事項がある
 - When: `step next design 001-x` と `step where` を実行する
-- Then: 両方の現在のステップが同じ（G3 が off ならどちらも G3 の次、on ならどちらも G3）
+- Then: G3 は deferred（確認）で、standard の `design_choice_gate` が有効なので手順に入り、両方とも `G3` を示す。`step next` の approval は `confirm`
 
 ### directiveOf: 事後同意が無効で G3 が同意のとき位置が一致する
 - 対応: US-13.3
@@ -638,9 +650,21 @@
 
 ### directiveOf: 事後同意が有効で G4 の事項が積まれたとき位置が一致する
 - 対応: US-13.3
-- Given: 上の状態に事後同意が有効で、`step report` が G4 の事項を積んでいる
+- Given: 事後同意が有効で、design-delta.md が G3 の申告に無い重い領域 `src/auth/**` に触れ、`step report` が G4 の事項を積んでいる（外との境界には触れない）
 - When: `step next design 001-x` と `step where` を実行する
-- Then: 両方の現在のステップが同じ
+- Then: 両方とも `G4` を示し、`step next` の approval は `confirm`
+
+### conductor parse: requested でほかの単位の事項だけがあるとき、子の手順では consent を外す
+- 対応: US-13.3
+- Given: requested、design/ に決定の無い `when: "merge@build-02"` の事項、build-02 が handoff まで完了
+- When: 監督が子のセッションの位置を `conductor parse` で読む（`asConductorChild` で評価）
+- Then: 子の現在のステップは `pr`（conductor の子では同意ゲートを手順に入れない build-06 のまま。pr の accepts が止める）
+
+### conductor parse: G3・G4 の位置が step next（子の環境）と一致する
+- 対応: US-13.3
+- Given: 上限 なし、architect が options を done（事後同意なし）／design-delta を done
+- When: `HIKYAKU_CONDUCTOR_CHILD=1` の `step next design 001-x` と、`conductor parse` の子の位置を比べる
+- Then: どちらも `G3`（options の後）／`G4`（design-delta の後）を示す
 
 ### directiveOf: positionOnly の評価でも返す opened は元の ctx のまま（解釈）
 - 対応: —
