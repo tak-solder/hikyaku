@@ -617,6 +617,30 @@ export async function commitsTouchingSince(cwd: string, path: string, since: str
   return commits;
 }
 
+/** 1回の git log に渡すファイルの数。引数の長さの上限（ARG_MAX）を超えないよう分ける */
+const LAST_TOUCHED_CHUNK = 500;
+
+/**
+ * files のどれかを最後に変えたコミットの日時（コミッタの日時）。
+ * glob は渡さない: rule の glob（rules.mts の matchesRule）と git の pathspec では `*.md` や `{a,b}` の意味が違うので、
+ * 呼び出し側が追跡ファイルを絞ってから渡す。files が空・どれも履歴が無ければ null、git の失敗は undefined
+ */
+export async function lastTouched(cwd: string, files: string[]): Promise<Date | null | undefined> {
+  let latest: Date | null = null;
+  for (let start = 0; start < files.length; start += LAST_TOUCHED_CHUNK) {
+    const chunk = files.slice(start, start + LAST_TOUCHED_CHUNK);
+    // :(literal) でファイル名の中の * や [ を pathspec の記号として読ませない
+    const result = await tryGit(cwd, ["log", "-1", "--format=%cI", "--", ...chunk.map((file) => `:(literal)${file}`)]);
+    if (!result.ok) return undefined;
+    const value = result.stdout.trim();
+    if (value === "") continue;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return undefined;
+    if (latest === null || date > latest) latest = date;
+  }
+  return latest;
+}
+
 /** path に、HEAD からの未コミットの変更（ステージ済みを含む）があるか。未追跡も変更とみなす。失敗は undefined */
 export async function hasUncommittedChange(cwd: string, path: string): Promise<boolean | undefined> {
   const result = await tryGit(cwd, ["status", "--porcelain", "--", path]);

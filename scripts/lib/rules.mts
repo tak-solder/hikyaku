@@ -13,6 +13,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { matchesPathPattern } from "./diff-stats.mts";
+import { lastTouched } from "./git.mts";
+import type { RuleHit } from "./review-records.mts";
 
 export const RULES_DIR = ".claude/rules";
 
@@ -26,6 +28,19 @@ export interface RuleFile {
   paths: string[] | undefined;
   /** frontmatter を除いた本文の文字数 */
   characters: number;
+  /** frontmatter の prevents / basis / importance（基準の理由。persistence.md の「rule の書き方」） */
+  reasons?: RuleReasons;
+  /** frontmatter の読めなかった値 */
+  problems?: string[];
+}
+
+export interface RuleReasons {
+  /** 何を防ぐための rule か（実際に起きた失敗） */
+  prevents?: string;
+  /** 何に立っているか（モデルの振る舞い・いまのコードの形・外の前提） */
+  basis?: string;
+  /** 害が成果物に残るなら高、セッションのコストなら中 */
+  importance?: "高" | "中";
 }
 
 export interface RuleMeasure extends RuleFile {
@@ -140,8 +155,8 @@ function unquote(value: string): string {
   return /^(["']).*\1$/.test(trimmed) ? trimmed.slice(1, -1) : trimmed;
 }
 
-/** カンマで分ける。`{a,b}` の中のカンマでは分けない */
-function splitList(value: string): string[] {
+/** カンマで分ける。`{a,b}` の中のカンマでは分けない（`--paths` のように glob を並べる引数にも使う） */
+export function splitList(value: string): string[] {
   const parts: string[] = [];
   let current = "";
   let depth = 0;
@@ -163,13 +178,14 @@ function splitList(value: string): string[] {
  * frontmatter の paths を読む。YAML のリスト（ブロック・インライン）と、カンマ区切りの文字列を受ける。
  * frontmatter が無い・paths が無い・読めないときは undefined（Claude Code も paths なしとして扱う）。
  */
-export function parseRule(source: string): { paths: string[] | undefined; body: string } {
+export function parseRule(source: string): { paths: string[] | undefined; body: string; reasons: RuleReasons; problems: string[] } {
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(source);
-  if (!match) return { paths: undefined, body: source };
+  if (!match) return { paths: undefined, body: source, reasons: {}, problems: [] };
   const body = source.slice(match[0].length);
   const lines = (match[1] as string).split(/\r?\n/);
+  const { reasons, problems } = parseReasons(lines);
   const at = lines.findIndex((line) => /^paths\s*:/.test(line));
-  if (at === -1) return { paths: undefined, body };
+  if (at === -1) return { paths: undefined, body, reasons, problems };
 
   const inline = stripYamlComment((lines[at] as string).replace(/^paths\s*:/, "")).trim();
   let paths: string[];
@@ -186,7 +202,27 @@ export function parseRule(source: string): { paths: string[] | undefined; body: 
       if (value !== "") paths.push(value);
     }
   }
-  return { paths: paths.length === 0 ? undefined : paths, body };
+  return { paths: paths.length === 0 ? undefined : paths, body, reasons, problems };
+}
+
+/** frontmatter の行から prevents / basis / importance を読む（1行の文字列だけ） */
+function parseReasons(lines: string[]): { reasons: RuleReasons; problems: string[] } {
+  const reasons: RuleReasons = {};
+  const problems: string[] = [];
+  const value = (key: string): string | undefined => {
+    const line = lines.find((l) => new RegExp(`^${key}\\s*:`).test(l));
+    if (line === undefined) return undefined;
+    const raw = unquote(stripYamlComment(line.replace(new RegExp(`^${key}\\s*:`), "")));
+    return raw === "" ? undefined : raw;
+  };
+  const prevents = value("prevents");
+  const basis = value("basis");
+  const importance = value("importance");
+  if (prevents !== undefined) reasons.prevents = prevents;
+  if (basis !== undefined) reasons.basis = basis;
+  if (importance === "高" || importance === "中") reasons.importance = importance;
+  else if (importance !== undefined) problems.push(`importance が不正です: ${importance}（高 か 中）`);
+  return { reasons, problems };
 }
 
 /** .claude/rules/ 配下の .md を再帰的に集める */
@@ -200,7 +236,13 @@ export function listRuleFiles(repoRoot: string): RuleFile[] {
       if (entry.isDirectory()) visit(path);
       else if (entry.name.endsWith(".md")) {
         const parsed = parseRule(readFileSync(path, "utf8"));
-        found.push({ path: relative(repoRoot, path), paths: parsed.paths, characters: parsed.body.trim().length });
+        found.push({
+          path: relative(repoRoot, path),
+          paths: parsed.paths,
+          characters: parsed.body.trim().length,
+          reasons: parsed.reasons,
+          problems: parsed.problems,
+        });
       }
     }
   };
@@ -216,6 +258,96 @@ export function trackedFiles(repoRoot: string): string[] | undefined {
   } catch {
     return undefined;
   }
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** date から now までの日数（切り捨て）。日時が分からなければ undefined */
+export function daysSince(date: Date | null | undefined, now: Date): number | undefined {
+  if (date === null || date === undefined) return undefined;
+  return Math.floor((now.getTime() - date.getTime()) / DAY_MS);
+}
+
+/**
+ * rule の最終変更を測るファイル。paths に当たる追跡ファイル（rule が守る領域の開発頻度）。
+ * paths が無い rule・どのファイルにも一致しない rule は、rule ファイル自身
+ */
+export function ruleTouchFiles(rule: RuleFile, files: string[], exclude: string[] = []): string[] {
+  if (rule.paths === undefined) return [rule.path];
+  // 生成物（[diff] exclude）は機械が頻繁に書き換えるので、領域の開発頻度に数えない
+  const matched = files.filter(
+    (path) => path !== rule.path && matchesRule(rule.paths as string[], path) && !exclude.some((pattern) => matchesPathPattern(pattern, path)),
+  );
+  return matched.length === 0 ? [rule.path] : matched;
+}
+
+/** rule ごとの最終変更日時（git.mts の lastTouched）。失敗した rule は undefined。候補になった rule だけを渡す（git log は rule ごとに走る） */
+export async function rulesLastTouched(
+  repoRoot: string,
+  rules: RuleFile[],
+  files: string[],
+  exclude: string[] = [],
+): Promise<Map<string, Date | null | undefined>> {
+  const touched = new Map<string, Date | null | undefined>();
+  for (const rule of rules) touched.set(rule.path, await lastTouched(repoRoot, ruleTouchFiles(rule, files, exclude)));
+  return touched;
+}
+
+export interface RuleCandidate {
+  path: string;
+  /**
+   * move: レビューの記録で閾値以上引かれた（機械の検査やリファクタへ移す候補）。
+   * stale: どのファイルにも一致しない。missing: 記録に挙がったが .claude/rules/ に無い
+   */
+  kind: "move" | "stale" | "missing";
+  hits?: number;
+  heavy?: number;
+  sources?: string[];
+  /** 最終変更からの日数（領域の開発頻度の材料）。分からなければ undefined */
+  lastTouchedDays: number | undefined;
+  reasons: RuleReasons;
+}
+
+/** 記録の rule のパスを .claude/rules/ のパスと同じ形にそろえる */
+function normalizeRulePath(path: string): string {
+  return path.replace(/^\.\//, "");
+}
+
+/**
+ * 移す候補・一致しない rule・記録に挙がったが無い rule を並べる。移すか消すかは決めない（US-4.4）
+ */
+export function ruleCandidates(input: {
+  measures: RuleMeasure[];
+  hits: Map<string, RuleHit>;
+  threshold: number;
+  lastTouched: Map<string, Date | null | undefined>;
+  now: Date;
+}): RuleCandidate[] {
+  const candidates: RuleCandidate[] = [];
+  const hits = new Map<string, RuleHit>();
+  for (const [path, hit] of input.hits) {
+    const key = normalizeRulePath(path);
+    const merged = hits.get(key) ?? { count: 0, heavy: 0, sources: [] };
+    hits.set(key, { count: merged.count + hit.count, heavy: merged.heavy + hit.heavy, sources: [...merged.sources, ...hit.sources] });
+  }
+  for (const rule of input.measures) {
+    const hit = hits.get(rule.path);
+    const days = daysSince(input.lastTouched.get(rule.path), input.now);
+    const reasons = rule.reasons ?? {};
+    const extra = hit === undefined ? {} : { hits: hit.count, heavy: hit.heavy, sources: hit.sources };
+    // 一致しない rule は、引かれた回数に関わらず stale の1行にする（もう読み込まれていないので、移す前に glob を直すか消すかが先）
+    if (rule.stale) {
+      candidates.push({ path: rule.path, kind: "stale", ...extra, lastTouchedDays: days, reasons });
+    } else if (hit !== undefined && hit.count >= input.threshold) {
+      candidates.push({ path: rule.path, kind: "move", ...extra, lastTouchedDays: days, reasons });
+    }
+  }
+  const known = new Set(input.measures.map((rule) => rule.path));
+  for (const [path, hit] of hits) {
+    if (known.has(path)) continue;
+    candidates.push({ path, kind: "missing", hits: hit.count, heavy: hit.heavy, sources: hit.sources, lastTouchedDays: undefined, reasons: {} });
+  }
+  return candidates;
 }
 
 /**

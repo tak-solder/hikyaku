@@ -34,6 +34,8 @@ architect が作るのは「これから作るもの（to-be）」で、それ�
 
 結果は `design/codebase-survey.md` に書かれます。`overview` に既にある内容は書きません。書いてしまうと2周目以降も初回と同じコストがかかり、`overview` を持つ意味が失われます。
 
+調査のあと、変えるパスを `hikyaku areas dormant --paths` に渡します。長く触られていなかった領域があれば、結び付いた rule・ADR・constraints の項目が示されるので、設計の前に前提が今も成り立つかを確かめます。長く触られていなかったこと自体が、前提が変わったかもしれないという信号です。`codebase-survey.md` には休眠の事実と基準の所在だけを書きます（[領域の開発頻度](../configuration/persistence.md#領域の開発頻度)）。
+
 `thorough` ではここで確認が入ります（G2）。他のプロファイルでは止まりません。
 
 ### 設計に関する質問

@@ -85,10 +85,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **`hikyaku tokens history [<cycle>] [--group-by model|hikyaku|host|guide]`**: 各ビルドの retrospective.md の「予測ピークの振り返り」から、予測（architect / builder 段階）・実測のピーク・乖離・比率・開始時の固定分・区切りでのコンテキスト（`progress.jsonl` から）・呼び出し回数・コンパクション・追加行数・モデル・ガイドの版・Hikyaku の版を並べる。`--group-by` は群ごとに件数・予測と実測の平均・実測の範囲・乖離と比率の平均を添える
 - **`hikyaku tokens history build-NN [<cycle>]`**: PR の base からの差分を数える（v2 の `bp actual` の後継）。`[diff] exclude` に当たる生成物は数えず、追加行数などを実装とテストに分けて返す。`--markdown` は retrospective.md の「差分の集計」に貼る表。起点を解決できないときは推測せず「計測不可」とその理由を返す
 - doctor: `token-guide/guide.md` の版の宣言の不備と、v2 の `bp-guide/` が残っていることを知らせる
+- **知見の置き場の「なくす」（宛先 `refactor`）**: `persistence.md` の置き場の順の先頭に、リファクタで知見そのものを不要にする置き場を足した。builder はそのビルドで直し、直せなければ「永続化すること」に `refactor` で書く。close-cycle は文書に書かず、リファクタの提案として G10 で示し、PR の本文に並べる
+- **基準の理由**: rule の frontmatter に `prevents`（何を防ぐか）・`basis`（何に立っているか）・`importance`（`高` / `中`）を書く。「永続化すること」の行と文書に書く基準には、行末に `（防ぐ: … / 立つ: … / 重要度: 高|中）` を付ける。`hikyaku promotions` が理由を読み、行の `[高|中]` と食い違えば読めなかった行にする。理由の無い既存の行は今までどおり読める
+- **handoff.md の「レビューの記録」**: コードレビューの指摘ごとに `- [重|軽] \`rule:<パス>\`: 要約`（rule に当たらなければ `` `-` ``）を書く。builder の review で控え、handoff で書く
+- **`hikyaku rules candidates`**: 全サイクル（closed を含む）の「レビューの記録」から、`[rules] hit_threshold`（既定 3）以上引かれた rule を移す候補として、どのファイルにも一致しない rule と、記録に挙がったが無い rule と一緒に並べる。各行に最終変更からの日数（paths に当たる追跡ファイルの最終コミット。paths が無い・一致しない rule は rule ファイル自身）と理由を添える。移すか消すかは決めず、終了コードは常に 0。builder の handoff と close-cycle の collect から呼ぶ
+- **`hikyaku areas dormant --paths <glob,...>`**: 渡した glob に当たる追跡ファイルの最終コミットが `[areas] dormant_days`（既定 180）を超えていれば休眠とし、重なる rule・ADR（「領域」の行。superseded は読まない）・constraints の項目（見出しごとの「領域」の行）を返す。当たるファイルが無いパスは休眠とみなさない。architect の survey の後と builder の plan から呼び、文書には休眠の事実と基準の所在だけを書く
+- `[rules] hit_threshold`・`[areas] dormant_days` 設定（正の整数。サイクル設定で上書きできる）
 
 ### Changed
 
 - builder の review から、スコープ準拠とマージ時点のデータ安全の自己確認を削った（agreement-review に移した）。pr は `diff facts build-NN --format pr` の出力を PR 本文に貼る
+- doc-triager: 重要度と置き場の要点の写しを消し、`persistence.md` だけを読んで判定する。出力の置き場に「なくす」を加えた
+- close-cycle の write・init の triage-write: rule の frontmatter に `paths` だけでなく理由を書く。文書に書く基準に行末の理由を残す
 - **ADR のテンプレート**（architect の `references/templates.md` と `steps/adr.md`）の欄を、決定 / 文脈 / 外の前提 / 検討した案 / 推奨 / 採用理由 / 受け入れたこと / トレードオフ / 再評価条件 / 退けた推奨で失う利点 / 影響範囲 / 領域（任意。`- **領域**: \`<glob>\`, \`<glob>\``）にした。「受け入れたこと」は1件1行で、外の前提を拠り所にする行は `（拠り所: \`<前提の参照>\`）` で終える
 - **design-questions.md のテンプレート**に、各案の欠点・推奨・回答と、推奨を退けたときに失う利点の欄を足した（architect の `steps/questions.md` も同じ）
 - ポインタに件数や範囲を添えさせていた指示を直した（close-cycle の G10 の提示例と collect、init の pr と triage-approval、conductor の最後の PR の CI の結果、token-guide の propose、build-manager と builder の templates）。予測ピークの根拠のファイル数・行数は、見積もりの根拠として残す

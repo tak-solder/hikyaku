@@ -362,6 +362,26 @@ review = "400k"
 
 どの値も単位を付けた文字列か整数で書けます。既定値は、1ビルドのピークを 400k トークン前後に収める狙いから決めた値で、1M のウィンドウを前提にしています。ウィンドウの小さいモデルを使うときは、自動コンパクションの閾値の 70% を目安に縮めてください。`hikyaku tokens history` の実績から見て合わないときにも変えます。
 
+## [rules]
+
+```toml
+[rules]
+hit_threshold = 3
+```
+
+`hit_threshold` は、`handoff.md` の「レビューの記録」で同じ rule が何回引かれたら、`hikyaku rules candidates` が機械の検査やリファクタへ移す候補として並べるかです。回数はサイクルをまたいで数えます。正の整数で書き、既定は 3 です。考え方は [知見の置き場](persistence.md#移すきっかけ) にあります。
+
+## [areas]
+
+```toml
+[areas]
+dormant_days = 180
+```
+
+`dormant_days` は、最終変更から何日を超えた領域を休眠とみなすかです。`hikyaku areas dormant` が、休眠した領域と結び付いた rule・ADR・constraints の項目を示します。正の整数で書き、既定は 180 です。考え方は [知見の置き場](persistence.md#領域の開発頻度) にあります。
+
+`[rules]` と `[areas]` は、どちらもサイクル設定で上書きできます。
+
 ## [conductor]
 
 ```toml
