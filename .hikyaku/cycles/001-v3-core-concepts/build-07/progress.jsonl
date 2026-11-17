@@ -31,3 +31,5 @@
 {"at":"2026-11-17T15:21:47.795Z","skill":"retrospective","step":"analyze","result":"done","context":390418,"session":"af5056b9-849b-4943-bafd-ff8f6c6ee8e6","hikyaku":"3.0.0"}
 {"at":"2026-11-17T15:22:08.789Z","skill":"retrospective","step":"write","result":"done","context":395929,"session":"af5056b9-849b-4943-bafd-ff8f6c6ee8e6","hikyaku":"3.0.0"}
 {"at":"2026-11-17T15:22:11.724Z","skill":"builder","step":"retrospective","result":"done","context":398341,"session":"af5056b9-849b-4943-bafd-ff8f6c6ee8e6","hikyaku":"3.0.0"}
+{"at":"2026-11-17T15:32:32.594Z","skill":"builder","step":"pr","result":"done","pr":"https://github.com/tak-solder/hikyaku/pull/126","context":403759,"session":"af5056b9-849b-4943-bafd-ff8f6c6ee8e6","hikyaku":"3.0.0"}
+{"at":"2026-11-17T15:32:36.734Z","skill":"builder","step":"publish","result":"done","reason":"gh が使えないため pr ready / pr request-reviewers は監督の指示で実行しない（Draft のまま監督が取り込み前に扱う）","context":407156,"session":"af5056b9-849b-4943-bafd-ff8f6c6ee8e6","hikyaku":"3.0.0"}
