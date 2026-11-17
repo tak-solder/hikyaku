@@ -154,6 +154,13 @@ test("parseFinalText: 指す先の無い waiting・waiting の無い blocked・�
   assert.equal(parseFinalText(`<hikyaku-blocked>\n${ESCALATION_BODY}</hikyaku-blocked>`, { isWaitingItem: () => false }).outcome, "blocked");
 });
 
+test("parseFinalText: 1行に並べた複数の ID を読み、次の行の語を ID と読まない", () => {
+  const all = () => true;
+  assert.deepEqual(parseFinalText("<hikyaku-blocked>\nwaiting: Q-3, Q-4\n</hikyaku-blocked>", { isWaitingItem: all }).waiting, ["Q-3", "Q-4"]);
+  const split = parseFinalText("<hikyaku-blocked>\nwaiting:\nQ-3\n</hikyaku-blocked>", { isWaitingItem: all });
+  assert.equal(split.outcome, "violation");
+});
+
 test("parseResultJson: 結果の JSON からも waiting を返す", () => {
   const parsed = parseResultJson(result(WAITING_TEXT), { isWaitingItem: (id) => id === "Q-3" });
   assert.equal(parsed.outcome, "blocked");
@@ -255,8 +262,16 @@ test("CLI: conductor launch --from user は --closes の未決の事項だけを
   assert.match(output.command, /^HIKYAKU_CONDUCTOR_CHILD=1 HIKYAKU_ANSWER_FROM=user HIKYAKU_ANSWER_ITEMS=/);
   assert.ok(output.command.includes(`${q3},${q4}`));
   assert.ok(output.argv[2]?.startsWith("次の事項はユーザーの答えで閉じます"));
-  assert.ok(output.argv[2]?.includes(`ledger decide build-01 ${q3} 001-test --decision decided --by user --input "既存の API は残す"`));
+  assert.ok(output.argv[2]?.includes(`ledger decide build-01 ${q3} 001-test --decision decided --by user --input='既存の API は残す'`));
   assert.ok(output.argv[2]?.endsWith("既存の API は残す"));
+  // 答えは子のシェルに展開されないよう単一引用符でくくり、- で始まってもフラグと読まれない形で渡す
+  write(directory, "tricky.txt", "- $HOME の `cache` を使う（It's ok）\n");
+  const tricky = launched(directory, "--resume", "s-1", "--message", "tricky.txt", "--from", "user", "--closes", q3);
+  assert.ok(tricky.argv[2]?.includes(`--input='- $HOME の \`cache\` を使う（It'\\''s ok）'`));
+  // ほかの答え方のフラグは黙って落とさない
+  assert.equal(launch(directory, ...RESUME, "--from", "supervisor", "--ask", "G8", "--choice", "approved", "--closes", q3).status, 1);
+  assert.equal(launch(directory, ...RESUME, "--from", "user", "--closes", q3, "--choice", "approved").status, 1);
+  assert.equal(launch(directory, ...RESUME, "--from", "user", "--closes", q3, "--ask", "typo").status, 1);
 
   const missing = launch(directory, ...RESUME, "--from", "user");
   assert.equal(missing.status, 1);
@@ -516,6 +531,12 @@ test("CLI: ledger decide は子の --by supervisor に FROM=supervisor を求め
 
   assert.equal(decideAs(directory, { ...env, HIKYAKU_ANSWER_RISK: "中:app.exposure" }, id, "supervisor").status, 0);
   assert.deepEqual(lines(directory).at(-1)?.["risk"], { kind: "declared", harm: "中", premises: ["app.exposure"] });
+
+  // 監督が答えた問いと違う問いの事項には書けない（申告の要らない問いの起動で、questions の事項を申告なしで決めさせない）
+  const questions = JSON.parse(succeeds(directory, "ledger", "open", "build-01", "001", "--type", "question", "--who", "supervisor", "--when", "now", "--ask", "questions", "--summary", "仕様", "--json")).record.id;
+  const mismatch = decideAs(directory, { ...CHILD, HIKYAKU_ANSWER_FROM: "supervisor", HIKYAKU_ANSWER_ASK: "G8", HIKYAKU_ANSWER_CHOICE: "approved", HIKYAKU_ANSWER_TOKEN: "t-4" }, questions, "supervisor");
+  assert.equal(mismatch.status, 1);
+  assert.match(mismatch.stderr, /監督が答えた問い（G8）と違います/);
 });
 
 test("CLI: ledger decide は申告の要る答えで RISK の無い起動の --by supervisor を拒み、fix は申告なしで書ける", (t) => {

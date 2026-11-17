@@ -257,9 +257,10 @@ register({
     const reason = flagString(args, "reason");
     // conductor の子では、答えの出どころ（launch が置いた環境変数）で書ける決定を縛る（--dry-run でも同じ検査）
     const answer = childAnswer();
-    const problem = answerProblem(by, id, answer);
-    if (problem !== undefined) throw new HikyakuError(problem);
     const ledger = readLedger(opened.cycle.directory);
+    const itemAsk = ledger.items.find((item) => item.open.id === id)?.open.ask;
+    const problem = answerProblem(by, id, answer, itemAsk);
+    if (problem !== undefined) throw new HikyakuError(problem);
     const record: DecideRecord = {
       record: "decide",
       at: new Date().toISOString(),

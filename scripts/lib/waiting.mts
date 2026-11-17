@@ -14,7 +14,7 @@ import { join, relative } from "node:path";
 import { branchName, buildPhase, type Phase } from "./branch.mts";
 import type { ResolvedConfig } from "./config.mts";
 import { localSha, readFileAtRef } from "./git.mts";
-import { LEDGER_FILE, ledgerPath, parseLedgerRecords, unitDirectories, type LedgerRecord, type OpenRecord } from "./ledger.mts";
+import { isWaitingRecord, LEDGER_FILE, ledgerPath, parseLedgerRecords, unitDirectories, type LedgerRecord, type OpenRecord } from "./ledger.mts";
 import { buildDirName, type BuildRecord } from "./tasklist.mts";
 import type { CycleContext } from "./workspace.mts";
 
@@ -43,10 +43,6 @@ export interface Waiting {
 
 /** すべてのビルドが待つ作業単位（ビルドの前のフェーズ） */
 const BEFORE_BUILDS = ["plan", "architect", "create"];
-
-function isWaitingOpen(open: OpenRecord): boolean {
-  return open.type === "question" && open.who === "user" && open.when === "now";
-}
 
 /** その事項の答えを待つビルド: 問いを出したビルドと、推移的に依存するビルド。ビルドの前のフェーズなら全ビルド */
 function waitingBuildsOf(unit: string, builds: BuildRecord[]): string[] {
@@ -92,13 +88,18 @@ export async function deriveWaiting(config: ResolvedConfig, cycle: CycleContext,
   }
 
   // architect と各ビルドの origin のブランチにある、その作業単位の記録
+  // 断面ごとの git の呼び出しは並べて走らせる（next が毎回呼ぶので、ビルドの数だけ直列に待たない）
   const units: Phase[] = ["architect", ...builds.map((build) => buildPhase(build.id))];
-  for (const unit of units) {
-    const branch = branchName(config.branch, unit, cycle.name);
-    const ref = `origin/${branch}`;
-    if ((await localSha(config.repoRoot, ref)) === undefined) continue; // origin に無いブランチは読まない
+  const reads = await Promise.all(units.map(async (unit) => {
+    const ref = `origin/${branchName(config.branch, unit, cycle.name)}`;
     const path = relative(config.repoRoot, ledgerPath(cycle.directory, unit)).split("\\").join("/");
-    const file = await readFileAtRef(config.repoRoot, ref, path);
+    // origin に無いブランチは読まない（読めない断面として数えない）
+    if ((await localSha(config.repoRoot, ref)) === undefined) return undefined;
+    return { ref, path, file: await readFileAtRef(config.repoRoot, ref, path) };
+  }));
+  for (const read of reads) {
+    if (read === undefined) continue;
+    const { ref, path, file } = read;
     if (file.state === "absent") continue;
     if (file.state === "unreadable" || file.content === undefined) {
       unavailable.push(`${ref} の ${path}: ${file.unavailable ?? "読めません"}`);
@@ -112,7 +113,7 @@ export async function deriveWaiting(config: ResolvedConfig, cycle: CycleContext,
   }
 
   const items: WaitingItem[] = [...opens.values()]
-    .filter(({ open }) => isWaitingOpen(open) && !decided.has(open.id))
+    .filter(({ open }) => isWaitingRecord(open) && !decided.has(open.id))
     .map(({ open, source }) => ({ id: open.id, unit: open.unit, summary: open.summary, ask: open.ask ?? null, source }));
 
   const waitingFor = new Map<string, string[]>();

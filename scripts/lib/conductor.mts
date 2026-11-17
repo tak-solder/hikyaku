@@ -14,6 +14,7 @@ import type { Gates, Reviews } from "./config.mts";
 import { HikyakuError } from "./errors.mts";
 import { checkEscalation, describeEscalationProblems } from "./escalation.mts";
 import { reviewerLogin } from "./github.mts";
+import { buildDirName } from "./tasklist.mts";
 
 export type AskCategory = "route" | "confirm" | "consent" | "spec" | "failure" | "abandon" | "unknown";
 export type Handler = "supervisor" | "user";
@@ -311,7 +312,8 @@ export const ANSWER_ENV = {
 export function escalateUnit(phase: ConductorPhase, buildId: string | undefined): string {
   if (phase === "close-cycle") return "close";
   if (phase === "architect") return "architect";
-  return `build-${(buildId ?? "").padStart(2, "0")}`;
+  if (buildId === undefined) throw new HikyakuError("builder にはビルドを指定してください");
+  return buildDirName(buildId);
 }
 
 /**
@@ -333,10 +335,12 @@ export function escalateMessage(unit: string, cycle: string, ask: string): strin
 
 /** --closes の事項をユーザーの答えで閉じる固定文。子が ID を知らない新しい起動でも閉じられるよう、回答の先頭に置く */
 export function closesMessage(unit: string, cycle: string, items: string[], answer: string): string {
-  const input = answer.replace(/\s+/g, " ").trim().replace(/"/g, "'");
+  // 答えは単一引用符でくくる（$ やバッククォートを子のシェルに展開させない）。`--input=` の形にするのは、
+  // 答えが - で始まってもフラグと読まれないため（args.mts は次のトークンが - で始まると値にしない）
+  const input = `'${answer.replace(/'/g, `'\\''`)}'`;
   return [
-    "次の事項はユーザーの答えで閉じます。続きに進む前に、それぞれを記録してください。",
-    ...items.map((id) => `- hikyaku ledger decide ${unit} ${id} ${cycle} --decision decided --by user --input "${input}"`),
+    "次の事項はユーザーの答えで閉じます。続きに進む前に、それぞれを記録してください（答えは書き換えずにそのまま渡す）。",
+    ...items.map((id) => `- hikyaku ledger decide ${unit} ${id} ${cycle} --decision decided --by user --input=${input}`),
     "",
     "ユーザーの答え:",
     answer,
@@ -427,7 +431,8 @@ export interface ParseOptions {
   isWaitingItem?: (id: string) => boolean;
 }
 
-const WAITING_LINE = /^waiting:\s*(\S+)\s*$/gm;
+/** 行頭の waiting: の行。同じ行の ID だけを読み（改行をまたがない）、カンマか空白で区切った複数の ID を受け付ける */
+const WAITING_LINE = /^waiting:[ \t]*([^\n]*?)[ \t]*$/gm;
 
 const BLOCK_PATTERN =
   /^<hikyaku-(gate|done|blocked)((?:\s+[a-z]+="[^"]*")*)\s*>\n?([\s\S]*?)\n?^<\/hikyaku-\1>\s*$/gm;
@@ -469,7 +474,7 @@ export function parseFinalText(text: string, options: ParseOptions = {}): Omit<P
   if (kind === "done") return { outcome: "done", next: attributes.get("next") ?? "", body };
   // 答えを待つ blocked（ユーザーに上げる問いを記録して終えた）は行き詰まりではないので検査から外す。
   // 外すのは、指す ID がすべて記録に裏取りできたときだけ（1つでも指す先が無ければ従来どおり検査する）
-  const waiting = [...body.matchAll(WAITING_LINE)].map((m) => m[1] as string);
+  const waiting = [...body.matchAll(WAITING_LINE)].flatMap((m) => (m[1] ?? "").split(/[,\s]+/).filter((id) => id !== ""));
   const isWaitingItem = options.isWaitingItem;
   if (waiting.length > 0 && isWaitingItem !== undefined && waiting.every((id) => isWaitingItem(id))) {
     return { outcome: "blocked", body, waiting };

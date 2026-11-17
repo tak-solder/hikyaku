@@ -231,6 +231,16 @@ register({
     const ask = flagString(args, "ask");
     const unit = escalateUnit(phase, phase === "builder" && operands[2] !== undefined ? normalizeBuildId(operands[2]) : undefined);
 
+    // ほかの答え方に属するフラグを黙って落とさない（--closes を落とすと待ちの事項が閉じないまま進む）
+    const stray = (names: string[], owner: string): void => {
+      const given = names.filter((name) => args.flags.has(name));
+      if (given.length > 0) throw new HikyakuError(`${given.map((name) => `--${name}`).join(" / ")} は ${owner} と一緒にだけ指定できます`);
+    };
+    if (from !== "user") stray(["closes"], "--from user");
+    if (from !== "supervisor") stray(["choice", "harm", "premises", "no-risk"], "--from supervisor");
+    if (ask !== undefined && !ASK_IDS.includes(ask)) {
+      throw new HikyakuError(`--ask の値が不正です: ${ask}`, "conductor の問いの ID（hikyaku conductor asks）を指定してください。");
+    }
     if (from !== undefined && notice) {
       throw new HikyakuError("--from と --notice は一緒に指定できません", "答えを渡す再開は --from、答えではない知らせ（中断からの再開・書き直しの依頼）は --notice です。");
     }
@@ -283,9 +293,6 @@ register({
     const answerEnv: [string, string][] = [];
     let answerToken: string | null = null;
     if (escalate) {
-      if (!ASK_IDS.includes(ask as string)) {
-        throw new HikyakuError(`--ask の値が不正です: ${ask}`, "conductor の問いの ID（hikyaku conductor asks）を指定してください。");
-      }
       message = escalateMessage(unit, context.name, ask as string);
     } else if (from === "user") {
       const closes = flagList(args, "closes") ?? [];
@@ -298,11 +305,13 @@ register({
       const ledger = readLedger(context.directory);
       const unclosable = closes.filter((id) => {
         const item = ledger.items.find((entry) => entry.open.id === id);
-        return item === undefined || !isWaitingItem(item);
+        // 閉じる事項は、再開する子の作業単位で記録したものだけ（決定はその単位の記録に書くので、別の単位の事項を閉じると
+        // 事項と決定が別のブランチに分かれ、取り込むまで待ちが消えない）
+        return item === undefined || !isWaitingItem(item) || item.open.unit !== unit;
       });
       if (unclosable.length > 0) {
         throw new HikyakuError(
-          `--closes に、ユーザーの答えを待つ未決の事項ではない ID があります: ${unclosable.join(", ")}`,
+          `--closes に、${unit} でユーザーの答えを待つ未決の事項ではない ID があります: ${unclosable.join(", ")}`,
           "作業ツリーの記録に、その ID の question（who=user・when=now）が決定なしであることを確かめてください（待ちのビルドのブランチへ conductor ブランチを取り込んでから再開します）。",
         );
       }
@@ -434,7 +443,8 @@ register({
     const step = childStep(parsed, config, context, flagString(args, "root"));
     // 監督の答えで再開した子が、その答えを記録せずに進めていないか（launch の answerToken）
     const expectAnswer = flagString(args, "expect-answer");
-    if (expectAnswer !== undefined) {
+    // 異常終了と規約違反は、記録する前に止まりうるので照合しない（それぞれの扱いで再開する）
+    if (expectAnswer !== undefined && parsed.outcome !== "error" && parsed.outcome !== "violation") {
       const recorded = ledger !== undefined && [...ledger.items.flatMap((item) => item.decisions), ...ledger.orphans]
         .some((record) => record.by === "supervisor" && record.token === expectAnswer);
       if (!recorded) {

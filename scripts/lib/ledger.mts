@@ -251,7 +251,7 @@ export function childAnswer(env: NodeJS.ProcessEnv = process.env): ChildAnswer |
  * （ユーザーが答えていない事項に、同じ実行の中で書けない）。--by supervisor は監督の答えで再開した子だけが書け、
  * 申告の要る答えでは申告が渡っていること。子が環境変数を自分で付ける偽装は防がない（ADR pending-items-ledger）
  */
-export function answerProblem(by: Who, itemId: string, answer: ChildAnswer | undefined): string | undefined {
+export function answerProblem(by: Who, itemId: string, answer: ChildAnswer | undefined, itemAsk?: string): string | undefined {
   if (answer === undefined) return undefined;
   if (by === "user") {
     if (answer.from !== "user") {
@@ -266,7 +266,12 @@ export function answerProblem(by: Who, itemId: string, answer: ChildAnswer | und
     if (answer.from !== "supervisor") {
       return "conductor の子では、監督の答えで再開されたとき（HIKYAKU_ANSWER_FROM=supervisor）だけ --by supervisor を記録できます";
     }
-    if (answer.risk === undefined && needsRiskDeclaration(answer.ask, answer.choice)) {
+    // 監督の答えは、渡された問い（HIKYAKU_ANSWER_ASK）の事項にだけ書ける。別の問いの事項に、この起動の問い・値・申告を
+    // 付けて記録すると、申告の要る答えが申告なしで残り、ledger answers の表示も取り違える
+    if (itemAsk !== undefined && answer.ask !== undefined && itemAsk !== answer.ask) {
+      return `${itemId} は問い ${itemAsk} の事項で、監督が答えた問い（${answer.ask}）と違います。監督の答えは、その問いの事項にだけ記録できます`;
+    }
+    if (answer.risk === undefined && (needsRiskDeclaration(answer.ask, answer.choice) || needsRiskDeclaration(itemAsk, answer.choice))) {
       return `この答え（${answer.ask ?? "問い不明"}${answer.choice === undefined ? "" : ` / ${answer.choice}`}）にはリスクの申告が要りますが、起動に申告がありません。監督に申告つきで再開してもらってください`;
     }
   }
@@ -289,7 +294,12 @@ export function answerFields(by: Who, answer: ChildAnswer | undefined): Partial<
 
 /** ユーザーの答えを待つ事項か: question・who=user・when=now で、決定が無い（答えを待つ blocked と conductor waiting が使う） */
 export function isWaitingItem(item: LedgerItem): boolean {
-  return item.open.type === "question" && item.open.who === "user" && item.open.when === "now" && item.latest === undefined;
+  return isWaitingRecord(item.open) && item.latest === undefined;
+}
+
+/** 答えを待つ事項の記録の形（決定の有無は見ない）。conductor waiting も同じ判定を使う */
+export function isWaitingRecord(open: OpenRecord): boolean {
+  return open.type === "question" && open.who === "user" && open.when === "now";
 }
 
 // ---------------------------------------------------------------------------
