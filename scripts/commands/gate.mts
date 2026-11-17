@@ -7,6 +7,8 @@ import { boundaryChanges, DESIGN_DELTA, g8Brief, readIfExists, renderG4Brief, re
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { open } from "../lib/steps/directive.mts";
+// directive.mts（steps/index.mts）より後に読む（architect.mts を先に読むと、risk.mts 経由の循環で初期化前に参照される）
+import { g4Verification } from "../lib/steps/architect.mts";
 
 const GATES = ["G4", "G8"] as const;
 
@@ -50,14 +52,8 @@ register({
 
     if (gate === "G4") {
       const changes = boundaryChanges(opened.ctx.config, directory);
-      // G3 の申告の裏取りは、step next と同じ文脈で G4 の args を評価して受け取る（同じ判定を二重に持たない）
-      const definition = opened.skill.steps.find((step) => step.id === "G4");
-      const values = (definition?.args?.(opened.ctx) ?? {}) as { undeclaredAreas?: G4Brief["undeclaredAreas"]; verified?: boolean };
-      const brief: G4Brief = {
-        boundaries: changes instanceof Error ? { error: changes.message } : changes,
-        undeclaredAreas: values.undeclaredAreas ?? [],
-        verified: values.verified !== false,
-      };
+      // G3 の申告の裏取りは、G4 の args と同じ関数で、step next と同じ文脈から求める
+      const brief: G4Brief = { boundaries: changes instanceof Error ? { error: changes.message } : changes, ...g4Verification(opened.ctx) };
       const delta = readIfExists(join(directory, DESIGN_DELTA));
       emit(brief, () => {
         const text = renderG4Brief(brief, full ? (delta ?? `（${DESIGN_DELTA} がありません）`) : undefined);

@@ -83,7 +83,7 @@ register({
         "  G1 user-stories      常に有効（同意）",
         `  G2 codebase-survey   ${onOff(config.gates.codebaseSurvey)}`,
         `  G3 設計案の選択      ${onOff(config.gates.designChoice)}（差し戻しからの再設計の回と、options の申告が上限を超える・重い領域に当たる・欠けている回は同意で常に有効）`,
-        `  G4 architecture      ${onOff(config.gates.architecture)}（差し戻しからの再設計の回と、設計が G3 の申告に無い重い領域に触れる回は同意で常に有効）`,
+        `  G4 architecture      ${onOff(config.gates.architecture)}（差し戻しからの再設計の回と、設計が G3 の申告に無い重い領域・外との境界に触れる回は同意で常に有効）`,
         `  G7 plan（単独）      ${onOff(config.gates.plan)}`,
         `  G10 昇格             ${onOff(config.gates.promotion)}（decisions・constraints の変更を含む回は同意で常に有効）`,
         "  ※ G6 tasklist・issue 変更 / G8 plan+test-spec は profile の管轄外で常に有効",

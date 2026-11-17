@@ -132,7 +132,7 @@ export function renderG4Brief(brief: G4Brief, full: string | undefined): string 
   const lines: string[] = ["# G4 の提示", ""];
   const boundaries = brief.boundaries;
   if ("error" in boundaries) {
-    lines.push(`! 境界を照合できませんでした（G4 は同意です）: ${boundaries.error}`, "");
+    lines.push(`! 境界を照合できませんでした（承認の種類は directive の approval に従ってください）: ${boundaries.error}`, "");
   } else if (!boundaries.declared) {
     lines.push("[boundaries] の宣言が無いので、従来どおり design-delta.md と doc-reviewer の指摘への対処を提示してください。", "");
   } else {
@@ -183,7 +183,8 @@ export function g8Brief(cycleDirectory: string, buildDirectory: string): G8Brief
   const scenarios = testSpec === undefined ? [] : testSpecScenarios(testSpec);
   const defined = definedCriteria(stories);
   const referenced = referencedCriteria(issue);
-  const trackable = testSpec !== undefined && defined.length > 0 && referenced !== undefined;
+  // 節があっても番号が1つも無ければ追跡できない（「未対応なし」と示して基準を隠さない）
+  const trackable = testSpec !== undefined && defined.length > 0 && referenced !== undefined && referenced.length > 0;
   const covered = new Set(scenarios.flatMap((scenario) => scenario.criteria));
   return {
     testSpec: testSpec !== undefined,

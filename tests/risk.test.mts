@@ -521,6 +521,15 @@ test("effectiveBoundaries: 基準を読めなければ作業ツリーの境界�
   assert.equal(boundaries.unverified, true);
 });
 
+test("effectiveBoundaries: 基準の [app] だけが壊れていても、基準の境界は効かせる", (t) => {
+  const directory = repoWith(t, `${ROOT_ONLY}[app]\nexposure = "everyone"\n[boundaries]\nexternal = ["api/**"]\n`);
+  withOrigin(t, directory);
+  const source = loosen(directory, "feature-x", ROOT_ONLY);
+  const boundaries = effectiveBoundaries(boundaryConfigOf(directory, source));
+  assert.deepEqual(boundaries.external, ["api/**"]);
+  assert.equal(boundaries.unverified, false);
+});
+
 test("effectiveBoundaries: どこにも宣言が無ければ空で、unverified ではない", (t) => {
   const directory = repoWith(t, undefined);
   const boundaries = effectiveBoundaries(boundaryConfigOf(directory, ROOT_ONLY));

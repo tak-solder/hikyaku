@@ -249,6 +249,13 @@ function boundaryConsent(ctx: StepContext): ConsentJudgement {
   return false;
 }
 
+/** G3 の申告の裏取りの結果（G4 の args と gate brief G4 が使う）。[app] の宣言が無ければ空で verified */
+export function g4Verification(ctx: StepContext): { undeclaredAreas: UndeclaredArea[]; verified: boolean } {
+  if (undeclared(ctx)) return { undeclaredAreas: [], verified: true };
+  const areas = undeclaredAreas(ctx);
+  return areas instanceof Error ? { undeclaredAreas: [], verified: false } : { undeclaredAreas: areas, verified: true };
+}
+
 function g4Consent(ctx: StepContext): ConsentJudgement {
   if (roundOf(ctx) === "return") return ON_RETURN;
   // design-delta の done の前は裏取りするものが無い（git を読まない。G4 は design-delta の後ろなので位置も変わらない）
@@ -419,10 +426,9 @@ export const ARCHITECT_STEPS: SkillSteps = {
         const boundaryArgs = changes instanceof Error
           ? { boundaries: { declared: true, external: [], internal: [], error: changes.message } }
           : { boundaries: { declared: changes.declared, external: changes.external, internal: changes.internal } };
-        if (undeclared(ctx)) return { undeclaredAreas: [], ...boundaryArgs };
-        const areas = undeclaredAreas(ctx);
+        const verification = g4Verification(ctx);
         // 裏取りできなかった回は、領域が空でも同意になる。提示で取り違えないよう、そのことを値でも示す
-        return areas instanceof Error ? { undeclaredAreas: [], verified: false, ...boundaryArgs } : { undeclaredAreas: areas, ...boundaryArgs };
+        return verification.verified ? { undeclaredAreas: verification.undeclaredAreas, ...boundaryArgs } : { ...verification, ...boundaryArgs };
       },
       notices: (ctx) => {
         const changes = boundaries(ctx);

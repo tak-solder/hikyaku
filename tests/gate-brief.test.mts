@@ -52,6 +52,23 @@ test("testSpecScenarios: 半角の括弧の印も拾い、シナリオの中の�
   assert.match(scenarios[0]?.body ?? "", /#### 補足/);
 });
 
+test("testSpecScenarios: 本文にはコードブロックも含め、その中の対応の番号は数えない", () => {
+  const scenarios = testSpecScenarios(["### a: 期待値（解釈）", "- 対応: US-1.1", FENCE + "json", "{\"ok\": true}", "- 対応: US-9.9", FENCE, ""].join("\n"));
+  assert.match(scenarios[0]?.body ?? "", /\{"ok": true\}/);
+  assert.deepEqual(scenarios[0]?.criteria, ["US-1.1"]);
+});
+
+test("g8Brief: 「対応する受け入れ基準」の節に番号が1つも無ければ追跡できない扱いにする", (t) => {
+  const { cycle, build } = buildDirectory(t, {
+    stories: STORIES,
+    issue: "# Build 03\n\n## 対応する受け入れ基準\n\nなし\n\n## 受け入れ基準\n\n- [ ] 基準の文\n",
+    testSpec: "### a: 1\n- 対応: —\n",
+  });
+  const brief = g8Brief(cycle, build);
+  assert.equal(brief.uncovered, undefined);
+  assert.equal(brief.criteriaSection, "- [ ] 基準の文");
+});
+
 test("markdownSection: コードブロックの中の # の行で節を切らない", () => {
   const issue = ["## 受け入れ基準", "", "- [ ] a", FENCE + "bash", "# setup", FENCE, "- [ ] b", "", "## 次", "x"].join("\n");
   assert.equal(markdownSection(issue, "受け入れ基準"), ["- [ ] a", FENCE + "bash", "# setup", FENCE, "- [ ] b"].join("\n"));

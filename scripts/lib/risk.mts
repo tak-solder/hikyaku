@@ -298,26 +298,31 @@ function readBaselineAt(config: ResolvedConfig, branch: string, ref: string): Ba
   }
   const source = gitSync(config.repoRoot, ["show", `${commit}:${CONFIG_FILE}`]);
   if (source === undefined) return { ...miss(`${ref} の ${CONFIG_FILE} を読めません`, ref, commit), unreadableDeclaration: true };
+  let table: TomlTable;
   try {
-    const table = parseToml(source);
-    const app = table["app"];
-    if (app !== undefined && (typeof app !== "object" || Array.isArray(app))) throw new Error("[app] がテーブルではありません");
-    const declaration = readAppDeclaration(app as TomlTable | undefined);
-    // [boundaries] は別に読む。境界の宣言が壊れていても [app] の上限（G3・G4）は読めたまま扱い、
-    // 境界の照合だけを確かめられない扱い（G4 の同意）にする
-    let boundaries: Boundaries | undefined;
-    let boundariesUnreadable: string | undefined;
-    try {
-      const raw = table["boundaries"];
-      if (raw !== undefined && (typeof raw !== "object" || Array.isArray(raw))) throw new Error("[boundaries] がテーブルではありません");
-      boundaries = readBoundaries(raw as TomlTable | undefined);
-    } catch (error) {
-      boundariesUnreadable = `${ref} の ${CONFIG_FILE} の [boundaries] を読めません: ${error instanceof Error ? error.message : String(error)}`;
-    }
-    return { branch, ref, commit, declaration, boundaries, boundariesUnreadable, unavailable: undefined };
+    table = parseToml(source);
   } catch (error) {
     const baseline = miss(`${ref} の ${CONFIG_FILE} の宣言を読めません: ${error instanceof Error ? error.message : String(error)}`, ref, commit);
-    return { ...baseline, unreadableDeclaration: true };
+    return { ...baseline, unreadableDeclaration: true, boundariesUnreadable: baseline.unavailable };
+  }
+  // [app] と [boundaries] は別に読む。片方が壊れていても、もう片方は読めたまま扱う
+  // （境界だけが壊れていれば G4 の境界の照合だけを確かめられない扱いにし、[app] だけが壊れていれば境界は効かせる）
+  let boundaries: Boundaries | undefined;
+  let boundariesUnreadable: string | undefined;
+  try {
+    const raw = table["boundaries"];
+    if (raw !== undefined && (typeof raw !== "object" || Array.isArray(raw))) throw new Error("[boundaries] がテーブルではありません");
+    boundaries = readBoundaries(raw as TomlTable | undefined);
+  } catch (error) {
+    boundariesUnreadable = `${ref} の ${CONFIG_FILE} の [boundaries] を読めません: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  try {
+    const app = table["app"];
+    if (app !== undefined && (typeof app !== "object" || Array.isArray(app))) throw new Error("[app] がテーブルではありません");
+    return { branch, ref, commit, declaration: readAppDeclaration(app as TomlTable | undefined), boundaries, boundariesUnreadable, unavailable: undefined };
+  } catch (error) {
+    const baseline = miss(`${ref} の ${CONFIG_FILE} の宣言を読めません: ${error instanceof Error ? error.message : String(error)}`, ref, commit);
+    return { ...baseline, unreadableDeclaration: true, boundaries, boundariesUnreadable };
   }
 }
 
@@ -401,9 +406,9 @@ export function effectiveBoundaries(config: ResolvedConfig): EffectiveBoundaries
   const effective = effectiveDeclaration(config);
   const reasons: string[] = [];
   for (const baseline of effective.baselines) {
-    if (baseline.unavailable !== undefined) continue;
-    // 基準の [boundaries] が壊れている: どの境界が宣言されているか分からない
+    // 基準の [boundaries] が壊れている（設定ファイル自体を解釈できない場合を含む）: どの境界が宣言されているか分からない
     if (baseline.boundariesUnreadable !== undefined) reasons.push(baseline.boundariesUnreadable);
+    // [app] だけが読めなかった基準でも、読めた境界は効かせる
     if (baseline.boundaries === undefined) continue;
     add(external, baseline.boundaries.external);
     add(internal, baseline.boundaries.internal);
