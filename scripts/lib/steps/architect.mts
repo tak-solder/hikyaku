@@ -22,16 +22,25 @@
 
 import { publicationStep } from "./publication.mts";
 import { declarationArgs } from "../premises.mts";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadCycles } from "../cycles.mts";
+import {
+  ceilingOf,
+  cycleAdrs,
+  effectiveDeclaration,
+  exceeds,
+  heavyAreasHit,
+  repositoryFiles,
+  touchedPaths,
+  type Harm,
+} from "../risk.mts";
 import { pluginRoot } from "../paths.mts";
 import { describeEscalationProblems } from "../escalation.mts";
 import { readReturn, RETURN_FILE } from "../phase.mts";
 import { buildDirName, loadTasklist } from "../tasklist.mts";
 import {
   currentEvents,
-  consentOf,
   currentRound,
   type ConsentJudgement,
   type SkillSteps,
@@ -94,8 +103,119 @@ function designChanges(ctx: StepContext): boolean {
 const mode = (ctx: StepContext) => ({ round: roundOf(ctx) });
 
 /** 差し戻しからの再設計の回は、委任の前提が崩れたあとなので G3・G4 をユーザーが行う（US-14.4） */
-const consentOnReturn = (ctx: StepContext): ConsentJudgement =>
-  roundOf(ctx) === "return" ? { timing: "now", reason: "差し戻しからの再設計の回" } : false;
+const ON_RETURN = { timing: "now", reason: "差し戻しからの再設計の回" } as const;
+
+/**
+ * options の done の申告（--harm / --paths）。この回の最後の options の done から読む。done が無ければ undefined。
+ * 記録の値の形が違えば欠けとして扱う（progress.jsonl の任意欄は読み込みで検査しないので、読む側で同意に倒す）
+ */
+export function riskDeclaration(ctx: StepContext): { harm?: Harm; paths?: string[] } | undefined {
+  const events = currentEvents(ARCHITECT_STEPS, ctx.events).filter(
+    (event) => event.skill === "architect" && event.step === "options" && event.result === "done",
+  );
+  const event = events[events.length - 1];
+  if (event === undefined) return undefined;
+  const out: { harm?: Harm; paths?: string[] } = {};
+  if (event.harm === "高" || event.harm === "中") out.harm = event.harm;
+  const paths: unknown = event.paths;
+  if (Array.isArray(paths) && paths.length > 0 && paths.every((path) => typeof path === "string" && path.trim() !== "")) {
+    out.paths = paths as string[];
+  }
+  return out;
+}
+
+/** 宣言がどこにも無く、厳しさの分からない基準も無い（上限を設けない。G3・G4 は従来どおりプロファイルで決まる） */
+function undeclared(ctx: StepContext): boolean {
+  const effective = effectiveDeclaration(ctx.config);
+  return effective.declaration === undefined && !effective.incomplete;
+}
+
+const INCOMPLETE = { timing: "now", reason: "基準の宣言を読めず、AI に任せてよい害の上限が分からない" } as const;
+
+/**
+ * G3 の同意の判定（ADR approval-kind-in-step-definitions・risk-ceiling-table）。withDeclaration が false なら、
+ * 宣言による同意を含めない（options の done の前に designChoiceGate を返すとき。申告がまだ無いため）
+ */
+function g3Consent(ctx: StepContext, withDeclaration: boolean): ConsentJudgement {
+  if (roundOf(ctx) === "return") return ON_RETURN;
+  if (!withDeclaration) return false;
+  const effective = effectiveDeclaration(ctx.config);
+  if (effective.incomplete) return INCOMPLETE;
+  const declaration = effective.declaration;
+  if (declaration === undefined) return false;
+  const declared = riskDeclaration(ctx);
+  if (declared?.harm === undefined || declared.paths === undefined) {
+    const missing = [declared?.harm === undefined ? "--harm" : "", declared?.paths === undefined ? "--paths" : ""].filter(Boolean).join(" と ");
+    return { timing: "now", reason: `options の申告（${missing}）が欠けている` };
+  }
+  const ceiling = ceilingOf(declaration.axes);
+  if (exceeds(declared.harm, ceiling)) {
+    return { timing: "now", reason: `害の申告（${declared.harm}）が上限（${ceiling === "なし" ? "何も任せない" : `${ceiling}まで`}）を超える` };
+  }
+  // 重い領域のパスに触れる受け入れは、害の重さに関わらず上限を超えるとみなす
+  const hit = heavyAreasHit(declaration, declared.paths, repositoryFiles(ctx.config));
+  if (hit.length > 0) return { timing: "now", reason: `申告したパスが重い領域（${hit.map((area) => area.name).join(", ")}）に当たる` };
+  return false;
+}
+
+/** 設計が触れた重い領域のうち、G3 の申告（--paths）に当たっていないもの */
+interface UndeclaredArea {
+  name: string;
+  /** その領域に当たった、設計の文書が触れたパス */
+  touched: string[];
+}
+
+/**
+ * G3 の申告の裏取り。design-delta.md とこのサイクルの ADR が触れるパスを重い領域と照合し、G3 の申告が
+ * 当たっている領域を除く。申告が領域に当たるかは G3 と同じ heavyAreasHit・同じファイル一覧で見る。
+ * options をスキップした回・--paths が無い回は、申告を空とみなす。ADR の一覧を読めなければ Error を返す
+ */
+function undeclaredAreas(ctx: StepContext): UndeclaredArea[] | Error {
+  const declaration = effectiveDeclaration(ctx.config).declaration;
+  if (declaration === undefined) return [];
+  let adrs: string[];
+  try {
+    adrs = cycleAdrs(ctx.config);
+  } catch (error) {
+    return error instanceof Error ? error : new Error(String(error));
+  }
+  const files = repositoryFiles(ctx.config);
+  const documents = [join(ctx.unitDirectory, "design-delta.md"), ...adrs.map((path) => join(ctx.config.repoRoot, path))];
+  const touched: string[] = [];
+  for (const path of documents) {
+    if (!existsSync(path)) continue;
+    let text: string;
+    try {
+      text = readFileSync(path, "utf8");
+    } catch (error) {
+      return new Error(`${path} を読めません: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    for (const entry of touchedPaths(text)) if (!touched.includes(entry)) touched.push(entry);
+  }
+  const declaredPaths = skipped(ctx, "options") ? [] : (riskDeclaration(ctx)?.paths ?? []);
+  const covered = new Set(heavyAreasHit(declaration, declaredPaths, files).map((area) => area.name));
+  return heavyAreasHit(declaration, touched, files)
+    .filter((area) => !covered.has(area.name))
+    .map((area) => ({ name: area.name, touched: touched.filter((path) => heavyAreasHit({ ...declaration, areas: [area] }, [path], files).length > 0) }));
+}
+
+function g4Consent(ctx: StepContext): ConsentJudgement {
+  if (roundOf(ctx) === "return") return ON_RETURN;
+  if (effectiveDeclaration(ctx.config).incomplete) return INCOMPLETE;
+  if (undeclared(ctx)) return false;
+  const areas = undeclaredAreas(ctx);
+  if (areas instanceof Error) return { timing: "now", reason: "G3 の申告を裏取りできない（このサイクルの ADR を読めない）" };
+  if (areas.length > 0) {
+    return { timing: "now", reason: `設計が G3 の申告に無い重い領域（${areas.map((area) => area.name).join(", ")}）に触れている` };
+  }
+  return false;
+}
+
+/** 基準の宣言を読めなかったこと。宣言がどこにも無く、厳しさの分からない基準も無い回は出さない（提示を変えない） */
+function declarationNotices(ctx: StepContext): string[] {
+  if (undeclared(ctx)) return [];
+  return effectiveDeclaration(ctx.config).notices;
+}
 
 const G3: StepDefinition = {
   id: "G3",
@@ -103,18 +223,21 @@ const G3: StepDefinition = {
   title: "設計案の選択",
   when: (ctx) => designChanges(ctx) && !skipped(ctx, "options"),
   enabled: (ctx) => ctx.config.gates.designChoice,
-  consent: consentOnReturn,
+  consent: (ctx) => g3Consent(ctx, true),
+  notices: declarationNotices,
   ask: "G3",
 };
 
 /**
  * その回に設計案の選択（G3）をユーザーが行うか。false なら options・adr は推奨案をそのまま採る。
  * express でも再設計の回は G3 が同意として入るので、設定の値だけでは決めない。
+ * options の done がまだ無い間は、宣言による同意を含めない（申告が無いので判定できない。done のあと
+ * G3 が同意になれば、G3 で提示する）。
  * options をスキップした回でも false にしない（構造の条件 when は見ない。案が無いだけで、
  * 推奨案を黙って採ったわけではないため）
  */
 const designChoiceGate = (ctx: StepContext) => {
-  const consent = consentOf(G3, ctx);
+  const consent = g3Consent(ctx, riskDeclaration(ctx) !== undefined);
   return { designChoiceGate: (consent !== false && consent.timing === "now") || G3.enabled?.(ctx) !== false };
 };
 
@@ -199,6 +322,8 @@ export const ARCHITECT_STEPS: SkillSteps = {
       when: designChanges,
       // 分岐がある判断が無ければ、案の生成・G3・ADR を行わない
       skippable: true,
+      // G3 に提示する案のうち最も重い害と、全案が触れるパス（G3 の同意の判定と G4 の裏取りに使う）
+      declaresRisk: true,
       args: designChoiceGate,
     },
     G3,
@@ -229,7 +354,19 @@ export const ARCHITECT_STEPS: SkillSteps = {
       title: "設計ドキュメントの承認",
       when: designChanges,
       enabled: (ctx) => ctx.config.gates.architecture,
-      consent: consentOnReturn,
+      consent: g4Consent,
+      // 当たった領域を G4 の提示に使う（宣言が無ければ空）。手順の位置だけを読む経路では組み立てない
+      args: (ctx) => {
+        if (ctx.positionOnly === true || undeclared(ctx)) return { undeclaredAreas: [] };
+        const areas = undeclaredAreas(ctx);
+        return { undeclaredAreas: areas instanceof Error ? [] : areas };
+      },
+      notices: (ctx) => {
+        const notices = declarationNotices(ctx);
+        if (undeclared(ctx)) return notices;
+        const areas = undeclaredAreas(ctx);
+        return areas instanceof Error ? [...notices, `G3 の申告を裏取りできないので、G4 を同意にしています: ${areas.message}`] : notices;
+      },
       ask: "G4",
     },
     {

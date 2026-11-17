@@ -32,6 +32,7 @@ import { parseTokenAmount } from "../lib/tokens.mts";
 import { assertCurrentConfig } from "../lib/config.mts";
 import { checkEscalation, describeEscalationProblems } from "../lib/escalation.mts";
 import { readReturn, RETURN_FILE } from "../lib/phase.mts";
+import { splitList } from "../lib/rules.mts";
 import {
   allowedResults,
   consentOf,
@@ -100,7 +101,7 @@ register({
   name: "step report",
   summary: "1手の結果を進捗に記録し、次の1手を返す",
   usage:
-    "hikyaku step report <phase> <step> [<cycle>] [--skill <内部スキル>] --result done|skipped|approved|rejected|failed [--reason <理由>] [--input <答え>] [--peak <トークン数>] [--pr <URL|番号>] [--dry-run] [--json]",
+    "hikyaku step report <phase> <step> [<cycle>] [--skill <内部スキル>] --result done|skipped|approved|rejected|failed [--reason <理由>] [--input <答え>] [--peak <トークン数>] [--harm 高|中] [--paths <glob,...>] [--pr <URL|番号>] [--dry-run] [--json]",
   writes: true,
   details: [
     "作業単位のディレクトリの progress.jsonl に1行追記します。報告できるのは現在地のステップと、",
@@ -117,6 +118,9 @@ register({
     "--peak は見積もり直した予測ピークです（380000・380k。分割の検討の判定に使う）。plan の done では必須、",
     "plan-review では任意です。[context] split_above を超えると、builder は分割の検討（split）を返します。",
     "--pr は作った PR の URL か番号です。PR を作るステップ（pr）の done では必須です。",
+    "--harm と --paths は、architect の options の done に添える申告です（G3 に提示する案のうち最も重い害と、",
+    "全案が触れるパスの glob。--paths は波括弧の外のカンマで区切る）。欠けていても受け付けますが、",
+    "[app] を宣言したワークスペースでは G3 が同意になります。",
     "記録には、報告した時点のコンテキスト・セッション ID・Hikyaku の版が入ります（#68）。",
     "progress.jsonl は成果物と一緒にコミットしてください。",
   ].join("\n"),
@@ -241,6 +245,8 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
     throw new HikyakuError(`${definition.id} の done には --peak で見積もり直した予測ピークを添えてください`);
   }
 
+  readRiskDeclaration(definition, result, args, event);
+
   const prRaw = flagString(args, "pr");
   if (prRaw !== undefined) {
     if (definition.recordsPr === undefined || definition.recordsPr === false) throw new HikyakuError(`${definition.id} には --pr を添えられません`);
@@ -261,7 +267,31 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
 }
 
 /**
- * すべてのゲートの承認の条件: そのステップで唱えた害が高の異議が片づいていること（US-1.4）。
+ * 害の重さとパスの申告（--harm / --paths）。declaresRisk のステップの done だけで受け付ける。
+ * 欠けていても受け付ける（判定する G3・G4 が同意に倒す）。値の形が違えば、黙って捨てずにエラーにする
+ */
+function readRiskDeclaration(definition: EvaluatedStep["definition"], result: StepResult, args: ParsedArgs, event: ProgressEvent): void {
+  const harm = flagString(args, "harm");
+  const paths = flagString(args, "paths");
+  if (harm === undefined && paths === undefined) return;
+  if (definition.declaresRisk !== true) throw new HikyakuError(`${definition.id} には --harm / --paths を添えられません`);
+  if (result !== "done") throw new HikyakuError("--harm / --paths は done の報告にだけ添えられます");
+  if (harm !== undefined) {
+    if (harm !== "高" && harm !== "中") throw new HikyakuError(`--harm は 高 か 中 で指定してください（現在: ${harm}）`);
+    event.harm = harm;
+  }
+  if (paths !== undefined) {
+    // 波括弧の外のカンマで区切る（`src/{a,b}/**` を1つの glob として読む）。空の要素は書き損じなので受け付けない
+    const list = splitList(paths).map((path) => path.trim());
+    if (list.length === 0 || list.includes("") || /^\s*,|,\s*,|,\s*$/.test(paths)) {
+      throw new HikyakuError(`--paths は触れるパスの glob をカンマで区切って指定してください（現在: ${paths}）`, "例: --paths \"src/api/**,src/{auth,billing}/**\"");
+    }
+    event.paths = list;
+  }
+}
+
+/**
+ * すべてのゲートの承認の条件:そのステップで唱えた害が高の異議が片づいていること（US-1.4）。
  * ほかの作業単位の記録が壊れていれば、この単位の記録だけで確かめる（ほかの単位の決定が見えない分は
  * 片づいていない側に倒れる）。この単位の記録を読めなければ、確かめられないので受け付けない
  */

@@ -440,8 +440,21 @@ test("conductor asks: G3・G4 が再設計の回に同意になることを示�
   const text = succeeds(directory, "conductor", "asks", "001");
   assert.match(text, /ユーザーに上げる同意ゲート: delegation/);
   assert.match(text, /G10（decisions・constraints の変更を含む回は同意/);
-  assert.match(text, /この profile では出ない問い: .*G3（差し戻しからの再設計の回は同意/);
+  assert.match(text, /この profile では出ない問い: .*G3（差し戻しからの再設計の回と、\[app\] の宣言があって options の申告が上限を超える/);
   assert.doesNotMatch(text, /人間/);
+});
+
+test("conductor asks と config: G3 は宣言の上限と申告、G4 は申告の裏取りで同意になることを示す", (t) => {
+  const directory = workspaceWith(t, "standard");
+  const json = JSON.parse(succeeds(directory, "conductor", "asks", "001", "--json"));
+  assert.match(json.consentWhen.G3, /上限を超える/);
+  assert.match(json.consentWhen.G3, /重い領域/);
+  assert.match(json.consentWhen.G3, /欠けて/);
+  assert.match(json.consentWhen.G4, /G3 の申告に無い重い領域/);
+  const config = succeeds(directory, "config", "001");
+  assert.match(config, /G3 設計案の選択.*上限を超える・重い領域に当たる・欠けている/);
+  assert.match(config, /G4 architecture.*G3 の申告に無い重い領域/);
+  assert.doesNotMatch(config + JSON.stringify(json.consentWhen), /人間/);
 });
 
 test("conductor parse: 子の手順の位置を確かめられないとき、回によって同意になるゲートは同意の側に倒す", (t) => {

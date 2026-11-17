@@ -16,7 +16,7 @@
  * conductor のブランチ）はユーザーのマージを経ていないので使わない。基準が Hikyaku のブランチを
  * 指しているとき（origin/HEAD の向け直しなど）も、その基準は読めない扱いにする。
  *
- * この版では宣言はまだゲートの判定に使わない（G3・G4 は build-15、境界は build-12）。
+ * G3・G4 の同意の判定（steps/architect.mts）がこの上限を使う。境界（[boundaries]）はまだ判定に使わない（build-12）。
  */
 
 import { parseBranch } from "./branch.mts";
