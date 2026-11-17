@@ -154,7 +154,8 @@ build-manager や retrospective のような内部スキルは、`--skill` を�
 |---|---|
 | `ledger open <phase> [<cycle>] --type --when --who --summary` | 決めずに先へ進めること・暫定で決めたこと・異議・受け入れたリスクを、いつ・誰が決めるかとともに残すとき（各スキルの手順が呼ぶ） |
 | `ledger decide <phase> <id> [<cycle>] --decision --by` | 未決事項への決定を残すとき。`<phase>` は決めた作業単位 |
-| `ledger object <phase> [<cycle>] --summary --basis --loses --harm --decision --input` | ゲートで、ユーザーの選択がその人自身の宣言・記録と食い違うと異を唱えたとき、異議とユーザーの決定を対で残す（ゲートの指示に呼び方が載る） |
+| `ledger object <phase> [<cycle>] --summary --basis --loses --harm --decision --input` | ゲートで、ユーザーの選択がその人自身の宣言・記録と食い違うと異を唱えたとき、異議とユーザーの決定を対で残す（ゲートの指示に呼び方が載る）。害が中でも上限を超える異議は、受け入れに `--accepts` と `--premises` が要る |
+| `ledger object <phase> [<cycle>] --summary --basis --loses --harm --defer --premises` | 事後同意が有効なサイクルで、上限を超える異議の同意を、ユーザーの選択でマージの前の同意ゲートへ回すとき。決定なしで記録し、今の回に同意ゲートが現れないとき（plan・close・差し戻しの回・PR を作った後）は受け付けない |
 | `ledger list [<cycle>]` | 未決事項と、期限が来た・過ぎたもの、未解決の退けを見渡したいとき |
 | `ledger consent-list <phase> [<cycle>]` | PR を作る直前の同意ゲートで、マージの前にユーザーが同意する項目（`merge@<phase>` の受け入れたリスク・異議）を1項目3行で示すとき。全文は `--full` |
 | `ledger return-draft <phase> [<cycle>] --items <id,...>` | 同意ゲートで前のフェーズの判断を退け、builder が architect へ差し戻すとき。退けた項目と試したことをそろえた `return.md` の下書きを出す（書き込まない。問題を変える選択肢と推奨は builder が書く） |

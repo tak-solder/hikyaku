@@ -108,10 +108,10 @@ export function consentGateSlot(skill: SkillSteps, ctx: StepContext): string | u
 
 ## 実装ステップ
 
-- [ ] Step 1: `risk.mts` の `exceedsCeilingFor`、`ledger.mts` の `exceedsCeiling`・`isHighObjection` と3関数の置き換え
-- [ ] Step 2: `ledger open --type objection`・`ledger object` の上限との比較
-- [ ] Step 3: 同意ゲートの slot と `hasConsentItems`（requested のサイクル全体）、`consentProblem` の案内
-- [ ] Step 4: `ledger object --defer`（拒否の条件）
-- [ ] Step 5: `directiveOf`・`buildDirective`・`currentStep` の positionOnly
-- [ ] Step 6: `OBJECTION_GUIDE`・consent.md 3つ、help・docs・CHANGELOG
-- [ ] Step 7: テスト（受け入れ基準ごと）、`conductor lint`・`step lint`・`npx tsc --noEmit`・`npm test`
+- [x] Step 1: `risk.mts` の `exceedsCeilingFor`、`ledger.mts` の `exceedsCeiling`・`isHighObjection` と3関数の置き換え
+- [x] Step 2: `ledger open --type objection`・`ledger object` の上限との比較
+- [x] Step 3: 同意ゲートの slot と `hasConsentItems`（requested のサイクル全体）、`consentProblem` の案内
+- [x] Step 4: `ledger object --defer`（拒否の条件）
+- [x] Step 5: `directiveOf`・`buildDirective`・`currentStep` の positionOnly
+- [x] Step 6: `OBJECTION_GUIDE`・consent.md 3つ、help・docs・CHANGELOG
+- [x] Step 7: テスト（受け入れ基準ごと）、`conductor lint`・`step lint`・`npx tsc --noEmit`・`npm test`

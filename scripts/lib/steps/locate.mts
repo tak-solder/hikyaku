@@ -245,13 +245,23 @@ function runningInternal(unit: FoundUnit, events: ProgressEvent[]): SkillSteps |
  */
 export function directiveOf(unit: FoundUnit, options: { root?: string } = {}): { opened: Opened; directive: Directive } {
   const opened = openUnit(unit, options);
-  const directive = buildDirective(opened, evaluate(opened.skill, opened.ctx), { measure: false, notices: false });
+  const directive = positioned(opened);
   if (directive.kind === "stop") return { opened, directive };
   const called = directive.kind === "call" && directive.call !== undefined ? stepsOf(directive.call) : undefined;
   const callee = called?.internal === true ? called : runningInternal(unit, opened.ctx.events);
   if (callee === undefined) return { opened, directive };
 
   const inner = openUnit(unit, { ...options, skill: callee });
-  const innerDirective = buildDirective(inner, evaluate(inner.skill, inner.ctx), { measure: false, notices: false });
+  const innerDirective = positioned(inner);
   return innerDirective.kind === "done" ? { opened, directive } : { opened: inner, directive: innerDirective };
+}
+
+/**
+ * 手順の位置だけを読む評価（positionOnly）。評価と directive の組み立ての両方に同じ ctx を渡す。
+ * positionOnly で変わるのは同意ゲートの when（事後同意を選んだサイクルで記録を読まずに手順に入れる）と重い args だけで、
+ * G3・G4 の consent は見ない（位置をずらさない）。返す opened の ctx には付けない（呼び手は nextCommand に使う）
+ */
+function positioned(opened: Opened): Directive {
+  const view: Opened = { ...opened, ctx: { ...opened.ctx, positionOnly: true } };
+  return buildDirective(view, evaluate(view.skill, view.ctx), { measure: false, notices: false });
 }

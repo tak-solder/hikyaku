@@ -79,6 +79,11 @@ export interface OpenRecord {
    * 付かない。G3・G4 を deferred にする条件（steps/architect.mts）は、この欄のある事項だけを数える
    */
   source?: "step-report";
+  /**
+   * 異議の害が上限を超えると ledger object / ledger open が判定した（US-13.3）。害が中でも高と同じに扱い、
+   * 受け入れには言葉と前提が要る（isHighObjection）
+   */
+  exceedsCeiling?: true;
   session?: string;
   hikyaku?: string;
 }
@@ -455,6 +460,11 @@ export function decideItem(cycleDirectory: string, record: DecideRecord, ledger:
  * consented）。拠り所の前提は、記録するとき（ledger open / object）に求める。決定では前提を足せないので、
  * ここで求めると前提の無い事項を受け入れで片づける手段が無くなる
  */
+/** 高として扱う異議か: 害が高か、上限を超える（exceedsCeiling）。受け入れには言葉と前提が要る */
+export function isHighObjection(item: Pick<LedgerItem, "open">): boolean {
+  return item.open.type === "objection" && (item.open.harm === "高" || item.open.exceedsCeiling === true);
+}
+
 export function objectionSettled(item: LedgerItem): boolean {
   const latest = item.latest;
   if (latest === undefined || latest.by !== "user") return false;
@@ -484,13 +494,16 @@ export function readUnitLedger(cycleDirectory: string, unit: string): Ledger {
 }
 
 /**
- * そのゲートの承認を止める異議。その作業単位・そのステップで記録した害が高の objection のうち、
- * 片づいていないもの。中の異議は記録だけで進むので数えない（US-1.3・US-1.4）
+ * そのゲートの承認を止める異議。その作業単位・そのステップで記録した高として扱う objection（害が高か、
+ * 上限を超える）のうち、片づいていないもの。中の異議は記録だけで進むので数えない（US-1.3・US-1.4）。
+ * 同意ゲートの対象でもある異議（ledger object --defer。who=user・when=merge@…）は、マージの前の同意ゲートで
+ * 決めるので数えない。who が user でない merge@ の異議は同意ゲートに載らないので、ここで止める
  */
 export function unacceptedObjections(ledger: Ledger, unit: string, step: string): LedgerItem[] {
   return ledger.items.filter(
     (item) =>
-      item.open.type === "objection" && item.open.harm === "高" && item.open.unit === unit && item.open.step === step &&
+      isHighObjection(item) && item.open.unit === unit && item.open.step === step &&
+      !(item.open.who === "user" && item.open.when.startsWith("merge@")) &&
       !objectionSettled(item),
   );
 }
@@ -549,15 +562,15 @@ export function consentItemsOf(ledger: Ledger, unit: string): LedgerItem[] {
 
 /**
  * ユーザーの決定があるか。最新の決定が by=user の consented / decided / resolved なら決定とする。
- * rejected は数えない（作り直しのあとユーザーが resolved を記録するまで止める）。害が高の異議は
- * 受け入れの言葉の無い consented を数えない（objectionSettled と同じ基準。resolved は片づきとして数える）
+ * rejected は数えない（作り直しのあとユーザーが resolved を記録するまで止める）。高として扱う異議（害が高か、
+ * 上限を超える）は受け入れの言葉の無い consented を数えない（objectionSettled と同じ基準。resolved は片づきとして数える）
  */
 export function consentDecided(item: LedgerItem): boolean {
   const latest = item.latest;
   if (latest === undefined || latest.by !== "user") return false;
   if (latest.decision === "rejected") return false;
   if (latest.decision === "resolved") return true;
-  if (item.open.type === "objection" && item.open.harm === "高") return objectionSettled(item);
+  if (isHighObjection(item)) return objectionSettled(item);
   return true;
 }
 

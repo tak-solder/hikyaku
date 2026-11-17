@@ -354,10 +354,11 @@ test("CLI: 承認のあとに決定の無い対象が足されると、同意ゲ
 test("CLI: 高の異議は受け入れの言葉の無い consented では承認できない", (t) => {
   const directory = built(t);
   upToHandoff(directory);
-  const id = (JSON.parse(succeeds(
-    directory, "ledger", "open", "build-01", "001", "--type", "objection", "--harm", "高", "--when", "merge", "--who", "user",
-    "--summary", "個人データをログに残す", "--premises", "app.data", "--json",
-  )) as { record: OpenRecord }).record.id;
+  // merge@ の異議は ledger open では書けない（ledger object --defer だけが書く。build-18）。記録の形だけを置く
+  const id = "build-01.1-aaaa";
+  writeFileSync(join(directory, BUILD, "decisions.jsonl"), `${JSON.stringify(open(id, {
+    type: "objection", harm: "高", summary: "個人データをログに残す", at: new Date().toISOString(),
+  }))}\n`);
   report(directory, "handoff", "--result", "done");
   decideByUser(directory, id);
   assert.equal(cli(directory, "step", "report", "build-01", "consent", "001", "--result", "approved", "--input", "OK").status, 1);
