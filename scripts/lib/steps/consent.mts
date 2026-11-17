@@ -21,7 +21,7 @@ import {
   unitConsentItemsAfter,
   unitHasConsentItems,
 } from "../ledger.mts";
-import type { StepContext, StepDefinition } from "./engine.mts";
+import { currentEvents, type StepContext, type StepDefinition } from "./engine.mts";
 
 export const CONSENT_STEP = "consent";
 
@@ -67,11 +67,22 @@ export function consentProblem(skill: string): (ctx: StepContext) => string | un
     // ゲートは外れているので、consent.md（承認の報告で終わる）ではなく、その場で示す案内にする
     const guide = isConductorChild()
       ? "conductor の子では同意ゲートが手順に入りません。PR を完了にせず、blocked でユーザーに上げてください。"
-      : GATED.has(skill) && unitHasConsentItems(ctx.unitDirectory, ctx.unit)
+      : GATED.has(skill) && unitHasConsentItems(ctx.unitDirectory, ctx.unit) && !gateApproved(skill, ctx)
         ? `skills/${skill}/steps/consent.md の手順で一覧をユーザーに示し、決定を記録してから報告し直してください。`
         : `その場で一覧（hikyaku ledger consent-list ${ctx.unit}）をユーザーに示し、項目ごとにユーザーの決定を hikyaku ledger decide ${ctx.unit} <ID> --decision <decision> --by user --input "<ユーザーの答え>" で記録してから報告し直してください。`;
     return `マージの前にユーザーの同意が要る項目に、ユーザーの決定がありません（${ids}）。${guide}`;
   };
+}
+
+/** 今回の回で、PR を作るステップ（architect・builder は pr、patch は publish）を done で報告したか */
+function anchorDone(skill: string, ctx: StepContext): boolean {
+  const anchor = skill === "patch" ? "publish" : "pr";
+  return currentEvents({ skill }, ctx.events).some((event) => event.skill === skill && event.step === anchor && event.result === "done");
+}
+
+/** その回で同意ゲートを承認したか（承認のあとに pr の accepts が止めたのは、ほかの単位で記録した項目） */
+function gateApproved(skill: string, ctx: StepContext): boolean {
+  return currentEvents({ skill }, ctx.events).some((event) => event.skill === skill && event.step === CONSENT_STEP && event.result === "approved");
 }
 
 /** 同意ゲート。when はスキルごとの構造の条件（architect の差し戻しの回を外す、など） */
@@ -80,8 +91,12 @@ export function consentStep(skill: string, when?: (ctx: StepContext) => boolean)
     id: CONSENT_STEP,
     kind: "gate",
     title: "事後同意（マージの前にユーザーが同意する項目）",
+    // PR を作るステップをこの回で終えたら、もう手順に入れない。そのとき pr / publish の accepts が決定を確かめ済み。
+    // 入れたままだと、あとから対象が足されたときや、conductor の子が終えた単位を子でない環境で評価したときに、
+    // 承認の無いゲートが PR の前に現れ、終えた pr / publish をやり直しにする（コードレビュー2回目の指摘）
     when: (ctx) =>
-      (when === undefined || when(ctx)) && ctx.cycle !== undefined && !isConductorChild() && unitHasConsentItems(ctx.unitDirectory, ctx.unit),
+      (when === undefined || when(ctx)) && ctx.cycle !== undefined && !isConductorChild() && !anchorDone(skill, ctx) &&
+      unitHasConsentItems(ctx.unitDirectory, ctx.unit),
     consent: () => ({ timing: "now", reason: "上限を超えるリスクの受け入れ（事後同意）" }),
     ask: "deferred-consent",
     accepts: consentProblem(skill),
@@ -97,8 +112,9 @@ export function consentStep(skill: string, when?: (ctx: StepContext) => boolean)
       if (ctx.positionOnly === true || ctx.cycle === undefined) return { items: [] };
       try {
         return { items: consentItemsOf(readLedger(ctx.cycle.directory), ctx.unit).map((item) => item.open.id) };
-      } catch {
-        return { items: [] };
+      } catch (error) {
+        // 空の一覧だけを返すと「同意する項目は無い」と読まれる。読めないことを示す（承認は accepts が拒む）
+        return { items: [], error: `未決事項の記録を読めません: ${error instanceof Error ? error.message : String(error)}` };
       }
     },
   };

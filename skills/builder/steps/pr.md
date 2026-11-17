@@ -22,7 +22,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr base build-{NN} {cycle}
 先行ビルドの差分まで含んだ PR になる。
 
 - [ ] PR を作る前に、マージの前にユーザーが同意する項目に決定が足りないかを確かめる
-  （`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger consent-list build-{NN} {cycle}` の「決定が足りない」が 0 か）。
+  （`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger consent-list build-{NN} {cycle}` の最後の行「決定が足りない項目」が「なし」か）。
   同意ゲートはこのビルドで記録した項目だけで現れるので、ほかのフェーズで記録した項目はここで見つかる。
   足りなければ一覧をその場でユーザーに示し、項目ごとに
   `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger decide build-{NN} <ID> {cycle} --decision <consented|decided|rejected> --by user --input "<ユーザーの答え>"`

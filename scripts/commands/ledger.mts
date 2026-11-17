@@ -519,7 +519,9 @@ register({
     const full = args.flags.get("full") === true;
     const pending = undecidedConsentItems(items);
     emit({ phase: opened.phase, cycle: opened.cycle.name, items: items.map(consentJson), undecided: pending.map((item) => item.open.id) }, () => {
-      if (items.length === 0) return `${opened.phase} に、マージの前にユーザーが同意する項目はありません。`;
+      // 「決定が足りない項目」の行は必ず出す（PR を作る前の確認が、件数を比べずにこの行を読む）
+      const pendingLine = `決定が足りない項目: ${pending.length === 0 ? "なし" : pending.map((item) => item.open.id).join(", ")}`;
+      if (items.length === 0) return `${opened.phase} に、マージの前にユーザーが同意する項目はありません。\n${pendingLine}`;
       const lines = [`${opened.phase} のマージの前にユーザーが同意する項目: ${items.length} 件（決定が足りない ${pending.length} 件）`];
       for (const item of items) {
         const o = item.open;
@@ -533,6 +535,7 @@ register({
         for (const d of item.decisions) lines.push(`  決定: ${decisionLine(d)}`);
       }
       if (!full) lines.push("", "全文は --full で出します。");
+      lines.push("", pendingLine);
       return lines.join("\n");
     });
   },

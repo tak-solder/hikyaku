@@ -7,7 +7,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify architect {cycle}
 ```
 
 - [ ] PR を作る前に、マージの前にユーザーが同意する項目に決定が足りないかを確かめる
-  （`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger consent-list architect {cycle}` の「決定が足りない」が 0 か）。
+  （`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger consent-list architect {cycle}` の最後の行「決定が足りない項目」が「なし」か）。
   同意ゲートは設計フェーズで記録した項目だけで現れるので、ほかのフェーズで記録した項目はここで見つかる。
   足りなければ一覧をその場でユーザーに示し、項目ごとに
   `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger decide architect <ID> {cycle} --decision <consented|decided|rejected> --by user --input "<ユーザーの答え>"`

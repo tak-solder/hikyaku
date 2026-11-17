@@ -8,7 +8,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify close {cycle}
 
 - [ ] 外部連携が有効なら、参照行を生成する（`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref close {cycle}`）
 - [ ] PR を作る前に、マージの前にユーザーが同意する項目に決定が足りないかを確かめる
-  （`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger consent-list close {cycle}` の「決定が足りない」が 0 か）。
+  （`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger consent-list close {cycle}` の最後の行「決定が足りない項目」が「なし」か）。
   足りなければ一覧をその場でユーザーに示し、項目ごとに
   `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger decide close <ID> {cycle} --decision <consented|decided|rejected> --by user --input "<ユーザーの答え>"`
   で記録してから作る（ask: deferred-consent）。conductor の子なら、PR を作らずに blocked でユーザーに上げる。決定が足りないままでは `done` を受け付けない

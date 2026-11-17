@@ -180,6 +180,10 @@ test("consentStep(args): 対象の ID を入れ、手順の位置だけを読む
   assert.deepEqual(gate.args?.(ctx), { items: ["build-01.1-aaaa"] });
   writeFileSync(join(ctx.cycle?.directory ?? "", "build-02", "decisions.jsonl"), "{broken\n");
   assert.deepEqual(gate.args?.({ ...ctx, positionOnly: true }), { items: [] });
+  // 読めないときは空の一覧だけを返さず、読めないことを示す
+  const failed = gate.args?.(ctx) ?? {};
+  assert.deepEqual(failed["items"], []);
+  assert.match(String(failed["error"]), /読めません/);
   assert.equal(gate.when?.({ ...ctx, positionOnly: true }), true);
 });
 
@@ -191,6 +195,11 @@ test("consentProblem: 決定が足りなければ ID と案内を返す。ゲー
   assert.match(problem, /skills\/builder\/steps\/consent\.md/);
   assert.doesNotMatch(problem, /ledger decide/);
   assert.match(withEnv(CHILD, () => consentProblem("builder")(ctx)) ?? "", /blocked/);
+  // ゲートを承認したあとに pr が止めたなら、consent.md（承認の報告で終わる）ではなくその場で示す案内
+  const approved = { at: "2026-11-16T02:00:00.000Z", skill: "builder", step: "consent", result: "approved" as const };
+  const afterGate = consentProblem("builder")({ ...ctx, events: [approved] }) ?? "";
+  assert.doesNotMatch(afterGate, /consent\.md/);
+  assert.match(afterGate, /その場で/);
 
   const plan = context(t, "plan", { planning: [open("plan.1-aaaa", { unit: "plan", when: "merge@plan" })] });
   const planner = stepOf(PLANNER_STEPS, "pr").accepts?.(plan) ?? "";
@@ -293,6 +302,9 @@ test("CLI: 対象が無ければ同意ゲートは現れず、従来どおり pr
   assert.equal(report(directory, "handoff", "--result", "done").step, "pr");
   succeeds(directory, "tasklist", "done", "001", "--id", "1", "--pr", PR);
   assert.equal(report(directory, "pr", "--result", "done", "--pr", PR).step, "publish");
+  // PR を作ったあとに対象が足されても、承認の無いゲートを PR の前に戻さない（終えた pr をやり直しにしない）
+  openRisk(directory);
+  assert.equal(next(directory).step, "publish");
 });
 
 test("CLI: 対象があると pr の前に同意ゲートが現れ、全項目にユーザーの決定があるまで承認も pr も受け付けない", (t) => {
@@ -371,6 +383,8 @@ test("CLI: conductor の子では同意ゲートが現れないが、決定の�
   assert.equal(cliWith(directory, CHILD, "step", "report", "build-01", "pr", "001", "--result", "done", "--pr", PR).status, 1, "最新が rejected");
   decideByUser(directory, id, "resolved");
   assert.equal(cliWith(directory, CHILD, "step", "report", "build-01", "pr", "001", "--result", "done", "--pr", PR).status, 0);
+  // 子が終えた単位を、子でない環境（step next・Stop フック・再開したセッション）で評価しても位置は同じ
+  assert.equal(next(directory).step, "publish");
 });
 
 test("CLI: 別の単位で記録した merge@build-01 の事項はゲートを出さず、pr の accepts が止める", (t) => {
@@ -403,7 +417,7 @@ test("CLI: merge@build-01 の未決の事項は、同意ゲートに来たとき
 
 test("ledger consent-list: 1項目3行と決定の状態の見出し、--full で全文、--json で項目と決定", (t) => {
   const directory = built(t);
-  assert.match(succeeds(directory, "ledger", "consent-list", "build-01", "001"), /同意する項目はありません/);
+  assert.match(succeeds(directory, "ledger", "consent-list", "build-01", "001"), /同意する項目はありません。\n決定が足りない項目: なし/);
   const a = openRisk(directory);
   const b = openRisk(directory, "architect", "merge@build-01", "移行を後回しにする");
   decideByUser(directory, b, "consented", "build-01");
@@ -413,6 +427,7 @@ test("ledger consent-list: 1項目3行と決定の状態の見出し、--full �
   assert.match(text, new RegExp(`${a.replace(".", "\\.")}（受け入れたリスク）\\[決定なし\\]\\n  受け入れたリスク: キャッシュの無効化を遅らせる\\n  拠り所の前提: app\\.data\\n  失うもの: 古いデータを返さない`));
   assert.match(text, new RegExp(`${b.replace(".", "\\.")}（受け入れたリスク）\\[決定あり（consented）\\]`));
   assert.doesNotMatch(text, /記録した単位/);
+  assert.match(text, new RegExp(`\\n決定が足りない項目: ${a.replace(".", "\\.")}\\n?$`), "最後の行に決定が足りない項目");
   const full = succeeds(directory, "ledger", "consent-list", "build-01", "001", "--full");
   assert.match(full, /いつ: merge@build-01/);
   assert.match(full, /記録した単位: architect/);
