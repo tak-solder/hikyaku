@@ -52,6 +52,11 @@ export interface ProgressEvent {
   harm?: "高" | "中";
   /** 触れるパスの申告（options の done。全案が触れるパスの glob の和） */
   paths?: string[];
+  /**
+   * planner の G1 の承認で提示した事後同意（[consent] deferred）の値。step report が設定から読んで書く
+   * （LLM の引数では受け取らない）。提示のあとに書き換えた値は false（deferred-consent.mts の g1ConsentRecord）
+   */
+  deferredConsent?: boolean;
   /** 報告で添えた PR（URL か番号。pr ステップ） */
   pr?: string;
   /** 報告した時点のメインセッションのコンテキスト（#68）。計測できなければ記録しない */

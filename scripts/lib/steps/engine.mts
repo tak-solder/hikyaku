@@ -57,6 +57,18 @@ export interface StepContext {
   positionOnly?: boolean;
 }
 
+/** 事後同意で積む、上限を超えるリスクの受け入れ（step report が risk の事項にする） */
+export interface DeferredRisk {
+  /** 同意を遅らせるゲート（G3・G4）。事項の ask に入る */
+  gate: string;
+  /** 事項の step（戻り先。G3 は options、G4 は design-delta） */
+  step: string;
+  summary: string;
+  /** 前提の参照（app.<axis>・area:<name>）。ゲートの consent は、これがいまの判定の理由を覆うかを見る */
+  premises: string[];
+  harm?: "高" | "中";
+}
+
 export interface StepDefinition {
   id: string;
   kind: StepKind;
@@ -132,6 +144,12 @@ export interface StepDefinition {
    * 欠けていても報告は受け付け、判定する側（G3・G4 の consent）が同意に倒す。gate は持てない
    */
   declaresRisk?: boolean;
+  /**
+   * done の報告で、上限を超えるリスクの受け入れを事後同意の事項として積むか（architect の options が G3、
+   * design-delta が G4 の分）。報告を足した後の記録で評価し、値を返せば step report が --loses を必須にして
+   * risk の事項（who=user、when=merge@<単位>）を書く。gate は持てない
+   */
+  defers?: (ctx: StepContext) => DeferredRisk | undefined;
   /** 設定から解決して指示に添える値 */
   args?: (ctx: StepContext) => Record<string, unknown>;
   /**
@@ -239,6 +257,9 @@ export function lintApproval(skill: Pick<SkillSteps, "skill" | "steps">): string
       // ゲートは done を報告しないので、申告を受け付けても記録されない
       if (definition.declaresRisk !== undefined) {
         problems.push(`${skill.skill}: ゲート ${definition.id} は declaresRisk を持てません（done を報告しないため）`);
+      }
+      if (definition.defers !== undefined) {
+        problems.push(`${skill.skill}: ゲート ${definition.id} は defers を持てません（done を報告しないため）`);
       }
       continue;
     }

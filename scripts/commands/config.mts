@@ -3,6 +3,7 @@
 import { flagBoolean, flagString } from "../lib/args.mts";
 import { describeProvider, loadConfig, type AppDeclaration, type ResolvedConfig } from "../lib/config.mts";
 import { ceilingOf, effectiveDeclaration } from "../lib/risk.mts";
+import { deferredConsent } from "../lib/deferred-consent.mts";
 import { DEFAULT_BRANCH_MARK, resolveUnsafeSplit } from "../lib/integrity.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { emit, warn } from "../lib/output.mts";
@@ -62,11 +63,13 @@ register({
         });
 
     const unsafeSplit = resolveUnsafeSplit(config);
+    // 事後同意の有効の判定（git を読むので loadConfig では計算しない）。サイクルが決まらなければ有効にならない
+    const deferred = deferredConsent(config, opened?.context.directory);
 
     const retired = config.retired.map((error) => error.message);
     for (const error of config.retired) warn(`${error.message}（v3 の作業では止まります）`);
 
-    emit({ ...config, retired, cycle: opened?.context.name, cycleSource: opened?.context.source, unsafeSplit }, () => {
+    emit({ ...config, retired, cycle: opened?.context.name, cycleSource: opened?.context.source, unsafeSplit, deferredConsent: deferred }, () => {
       const lines: string[] = [];
       if (opened) {
         lines.push(
@@ -122,6 +125,8 @@ register({
         `  release_branches    ${[unsafeSplit.defaultBranch === null ? `${DEFAULT_BRANCH_MARK}不明` : `${unsafeSplit.defaultBranch}${DEFAULT_BRANCH_MARK}`, ...config.dataIntegrity.releaseBranches].join(", ")}`,
         `  allow_unsafe_split  ${config.dataIntegrity.allowUnsafeSplit}`,
         `  安全でない分割      ${unsafeSplit.allowed ? "許す" : "許さない"}（${unsafeSplit.message}）`,
+        "",
+        `[consent] deferred    ${deferred.requested ? (deferred.effective ? "有効" : "選んでいるが有効でない") : "選んでいない"}（${deferred.reason}）`,
         "",
         ...describeDeclaration(config),
         "",

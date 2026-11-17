@@ -360,6 +360,8 @@ export interface ResolvedConfig {
   app: AppDeclaration | undefined;
   /** [boundaries]。照合は gate brief（build-12） */
   boundaries: Boundaries;
+  /** [consent]（サイクル設定の素の値）。有効の判定は deferred-consent.mts（git を読むのでここでは計算しない） */
+  consent: ConsentConfig;
   /** [diff] — ビルドの差分の集計（tokens history build-NN）が数えない生成物と、テストとして分けるパス */
   diff: DiffPatterns;
   /** [context] — builder の区切りで、メインセッションのコンテキストと比べる目安 */
@@ -1228,6 +1230,37 @@ export function readAppDeclaration(table: TomlTable | undefined, where = "[app]"
   return { axes: { exposure, data, impact }, mergeGate, areas };
 }
 
+/** [consent]（サイクル設定でだけ書ける）。deferred は書いた素の値で、有効かは deferred-consent.mts が判定する */
+export interface ConsentConfig {
+  deferred: boolean | undefined;
+}
+
+/**
+ * [consent] を読む。作業ツリーのサイクル設定と、基準（merge-base）のサイクル設定の両方で使う。
+ * 事後同意は緩める向きの設定なので、知らないキー・真偽値でない値は黙って捨てずにエラーにする
+ */
+export function readConsent(table: TomlTable | undefined, where = "[consent]"): ConsentConfig {
+  if (table === undefined) return { deferred: undefined };
+  assertKnownKeys(table, ["deferred"], where);
+  return { deferred: readBoolean(table, "deferred", where) };
+}
+
+/** サイクル設定でだけ書けるテーブル（ルートに書くと全サイクルに効き、G1 の合意を経ずに緩められる） */
+const CYCLE_ONLY_TABLES = ["consent"] as const;
+
+/** ルート設定に、サイクル設定でだけ書けるテーブルが無いか検査する */
+function assertNotCycleOnly(table: TomlTable, path: string): void {
+  const found = CYCLE_ONLY_TABLES.filter((key) => table[key] !== undefined);
+  if (found.length === 0) return;
+  throw new HikyakuError(
+    `${path}: ${found.map((key) => `[${key}]`).join("・")} はリポジトリルートの設定では指定できません`,
+    [
+      "事後同意（[consent] deferred）はサイクルごとに G1 でユーザーが合意して選ぶ設定なので、",
+      "サイクルの .hikyaku.config にだけ書けます（docs/configuration/config-file.md）。",
+    ].join("\n"),
+  );
+}
+
 /** [boundaries] を読む。作業ツリーのルート設定と、基準（merge-base）のルート設定の両方で使う */
 export function readBoundaries(table: TomlTable | undefined): Boundaries {
   if (table === undefined) return { external: [], internal: [] };
@@ -1322,6 +1355,7 @@ export function loadConfig(options: LoadOptions = {}): ResolvedConfig {
       ].join("\n"),
     );
   }
+  if (repoConfig) assertNotCycleOnly(repoConfig, repoConfigPath);
   const legacy = repoConfig ? checkLegacyKeys(repoConfig, repoConfigPath) : {};
   // ルート設定は全サイクルに効くので、読んだ時点で止める
   const [retiredAtRoot] = repoConfig ? retiredKeyErrors(repoConfig, repoConfigPath) : [];
@@ -1482,6 +1516,7 @@ function finalize(
     dataIntegrity: readDataIntegrity(readTable(merged, "data_integrity")),
     app: readAppDeclaration(requireTable(merged, "app", "config")),
     boundaries: readBoundaries(requireTable(merged, "boundaries", "config")),
+    consent: readConsent(requireTable(merged, "consent", "config")),
     diff: readDiffPatterns(readTable(merged, "diff")),
     context: readContextBudget(readTable(merged, "context")),
     peakBands: readPeakBands(readTable(merged, "context")),

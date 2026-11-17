@@ -38,8 +38,9 @@ export const PLANNER_STEPS: SkillSteps = {
       // 要件の合意は意図を決める判断なので、どのプロファイル・設定でも外さない
       consent: () => ({ timing: "now", reason: "要件の合意（意図を決める判断）" }),
       ask: "G1",
-      // 選んだプロファイルのままでよいかを、要件と一緒に確かめる（US-14.1）
-      args: (ctx) => ({ profile: ctx.config.profile }),
+      // 選んだプロファイルのままでよいかと、事後同意を選ぶかを、要件と一緒に確かめる（US-14.1・US-20）。
+      // 事後同意の値は step report が承認の記録に残し、有効の判定（deferred-consent.mts）に使う
+      args: (ctx) => ({ profile: ctx.config.profile, deferredConsent: ctx.config.consent.deferred === true }),
     },
     {
       id: "retrospective",

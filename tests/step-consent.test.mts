@@ -84,7 +84,9 @@ test("engine: evaluate は同意の回のゲートを off にしない", () => {
 
 function opened(definition: StepDefinition): Opened {
   const skill: SkillSteps = { skill: "synthetic", steps: [definition] };
-  const config = { retired: [], context: { approval: 250_000, implement: 300_000, review: 400_000 } } as unknown as ResolvedConfig;
+  const config = {
+    retired: [], context: { approval: 250_000, implement: 300_000, review: 400_000 }, consent: { deferred: undefined },
+  } as unknown as ResolvedConfig;
   return { phase: "build-01", skill, ctx: { ...ctx, config } };
 }
 

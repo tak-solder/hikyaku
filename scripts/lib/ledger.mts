@@ -74,6 +74,11 @@ export interface OpenRecord {
   harm?: Harm;
   /** 問いの ID（conductor の ASKS かゲートの ID） */
   ask?: string;
+  /**
+   * step report が自動で書いた事項（G3・G4 の事後同意の risk）。ledger open には欄の指定が無いので、手書きの事項には
+   * 付かない。G3・G4 を deferred にする条件（steps/architect.mts）は、この欄のある事項だけを数える
+   */
+  source?: "step-report";
   session?: string;
   hikyaku?: string;
 }
