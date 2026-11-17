@@ -78,7 +78,7 @@ register({
         : await rulesLastTouched(config.repoRoot, rules.filter((rule) => selected.has(rule.path)), files, config.diff.exclude);
     const candidates = ruleCandidates({ ...input, lastTouched: touched });
     const problems = rules.flatMap((rule) => (rule.problems ?? []).map((problem) => `${rule.path}: ${problem}`));
-    const removals = collectRemovalCandidates(config, opened?.context.directory);
+    const removals = collectRemovalCandidates(config, opened?.context.directory, measures);
 
     emit({ threshold: config.rules.hitThreshold, records: records.length, candidates, removals, unparsed, problems, notices }, () => {
       const lines: string[] = [];

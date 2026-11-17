@@ -103,7 +103,8 @@ interface BaseCommit {
 function baseHistory(config: ResolvedConfig): BaseCommit[] | string {
   const base = config.baseBranch ?? defaultBranch(config.repoRoot);
   if (base === undefined) return "ベースブランチを決められません（base_branch を設定してください）";
-  const ref = [base, `origin/${base}`].find((candidate) => gitSync(config.repoRoot, ["rev-parse", "--verify", "-q", candidate]) !== undefined);
+  // リモートを先に見る。PR は GitHub でマージされ、手元のベースブランチは進めていないことが多い
+  const ref = [`origin/${base}`, base].find((candidate) => gitSync(config.repoRoot, ["rev-parse", "--verify", "-q", candidate]) !== undefined);
   if (ref === undefined) return `ベースブランチ ${base} を読めません`;
   const log = gitSync(config.repoRoot, ["log", "--first-parent", "--format=%H%x1f%cI%x1f%s", ref]);
   if (log === undefined) return `ベースブランチ ${base} の履歴を読めません`;
@@ -225,6 +226,17 @@ export function compareAround(input: {
   };
 }
 
+/**
+ * 日時をこの環境のローカルの日付（YYYY-MM-DD）にする。cycles.md の開始日・完了日はローカルの日付で書かれるので、
+ * コミットした人のタイムゾーンの日付（ISO の先頭10文字）ではそろわない
+ */
+export function localDay(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso.slice(0, 10);
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 /** 過去に基準を消した PR ごとの、マージ前後の指標の比較（close-cycle の followups が示す） */
 export function metricsComparison(config: ResolvedConfig): MetricsComparison[] {
   let cycles: CycleRecord[];
@@ -240,10 +252,11 @@ export function metricsComparison(config: ResolvedConfig): MetricsComparison[] {
     const pr = prNumber(record.pr);
     if (typeof history === "string") return { ...record, removed: [], comparable: false, reason: history };
     if (pr === undefined) return { ...record, removed: [], comparable: false, reason: `PR 番号を読めません: ${record.pr}` };
-    const merge = history.find((commit) => subjectMentionsPr(commit.subject, pr));
+    // 履歴は新しい順。PR を参照する後のコミット（revert など）ではなく、最も古いものをマージとみなす
+    const merge = history.findLast((commit) => subjectMentionsPr(commit.subject, pr) && !/^Revert\b/.test(commit.subject));
     if (merge === undefined) return { ...record, removed: [], comparable: false, reason: "未マージ（ベースブランチに PR のコミットがありません）" };
     const compared = compareAround({
-      mergedDay: merge.date.slice(0, 10),
+      mergedDay: localDay(merge.date),
       cycles,
       window: config.metrics.window,
       metricsOf: (c) => cycleMetrics(config.hikyakuRoot, c),

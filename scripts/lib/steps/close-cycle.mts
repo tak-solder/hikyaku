@@ -52,17 +52,34 @@ function hooksAccepted(ctx: StepContext): boolean {
   return events[events.length - 1]?.result === "done";
 }
 
+/**
+ * 1回の評価（同じ記録の配列）の中では作業ツリーも記録も変わらないので、git を読む判定を1回にまとめる。
+ * consent・reopens・args・accepts が同じ評価で何度も呼ぶため
+ */
+const consentCache = new WeakMap<object, PromotionConsent>();
+
 /** G10 の判定の材料（promotions.mts の promotionConsent が唯一の判定）。サイクルが無ければ変更なし */
 function consentState(ctx: StepContext): PromotionConsent {
   if (ctx.cycle === undefined) return { changes: [] };
-  return promotionConsent(ctx.config, ctx.cycle.directory, cycleClosed(ctx));
+  const cached = consentCache.get(ctx.events);
+  if (cached !== undefined) return cached;
+  const state = promotionConsent(ctx.config, ctx.cycle.directory, cycleClosed(ctx));
+  consentCache.set(ctx.events, state);
+  return state;
 }
 
-/** 今回の回の G10 の最後の承認（差し戻しのあとは無い） */
+/**
+ * 今回の回の G10 の最後の承認。差し戻しのあと・collect をやり直したあとは無い
+ * （collect をやり直すと G10 もやり直しになるので、それより前の承認は数えない）
+ */
 function g10Approval(ctx: StepContext): ProgressEvent | undefined {
-  const events = currentEvents(CLOSE_CYCLE_STEPS, ctx.events).filter((event) => event.skill === "close-cycle" && event.step === "G10");
-  const latest = events[events.length - 1];
-  return latest?.result === "approved" ? latest : undefined;
+  const events = currentEvents(CLOSE_CYCLE_STEPS, ctx.events).filter((event) => event.skill === "close-cycle");
+  let latest: ProgressEvent | undefined;
+  for (const event of events) {
+    if (event.step === "collect") latest = undefined;
+    else if (event.step === "G10") latest = event.result === "approved" ? event : undefined;
+  }
+  return latest;
 }
 
 export const CLOSE_CYCLE_STEPS: SkillSteps = {
@@ -108,7 +125,8 @@ export const CLOSE_CYCLE_STEPS: SkillSteps = {
       id: "hooks",
       kind: "run",
       title: "フックを採るかの記録（G10 の決定）",
-      when: hookCandidates,
+      // G10 を省いた回は、フックを採ると決まらないので記録しない（followups もフックを作らない）
+      when: (ctx) => hookCandidates(ctx) && g10Approval(ctx) !== undefined,
       skippable: true,
     },
     {

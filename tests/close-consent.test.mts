@@ -93,14 +93,20 @@ interface Directive {
 }
 
 function git(directory: string, ...args: string[]): string {
-  const result = spawnSync("git", args, { cwd: directory, encoding: "utf8", env: testEnvironment() });
+  return gitWith(directory, {}, ...args);
+}
+
+function gitWith(directory: string, env: NodeJS.ProcessEnv, ...args: string[]): string {
+  const result = spawnSync("git", args, { cwd: directory, encoding: "utf8", env: { ...testEnvironment(), ...env } });
   assert.equal(result.status, 0, result.stderr);
   return result.stdout;
 }
 
-function commit(directory: string, message: string): void {
+/** コミットする。date を渡すとその日時で（close-cycle の記録より前のコミットにするため） */
+function commit(directory: string, message: string, date?: string): void {
   git(directory, "add", "-A");
-  git(directory, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", message);
+  const env = date === undefined ? {} : { GIT_COMMITTER_DATE: date, GIT_AUTHOR_DATE: date };
+  gitWith(directory, env, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", message);
 }
 
 function next(directory: string): Directive {
@@ -126,7 +132,8 @@ function closeWorkspace(t: TestContext, profile = "standard"): string {
   writeFileSync(guide, readFileSync(guide, "utf8").replace(/^\| *decisions *\|.*$/m, "| decisions | hikyaku | `docs/adr/` | ADR |"));
   write(directory, ADR, ACCEPTED);
   write(directory, `${CYCLE}/design/design-delta.md`, "# 設計差分\n\n- ADR `20261101-cache-layer.md`\n");
-  commit(directory, "architect");
+  // close-cycle の記録の基準は「最初の記録の1秒前までのコミット」なので、architect のコミットはそれより前にする
+  commit(directory, "architect", new Date(Date.now() - 60_000).toISOString());
   return directory;
 }
 
@@ -210,6 +217,44 @@ test("G10: 承認の種類の無い既存の記録は同意として扱い、閉
 
   write(directory, "docs/adr/20261201-later.md", ACCEPTED);
   assert.equal(next(directory).step, "pr", "closed のサイクルは差分を見ない");
+});
+
+test("G10: 文書の変更を progress.jsonl より先に別のコミットにしても、同意が要る変更として数える", (t) => {
+  const directory = closeWorkspace(t, "express");
+  report(directory, "collect", "--result", "done");
+  // collect の記録はまだコミットしない。ADR の本文の変更だけを先にコミットする
+  spawnSync("sleep", ["1.1"]);
+  write(directory, ADR, IMPLEMENTED.replace("本文", "本文を変えた"));
+  git(directory, "add", ADR);
+  git(directory, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "ADR だけ");
+  commit(directory, "collect の記録");
+  assert.deepEqual([next(directory).step, next(directory).approval], ["G10", "consent"]);
+});
+
+test("G10: 閉じたあとに close のブランチでコミットした decisions の変更は数え、記録の後のコミットは数えない", (t) => {
+  const directory = closeWorkspace(t, "express");
+  report(directory, "collect", "--result", "done");
+  report(directory, "write", "--result", "done");
+  succeeds(directory, "cycle", "close", "001", "--summary", "テスト");
+  report(directory, "close", "--result", "done");
+  commit(directory, "close");
+
+  // 後続のサイクルの変更（close-cycle の記録の後のコミット）は数えない
+  write(directory, "docs/adr/20261201-later.md", ACCEPTED);
+  commit(directory, "後続のサイクル");
+  assert.equal(next(directory).step, "pr");
+
+  // pr のステップで ADR の本文を変え、close-cycle の記録と一緒にコミットしたら G10 に戻る
+  write(directory, ADR, IMPLEMENTED.replace("本文", "pr で変えた"));
+  report(directory, "pr", "--result", "done", "--pr", "1");
+  commit(directory, "pr");
+  assert.deepEqual([next(directory).step, next(directory).approval], ["G10", "consent"]);
+});
+
+test("hooks: G10 を省いた回は、フックの候補があっても hooks を手順に入れない", (t) => {
+  const directory = closeWorkspace(t, "express");
+  write(directory, `${CYCLE}/build-01/handoff.md`, "# 申し送り\n\n## 永続化すること\n\n- `hook` [中]: .env の編集を止める\n");
+  assert.equal(report(directory, "collect", "--result", "done").step, "write");
 });
 
 test("G10: decisions が対象外なら差分を見ない", (t) => {

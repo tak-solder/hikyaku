@@ -408,9 +408,11 @@ export function removalCandidates(input: {
     }
     const text = input.readDocument(item.location);
     if (text === undefined || item.quote === "") continue;
-    const line = text.split("\n").find((l) => l.includes(item.quote));
-    // 引用が見つからなければ、消す行がもう無い
-    if (line === undefined) continue;
+    // 基準は箇条書きの1行。見出しや本文の行に同じ語があっても当てない（違う行を消し、重要度を違う行で判定するため）。
+    // 当たる行が無い（もう消えた・見出しを引用した）か、複数ある（どれか決められない）なら候補にしない
+    const lines = text.split("\n").filter((l) => /^\s*[-*]\s+\S/.test(l) && l.includes(item.quote));
+    if (lines.length !== 1) continue;
+    const line = lines[0] as string;
     const parsed = parseCriterionReasons(line.replace(/^\s*[-*]\s+/, ""));
     const reasons: RuleReasons = typeof parsed === "string" || parsed.reasons === undefined ? {} : parsed.reasons;
     if (reasons.importance === "高") continue;
@@ -424,10 +426,18 @@ export function removalCandidates(input: {
  * close-cycle の followups が使う）。サイクルが無ければ rule だけから作る。追跡ファイルを読めなければ
  * 一致しない rule は判定しない
  */
-export function collectRemovalCandidates(config: ResolvedConfig, cycleDirectory: string | undefined): RemovalCandidate[] {
-  const files = trackedFiles(config.repoRoot);
-  const { measures } = measureRules(listRuleFiles(config.repoRoot), files ?? [], config.diff.exclude);
-  if (files === undefined) for (const m of measures) m.stale = false;
+export function collectRemovalCandidates(
+  config: ResolvedConfig,
+  cycleDirectory: string | undefined,
+  /** 測り済みの rule（rules candidates が一致の判定を済ませていれば渡す。追跡ファイルを読み直さない） */
+  measured?: RuleMeasure[],
+): RemovalCandidate[] {
+  let measures = measured;
+  if (measures === undefined) {
+    const files = trackedFiles(config.repoRoot);
+    measures = measureRules(listRuleFiles(config.repoRoot), files ?? [], config.diff.exclude).measures;
+    if (files === undefined) for (const m of measures) m.stale = false;
+  }
   const unhelpful = cycleDirectory === undefined ? [] : collectPromotions(cycleDirectory).unhelpful;
   let guide: DocEntry[] = [];
   try {

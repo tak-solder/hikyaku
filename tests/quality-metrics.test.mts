@@ -12,6 +12,7 @@ import { renderCyclesFile, type CycleRecord } from "../scripts/lib/cycles.mts";
 import {
   compareAround,
   cycleMetrics,
+  localDay,
   metricsComparison,
   prNumber,
   subjectMentionsPr,
@@ -40,6 +41,7 @@ test("removalCandidates: 一致しない rule・理由の欠けた rule・役に
   const { measures } = measureRules(rules, ["src/a.ts"], []);
   const documents: Record<string, string> = {
     conventions: [
+      "## 規約の見出し（テストは日本語）",
       "- 関数は短く書く",
       "- テストは日本語で書く（防ぐ: 読めない / 立つ: 読み手 / 重要度: 中）",
       "- 移行は1ファイル（防ぐ: 壊れる / 立つ: DB / 重要度: 高）",
@@ -52,6 +54,8 @@ test("removalCandidates: 一致しない rule・理由の欠けた rule・役に
     { location: "conventions", quote: "テストは日本語", reason: "自明", source: "build-03/retrospective.md" },
     { location: "conventions", quote: "移行は1ファイル", reason: "自明", source: "build-03/retrospective.md" },
     { location: "conventions", quote: "存在しない記述", reason: "古い", source: "build-03/retrospective.md" },
+    // 見出しだけに当たる引用は、消す行が決まらないので候補にしない
+    { location: "conventions", quote: "規約の見出し", reason: "無関係", source: "build-04/retrospective.md" },
   ];
   const found = removalCandidates({ measures, unhelpful, readDocument: (location) => documents[location] });
   const summary = found.map((c) => [c.line === undefined ? c.location : `${c.location}:${c.quote}`, c.kinds]);
@@ -79,6 +83,12 @@ test("rules candidates: 消す候補を JSON の removals に並べる", (t) => 
 
 // ---------------------------------------------------------------------------
 // 指標の比較（関数）
+
+test("localDay: ISO の日時をこの環境のローカルの日付にする", () => {
+  const date = new Date(2026, 10, 17, 23, 30);
+  assert.equal(localDay(date.toISOString()), "2026-11-17");
+  assert.equal(localDay("not-a-date"), "not-a-date".slice(0, 10));
+});
 
 test("prNumber と subjectMentionsPr: URL と番号を読み、#12 と #123 を取り違えない", () => {
   assert.equal(prNumber("https://github.com/o/r/pull/12"), 12);
@@ -190,8 +200,12 @@ function metricsRepository(t: TestContext): { directory: string; config: Resolve
 
   rmSync(join(directory, ".claude/rules/legacy.md"));
   write(directory, "AGENTS.md", "# 規約\n\n- 残す基準\n");
-  commitAt(directory, "2026-09-10T00:00:00+00:00", "Merge pull request #12 from x/q-close-criteria");
-  commitAt(directory, "2026-09-11T00:00:00+00:00", "Merge pull request #123 from x/other");
+  // 正午（UTC）にしておけば、ローカルの日付に直しても多くのタイムゾーンで同じ日になる
+  commitAt(directory, "2026-09-10T12:00:00+00:00", "Merge pull request #12 from x/q-close-criteria");
+  commitAt(directory, "2026-09-11T12:00:00+00:00", "Merge pull request #123 from x/other");
+  // PR を参照する後のコミット（revert）をマージとみなさない
+  commitAt(directory, "2026-09-20T12:00:00+00:00", 'Revert "Merge pull request #12 from x/q-close-criteria" (#15)');
+  commitAt(directory, "2026-09-21T12:00:00+00:00", "follow-up to #12");
 
   const config = {
     repoRoot: directory,
