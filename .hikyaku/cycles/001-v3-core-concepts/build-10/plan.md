@@ -32,18 +32,18 @@
 - `collectReviewRecords(hikyakuRoot: string, cycles: CycleRecord[]): { records: ReviewRecord[]; unparsed: Unparsed[] }`
   - `ReviewRecord = ReviewRecordLine & { cycle: string; build: string; source: string }`
   - 全サイクル（closed を含む）の `build-NN/handoff.md` を `collectPeakRecords` と同じ型で走査する。
-    サイクルに属す patch の handoff.md も読む（`listPatchUnits`）
+    patch の handoff.md は読まない（patch の手順に「レビューの記録」を書かせるのはこのビルドの範囲外。handoff の「残したこと」に残す）
 - `ruleHits(records: ReviewRecord[]): Map<string, { count: number; heavy: number; sources: string[] }>`（rule のパスごと）
 - `heavyCountByCycle(records)`: サイクルごとの重い指摘の数（build-11 の指標の比較が使う）
 
 ### rule（`scripts/lib/rules.mts`）
 
 - `parseRule` が frontmatter の `prevents` / `basis` / `importance`（`高` | `中`）を読む。`RuleFile` に
-  `reasons: { prevents?: string; basis?: string; importance?: "高" | "中" }` を足す（不正な importance は undefined にして
-  `problems` に出す）
+  `reasons: { prevents?: string; basis?: string; importance?: "高" | "中" }` と `problems: string[]` を足す
+  （不正な importance は reasons に入れず problems に出す）
 - `ruleCandidates(input): RuleCandidate[]`
   - 入力: 測った rule（`measureRules` の結果）、`ruleHits`、閾値、rule ごとの最終変更日
-  - `RuleCandidate = { path; kind: "move" | "stale"; hits?: number; heavy?: number; lastTouchedDays: number | undefined; reasons }`
+  - `RuleCandidate = { path; kind: "move" | "stale" | "missing"; hits?: number; heavy?: number; lastTouchedDays: number | undefined; reasons }`
   - 移す候補（`move`）: 引かれた回数 ≥ 閾値。一致しない rule（`stale`）は既存の判定。
     記録に挙がったが `.claude/rules/` に無い rule は `missing` として並べる（パスの書き間違いを黙って落とさない）
   - 日数は rule の `paths` に当たる追跡ファイルの最終変更から（paths が無い rule・一致しない rule は rule ファイル自身）。
@@ -51,8 +51,10 @@
 
 ### git（`scripts/lib/git.mts`）
 
-- `lastTouched(cwd: string, paths: string[]): Promise<Date | null | undefined>`
-  - `git log -1 --format=%cI -- <pathspec...>`（`:(glob)` の pathspec）。履歴が無ければ null、失敗は undefined
+- `lastTouched(cwd: string, files: string[]): Promise<Date | null | undefined>`
+  - `git log -1 --format=%cI -- <files...>`。glob は渡さない: 呼び出し側が追跡ファイルを `matchesRule`（rule と同じ glob の意味。
+    `/` の無いパターンはどの階層にも当たり、`{a,b}` を展開する）で絞ってから渡す。git の pathspec と glob の意味の差を作らないため。
+    引数が多ければ分けて呼び、最も新しい日時を取る。ファイルが空・履歴が無ければ null、失敗は undefined
 
 ### 休眠した領域（`scripts/lib/areas.mts`、新規）
 
@@ -62,16 +64,17 @@
   - rule は frontmatter の `paths`、ADR は1ファイル1行の「領域」（superseded は読まない）、constraints は `##` の項目ごとの「領域」
   - ADR・constraints の所在は `premises.mts` の `documentFiles` で引く
 - `dormantAreas(config, paths: string[], now?: Date): Promise<DormantResult>`
-  - 渡された glob ごとに `lastTouched` を引き、`[areas] dormant_days` を超えていれば休眠
-  - 休眠した glob と重なる基準（渡された glob に当たる追跡ファイルが、基準の glob にも当たる。追跡ファイルが無い新しいパスは、
-    glob の文字列が基準の glob に当たるか）を並べる
+  - 渡された glob ごとに、当たる追跡ファイルを `matchesRule` で絞って `lastTouched` を引き、`[areas] dormant_days` を超えていれば休眠
+  - 休眠した glob と重なる基準（渡された glob に当たる追跡ファイルが、基準の glob にも `matchesRule` で当たる）を並べる。
+    判定も重なりも同じ matcher を使う
   - `DormantResult = { dormantDays; areas: { glob; lastTouched: string | null; days: number | null; dormant: boolean; linked: LinkedCriterion[] }[]; notices: string[] }`
   - 履歴の無いパス（新規）は休眠とみなさない（前提が古びる元のコードが無い）
 
 ### CLI
 
-- `hikyaku rules candidates [<cycle>] [--json]`（`scripts/commands/rules.mts`）: 移す候補・一致しない rule・記録に挙がったが無い rule を、
-  回数・重い指摘・最終変更からの日数・理由（防ぐ・立つ・重要度）とともに並べる。読み取り専用、終了コード 0
+- `hikyaku rules candidates [--json]`（`scripts/commands/rules.mts`）: 移す候補・一致しない rule・記録に挙がったが無い rule を、
+  回数・重い指摘・最終変更からの日数・理由（防ぐ・立つ・重要度）とともに並べる。回数はサイクルをまたいで数えるので、サイクルの引数は取らない。
+  読み取り専用、終了コード 0
   （`rules check` は今のまま。一致しない rule で 2 を返すのは check の役目）
 - `hikyaku areas dormant --paths <glob,...> [--json]`（`scripts/commands/areas.mts`、新規）: 休眠した領域と結び付いた基準。読み取り専用、終了コード 0
 - `scripts/hikyaku.mts` に areas を登録する
@@ -85,11 +88,18 @@
 - `skills/builder/references/templates.md`: handoff に「レビューの記録」の節、「永続化すること」の例に理由の欄
 - `skills/builder/steps/review.md`: 指摘ごとに、引いた rule と重さを控える（handoff で書く）
 - `skills/builder/steps/handoff.md`: 「レビューの記録」を書く。置き場を決める前に `rules candidates` を呼ぶ
-- `skills/builder/steps/plan.md`: 触るパスを `areas dormant --paths` に渡し、休眠していれば結び付いた前提と基準を plan.md に書く
-- `skills/architect/steps/survey.md`: survey の後に、変更するパスを `areas dormant --paths` に渡し、示された基準を codebase-survey.md に書く
+- `skills/builder/steps/plan.md`: 触るパスを `areas dormant --paths` に渡し、休眠していれば、休眠の事実と結び付いた基準の所在
+  （rule のパス・ADR のファイル名・constraints のアンカー）だけを plan.md に書き、その基準を読む（本文は写さない）
+- `skills/architect/steps/survey.md`: survey の後に、変更するパスを `areas dormant --paths` に渡し、休眠の事実と基準の所在だけを codebase-survey.md に書く
+- `skills/builder/SKILL.md`: 知見の表の先頭に「なくす（リファクタで知見そのものを不要にできる）」の行。基準は persistence.md を指すだけにする
 - `skills/retrospective/steps/write.md`: 「永続化すること」の例に理由の欄
 - `skills/close-cycle/steps/collect.md`: `rules candidates` を呼ぶ（移す候補と一致しない rule を G10 の材料にする）
-- `docs/configuration/persistence.md`・`docs/configuration/config-file.md`（`[rules]`・`[areas]`）・`docs/reference/cli.md`（`rules candidates`・`areas dormant`）・`docs/workflow/build.md`（レビューの記録）
+- `skills/close-cycle/steps/G10.md`・`pr.md`: 宛先 `refactor` は文書に書かず、「リファクタの提案」として G10 で示し、PR 本文に並べる
+  （close-cycle はコードを直さない。採るなら後続のサイクルか patch で行う）
+- `skills/close-cycle/steps/write.md`・`skills/init/steps/triage-write.md`: 「frontmatter には `paths` だけ」を、persistence.md の
+  「rule の書き方」（理由の欄）と、文書の基準の行末の理由へのポインタに直す
+- `docs/configuration/persistence.md`・`docs/configuration/config-file.md`（`[rules]`・`[areas]`）・`docs/reference/cli.md`（`rules candidates`・`areas dormant`）・
+  `docs/workflow/build.md`（レビューの記録・休眠）・`docs/workflow/architect.md`（survey の休眠）・`docs/workflow/close.md`（rules candidates・refactor）
 - CHANGELOG の `[3.0.0]` に追記
 
 ## 非機能要件
@@ -103,17 +113,18 @@
 | 段階 | 予測ピーク |
 |------|------------|
 | architectフェーズ段階 | 345k |
-| builderフェーズ段階 | 365k |
+| builderフェーズ段階 | 400k |
 
 **読むファイル**
 
 - `design/design-delta.md` の「7. 知見と基準」、ADR `20261116-review-records-and-criterion-reasons.md`、build-05 の handoff.md
-- `scripts/lib/promotions.mts`（約 250 行）、`scripts/lib/rules.mts`（約 235 行）、`scripts/commands/rules.mts`（約 70 行）
+- `scripts/lib/promotions.mts`（約 250 行）、`scripts/lib/rules.mts`（約 235 行）、`scripts/commands/rules.mts`（約 70 行）、`scripts/commands/promotions.mts`（約 120 行）
 - `scripts/lib/git.mts` の該当節、`scripts/lib/tokens-history.mts` の `collectPeakRecords`、`scripts/lib/config.mts` の該当節、`scripts/lib/premises.mts`
 - `tests/rules.test.mts`・`tests/promotions.test.mts`・`tests/helpers.mts`・`tests/config.test.mts` の書き方
 - `skills/close-cycle/references/persistence.md`・`constraints-template.md`、`skills/architect/references/templates.md`、`agents/doc-triager.md`
-- `skills/builder/references/templates.md`・`steps/handoff.md`・`steps/plan.md`・`steps/review.md`、`skills/retrospective/steps/write.md`、`skills/architect/steps/survey.md`、`skills/close-cycle/steps/collect.md`
-- `docs/configuration/persistence.md`・`config-file.md`、`docs/reference/cli.md`、`docs/workflow/build.md`
+- `skills/builder/SKILL.md`・`references/templates.md`・`steps/handoff.md`・`steps/plan.md`・`steps/review.md`、`skills/retrospective/steps/write.md`、`skills/architect/steps/survey.md`
+- `skills/close-cycle/steps/collect.md`・`G10.md`・`write.md`・`pr.md`、`skills/init/steps/triage-write.md`
+- `docs/configuration/persistence.md`・`config-file.md`、`docs/reference/cli.md`、`docs/workflow/build.md`・`architect.md`・`close.md`
 
 **作成するファイル**
 
@@ -125,12 +136,12 @@
 
 | 成分 | 予測 | 根拠 |
 |------|------|------|
-| 固定費 | 90k | — |
-| 読み込み | 120k | 既に読んだ promotions・rules・git・tokens-history・config の該当節・persistence.md・テンプレート群に加え、tests/rules.test.mts・tests/promotions.test.mts・tests/helpers.mts・config.test.mts の書式、commands/promotions.mts、close-cycle の write.md・followups.md、retrospective の write.md、docs の config-file.md・cli.md・build.md |
-| 実装 | 80k | review-records.mts 新規・areas.mts（lib と command）新規・rules.mts に frontmatter の理由と候補・lastTouched・config に [rules]/[areas]・promotions の refactor と理由の欄・rules candidates コマンド・手順書7本と persistence.md と doc-triager と docs 3本・CHANGELOG |
-| テスト | 50k | — |
-| 未知の領域 | 25k | — |
-| **予測ピーク** | **365k** | 狙いの帯（300k〜450k） |
+| 固定費 | 90k | 標準ガイドの出発点 80k〜100k の中央。plan までで既に約 150k が載っている |
+| 読み込み | 135k | promotions・rules・commands/rules・commands/promotions・git・tokens-history・config・premises・patch.mts の該当節、tests の rules・promotions・helpers・config、persistence.md・constraints-template・architect の templates・doc-triager、builder の SKILL.md・templates・plan/handoff/review、retrospective の write、architect の survey、close-cycle の collect・G10・write・pr、init の triage-write、docs の persistence・config-file・cli・workflow の build・architect・close |
+| 実装 | 85k | review-records.mts・areas.mts（lib と command）新規、rules.mts の frontmatter の理由と ruleCandidates、lastTouched、config の [rules]/[areas]、promotions の refactor と理由の欄、rules candidates コマンド、手順書 10 本・persistence.md・doc-triager・docs 6 本・CHANGELOG |
+| テスト | 50k | promotions の refactor と理由、review-records のサイクルをまたいだ結合、rules candidates、areas dormant（一時リポジトリのコミット日時）、config の [rules]/[areas] |
+| 未知の領域 | 40k | rule の glob（matchesRule）と git の pathspec の意味の差を避けるため追跡ファイルを JS で絞ってから git log に渡す実装、コミット日時（GIT_COMMITTER_DATE）と now を注入するテストの修正ループ、rule の frontmatter の解析と既存実装の整合 |
+| **予測ピーク** | **400k** | 狙いの帯（300k〜450k） |
 | ガイド | 標準 v2 | 03897ac0 |
 
 ## 実装ステップ
