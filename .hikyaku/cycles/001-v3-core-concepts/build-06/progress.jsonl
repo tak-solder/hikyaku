@@ -17,3 +17,4 @@
 {"at":"2026-11-17T04:37:29.213Z","skill":"builder","step":"plan-review","result":"done","peak":390000,"context":333239,"session":"24a6ee83-9216-4e84-9f6b-12546422b1bf","hikyaku":"3.0.0"}
 {"at":"2026-11-17T04:41:28.943Z","skill":"builder","step":"test-spec","result":"done","context":146926,"session":"62d86b14-c803-4abf-a99a-8ac573e8e2e0","hikyaku":"3.0.0"}
 {"at":"2026-11-17T04:43:16.791Z","skill":"builder","step":"test-spec-review","result":"done","context":159406,"session":"62d86b14-c803-4abf-a99a-8ac573e8e2e0","hikyaku":"3.0.0"}
+{"at":"2026-11-17T04:44:13.454Z","skill":"builder","step":"G8","result":"approved","input":"承認する（実装へ進む）。委任された判断（監督）: 受け入れ基準はすべて test-spec に対応し範囲外のシナリオなし。conductor の子の扱い・決定の数え方・読めないときの扱いは安全側。低の指摘（文言とキー名）は実装で決めてよい","context":163838,"session":"62d86b14-c803-4abf-a99a-8ac573e8e2e0","hikyaku":"3.0.0"}
