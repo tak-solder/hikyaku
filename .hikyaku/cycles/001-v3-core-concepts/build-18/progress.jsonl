@@ -5,3 +5,5 @@
 {"at":"2026-11-17T09:35:58.522Z","skill":"builder","step":"G8","result":"approved","input":"承認（監督の委任された判断）。ADR との差は handoff の永続化すること（decisions 宛て）に、要確認の2点は残したことに残す。解釈3件も受け入れる","context":231304,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
 {"at":"2026-11-17T09:56:15.878Z","skill":"builder","step":"implement","result":"done","context":286563,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
 {"at":"2026-11-17T09:56:21.406Z","skill":"builder","step":"verify","result":"done","context":288077,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T10:18:27.742Z","skill":"builder","step":"review","result":"done","context":314946,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T10:18:50.783Z","skill":"builder","step":"handoff","result":"done","context":317255,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
