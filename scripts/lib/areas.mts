@@ -12,6 +12,7 @@
 import { readFileSync } from "node:fs";
 import { relative } from "node:path";
 import type { ResolvedConfig } from "./config.mts";
+import { matchesPathPattern } from "./diff-stats.mts";
 import { lastTouched } from "./git.mts";
 import { documentFiles, isSuperseded } from "./premises.mts";
 import { daysSince, listRuleFiles, matchesRule, trackedFiles } from "./rules.mts";
@@ -51,7 +52,10 @@ export function parseAreaLine(line: string): string[] | undefined {
   return [...(match[1] as string).matchAll(/`([^`]+)`/g)].map((m) => (m[1] as string).trim()).filter((g) => g !== "");
 }
 
-/** Markdown の「領域」行を、直前の見出しと一緒に返す（コードブロックの中は読まない） */
+/**
+ * Markdown の「領域」行を、属する項目の見出しと一緒に返す（コードブロックの中は読まない）。
+ * constraints の項目は `##` の見出しなので、`###` 以下の小見出しは項目に数えない
+ */
 export function areaLines(markdown: string): { heading: string | undefined; level: number; globs: string[] }[] {
   const found: { heading: string | undefined; level: number; globs: string[] }[] = [];
   let heading: string | undefined;
@@ -69,8 +73,10 @@ export function areaLines(markdown: string): { heading: string | undefined; leve
     }
     const head = /^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(raw);
     if (head) {
-      heading = (head[2] as string).trim();
-      level = (head[1] as string).length;
+      if ((head[1] as string).length <= 2) {
+        heading = (head[2] as string).trim();
+        level = (head[1] as string).length;
+      }
       continue;
     }
     const globs = parseAreaLine(raw);
@@ -115,7 +121,10 @@ export async function dormantAreas(config: ResolvedConfig, globs: string[], now 
   const criteria = files === undefined ? [] : linkedCriteria(config);
   const areas: AreaStatus[] = [];
   for (const glob of globs) {
-    const matched = (files ?? []).filter((path) => matchesRule([glob], path));
+    // 生成物（[diff] exclude）は機械が頻繁に書き換えるので、領域の開発頻度に数えない
+    const matched = (files ?? []).filter(
+      (path) => matchesRule([glob], path) && !config.diff.exclude.some((pattern) => matchesPathPattern(pattern, path)),
+    );
     const date = matched.length === 0 ? null : await lastTouched(config.repoRoot, matched);
     if (date === undefined) notices.push(`${glob}: 最終変更を git から読めませんでした`);
     const days = daysSince(date, now) ?? null;

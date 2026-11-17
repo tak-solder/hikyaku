@@ -67,8 +67,10 @@ test("parseAreaLine: build-05 の書式の「領域」行から glob を読み�
 });
 
 test("areaLines: コードブロックの中の「領域」行は読まず、直前の見出しを添える", () => {
-  const lines = areaLines(["# 制約", "", "## 外部決済", "", "- **領域**: `src/billing/**`", "", "```markdown", "- **領域**: `example/**`", "```"].join("\n"));
-  assert.deepEqual(lines, [{ heading: "外部決済", level: 2, globs: ["src/billing/**"] }]);
+  const lines = areaLines([
+    "# 制約", "", "## 外部決済", "", "### 背景", "", "- **領域**: `src/billing/**`", "", "```markdown", "- **領域**: `example/**`", "```",
+  ].join("\n"));
+  assert.deepEqual(lines, [{ heading: "外部決済", level: 2, globs: ["src/billing/**"] }], "### の小見出しは項目に数えない");
 });
 
 // ---------------------------------------------------------------------------
@@ -164,6 +166,10 @@ test("areas dormant: 休眠した領域と結び付いた基準を示し、設�
   assert.deepEqual([billing?.days, billing?.dormant], [200, true]);
   assert.deepEqual(new Set(billing?.linked.map((c) => c.kind)), new Set(["rule", "adr", "constraints"]));
   assert.equal(ui?.dormant, false);
+
+  // {a,b} の中のカンマでは切らない
+  const braces = JSON.parse(succeeds(directory, "areas", "dormant", "--paths", "src/{billing,invoice}/**", "--json")) as DormantOutput;
+  assert.deepEqual(braces.areas.map((a) => [a.glob, a.dormant]), [["src/{billing,invoice}/**", true]]);
 
   const config = join(directory, ".hikyaku.config");
   writeFileSync(config, `${readFileSync(config, "utf8")}\n[areas]\ndormant_days = 365\n`);

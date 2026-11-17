@@ -53,14 +53,14 @@ register({
     // 一覧を取れないときは、一致しない rule と誤って並べない
     if (files === undefined) for (const m of measures) m.stale = false;
     const { records, unparsed } = collectReviewRecords(config.hikyakuRoot, loadCycles(config.hikyakuRoot));
-    const touched = files === undefined ? new Map() : await rulesLastTouched(config.repoRoot, rules, files);
-    const candidates = ruleCandidates({
-      measures,
-      hits: ruleHits(records),
-      threshold: config.rules.hitThreshold,
-      lastTouched: touched,
-      now: new Date(),
-    });
+    const input = { measures, hits: ruleHits(records), threshold: config.rules.hitThreshold, now: new Date() };
+    // 日数は候補になった rule の分だけ git から引く（rule ごとに履歴をたどるので、全 rule では重い）
+    const selected = new Set(ruleCandidates({ ...input, lastTouched: new Map() }).map((c) => c.path));
+    const touched =
+      files === undefined
+        ? new Map()
+        : await rulesLastTouched(config.repoRoot, rules.filter((rule) => selected.has(rule.path)), files, config.diff.exclude);
+    const candidates = ruleCandidates({ ...input, lastTouched: touched });
     const problems = rules.flatMap((rule) => (rule.problems ?? []).map((problem) => `${rule.path}: ${problem}`));
 
     emit({ threshold: config.rules.hitThreshold, records: records.length, candidates, unparsed, problems, notices }, () => {

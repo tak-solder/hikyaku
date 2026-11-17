@@ -155,8 +155,8 @@ function unquote(value: string): string {
   return /^(["']).*\1$/.test(trimmed) ? trimmed.slice(1, -1) : trimmed;
 }
 
-/** カンマで分ける。`{a,b}` の中のカンマでは分けない */
-function splitList(value: string): string[] {
+/** カンマで分ける。`{a,b}` の中のカンマでは分けない（`--paths` のように glob を並べる引数にも使う） */
+export function splitList(value: string): string[] {
   const parts: string[] = [];
   let current = "";
   let depth = 0;
@@ -272,16 +272,24 @@ export function daysSince(date: Date | null | undefined, now: Date): number | un
  * rule の最終変更を測るファイル。paths に当たる追跡ファイル（rule が守る領域の開発頻度）。
  * paths が無い rule・どのファイルにも一致しない rule は、rule ファイル自身
  */
-export function ruleTouchFiles(rule: RuleFile, files: string[]): string[] {
+export function ruleTouchFiles(rule: RuleFile, files: string[], exclude: string[] = []): string[] {
   if (rule.paths === undefined) return [rule.path];
-  const matched = files.filter((path) => path !== rule.path && matchesRule(rule.paths as string[], path));
+  // 生成物（[diff] exclude）は機械が頻繁に書き換えるので、領域の開発頻度に数えない
+  const matched = files.filter(
+    (path) => path !== rule.path && matchesRule(rule.paths as string[], path) && !exclude.some((pattern) => matchesPathPattern(pattern, path)),
+  );
   return matched.length === 0 ? [rule.path] : matched;
 }
 
-/** rule ごとの最終変更日時（git.mts の lastTouched）。失敗した rule は undefined */
-export async function rulesLastTouched(repoRoot: string, rules: RuleFile[], files: string[]): Promise<Map<string, Date | null | undefined>> {
+/** rule ごとの最終変更日時（git.mts の lastTouched）。失敗した rule は undefined。候補になった rule だけを渡す（git log は rule ごとに走る） */
+export async function rulesLastTouched(
+  repoRoot: string,
+  rules: RuleFile[],
+  files: string[],
+  exclude: string[] = [],
+): Promise<Map<string, Date | null | undefined>> {
   const touched = new Map<string, Date | null | undefined>();
-  for (const rule of rules) touched.set(rule.path, await lastTouched(repoRoot, ruleTouchFiles(rule, files)));
+  for (const rule of rules) touched.set(rule.path, await lastTouched(repoRoot, ruleTouchFiles(rule, files, exclude)));
   return touched;
 }
 
@@ -326,12 +334,12 @@ export function ruleCandidates(input: {
     const hit = hits.get(rule.path);
     const days = daysSince(input.lastTouched.get(rule.path), input.now);
     const reasons = rule.reasons ?? {};
-    if (hit !== undefined && hit.count >= input.threshold) {
-      candidates.push({ path: rule.path, kind: "move", hits: hit.count, heavy: hit.heavy, sources: hit.sources, lastTouchedDays: days, reasons });
-    }
+    const extra = hit === undefined ? {} : { hits: hit.count, heavy: hit.heavy, sources: hit.sources };
+    // 一致しない rule は、引かれた回数に関わらず stale の1行にする（もう読み込まれていないので、移す前に glob を直すか消すかが先）
     if (rule.stale) {
-      const extra = hit === undefined ? {} : { hits: hit.count, heavy: hit.heavy, sources: hit.sources };
       candidates.push({ path: rule.path, kind: "stale", ...extra, lastTouchedDays: days, reasons });
+    } else if (hit !== undefined && hit.count >= input.threshold) {
+      candidates.push({ path: rule.path, kind: "move", ...extra, lastTouchedDays: days, reasons });
     }
   }
   const known = new Set(input.measures.map((rule) => rule.path));

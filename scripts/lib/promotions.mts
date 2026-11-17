@@ -138,7 +138,19 @@ export interface CriterionReasons {
   importance: Importance | undefined;
 }
 
-const REASONS_TAIL = /[（(]\s*防ぐ\s*[:：]([^（）()]*)[）)]\s*$/;
+/** 理由の欄の始まり。最後に現れたものを使う（本文や根拠の括弧に「防ぐ:」が出ても、理由は行末にある） */
+const REASONS_OPEN = /[（(]\s*防ぐ\s*[:：]/g;
+/** 欄の区切り。次の欄の名前が続く `/` だけで切る（防ぐ・立つの文に `src/billing` のようなパスが入りうる） */
+const FIELD_SEPARATOR = /\s*\/\s*(?=(?:防ぐ|立つ|重要度)\s*[:：])/;
+
+/** 理由の欄の中身（行末の閉じ括弧まで）。中の入れ子の括弧（`移行（up/down）`）はそのまま含む */
+function reasonsTail(text: string): { start: number; inner: string } | undefined {
+  const opens = [...text.matchAll(REASONS_OPEN)];
+  const last = opens[opens.length - 1];
+  if (last === undefined || !/[）)]$/.test(text)) return undefined;
+  const start = last.index ?? 0;
+  return { start, inner: text.slice(start + last[0].length, -1) };
+}
 
 /**
  * 基準の行末の理由 `（防ぐ: … / 立つ: … / 重要度: 高|中）` を読む。「永続化すること」の行と、
@@ -147,10 +159,10 @@ const REASONS_TAIL = /[（(]\s*防ぐ\s*[:：]([^（）()]*)[）)]\s*$/;
  */
 export function parseCriterionReasons(text: string): { text: string; reasons: CriterionReasons | undefined } | string {
   const trimmed = text.trim();
-  const match = REASONS_TAIL.exec(trimmed);
-  if (!match) return { text: trimmed, reasons: undefined };
+  const tail = reasonsTail(trimmed);
+  if (tail === undefined) return { text: trimmed, reasons: undefined };
   const fields = new Map<string, string>();
-  for (const part of `防ぐ:${match[1] as string}`.split("/").map((p) => p.trim())) {
+  for (const part of `防ぐ:${tail.inner}`.split(FIELD_SEPARATOR).map((p) => p.trim())) {
     const field = /^(防ぐ|立つ|重要度)\s*[:：]\s*(.*)$/.exec(part);
     if (!field) return `理由の欄を読めません: 「${part}」（「防ぐ: … / 立つ: … / 重要度: 高|中」の形で書きます）`;
     fields.set(field[1] as string, (field[2] as string).trim());
@@ -163,7 +175,7 @@ export function parseCriterionReasons(text: string): { text: string; reasons: Cr
   if (importance !== undefined && importance !== "高" && importance !== "中") {
     return `理由の欄の重要度が不正です: ${importance}（高 か 中）`;
   }
-  return { text: trimmed.slice(0, match.index).trim(), reasons: { prevents, basis, importance: importance as Importance | undefined } };
+  return { text: trimmed.slice(0, tail.start).trim(), reasons: { prevents, basis, importance: importance as Importance | undefined } };
 }
 
 /** `- \`宛先\` [高] 済: 本文` の1行を読む。読めなければ理由を返す */

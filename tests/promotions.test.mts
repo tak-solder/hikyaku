@@ -149,6 +149,17 @@ test("parseCriterionReasons: 行末の理由から防ぐ・立つ・重要度を
   });
 });
 
+test("parseCriterionReasons: 欄の中のパスの / と入れ子の括弧を読める", () => {
+  assert.deepEqual(parseCriterionReasons("共有 DB を使わない（防ぐ: src/billing のテストが通ってしまった / 立つ: 移行（up/down）の手順）"), {
+    text: "共有 DB を使わない",
+    reasons: { prevents: "src/billing のテストが通ってしまった", basis: "移行（up/down）の手順", importance: undefined },
+  });
+  assert.deepEqual(parseCriterionReasons("X（build-03 で確認）（防ぐ: 二重送信 / 立つ: 冪等性 / 重要度: 中）"), {
+    text: "X（build-03 で確認）",
+    reasons: { prevents: "二重送信", basis: "冪等性", importance: "中" },
+  });
+});
+
 test("parseCriterionReasons: 理由の欄が無ければ reasons は undefined、崩れていれば問題を返す", () => {
   assert.deepEqual(parseCriterionReasons("日付は ISO 8601 で書く"), { text: "日付は ISO 8601 で書く", reasons: undefined });
   assert.deepEqual(parseCriterionReasons("新しい画面(ベータ版)"), { text: "新しい画面(ベータ版)", reasons: undefined });

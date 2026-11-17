@@ -94,10 +94,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- builder の review から、スコープ準拠とマージ時点のデータ安全の自己確認を削った（agreement-review に移した）。pr は `diff facts build-NN --format pr` の出力を PR 本文に貼る
 - doc-triager: 重要度と置き場の要点の写しを消し、`persistence.md` だけを読んで判定する。出力の置き場に「なくす」を加えた
 - close-cycle の write・init の triage-write: rule の frontmatter に `paths` だけでなく理由を書く。文書に書く基準に行末の理由を残す
-
-- builder の review から、スコープ準拠とマージ時点のデータ安全の自己確認を削った（agreement-review に移した）。pr は `diff facts build-NN --format pr` の出力を PR 本文に貼る
 - **ADR のテンプレート**（architect の `references/templates.md` と `steps/adr.md`）の欄を、決定 / 文脈 / 外の前提 / 検討した案 / 推奨 / 採用理由 / 受け入れたこと / トレードオフ / 再評価条件 / 退けた推奨で失う利点 / 影響範囲 / 領域（任意。`- **領域**: \`<glob>\`, \`<glob>\``）にした。「受け入れたこと」は1件1行で、外の前提を拠り所にする行は `（拠り所: \`<前提の参照>\`）` で終える
 - **design-questions.md のテンプレート**に、各案の欠点・推奨・回答と、推奨を退けたときに失う利点の欄を足した（architect の `steps/questions.md` も同じ）
 - ポインタに件数や範囲を添えさせていた指示を直した（close-cycle の G10 の提示例と collect、init の pr と triage-approval、conductor の最後の PR の CI の結果、token-guide の propose、build-manager と builder の templates）。予測ピークの根拠のファイル数・行数は、見積もりの根拠として残す

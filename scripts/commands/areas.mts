@@ -1,11 +1,12 @@
 /** areas dormant — 長く触られていなかった領域と、それに結び付いた基準を示す */
 
-import { flagList, flagString } from "../lib/args.mts";
+import { flagString } from "../lib/args.mts";
 import { dormantAreas } from "../lib/areas.mts";
 import { loadConfig } from "../lib/config.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
+import { splitList } from "../lib/rules.mts";
 
 register({
   name: "areas dormant",
@@ -26,7 +27,9 @@ register({
     "設計（architect の survey の後・builder の plan）の前に見直してください。読み取り専用で、終了コードは常に 0 です。",
   ].join("\n"),
   run: async ({ args }) => {
-    const globs = flagList(args, "paths");
+    // flagList は {a,b} の中のカンマでも切るので、rule の paths と同じ分け方をする
+    const raw = flagString(args, "paths");
+    const globs = raw === undefined ? undefined : splitList(raw).map((glob) => glob.trim()).filter((glob) => glob !== "");
     if (globs === undefined || globs.length === 0) {
       throw new HikyakuError("--paths が必要です", "変更するパスの glob をカンマ区切りで渡してください（例: --paths 'src/billing/**,db/migrations/**'）。");
     }

@@ -67,16 +67,19 @@ test("ruleCandidates: 回数が閾値と等しければ移す候補、1足りな
   assert.deepEqual(ruleCandidates(input(2)), []);
 });
 
-test("ruleCandidates: 一致しない rule は stale、記録に挙がったが無い rule は閾値に関わらず missing", () => {
+test("ruleCandidates: 一致しない rule は閾値に達していても stale の1行だけ、記録に挙がったが無い rule は閾値に関わらず missing", () => {
   const candidates = ruleCandidates({
     measures: [measured(".claude/rules/old.md", true)],
-    hits: new Map([["./.claude/rules/apii.md", { count: 1, heavy: 0, sources: ["001-a/build-01/handoff.md"] }]]),
+    hits: new Map([
+      ["./.claude/rules/apii.md", { count: 1, heavy: 0, sources: ["001-a/build-01/handoff.md"] }],
+      [".claude/rules/old.md", { count: 4, heavy: 0, sources: [] }],
+    ]),
     threshold: 3,
     lastTouched: new Map([[".claude/rules/old.md", daysAgo(300)]]),
     now: NOW,
   });
   assert.deepEqual(candidates.map((c) => [c.path, c.kind, c.hits, c.lastTouchedDays]), [
-    [".claude/rules/old.md", "stale", undefined, 300],
+    [".claude/rules/old.md", "stale", 4, 300],
     [".claude/rules/apii.md", "missing", 1, undefined],
   ]);
 });
@@ -97,6 +100,11 @@ test("ruleTouchFiles: paths に当たる追跡ファイル。paths が無い・�
   assert.deepEqual(ruleTouchFiles({ path: ".claude/rules/api.md", paths: ["src/api/**"], characters: 1 }, files), ["src/api/pay.ts"]);
   assert.deepEqual(ruleTouchFiles({ path: ".claude/rules/old.md", paths: ["legacy/**"], characters: 1 }, files), [".claude/rules/old.md"]);
   assert.deepEqual(ruleTouchFiles({ path: ".claude/rules/all.md", paths: undefined, characters: 1 }, files), [".claude/rules/all.md"]);
+  // 生成物は領域の開発頻度に数えない
+  assert.deepEqual(
+    ruleTouchFiles({ path: ".claude/rules/src.md", paths: ["src/**"], characters: 1 }, [...files, "src/gen/a.gen.ts"], ["*.gen.*"]),
+    ["src/api/pay.ts", "src/ui/a.ts"],
+  );
 });
 
 test("measureRules: 広さ × 大きさで測り、生成物を分母から除き、一致しない rule を見つける", () => {
