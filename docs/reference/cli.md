@@ -159,6 +159,7 @@ build-manager や retrospective のような内部スキルは、`--skill` を�
 | `ledger list [<cycle>]` | 未決事項と、期限が来た・過ぎたもの、未解決の退けを見渡したいとき |
 | `ledger consent-list <phase> [<cycle>]` | PR を作る直前の同意ゲートで、マージの前にユーザーが同意する項目（`merge@<phase>` の受け入れたリスク・異議）を1項目3行で示すとき。全文は `--full` |
 | `ledger return-draft <phase> [<cycle>] --items <id,...>` | 同意ゲートで前のフェーズの判断を退け、builder が architect へ差し戻すとき。退けた項目と試したことをそろえた `return.md` の下書きを出す（書き込まない。問題を変える選択肢と推奨は builder が書く） |
+| `ledger answers [<cycle>]` | conductor の最後の PR の本文に、監督が答えた問い（答えとリスクの申告）の一覧を貼るとき（`--format pr`） |
 | `ledger pr-section <phase> [<cycle>]` | PR 本文に、受け入れたリスク（事後同意）・未解決の退け・マージの前に決める事項・期限を過ぎた事項の節を貼るとき（各フェーズの PR の手順が呼ぶ。中身が無ければ空） |
 | `ledger show <id> [<cycle>]` | 1件の事項の前提・失うもの・決定の経緯を読みたいとき |
 | `ledger premises [--changed-from <ref>]` | アプリケーションの状況の宣言を変えたとき、それを拠り所にして受け入れたリスク（未決事項の記録と、ADR・`constraints` の「受け入れたこと」の行）を見直す対象として並べる。各フェーズの PR の手順が、宣言が変わっていれば `--format pr` の出力を PR 本文に貼る |
@@ -250,6 +251,7 @@ patch（`patch-YYYYMM-slug`）は、サイクルに属さなければ `<cycle>` 
 | `conductor asks [<cycle>]` | 子の問いのうち、どれを監督が答え、どれを人間に上げるかを確認するとき |
 | `conductor launch <phase> [<cycle>] [<build>\|add]` | 子セッションの起動・再開コマンドを組み立てるとき（通常は `/hikyaku:conductor` が呼ぶ） |
 | `conductor parse <result.json> [<cycle>]` | 子の結果から gate / done / blocked を取り出すとき（同上） |
+| `conductor waiting [<cycle>]` | ユーザーの答えを待っている問いと、それを待っているビルドを確かめるとき（監督が、着手できるビルドが無くなったときに呼ぶ） |
 | `conductor check-pr <pr> [<cycle>]` | フェーズの PR を conductor ブランチに取り込む前に、マージ先・Draft・レビューの依頼・未解決の指摘・CI（と、設定すれば承認）を確かめるとき。`--wait` で待てる問題が解消するまで確かめ直す（通常は `/hikyaku:conductor` が呼ぶ） |
 | `conductor lint` | プラグイン本体の開発用。スキルに付けた問いの ID と、CLI の ID の表の食い違いを検出する |
 

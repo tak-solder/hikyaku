@@ -22,8 +22,9 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { isPhase, type Phase } from "./branch.mts";
+import { ANSWER_ENV, needsRiskDeclaration } from "./conductor.mts";
 import { HikyakuError } from "./errors.mts";
-import { appendJsonl, readJsonl, type JsonlLabels } from "./jsonl.mts";
+import { appendJsonl, parseJsonl, readJsonl, type JsonlLabels } from "./jsonl.mts";
 import { listPatchUnits, patchPhaseOf, patchUnitDirectory } from "./patch.mts";
 import { readProgress, RESTART, type ProgressEvent } from "./progress.mts";
 import type { Harm } from "./risk.mts";
@@ -101,11 +102,24 @@ export interface DecideRecord {
   /** ユーザーが受け入れると書いた言葉 */
   accepts?: string;
   reason?: string;
-  /** 答えの出どころ（conductor の子で HIKYAKU_ANSWER_FROM の値。入れるのは build-07） */
+  /** 答えの出どころ（conductor の子で HIKYAKU_ANSWER_FROM の値） */
   from?: string;
+  /** 監督の答えの問いの ID（conductor の子で HIKYAKU_ANSWER_ASK の値） */
+  ask?: string;
+  /** 監督の答えの値（HIKYAKU_ANSWER_CHOICE の値） */
+  choice?: string;
+  /** 監督の答えが受け入れるリスクの申告（HIKYAKU_ANSWER_RISK の値。子が省けない） */
+  risk?: RiskDeclaration;
+  /** 監督の答えを渡した起動の印（HIKYAKU_ANSWER_TOKEN。conductor parse --expect-answer が照合する） */
+  token?: string;
+  /** ledger object の決定が閉じる、ユーザーの答えを待っていた事項の ID（conductor の子の --answers） */
+  answers?: string;
   session?: string;
   hikyaku?: string;
 }
+
+/** 監督の答えのリスクの申告。none は --no-risk */
+export type RiskDeclaration = { kind: "none" } | { kind: "declared"; harm: Harm; premises: string[] };
 
 export type LedgerRecord = OpenRecord | DecideRecord;
 
@@ -175,6 +189,117 @@ export function assertDecider(item: Pick<OpenRecord, "id" | "who">, by: Who, inp
         : "決める人を変える手順はありません。",
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// 答えの出どころ（conductor の子）— US-19.7・US-15.3
+
+/** 子に渡された答え（conductor launch が置いた環境変数）。conductor の子でなければ undefined */
+export interface ChildAnswer {
+  from: "user" | "supervisor" | undefined;
+  /** --from user の --closes の ID。子の中の --by user は、この ID の事項にだけ書ける */
+  items: string[];
+  ask?: string;
+  choice?: string;
+  risk?: RiskDeclaration;
+  token?: string;
+}
+
+/** HIKYAKU_ANSWER_RISK の値を読む（none か <害>:<前提,...>）。読めなければ undefined（申告なしとして扱う） */
+export function parseRiskDeclaration(raw: string | undefined): RiskDeclaration | undefined {
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const value = raw.trim();
+  if (value === "none") return { kind: "none" };
+  const separator = value.indexOf(":");
+  if (separator === -1) return undefined;
+  const harm = value.slice(0, separator) as Harm;
+  if (!HARMS.includes(harm)) return undefined;
+  const premises = value.slice(separator + 1).split(",").map((premise) => premise.trim()).filter((premise) => premise !== "");
+  return { kind: "declared", harm, premises };
+}
+
+/** RiskDeclaration を HIKYAKU_ANSWER_RISK の値にする */
+export function formatRiskDeclaration(risk: RiskDeclaration): string {
+  return risk.kind === "none" ? "none" : `${risk.harm}:${risk.premises.join(",")}`;
+}
+
+export function childAnswer(env: NodeJS.ProcessEnv = process.env): ChildAnswer | undefined {
+  // steps/consent.mts の isConductorChild と同じ判定（consent.mts はこのファイルを読み込むので、循環を避けて直接見る）
+  if (env["HIKYAKU_CONDUCTOR_CHILD"] !== "1") return undefined;
+  const text = (key: string): string | undefined => {
+    const value = env[key];
+    return value === undefined || value.trim() === "" ? undefined : value.trim();
+  };
+  const fromRaw = text(ANSWER_ENV.from);
+  const risk = parseRiskDeclaration(text(ANSWER_ENV.risk));
+  const ask = text(ANSWER_ENV.ask);
+  const choice = text(ANSWER_ENV.choice);
+  const token = text(ANSWER_ENV.token);
+  return {
+    from: fromRaw === "user" || fromRaw === "supervisor" ? fromRaw : undefined,
+    items: (text(ANSWER_ENV.items) ?? "").split(",").map((id) => id.trim()).filter((id) => id !== ""),
+    ...(ask === undefined ? {} : { ask }),
+    ...(choice === undefined ? {} : { choice }),
+    ...(risk === undefined ? {} : { risk }),
+    ...(token === undefined ? {} : { token }),
+  };
+}
+
+/**
+ * conductor の子で、この決定を書いてよいか。だめなら理由。
+ * --by user は、ユーザーの答えで再開した子（HIKYAKU_ANSWER_FROM=user）が、--closes で渡された事項にだけ書ける
+ * （ユーザーが答えていない事項に、同じ実行の中で書けない）。--by supervisor は監督の答えで再開した子だけが書け、
+ * 申告の要る答えでは申告が渡っていること。子が環境変数を自分で付ける偽装は防がない（ADR pending-items-ledger）
+ */
+export function answerProblem(by: Who, itemId: string, answer: ChildAnswer | undefined, itemAsk?: string): string | undefined {
+  if (answer === undefined) return undefined;
+  if (by === "user") {
+    if (answer.from !== "user") {
+      return "conductor の子では、ユーザーの答えで再開されたとき（HIKYAKU_ANSWER_FROM=user）だけ --by user を記録できます。ユーザーに上げる問いは記録して blocked で終えてください";
+    }
+    if (!answer.items.includes(itemId)) {
+      return `${itemId} はユーザーが答えた事項（${answer.items.join(", ") || "なし"}）にありません。ユーザーが答えていない事項に --by user は記録できません`;
+    }
+    return undefined;
+  }
+  if (by === "supervisor") {
+    if (answer.from !== "supervisor") {
+      return "conductor の子では、監督の答えで再開されたとき（HIKYAKU_ANSWER_FROM=supervisor）だけ --by supervisor を記録できます";
+    }
+    // 監督の答えは、渡された問い（HIKYAKU_ANSWER_ASK）の事項にだけ書ける。別の問いの事項に、この起動の問い・値・申告を
+    // 付けて記録すると、申告の要る答えが申告なしで残り、ledger answers の表示も取り違える
+    if (itemAsk !== undefined && answer.ask !== undefined && itemAsk !== answer.ask) {
+      return `${itemId} は問い ${itemAsk} の事項で、監督が答えた問い（${answer.ask}）と違います。監督の答えは、その問いの事項にだけ記録できます`;
+    }
+    if (answer.risk === undefined && (needsRiskDeclaration(answer.ask, answer.choice) || needsRiskDeclaration(itemAsk, answer.choice))) {
+      return `この答え（${answer.ask ?? "問い不明"}${answer.choice === undefined ? "" : ` / ${answer.choice}`}）にはリスクの申告が要りますが、起動に申告がありません。監督に申告つきで再開してもらってください`;
+    }
+  }
+  return undefined;
+}
+
+/** 決定のレコードに足す欄。子でなければ空（ユーザーが直接立てたセッションは何も足さない） */
+export function answerFields(by: Who, answer: ChildAnswer | undefined): Partial<DecideRecord> {
+  if (answer === undefined || answer.from === undefined) return {};
+  if (by === "user") return { from: answer.from };
+  if (by !== "supervisor") return {};
+  return {
+    from: answer.from,
+    ...(answer.ask === undefined ? {} : { ask: answer.ask }),
+    ...(answer.choice === undefined ? {} : { choice: answer.choice }),
+    ...(answer.risk === undefined ? {} : { risk: answer.risk }),
+    ...(answer.token === undefined ? {} : { token: answer.token }),
+  };
+}
+
+/** ユーザーの答えを待つ事項か: question・who=user・when=now で、決定が無い（答えを待つ blocked と conductor waiting が使う） */
+export function isWaitingItem(item: LedgerItem): boolean {
+  return isWaitingRecord(item.open) && item.latest === undefined;
+}
+
+/** 答えを待つ事項の記録の形（決定の有無は見ない）。conductor waiting も同じ判定を使う */
+export function isWaitingRecord(open: OpenRecord): boolean {
+  return open.type === "question" && open.who === "user" && open.when === "now";
 }
 
 // ---------------------------------------------------------------------------
@@ -384,6 +509,11 @@ export function ledgerPath(cycleDirectory: string, unit: string): string {
   const owner = ownerOf(unit as Phase);
   if (owner === undefined) throw new HikyakuError(`${unit} の作業単位のディレクトリが分かりません`);
   return join(cycleDirectory, owner.directory, LEDGER_FILE);
+}
+
+/** decisions.jsonl の中身を読む（別のブランチの記録を git show で読んだときに使う）。壊れた行はエラー */
+export function parseLedgerRecords(text: string, source: string): LedgerRecord[] {
+  return parseJsonl(text, source, isRecord, LABELS);
 }
 
 export function readLedger(cycleDirectory: string): Ledger {

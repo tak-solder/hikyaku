@@ -14,6 +14,7 @@ import {
   type BuildRecord,
 } from "../lib/tasklist.mts";
 import { resolveViews, sectionNote, type TasklistViews } from "../lib/views.mts";
+import { deriveWaiting, waitingLines } from "../lib/waiting.mts";
 import { openCycle } from "../lib/workspace.mts";
 
 register({
@@ -51,6 +52,10 @@ register({
     "",
     "作業ツリーに差し戻しの記録（return.md）があれば、着手可能なビルドを返しません。",
     "設計を見直している最中なので、どのビルドもその上に積むべきではないためです。",
+    "",
+    "JSON の waiting には、ユーザーの答えを待っている問い（items）と、それを待っているビルド（builds）が入ります",
+    "（導出は conductor waiting と同じ）。着手可否の判定は変えません。テキストでは、待ちがあれば",
+    "「答えを待っているビルド」の節を足します。",
   ].join("\n"),
   run: async ({ args, operands }) => {
     const { config, context: ctx } = openCycle(args, operands[0]);
@@ -77,6 +82,9 @@ register({
     const inProgress = ready.filter((build) => hasBranch(build));
     // 待機中のビルドにブランチがあるなら、他セッションが積んで作業している可能性がある
     const blockedWithBranch = blocked.filter((build) => hasBranch(build));
+
+    // ユーザーの答えを待っている問いとビルド（conductor が積んだ問い）。着手可否は変えない
+    const waiting = await deriveWaiting(config, ctx, builds);
 
     // 依存が HEAD には在るが base には無い＝スタックしている
     const stacked =
@@ -108,6 +116,8 @@ register({
           fetched: views.fetched,
         },
         remoteUnavailable: remote.unavailable,
+        waiting: { items: waiting.items, builds: waiting.builds },
+        waitingUnavailable: waiting.unavailable,
       },
       () => {
         const lines = [`cycle ${ctx.name}: ${phaseLabel(state)}`, ""];
@@ -122,12 +132,15 @@ register({
           return lines.join("\n");
         }
 
+        const waitingSection = waitingLines(waiting, builds);
         if (state.phase !== "building") {
           lines.push(
             `このサイクルはまだビルド段階ではありません。`,
             "",
             `  ${suggestCommand(state.phase, ctx.name)}`,
             "",
+            // ARCHITECT の問いを待っている間もビルド段階の前なので、待ちの節はここにも出す
+            ...(waitingSection.length > 0 ? [...waitingSection, ""] : []),
             sectionNote("判定", views.head, " の PR 列（未コミットの変更は数えません）"),
             sectionNote("マージ状況", views.base, " の PR 列"),
           );
@@ -165,6 +178,8 @@ register({
             );
           }
         }
+
+        if (waitingSection.length > 0) lines.push("", ...waitingSection);
 
         if (ready.length === 0 && blocked.length === 0 && state.mergePending.length > 0) {
           lines.push(
