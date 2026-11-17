@@ -25,3 +25,9 @@
 {"at":"2026-11-17T14:10:31.664Z","skill":"builder","step":"G8","result":"approved","input":"回答（委任された判断）: 承認する（G8）。根拠: G8 1回目のユーザーの判断2件が plan.md と test-spec.md に反映され、再レビューの指摘もすべて反映されている。--notice は答えを渡さない再開のためで判断の範囲を広げない。予測ピーク 435k は split_above 以下。decisions.jsonl に書けなかったユーザーの判断は questions.md と handoff に残す","context":411656,"session":"351a4dcd-2eac-4b3b-9a63-44d8bdee00b7","hikyaku":"3.0.0"}
 {"at":"2026-11-17T14:52:26.886Z","skill":"builder","step":"implement","result":"done","context":338986,"session":"af5056b9-849b-4943-bafd-ff8f6c6ee8e6","hikyaku":"3.0.0"}
 {"at":"2026-11-17T14:52:39.971Z","skill":"builder","step":"verify","result":"done","context":340881,"session":"af5056b9-849b-4943-bafd-ff8f6c6ee8e6","hikyaku":"3.0.0"}
+{"at":"2026-11-17T15:20:52.027Z","skill":"builder","step":"review","result":"done","context":377402,"session":"af5056b9-849b-4943-bafd-ff8f6c6ee8e6","hikyaku":"3.0.0"}
+{"at":"2026-11-17T15:21:25.739Z","skill":"builder","step":"handoff","result":"done","context":382320,"session":"af5056b9-849b-4943-bafd-ff8f6c6ee8e6","hikyaku":"3.0.0"}
+{"at":"2026-11-17T15:21:40.474Z","skill":"retrospective","step":"peak-actual","result":"done","context":388924,"session":"af5056b9-849b-4943-bafd-ff8f6c6ee8e6","hikyaku":"3.0.0"}
+{"at":"2026-11-17T15:21:47.795Z","skill":"retrospective","step":"analyze","result":"done","context":390418,"session":"af5056b9-849b-4943-bafd-ff8f6c6ee8e6","hikyaku":"3.0.0"}
+{"at":"2026-11-17T15:22:08.789Z","skill":"retrospective","step":"write","result":"done","context":395929,"session":"af5056b9-849b-4943-bafd-ff8f6c6ee8e6","hikyaku":"3.0.0"}
+{"at":"2026-11-17T15:22:11.724Z","skill":"builder","step":"retrospective","result":"done","context":398341,"session":"af5056b9-849b-4943-bafd-ff8f6c6ee8e6","hikyaku":"3.0.0"}
