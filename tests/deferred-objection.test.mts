@@ -98,7 +98,10 @@ test("unacceptedObjections: who=user・merge@ の異議は同意ゲートで扱�
   const ids = (items: LedgerItem[]) => items.map((entry) => entry.open.id);
   const deferred = item(open("a", { exceedsCeiling: true, when: "merge@build-01" }));
   const byAi = item(open("b", { harm: "高", when: "merge@build-01", who: "ai:build-01" }));
-  assert.deepEqual(ids(unacceptedObjections({ items: [deferred, byAi], orphans: [] }, "build-01", "G8")), ["b"]);
+  // --defer の形でない merge@ の異議（ほかの単位の merge@・上限の判定が無い）は同意ゲートで決まる保証が無いので数える
+  const otherUnit = item(open("c", { exceedsCeiling: true, when: "merge@build-05" }));
+  const legacy = item(open("d", { harm: "高", when: "merge@build-01" }));
+  assert.deepEqual(ids(unacceptedObjections({ items: [deferred, byAi, otherUnit, legacy], orphans: [] }, "build-01", "G8")), ["b", "c", "d"]);
 });
 
 test("consentDecided: 上限を超える異議は accepts 付きの consented・decided・resolved で決定、rejected は数えない", () => {
@@ -392,6 +395,15 @@ test("同意ゲート: 事後同意を選んだサイクルで記録が壊れて
   mkdirSync(join(directory, DESIGN), { recursive: true });
   writeFileSync(join(directory, DESIGN, "decisions.jsonl"), "{broken\n");
   assert.equal(next(directory).step, "consent");
+});
+
+test("ledger object: 事後同意を選んだサイクルで対象が無いとき、記録する step は位置だけの評価の consent ではなく step next の現在地", (t) => {
+  const directory = workspace(t, { exposure: "internal", consent: true });
+  upToHandoff(directory);
+  report(directory, "handoff", "--result", "done");
+  assert.equal(where(directory), "consent");
+  succeeds(directory, ...OBJECT, "--harm", "中", "--decision", "consented", "--input", "進める");
+  assert.equal(records(directory)[0]?.["step"], "pr");
 });
 
 test("同意ゲート: ほかの単位の事項だけのときの承認の拒否は consent.md の案内になる", (t) => {

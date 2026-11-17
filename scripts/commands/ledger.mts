@@ -75,8 +75,9 @@ function openUnit(args: ParsedArgs, phase: string | undefined, cycle: string | u
  * step where と同じ directiveOf に任せる）。外れたゲート（off）も返す
  */
 function currentStep(args: ParsedArgs, opened: Opened & { cycle: CycleContext }): { step: string | undefined; off: Set<string> } {
-  // directiveOf と同じ positionOnly の評価（step と off の食い違いを防ぐ）
-  const evaluation = evaluate(opened.skill, { ...opened.ctx, positionOnly: true });
+  // step next と同じ評価（positionOnly を付けない）。off と step を同じ評価から求め、位置だけの評価が安全側に入れた
+  // 同意ゲートを、事項を記録したステップとして残さない（コードレビュー1回目の指摘）
+  const evaluation = evaluate(opened.skill, opened.ctx);
   const off = new Set(evaluation.steps.filter((step) => step.status === "off").map((step) => step.definition.id));
   const unit: FoundUnit = {
     phase: opened.phase,
@@ -87,7 +88,7 @@ function currentStep(args: ParsedArgs, opened: Opened & { cycle: CycleContext })
     events: opened.ctx.events,
   };
   const root = flagString(args, "root");
-  const { directive } = directiveOf(unit, root === undefined ? {} : { root });
+  const { directive } = directiveOf(unit, { ...(root === undefined ? {} : { root }), positionOnly: false });
   return { step: directive.step, off };
 }
 
@@ -182,7 +183,7 @@ register({
       summary,
       when: formatWhen(when),
       who,
-      ...(premisesRaw === undefined ? {} : { premises: parsePremises(premisesRaw) }),
+      ...(premises.length === 0 ? {} : { premises }),
       ...(loses === undefined ? {} : { loses }),
       ...(harm === undefined ? {} : { harm: harm as Harm }),
       ...(ask === undefined ? {} : { ask }),

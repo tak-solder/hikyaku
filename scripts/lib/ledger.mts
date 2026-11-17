@@ -455,16 +455,16 @@ export function decideItem(cycleDirectory: string, record: DecideRecord, ledger:
 // ---------------------------------------------------------------------------
 // 異議
 
-/**
- * 高の異議が片づいたか: ユーザーが選択を改めた（decided）か、受け入れると書いて進めた（accepts 付きの
- * consented）。拠り所の前提は、記録するとき（ledger open / object）に求める。決定では前提を足せないので、
- * ここで求めると前提の無い事項を受け入れで片づける手段が無くなる
- */
 /** 高として扱う異議か: 害が高か、上限を超える（exceedsCeiling）。受け入れには言葉と前提が要る */
 export function isHighObjection(item: Pick<LedgerItem, "open">): boolean {
   return item.open.type === "objection" && (item.open.harm === "高" || item.open.exceedsCeiling === true);
 }
 
+/**
+ * 高の異議が片づいたか: ユーザーが選択を改めた（decided）か、受け入れると書いて進めた（accepts 付きの
+ * consented）。拠り所の前提は、記録するとき（ledger open / object）に求める。決定では前提を足せないので、
+ * ここで求めると前提の無い事項を受け入れで片づける手段が無くなる
+ */
 export function objectionSettled(item: LedgerItem): boolean {
   const latest = item.latest;
   if (latest === undefined || latest.by !== "user") return false;
@@ -496,16 +496,23 @@ export function readUnitLedger(cycleDirectory: string, unit: string): Ledger {
 /**
  * そのゲートの承認を止める異議。その作業単位・そのステップで記録した高として扱う objection（害が高か、
  * 上限を超える）のうち、片づいていないもの。中の異議は記録だけで進むので数えない（US-1.3・US-1.4）。
- * 同意ゲートの対象でもある異議（ledger object --defer。who=user・when=merge@…）は、マージの前の同意ゲートで
- * 決めるので数えない。who が user でない merge@ の異議は同意ゲートに載らないので、ここで止める
+ * ledger object --defer で同意ゲートへ回した異議（who=user・記録した作業単位の when=merge@<unit>・exceedsCeiling）は、
+ * その単位のマージの前の同意ゲートで決めるので数えない。それ以外の merge@ の異議（who が user でない、ほかの単位の
+ * merge@、上限を超えない）は同意ゲートで決まる保証が無いので、ここで止める
  */
 export function unacceptedObjections(ledger: Ledger, unit: string, step: string): LedgerItem[] {
   return ledger.items.filter(
     (item) =>
       isHighObjection(item) && item.open.unit === unit && item.open.step === step &&
-      !(item.open.who === "user" && item.open.when.startsWith("merge@")) &&
+      !isDeferredObjection(item) &&
       !objectionSettled(item),
   );
+}
+
+/** ledger object --defer が書く形の異議（記録した単位の同意ゲートへ回した） */
+function isDeferredObjection(item: LedgerItem): boolean {
+  const open = item.open;
+  return open.who === "user" && open.when === `merge@${open.unit}` && open.exceedsCeiling === true;
 }
 
 /**
