@@ -49,8 +49,10 @@ export function safeAnswerOf(id: string): SafeAnswer | undefined
 | `HIKYAKU_ANSWER_FROM` | `user` / `supervisor` | `ledger decide` / `object` の検査と `from` |
 | `HIKYAKU_ANSWER_ITEMS` | `--from user` の `--closes` の ID（カンマ区切り） | 子の中の `--by user` は、この ID の事項にだけ書ける |
 | `HIKYAKU_ANSWER_ASK` | `--ask` の値 | 決定のレコードの `ask` |
+| `HIKYAKU_ANSWER_CHOICE` | `--choice` の値（あれば） | 決定のレコードの `choice`。申告の要否を問いと答えの値の組で決める（`needsRiskDeclaration`） |
 | `HIKYAKU_ANSWER_RISK` | `--from supervisor` のリスクの申告。`none`（`--no-risk`）か `<害>:<前提,...>`。申告の無い問いでは置かない | 決定のレコードの `risk`（子が省けない） |
 | `HIKYAKU_ANSWER_TOKEN` | 起動ごとの乱数（launch の JSON の `answerToken`） | 決定のレコードの `token`。`conductor parse --expect-answer <token>` が、監督の答えの記録が残ったかを確かめる |
+- `--notice` — 答えを渡さない再開（error のあとの「中断したところから続けてください」、violation・stepProblems の1回目の書き直しの依頼）。`--message` を取り、答えの環境変数を置かない（`--from` と同時には使えない）。`--resume` と `--message` だけの再開は、`--from` か `--notice` のどちらかが無ければ拒む（答えか否かを監督が明示する）
 - `--ask <id>` — `--from supervisor` と `--escalate` に必須（`--from user` では任意）
 - `--choice <値>` — `--from supervisor` で、`--ask` の問いに `SAFE_ANSWERS` があれば必須
 - `--harm 高|中` と `--premises <ref,...>` / `--no-risk` — `--from supervisor` の答えが受け入れるリスクの申告。`declaresRisk` の問い（questions・review-findings の `proceed`）では、どちらかが無ければ拒む（付け忘れで上げる向きと逆に倒れないため）。ほかの問いでは任意
@@ -77,20 +79,22 @@ export type RiskDeclaration = { kind: "none" } | { kind: "declared"; harm: Harm;
 export function childAnswer(env?: NodeJS.ProcessEnv): ChildAnswer | undefined
 /** conductor の子で、この決定を書いてよいか。だめなら理由（US-19.7・G8 1回目のユーザーの判断） */
 export function answerProblem(by: Who, itemId: string, answer: ChildAnswer | undefined): string | undefined
-/** 決定のレコードに足す欄（from・ask・risk・token）。子でなければ空 */
+/** 申告が要る問いと答えの組か（questions は常に、review-findings は proceed のとき）。launch と ledger が同じ関数を使う */
+export function needsRiskDeclaration(ask: string | undefined, choice: string | undefined): boolean // 置き場は lib/conductor.mts
+/** 決定のレコードに足す欄（from・ask・choice・risk・token）。子でなければ空（ユーザーが直接立てたセッションは何も足さない） */
 export function answerFields(by: Who, answer: ChildAnswer | undefined): Partial<DecideRecord>
 ```
 
 - 置き場は `scripts/lib/ledger.mts`（commands と tests から使う）。`DecideRecord` に任意欄 `from`（既存）・`ask`・`risk`・`token`・`answers`（下の object）を足す
 - **conductor の子（`HIKYAKU_CONDUCTOR_CHILD=1`）の `--by user`**: `HIKYAKU_ANSWER_FROM=user` で、かつ決める事項の ID が `HIKYAKU_ANSWER_ITEMS` にあるときだけ書ける（`--dry-run` でも同じ検査）。ユーザーが答えていない事項に、同じ実行の中で書けない
 - **`ledger object` の決定つきの記録（`--defer` でない）**: 異議の事項はその場で作るので ID が前もって無い。conductor の子では `--answers <ID>`（ユーザーの答えで閉じる待ちの事項）を必須にし、その ID が `HIKYAKU_ANSWER_ITEMS` にあるときだけ書ける。決定のレコードに `answers` を残す。子でなければ `--answers` は任意で、検査しない
-- **conductor の子の `--by supervisor`**: `HIKYAKU_ANSWER_FROM=supervisor` が要る。決定のレコードに `from`・`ask`・`risk`・`token` を環境変数から必ず書く（引数では渡せず、子が省けない）。`HIKYAKU_ANSWER_RISK` が無い起動で、`ask` が `declaresRisk` の問いなら拒む
-- **ユーザーが直接立てたセッション**（`HIKYAKU_CONDUCTOR_CHILD` が無い）の振る舞いは変えない（検査しない。環境変数があっても `from` だけを残す）
+- **conductor の子の `--by supervisor`**: `HIKYAKU_ANSWER_FROM=supervisor` が要る。決定のレコードに `from`・`ask`・`choice`・`risk`・`token` を環境変数から必ず書く（引数では渡せず、子が省けない）。`HIKYAKU_ANSWER_RISK` が無い起動で、`needsRiskDeclaration(ask, choice)` なら拒む（launch も同じ関数で申告を求める。review-findings の `fix`・`new-build` は申告なしで記録できる）
+- **ユーザーが直接立てたセッション**（`HIKYAKU_CONDUCTOR_CHILD` が無い）の振る舞いは変えない（検査せず、環境変数があっても欄を足さない）
 - 子が環境変数を自分で付ける偽装は防がない（ADR pending-items-ledger で受け入れ済み）
 
 ### 監督の答えの記録の確かめと PR 本文（`conductor parse`・`ledger answers`）
 
-- `conductor parse --expect-answer <token>`: 監督の答えで再開した子の結果を読むとき、監督が launch の `answerToken` を渡す。作業ツリーのサイクルの記録に、その `token` を持つ `by: supervisor` の決定が無ければ `stepProblems` に入れる（子が監督の答えを記録せずに進めた。SKILL.md の stepProblems の扱い＝1回目は再開、2回目はユーザーに上げる）
+- `conductor parse --expect-answer <token>`: 監督の答えで再開した子の結果を読むとき、監督が launch の `answerToken` を渡す。作業ツリーのサイクルの記録に、その `token` を持つ `by: supervisor` の決定が無ければ `stepProblems` に入れる（子が監督の答えを記録せずに進めた。SKILL.md の stepProblems の扱い＝1回目は再開、2回目はユーザーに上げる）。この1回目の再開は、`--notice` ではなく、同じ `--from supervisor --ask --choice` と申告を渡し直す（新しい `answerToken` で、次の parse にはその token を渡す）。SKILL.md に書く
 - `hikyaku ledger answers [<cycle>] [--format pr] [--json]`（新規・読み取り専用）: サイクル全体の `by: supervisor` の決定を、問い（`ask`）・リスクの申告（`risk`）つきで並べる。`--format pr` は「監督が答えた問い」の節を Markdown で出し、`risk` が `none` の答えは「リスクなしと申告」と明示する。`risk` の無い決定（このビルドより前の記録）はそのまま出す
 - SKILL.md の Step 4 は、最後の PR の本文に `ledger answers {cycle} --format pr` の出力を貼る（監督が書き写さない）
 
@@ -140,7 +144,7 @@ export async function deriveWaiting(config: ResolvedConfig, cycle: CycleContext,
   - 「人間に上げるとき」: ユーザーが「監督に任せる」と答えたら監督が判断する経路を消す。handler が user の問いを監督が答える経路は launch が拒むので（US-15.3・US-21.4）、ユーザーに答えを求める
   - error・2回目の violation・check-pr の不合格は従来どおりその場でユーザーに上げる
   - 「問いへの答え方」の表に `--choice` の値を添える
-  - Step 3: 監督の答えで再開した子の結果は `conductor parse --expect-answer <launch の answerToken>` で読む
+  - Step 3: 監督の答えで再開した子の結果は `conductor parse --expect-answer <launch の answerToken>` で読む。error・violation・stepProblems の1回目の再開は `--notice`（答えではない）。ただし `--expect-answer` の stepProblems の1回目は、同じ答え（`--from supervisor --ask --choice` と申告）で再開する
   - Step 4: 最後の PR の本文の「監督が答えた問い」は、`ledger answers {cycle} --format pr` の出力を貼る（`--no-risk` で答えた問いは、スクリプトが決定のレコードの `risk` から「リスクなしと申告」と示す。監督は書き写さない。G8 1回目のユーザーの判断）
 - `skills/conductor/references/headless-protocol.md`: ユーザーに上げる問いの記録と `waiting:` の blocked、`HIKYAKU_ANSWER_FROM` と `--by user`（最後のビルドの同意ゲートは build-19）
 - `docs/workflow/conductor.md`・`docs/reference/cli.md`（いつ・なぜだけ）、CHANGELOG の `[3.0.0]`
@@ -156,7 +160,7 @@ export async function deriveWaiting(config: ResolvedConfig, cycle: CycleContext,
 
 ## 非機能要件
 
-- **マージ時点のデータ安全**: 本番データは無い（ワークフローの CLI とスキル）。ワークスペースのデータは、`decisions.jsonl` の decide に任意欄 `from` を足すだけで、既存の記録はそのまま読める。conductor の子の挙動が変わるのは、このビルドの後に起動した子だけ
+- **マージ時点のデータ安全**: 本番データは無い（ワークフローの CLI とスキル）。ワークスペースのデータは、`decisions.jsonl` の decide に任意欄（`from`・`ask`・`choice`・`risk`・`token`・`answers`）を足すだけで、既存の記録はそのまま読める（`isRecord` は欄の有無を問わない。`ledger answers` は `risk` の無い古い決定もそのまま出す）。conductor の子の挙動が変わるのは、このビルドの後に起動した子だけ
 - **安全側**: 監督が答えてよい範囲は狭める方向にだけ変える（handler が user の問いと safe に無い値は拒む）。位置を確かめられない回は同意に倒す（parse と同じ）
 - **状態を保存しない**: 待ちは作業ツリーと origin のブランチから毎回導く。session-id は保存しない
 - **互換**: `conductor launch` の `--resume --message` は `--from` が必須になる（監督の手順と同じ PR で直す）

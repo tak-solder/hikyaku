@@ -120,17 +120,41 @@
 
 ## CLI: conductor launch（答えの出どころ）
 
-### conductor launch: 回答を渡す再開は --from が必須
+### conductor launch: --from も --notice も無い --message の再開を拒む
 - 対応: US-19.7
 - Given: tasklist に build-01 があるワークスペースと回答ファイル `answer.txt`
-- When: `conductor launch builder 001 1 --resume s-1 --message answer.txt --expect-digest <digest>` を `--from` 無しで実行する
-- Then: 終了コード 1 で、`--from` を求める案内が出る
+- When: `conductor launch builder 001 1 --resume s-1 --message answer.txt --expect-digest <digest>` を `--from` も `--notice` も付けずに実行する
+- Then: 終了コード 1 で、`--from` か `--notice` を求める案内が出る
 
-### conductor launch: --from user は子のコマンドに HIKYAKU_ANSWER_FROM=user を置く
+### conductor launch: --notice の再開は答えの環境変数を置かない
 - 対応: US-19.7
-- Given: 同じワークスペース
-- When: `conductor launch builder 001 1 --resume s-1 --message answer.txt --from user --json` を実行する
-- Then: `command` が `HIKYAKU_ANSWER_FROM=user` で始まる子のコマンドを含む
+- Given: 同じワークスペースと、答えではない知らせのファイル `notice.txt`（「conductor ブランチを取り込みました」）
+- When: `conductor launch builder 001 1 --resume s-1 --message notice.txt --notice --json` を実行する
+- Then: 成功し、`argv[2]` が知らせの本文になり、`command` に `HIKYAKU_ANSWER_` で始まる変数が1つも無い
+
+### conductor launch: --from と --notice の同時指定を拒む
+- 対応: US-19.7
+- Given: 同じワークスペースと `notice.txt`
+- When: `conductor launch builder 001 1 --resume s-1 --message notice.txt --notice --from supervisor --ask G8 --choice approved` を実行する
+- Then: 終了コード 1 で拒否される
+
+### conductor launch: --from user は子のコマンドに HIKYAKU_ANSWER_FROM=user と HIKYAKU_ANSWER_ITEMS を置く
+- 対応: US-19.7
+- Given: 同じワークスペースで、作業ツリーの build-01 の記録に未決の `question`・`who=user`・`when=now` の事項 `Q-3` と `Q-4` がある
+- When: `conductor launch builder 001 1 --resume s-1 --message answer.txt --from user --closes Q-3,Q-4 --json` を実行する
+- Then: `command` が子のコマンドの前に `HIKYAKU_ANSWER_FROM=user` と `HIKYAKU_ANSWER_ITEMS=Q-3,Q-4` を置く
+
+### conductor launch: --from user に --closes が無ければ拒む
+- 対応: US-19.7
+- Given: 同じワークスペース（未決の `Q-3` がある）
+- When: `conductor launch builder 001 1 --resume s-1 --message answer.txt --from user` を実行する
+- Then: 終了コード 1 で、`--closes` を求める案内が出る
+
+### conductor launch: --closes が未決の事項に無い ID なら拒む
+- 対応: US-19.7
+- Given: 作業ツリーに未決の `Q-3` と、決定済みの `Q-5` があり、`Q-9` はどこにも無い
+- When: `--from user --closes Q-9` と `--from user --closes Q-3,Q-5` でそれぞれ launch する
+- Then: どちらも終了コード 1 で、閉じられない ID（`Q-9`・`Q-5`）が案内に出る
 
 ### conductor launch: 回答の無い初回の起動には HIKYAKU_ANSWER_FROM を置かない
 - 対応: —
@@ -140,13 +164,13 @@
 
 ### conductor launch: 初回の起動でも --from を添えれば --message を渡せる
 - 対応: —
-- Given: session-id が無い状態と回答ファイル `answer.txt`（「既存の API は残す」）
-- When: `conductor launch builder 001 1 --message answer.txt --from user --json` を実行する
-- Then: 成功し、`resumed` が false、`argv[2]` がプロンプトの後ろに回答を続け、`command` が `HIKYAKU_ANSWER_FROM=user` を含む。`--from` を外すと終了コード 1 になる
+- Given: session-id が無い状態と回答ファイル `answer.txt`（「既存の API は残す」）と、作業ツリーの未決の待ち `Q-3`
+- When: `conductor launch builder 001 1 --message answer.txt --from user --closes Q-3 --json` を実行する
+- Then: 成功し、`resumed` が false、`argv[2]` がプロンプトの後ろに `Q-3` を閉じる固定文と回答を続け、`command` が `HIKYAKU_ANSWER_FROM=user` を含む。`--from` を外すと終了コード 1 になる
 
 ### conductor launch: --closes の ID を閉じる固定文を回答の先頭に足す
 - 対応: US-21.3
-- Given: 回答ファイル `answer.txt`（「既存の API は残す」）と、待ちの事項 `Q-3`
+- Given: 回答ファイル `answer.txt`（「既存の API は残す」）と、作業ツリーの build-01 の記録にある未決の待ちの事項 `Q-3`
 - When: `conductor launch builder 001 1 --resume s-1 --message answer.txt --from user --closes Q-3 --json` を実行する
 - Then: `argv[2]` の先頭に `ledger decide build-01 Q-3 --decision decided --by user --input "既存の API は残す"` を記録する固定文があり、その後に回答が続く
 
@@ -242,17 +266,23 @@
 - When: `--from supervisor --ask review-findings --choice proceed` と `--choice fix` を、どちらもリスクの申告無しで launch する
 - Then: proceed は終了コード 1、fix は成功する
 
-### conductor launch: --no-risk の申告で受け付け、riskDeclaration に none を出す
-- 対応: —
+### conductor launch: --no-risk の答えは子に RISK=none と ASK と TOKEN を渡し、answerToken を返す
+- 対応: US-15.3
 - Given: 既定の conductor 設定
-- When: `--from supervisor --ask questions --no-risk --json` で launch する
-- Then: 成功し、JSON の `riskDeclaration` が `none` になる
+- When: `conductor launch builder 001 1 --resume s-1 --message answer.txt --from supervisor --ask questions --no-risk --json` を実行する
+- Then: 成功し、`command` が子のコマンドの前に `HIKYAKU_ANSWER_FROM=supervisor`・`HIKYAKU_ANSWER_ASK=questions`・`HIKYAKU_ANSWER_RISK=none`・`HIKYAKU_ANSWER_TOKEN=<answerToken>` を置き、JSON の `answerToken` が空でない文字列で `command` の値と一致する。同じ引数でもう一度 launch すると `answerToken` が異なる
 
-### conductor launch: 上限以内の害の申告は受け付け、riskDeclaration に害と前提を出す
+### conductor launch: 上限以内の害の申告は受け付け、子に害と前提を渡す
 - 対応: US-13.3
 - Given: `[app]` が `exposure = "internal"`・`data = "none"`・`impact = "low"`（上限は中まで）のワークスペース
 - When: `--from supervisor --ask review-findings --choice proceed --harm 中 --premises app.exposure --json` で launch する
-- Then: 成功し、`riskDeclaration` が害 `中` と前提 `["app.exposure"]` を持つ
+- Then: 成功し、`command` が `HIKYAKU_ANSWER_CHOICE=proceed` と `HIKYAKU_ANSWER_RISK=中:app.exposure` を含む
+
+### conductor launch: リスクの申告の無い問いでは HIKYAKU_ANSWER_RISK を置かない
+- 対応: —
+- Given: 既定の conductor 設定
+- When: `--from supervisor --ask G8 --choice approved --json` で launch する
+- Then: 成功し、`command` に `HIKYAKU_ANSWER_ASK=G8`・`HIKYAKU_ANSWER_CHOICE=approved`・`HIKYAKU_ANSWER_TOKEN` はあり、`HIKYAKU_ANSWER_RISK` と `HIKYAKU_ANSWER_ITEMS` は無い
 
 ### conductor launch: 上限を超える害の申告を拒む
 - 対応: US-13.3
@@ -290,39 +320,129 @@
 - When: `conductor launch architect 001 --resume s-1 --escalate --ask G3 --json`、`conductor launch close-cycle 001 --resume s-1 --escalate --ask G10 --json`、`--escalate --message answer.txt --ask G8`、`--escalate`（`--ask` 無し）をそれぞれ実行する
 - Then: 前の2つは固定文の `ledger open` の単位がそれぞれ `architect`・`close` になり、後の2つは終了コード 1 になる
 
-## lib/ledger.mts（answerSourceProblem・answerSource）
+## lib（needsRiskDeclaration）
 
-### answerSourceProblem: conductor の子で HIKYAKU_ANSWER_FROM が user でなければ --by user を拒む
-- 対応: US-19.7
-- Given: `HIKYAKU_CONDUCTOR_CHILD=1` で、`HIKYAKU_ANSWER_FROM` が未設定の環境と `supervisor` の環境
-- When: `answerSourceProblem("user", env)` を呼ぶ
-- Then: どちらも理由の文字列を返す。`HIKYAKU_ANSWER_FROM=user` なら `undefined` を返す
+### needsRiskDeclaration: questions は常に、review-findings は proceed のときだけ申告が要る
+- 対応: US-15.2
+- Given: 問いと答えの組 `("questions", undefined)`・`("review-findings", "proceed")`・`("review-findings", "fix")`・`("review-findings", "new-build")`・`("G8", "approved")`
+- When: それぞれ `needsRiskDeclaration(ask, choice)` を呼ぶ
+- Then: 前の2つは true、残りの3つは false を返す
 
-### answerSourceProblem: 子でない、または --by user でなければ検査しない
+## lib/ledger.mts（childAnswer・answerProblem・answerFields）
+
+### childAnswer: 子の環境変数から答えを読み、子でなければ undefined
 - 対応: —
-- Given: `HIKYAKU_CONDUCTOR_CHILD` の無い環境での `"user"`、`HIKYAKU_CONDUCTOR_CHILD=1` で `HIKYAKU_ANSWER_FROM` 未設定の環境での `"ai:builder"`
-- When: それぞれ `answerSourceProblem(by, env)` を呼ぶ
+- Given: `HIKYAKU_CONDUCTOR_CHILD=1`・`HIKYAKU_ANSWER_FROM=supervisor`・`HIKYAKU_ANSWER_ASK=review-findings`・`HIKYAKU_ANSWER_CHOICE=proceed`・`HIKYAKU_ANSWER_RISK=中:app.exposure,area:billing`・`HIKYAKU_ANSWER_TOKEN=t-1` の環境と、`HIKYAKU_CONDUCTOR_CHILD` の無い環境
+- When: それぞれ `childAnswer(env)` を呼ぶ
+- Then: 前者は `from: "supervisor"`・`items: []`・`ask: "review-findings"`・`choice: "proceed"`・`risk: { kind: "declared", harm: "中", premises: ["app.exposure", "area:billing"] }`・`token: "t-1"` を返し、`HIKYAKU_ANSWER_RISK=none` なら `risk: { kind: "none" }` になる。後者は `undefined` を返す
+
+### answerProblem: 子の --by user は FROM=user で ITEMS にある ID だけ通す
+- 対応: US-19.7
+- Given: `from: "user"`・`items: ["Q-3"]` の答え、`from: "supervisor"`・`items: []` の答え、`from: undefined` の答え
+- When: `answerProblem("user", "Q-3", …)` と `answerProblem("user", "Q-4", …)` を、それぞれの答えで呼ぶ
+- Then: `from: "user"` で `Q-3` のときだけ `undefined` を返し、それ以外（`Q-4`、supervisor、未設定）はすべて理由の文字列を返す
+
+### answerProblem: 子でない、または --by が ai のときは検査しない
+- 対応: —
+- Given: 答えが `undefined`（子でない）の `"user"`、`from: undefined` の子の答えでの `"ai:builder"`
+- When: それぞれ `answerProblem(by, "Q-3", answer)` を呼ぶ
 - Then: どちらも `undefined` を返す
 
 ## CLI: ledger decide・ledger object（答えの出どころ）
 
 ### ledger decide: conductor の子で出どころが user でなければ --by user を拒み、記録を書かない
 - 対応: US-19.7
-- Given: question の事項 `Q-1` がある作業単位 build-01 と、`HIKYAKU_CONDUCTOR_CHILD=1`・`HIKYAKU_ANSWER_FROM=supervisor` の環境
-- When: `ledger decide build-01 Q-1 --decision decided --by user --input "残す"` を実行し、続けて `--dry-run` を付けて実行する
+- Given: 未決の question の事項 `Q-3` がある作業単位 build-01 と、`HIKYAKU_CONDUCTOR_CHILD=1`・`HIKYAKU_ANSWER_FROM=supervisor` の環境
+- When: `ledger decide build-01 Q-3 --decision decided --by user --input "残す"` を実行し、続けて `--dry-run` を付けて実行する
 - Then: どちらも終了コード 1 で、`decisions.jsonl` に decide の行が増えない
 
-### ledger decide: HIKYAKU_ANSWER_FROM の値を決定の from に残す
+### ledger decide: 子で HIKYAKU_ANSWER_ITEMS に無い ID への --by user を拒む
 - 対応: US-19.7
-- Given: 同じ事項と、`HIKYAKU_CONDUCTOR_CHILD=1`・`HIKYAKU_ANSWER_FROM=user` の環境
-- When: `ledger decide build-01 Q-1 --decision decided --by user --input "残す"` を実行する
-- Then: 成功し、追記された decide の記録の `from` が `"user"` になる。`HIKYAKU_ANSWER_FROM` の無い環境で決めた記録には `from` が無く、既存の記録もそのまま読める
+- Given: 未決の `Q-3`・`Q-4` がある build-01 と、`HIKYAKU_CONDUCTOR_CHILD=1`・`HIKYAKU_ANSWER_FROM=user`・`HIKYAKU_ANSWER_ITEMS=Q-3` の環境
+- When: `ledger decide build-01 Q-4 --decision decided --by user --input "残す"` を実行し、続けて `--dry-run` を付けて実行する
+- Then: どちらも終了コード 1 で、`Q-4` はユーザーが答えた事項に無いと案内され、decide の行が増えない
 
-### ledger object: 決定つきの異議は decide と同じ検査を受け、--defer は検査しない
+### ledger decide: 子で ITEMS にある ID なら書け、from を残す
 - 対応: US-19.7
-- Given: `HIKYAKU_CONDUCTOR_CHILD=1`・`HIKYAKU_ANSWER_FROM=supervisor` の環境
-- When: 決定つきの `ledger object … --by user` と、`--defer` を付けた `ledger object …` をそれぞれ実行する
-- Then: 決定つきは終了コード 1、`--defer` は成功する。`HIKYAKU_ANSWER_FROM=user` で決定つきを実行すると成功し、記録の `from` が `"user"` になる
+- Given: 上と同じ事項と、`HIKYAKU_CONDUCTOR_CHILD=1`・`HIKYAKU_ANSWER_FROM=user`・`HIKYAKU_ANSWER_ITEMS=Q-3` の環境
+- When: `ledger decide build-01 Q-3 --decision decided --by user --input "残す"` を実行する
+- Then: 成功し、追記された decide の記録の `from` が `"user"` になる。`from` の無い既存の記録もそのまま読める
+
+### ledger decide: 子でないセッションは ID の縛りを受けず、従来どおり書ける
+- 対応: US-19.7
+- Given: 未決の `Q-4` がある build-01 と、`HIKYAKU_CONDUCTOR_CHILD` が無く `HIKYAKU_ANSWER_FROM=user`・`HIKYAKU_ANSWER_ITEMS=Q-3` だけがある環境、およびどの変数も無い環境
+- When: それぞれ `ledger decide build-01 Q-4 --decision decided --by user --input "残す"` を実行する
+- Then: どちらも成功し、どちらの記録にも `from`・`ask`・`choice`・`risk`・`token` が無い
+
+### ledger decide: 子でないセッションは答えの環境変数があっても決定に欄を足さない
+- 対応: —
+- Given: 未決の `Q-6` がある build-01 と、`HIKYAKU_CONDUCTOR_CHILD` が無く `HIKYAKU_ANSWER_FROM=supervisor`・`HIKYAKU_ANSWER_ASK=questions`・`HIKYAKU_ANSWER_RISK=none`・`HIKYAKU_ANSWER_TOKEN=t-9` がある環境
+- When: `ledger decide build-01 Q-6 --decision decided --by supervisor --input "進める"` を実行する
+- Then: 成功し、記録に `from`・`ask`・`choice`・`risk`・`token` が無い（`RISK` が無くても拒まれない）
+
+### ledger decide: 子の --by supervisor は FROM=supervisor が要り、環境変数の欄を必ず残す
+- 対応: US-15.3
+- Given: 未決の question `Q-6` がある build-01 と、`HIKYAKU_CONDUCTOR_CHILD=1`・`HIKYAKU_ANSWER_FROM=supervisor`・`HIKYAKU_ANSWER_ASK=review-findings`・`HIKYAKU_ANSWER_CHOICE=proceed`・`HIKYAKU_ANSWER_RISK=none`・`HIKYAKU_ANSWER_TOKEN=t-1` の環境
+- When: `ledger decide build-01 Q-6 --decision decided --by supervisor --input "そのまま進める"` を実行する
+- Then: 成功し、decide の記録が `from: "supervisor"`・`ask: "review-findings"`・`choice: "proceed"`・`risk: { kind: "none" }`・`token: "t-1"` を持つ。`HIKYAKU_ANSWER_FROM=user`（または未設定）の子で同じ操作をすると終了コード 1 になる
+
+### ledger decide: 子の --by supervisor は害と前提の申告をレコードに残す
+- 対応: US-15.2
+- Given: 同じ事項と、`HIKYAKU_ANSWER_RISK=中:app.exposure` 以外は上と同じ環境
+- When: 同じ `ledger decide … --by supervisor` を実行する
+- Then: 記録の `risk` が `{ kind: "declared", harm: "中", premises: ["app.exposure"] }` になる
+
+### ledger decide: needsRiskDeclaration が true の答えで RISK の無い起動なら --by supervisor を拒む
+- 対応: US-15.2
+- Given: `HIKYAKU_CONDUCTOR_CHILD=1`・`HIKYAKU_ANSWER_FROM=supervisor`・`HIKYAKU_ANSWER_TOKEN=t-2` で `HIKYAKU_ANSWER_RISK` が無く、`HIKYAKU_ANSWER_ASK=questions` の環境と、`HIKYAKU_ANSWER_ASK=review-findings`・`HIKYAKU_ANSWER_CHOICE=proceed` の環境
+- When: それぞれ `ledger decide build-01 Q-6 --decision decided --by supervisor --input "進める"` を実行する
+- Then: どちらも終了コード 1 で、decide の行が増えない
+
+### ledger decide: review-findings の fix は申告なしで --by supervisor を書け、choice を残す
+- 対応: US-15.1
+- Given: `HIKYAKU_CONDUCTOR_CHILD=1`・`HIKYAKU_ANSWER_FROM=supervisor`・`HIKYAKU_ANSWER_ASK=review-findings`・`HIKYAKU_ANSWER_CHOICE=fix`・`HIKYAKU_ANSWER_TOKEN=t-3` で `HIKYAKU_ANSWER_RISK` が無い環境
+- When: `ledger decide build-01 Q-6 --decision decided --by supervisor --input "今修正する"` を実行する
+- Then: 成功し、記録が `choice: "fix"`・`token: "t-3"` を持ち、`risk` は無い
+
+### ledger object: 子の決定つきの記録は --answers が必須で、ITEMS にある ID だけ受け付ける
+- 対応: US-19.7
+- Given: 未決の待ち `Q-3` があり、`HIKYAKU_CONDUCTOR_CHILD=1`・`HIKYAKU_ANSWER_FROM=user`・`HIKYAKU_ANSWER_ITEMS=Q-3` の環境
+- When: 決定つきの `ledger object … --by user` を、`--answers` 無し、`--answers Q-4`、`--answers Q-3` でそれぞれ実行する
+- Then: 前の2つは終了コード 1 で記録が増えず、`--answers Q-3` は成功して決定のレコードに `answers: "Q-3"` と `from: "user"` が残る
+
+### ledger object: --defer と子でないセッションは --answers を検査しない
+- 対応: —
+- Given: `HIKYAKU_CONDUCTOR_CHILD=1`・`HIKYAKU_ANSWER_FROM=supervisor` の環境と、`HIKYAKU_CONDUCTOR_CHILD` の無い環境
+- When: 前者で `--defer` を付けた `ledger object …` を、後者で `--answers` 無しの決定つきの `ledger object … --by user` を実行する
+- Then: どちらも成功する
+
+## CLI: conductor parse（監督の答えの記録の確かめ）
+
+### conductor parse: --expect-answer の token を持つ監督の決定が無ければ stepProblems に入れる
+- 対応: US-15.3
+- Given: 作業ツリーのサイクルの記録に `token: "t-1"` を持つ `by: supervisor` の決定が無く、結果ファイル `r.json` が `done` で終わっている
+- When: `conductor parse r.json 001 --expect-answer t-1 --json` を実行する
+- Then: `stepProblems` に、監督の答えの記録が無いことを示す項目が1件入る
+
+### conductor parse: token の一致する監督の決定があれば stepProblems に入れない
+- 対応: —
+- Given: build-01 の記録に `by: supervisor`・`token: "t-1"` の決定があり、別に `by: user`・`token: "t-2"` の決定がある
+- When: `conductor parse r.json 001 --expect-answer t-1 --json` と `--expect-answer t-2 --json` を実行する
+- Then: `t-1` では答えの記録についての項目が `stepProblems` に無く、`t-2`（`by: user` の決定しか無い）では入る
+
+## CLI: ledger answers
+
+### ledger answers: --format pr は監督が答えた問いを並べ、none を「リスクなしと申告」と示す
+- 対応: US-15.2
+- Given: build-01 に `by: supervisor`・`ask: "questions"`・`risk: { kind: "none" }` の決定、build-02 に `by: supervisor`・`ask: "review-findings"`・`risk: { kind: "declared", harm: "中", premises: ["app.exposure"] }` の決定、architect に `by: user` の決定がある
+- When: `ledger answers 001 --format pr` を実行する
+- Then: 「監督が答えた問い」の節に2行が並び、questions の行に「リスクなしと申告」、review-findings の行に害 `中` と前提 `app.exposure` が出る。`by: user` の決定は出ない。何もファイルを書かない
+
+### ledger answers: risk の無い古い決定もそのまま出す
+- 対応: —
+- Given: このビルドより前の形式で、`ask`・`risk`・`token` を持たない `by: supervisor` の決定が build-01 にある
+- When: `ledger answers 001 --format pr` と `ledger answers 001 --json` を実行する
+- Then: どちらにもその決定が出て、「リスクなしと申告」とは示されない
 
 ## lib/waiting.mts（deriveWaiting）
 
