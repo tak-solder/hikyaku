@@ -164,45 +164,55 @@ const STATE_STYLES = {
   blocked: "fill:#f6f8fa,stroke:#8c959f,color:#57606a",
 } as const;
 
-/** 先行ビルドが未完了の依存線のスタイル */
-const PENDING_EDGE_STYLE = "stroke:#8c959f,stroke-dasharray:5 5";
-
 /** 図の凡例。グラフの色と STATE_STYLES を対応づける */
 export const GRAPH_LEGEND = "紫: 完了（merged） / 緑: 着手可能（ready） / グレー: 待機中（blocked）。点線は先行ビルドが未完了の依存";
 
 /**
  * 依存グラフの Mermaid 表現。辺は推移的簡約をかけたもので、
  * tasklist の dependencies 列（宣言された直接依存）と到達可能性が一致する。
- * ノードは状態（完了 / 着手可能 / 待機中）で色分けし、先行ビルドが未完了の依存線は点線にする
+ * ノードは状態（完了 / 着手可能 / 待機中）で色分けし、先行ビルドが未完了の依存線は点線にする。
+ *
+ * どの行も、1つのビルドの完了だけで決まるように書く。`done` は当該ビルドの PR に入るので、
+ * 複数のビルドの状態を1行にまとめると（`class b01,b02 ready` や `linkStyle 0,1,2`）、
+ * 並行するビルドの PR 同士が必ずコンフリクトする。
+ *
+ *   - ビルドごとのブロックに分け、空行で区切る（隣り合う行の変更は Git が自動でマージできないため）
+ *   - 完了は自分のノードの行に付ける（`:::merged`）
+ *   - 待機中は、未完了の先行ビルドが自分のブロックの線に付ける（`-.-> b04:::blocked`）
+ *   - 着手可能は誰も書かない。何も付いていない未完了ノードの既定の色（`classDef default`）にする
+ *
+ * 着手可能は「すべての依存が完了」で決まり、1つのビルドの PR からは書けない。先行ビルドの線が
+ * 1本ずつ実線になり、`blocked` を付ける線が無くなったときに既定の色へ戻る形にすると、
+ * 先行ビルドが並行してマージされても、マージ結果の図が正しくなる
  */
 export function renderGraph(builds: BuildRecord[]): string {
-  const lines = ["```mermaid", "graph TD"];
+  const byId = new Map(builds.map((b) => [b.id, b]));
+  const edges = graphEdges(builds);
+  const edgeLine = (from: string, to: string): string => {
+    const source = byId.get(from);
+    return source !== undefined && isComplete(source)
+      ? `  ${nodeId(from)} --> ${nodeId(to)}`
+      : `  ${nodeId(from)} -.-> ${nodeId(to)}:::blocked`;
+  };
+
+  const lines = [
+    "```mermaid",
+    "graph TD",
+    `  classDef default ${STATE_STYLES.ready}`,
+    `  classDef blocked ${STATE_STYLES.blocked}`,
+    `  classDef merged ${STATE_STYLES.merged}`,
+  ];
   for (const build of builds) {
     const label = `${buildDirName(build.id)}: ${build.title}`.replace(/"/g, "'");
-    lines.push(`  ${nodeId(build.id)}["${label}"]`);
+    lines.push("", `  ${nodeId(build.id)}["${label}"]${isComplete(build) ? ":::merged" : ""}`);
+    // 存在しない先行ビルドからの線は、書き換える持ち主がいないので後続のブロックに置く
+    for (const [from, to] of edges) {
+      if (to === build.id && !byId.has(from)) lines.push(edgeLine(from, to));
+    }
+    for (const [from, to] of edges) {
+      if (from === build.id) lines.push(edgeLine(from, to));
+    }
   }
-
-  const byId = new Map(builds.map((b) => [b.id, b]));
-  const pendingEdges: number[] = [];
-  graphEdges(builds).forEach(([from, to], index) => {
-    const done = byId.get(from) !== undefined && isComplete(byId.get(from)!);
-    lines.push(`  ${nodeId(from)} ${done ? "-->" : "-.->"} ${nodeId(to)}`);
-    if (!done) pendingEdges.push(index);
-  });
-
-  const ready = new Set(readyBuilds(builds).map((b) => b.id));
-  const groups: Record<keyof typeof STATE_STYLES, string[]> = { merged: [], ready: [], blocked: [] };
-  for (const build of builds) {
-    const state = isComplete(build) ? "merged" : ready.has(build.id) ? "ready" : "blocked";
-    groups[state].push(nodeId(build.id));
-  }
-  for (const state of Object.keys(STATE_STYLES) as Array<keyof typeof STATE_STYLES>) {
-    lines.push(`  classDef ${state} ${STATE_STYLES[state]}`);
-  }
-  for (const state of Object.keys(groups) as Array<keyof typeof groups>) {
-    if (groups[state].length > 0) lines.push(`  class ${groups[state].join(",")} ${state}`);
-  }
-  if (pendingEdges.length > 0) lines.push(`  linkStyle ${pendingEdges.join(",")} ${PENDING_EDGE_STYLE}`);
 
   lines.push("```");
   return lines.join("\n");
@@ -225,7 +235,7 @@ export function renderTasklistFile(cycle: string, builds: BuildRecord[]): string
     "依存関係のあるビルドは、先行ビルドがデフォルトブランチにマージ済みであることが必須です。",
     "依存関係がないビルドは並行実行できます。",
     "",
-    renderTable(TASKLIST_HEADERS, sorted.map(toRow)),
+    renderTable(TASKLIST_HEADERS, sorted.map(toRow), { raggedLastColumn: true }),
     "",
     "## 依存グラフ",
     "",

@@ -101,16 +101,25 @@ export function escapeCell(text: string): string {
  * 再パース時に値が隣の列へずれる。tasklist.md では PR 列に issue リンクがずれ込み、
  * 未着手のビルドが「完了」と誤判定されるため、静かなデータ破壊になる。
  */
-export function renderTable(headers: string[], rows: string[][]): string {
+export interface RenderTableOptions {
+  /**
+   * 最後の列を空白で埋めない。行ごとに別のブランチが書き換える列（tasklist.md の PR 列）で使う。
+   * 列幅をそろえると、1つのセルが伸びただけで全行が変わり、並行するブランチ同士がコンフリクトする
+   */
+  raggedLastColumn?: boolean;
+}
+
+export function renderTable(headers: string[], rows: string[][], options: RenderTableOptions = {}): string {
   const escapedHeaders = headers.map(escapeCell);
   const escapedRows = rows.map((row) => padRow(row, headers.length).map(escapeCell));
   const all = [escapedHeaders, ...escapedRows];
+  const ragged = (column: number): boolean => options.raggedLastColumn === true && column === headers.length - 1;
   const widths = escapedHeaders.map((_, column) =>
-    Math.max(...all.map((row) => cellWidth(row[column] ?? ""))),
+    ragged(column) ? 0 : Math.max(...all.map((row) => cellWidth(row[column] ?? ""))),
   );
 
   const line = (cells: string[]): string =>
-    `| ${cells.map((cell, i) => cell + " ".repeat((widths[i] ?? 0) - cellWidth(cell))).join(" | ")} |`;
+    `| ${cells.map((cell, i) => cell + " ".repeat(Math.max((widths[i] ?? 0) - cellWidth(cell), 0))).join(" | ")} |`;
 
   const separator = `| ${widths.map((w) => "-".repeat(Math.max(w, 3))).join(" | ")} |`;
   return [line(escapedHeaders), separator, ...escapedRows.map(line)].join("\n");
