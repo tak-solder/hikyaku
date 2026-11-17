@@ -20,7 +20,7 @@
 | 9       | 行き詰まりの報告の検査と、gh が使えないときの扱い               | 305k       | —                                                     | [#115](https://github.com/tak-solder/hikyaku/pull/115) |
 | 10      | 知見の置き場の「なくす」と、rule を移すきっかけ・領域の開発頻度 | 345k       | 5                                                     | [#116](https://github.com/tak-solder/hikyaku/pull/116) |
 | 11      | G10 の同意と確認の区分、基準を消す経路と指標の比較              | 340k       | 1, 3, 10                                              | [#117](https://github.com/tak-solder/hikyaku/pull/117) |
-| 12      | G4 と G8 の提示（gate brief）                                   | 280k       | 2, 15                                                 | —                                                      |
+| 12      | G4 と G8 の提示（gate brief）                                   | 280k       | 2, 15                                                 | [#122](https://github.com/tak-solder/hikyaku/pull/122) |
 | 13      | 中身を含まないフィードバックと、document-guide のアンカー       | 295k       | —                                                     | [#118](https://github.com/tak-solder/hikyaku/pull/118) |
 | 14      | 操作する人を「ユーザー」と書く用語の統一                        | 275k       | 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17 | —                                                      |
 | 15      | G3・G4 を宣言の上限で同意にする（害とパスの申告と裏取り）       | 350k       | 2                                                     | [#119](https://github.com/tak-solder/hikyaku/pull/119) |
@@ -67,15 +67,15 @@ graph TD
   b13 --> b14
   b02 --> b15
   b06 --> b16
-  b12 -.-> b16
+  b12 --> b16
   b06 --> b17
   classDef merged fill:#fbefff,stroke:#8250df,color:#6639ba
   classDef ready fill:#dafbe1,stroke:#1a7f37,color:#116329
   classDef blocked fill:#f6f8fa,stroke:#8c959f,color:#57606a
-  class b01,b02,b03,b04,b05,b06,b08,b09,b10,b11,b13,b15 merged
-  class b12,b17 ready
-  class b07,b14,b16 blocked
-  linkStyle 8,9,13,19 stroke:#8c959f,stroke-dasharray:5 5
+  class b01,b02,b03,b04,b05,b06,b08,b09,b10,b11,b12,b13,b15 merged
+  class b16,b17 ready
+  class b07,b14 blocked
+  linkStyle 8,9,13 stroke:#8c959f,stroke-dasharray:5 5
 ```
 
 紫: 完了（merged） / 緑: 着手可能（ready） / グレー: 待機中（blocked）。点線は先行ビルドが未完了の依存

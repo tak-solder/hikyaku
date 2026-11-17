@@ -8,11 +8,12 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { readAppDeclaration, type AppAxes, type AppDeclaration, type ResolvedConfig } from "../scripts/lib/config.mts";
+import { readAppDeclaration, readBoundaries, type AppAxes, type AppDeclaration, type ResolvedConfig } from "../scripts/lib/config.mts";
 import {
   axesForPath,
   ceilingOf,
   cycleAdrs,
+  effectiveBoundaries,
   effectiveDeclaration,
   exceeds,
   heavyAreasHit,
@@ -479,4 +480,58 @@ test("cycleAdrs: decisions が対象外なら空", (t) => {
 test("cycleAdrs: 基準を読めなければ decisions のファイルすべて", (t) => {
   const directory = adrRepo(t, DECISIONS);
   assert.deepEqual(cycleAdrs(configOf(directory, "", "release")), [".hikyaku/decisions/a.md", ".hikyaku/decisions/b.md"]);
+});
+
+// ---------------------------------------------------------------------------
+// 境界（[boundaries]）の基準との和（build-12）
+
+/** configOf に作業ツリーの [boundaries] を足したもの */
+function boundaryConfigOf(directory: string, source: string): ResolvedConfig {
+  const config = configOf(directory, source);
+  return { ...config, boundaries: readBoundaries(parseToml(source)["boundaries"] as TomlTable | undefined) } as ResolvedConfig;
+}
+
+const ROOT_ONLY = `hikyaku_root = "docs/hikyaku"\n`;
+
+test("effectiveBoundaries: 作業ツリーと基準の [boundaries] の和を返し、重複は1つにまとめる", (t) => {
+  const directory = repoWith(t, `${ROOT_ONLY}[boundaries]\nexternal = ["api/public/**"]\n`);
+  withOrigin(t, directory);
+  const source = loosen(directory, "feature-x", `${ROOT_ONLY}[boundaries]\nexternal = ["api/public/**", "api/webhook/**"]\ninternal = ["src/core/**"]\n`);
+  const boundaries = effectiveBoundaries(boundaryConfigOf(directory, source));
+  assert.deepEqual(boundaries.external, ["api/public/**", "api/webhook/**"]);
+  assert.deepEqual(boundaries.internal, ["src/core/**"]);
+  assert.equal(boundaries.unverified, false);
+});
+
+test("effectiveBoundaries: 作業ツリーで境界を消しても、基準の境界は残る", (t) => {
+  const directory = repoWith(t, `${ROOT_ONLY}[boundaries]\nexternal = ["api/public/**"]\n`);
+  withOrigin(t, directory);
+  const source = loosen(directory, "feature-x", ROOT_ONLY);
+  const boundaries = effectiveBoundaries(boundaryConfigOf(directory, source));
+  assert.deepEqual(boundaries.external, ["api/public/**"]);
+  assert.equal(boundaries.unverified, false, "作業ツリーが宣言していないので unverified ではない");
+});
+
+test("effectiveBoundaries: 基準を読めなければ作業ツリーの境界だけを返し、unverified になる", (t) => {
+  const directory = repoWith(t, undefined);
+  const source = `${ROOT_ONLY}[boundaries]\nexternal = ["api/public/**"]\n`;
+  const boundaries = effectiveBoundaries(boundaryConfigOf(directory, source));
+  assert.deepEqual(boundaries.external, ["api/public/**"]);
+  assert.deepEqual(boundaries.internal, []);
+  assert.equal(boundaries.unverified, true);
+});
+
+test("effectiveBoundaries: 基準の [app] だけが壊れていても、基準の境界は効かせる", (t) => {
+  const directory = repoWith(t, `${ROOT_ONLY}[app]\nexposure = "everyone"\n[boundaries]\nexternal = ["api/**"]\n`);
+  withOrigin(t, directory);
+  const source = loosen(directory, "feature-x", ROOT_ONLY);
+  const boundaries = effectiveBoundaries(boundaryConfigOf(directory, source));
+  assert.deepEqual(boundaries.external, ["api/**"]);
+  assert.equal(boundaries.unverified, false);
+});
+
+test("effectiveBoundaries: どこにも宣言が無ければ空で、unverified ではない", (t) => {
+  const directory = repoWith(t, undefined);
+  const boundaries = effectiveBoundaries(boundaryConfigOf(directory, ROOT_ONLY));
+  assert.deepEqual([boundaries.external, boundaries.internal, boundaries.unverified], [[], [], false]);
 });

@@ -16,7 +16,8 @@
  * conductor のブランチ）はユーザーのマージを経ていないので使わない。基準が Hikyaku のブランチを
  * 指しているとき（origin/HEAD の向け直しなど）も、その基準は読めない扱いにする。
  *
- * G3・G4 の同意の判定（steps/architect.mts）がこの上限を使う。境界（[boundaries]）はまだ判定に使わない（build-12）。
+ * G3・G4 の同意の判定（steps/architect.mts）がこの上限を使う。境界（[boundaries]）は、同じ基準から読んだ宣言と
+ * 作業ツリーの宣言の和を、G4 の外との境界の同意と提示（gate-brief.mts）に使う。
  */
 
 import { parseBranch } from "./branch.mts";
@@ -25,9 +26,11 @@ import {
   EXPOSURES,
   IMPACTS,
   readAppDeclaration,
+  readBoundaries,
   type AppArea,
   type AppAxes,
   type AppDeclaration,
+  type Boundaries,
   type ResolvedConfig,
 } from "./config.mts";
 import { loadGuide } from "./docs.mts";
@@ -240,6 +243,10 @@ export interface Baseline {
   commit: string | undefined;
   /** 読めたときの宣言（宣言が無ければ undefined） */
   declaration: AppDeclaration | undefined;
+  /** 読めたときの [boundaries]（宣言が無ければ空の配列） */
+  boundaries?: Boundaries;
+  /** 設定ファイルは読めたが、[boundaries] だけを読めなかった理由 */
+  boundariesUnreadable?: string;
   /** 読めなかった理由 */
   unavailable: string | undefined;
   /** 設定ファイルはあるのに、宣言を読めなかった（壊れている・この版の検査を通らない） */
@@ -291,14 +298,31 @@ function readBaselineAt(config: ResolvedConfig, branch: string, ref: string): Ba
   }
   const source = gitSync(config.repoRoot, ["show", `${commit}:${CONFIG_FILE}`]);
   if (source === undefined) return { ...miss(`${ref} の ${CONFIG_FILE} を読めません`, ref, commit), unreadableDeclaration: true };
+  let table: TomlTable;
   try {
-    const table = parseToml(source);
-    const app = table["app"];
-    if (app !== undefined && (typeof app !== "object" || Array.isArray(app))) throw new Error("[app] がテーブルではありません");
-    return { branch, ref, commit, declaration: readAppDeclaration(app as TomlTable | undefined), unavailable: undefined };
+    table = parseToml(source);
   } catch (error) {
     const baseline = miss(`${ref} の ${CONFIG_FILE} の宣言を読めません: ${error instanceof Error ? error.message : String(error)}`, ref, commit);
-    return { ...baseline, unreadableDeclaration: true };
+    return { ...baseline, unreadableDeclaration: true, boundariesUnreadable: baseline.unavailable };
+  }
+  // [app] と [boundaries] は別に読む。片方が壊れていても、もう片方は読めたまま扱う
+  // （境界だけが壊れていれば G4 の境界の照合だけを確かめられない扱いにし、[app] だけが壊れていれば境界は効かせる）
+  let boundaries: Boundaries | undefined;
+  let boundariesUnreadable: string | undefined;
+  try {
+    const raw = table["boundaries"];
+    if (raw !== undefined && (typeof raw !== "object" || Array.isArray(raw))) throw new Error("[boundaries] がテーブルではありません");
+    boundaries = readBoundaries(raw as TomlTable | undefined);
+  } catch (error) {
+    boundariesUnreadable = `${ref} の ${CONFIG_FILE} の [boundaries] を読めません: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  try {
+    const app = table["app"];
+    if (app !== undefined && (typeof app !== "object" || Array.isArray(app))) throw new Error("[app] がテーブルではありません");
+    return { branch, ref, commit, declaration: readAppDeclaration(app as TomlTable | undefined), boundaries, boundariesUnreadable, unavailable: undefined };
+  } catch (error) {
+    const baseline = miss(`${ref} の ${CONFIG_FILE} の宣言を読めません: ${error instanceof Error ? error.message : String(error)}`, ref, commit);
+    return { ...baseline, unreadableDeclaration: true, boundaries, boundariesUnreadable };
   }
 }
 
@@ -357,6 +381,44 @@ export function effectiveDeclaration(config: ResolvedConfig): EffectiveDeclarati
   };
   effectiveCache.set(config, result);
   return result;
+}
+
+export interface EffectiveBoundaries extends Boundaries {
+  /**
+   * 作業ツリーだけが [boundaries] を宣言していて、基準を1つも読めない。作業ツリーで境界を狭めても分からないので、
+   * G4 は同意に倒す。effectiveDeclaration の incomplete は [app] の上限（G3 にも効く）なので広げず、ここで持つ
+   */
+  unverified: boolean;
+  /** unverified の理由（基準を読めなかった説明。G4 の notices に出す） */
+  reasons: string[];
+}
+
+/**
+ * 照合に使う境界。作業ツリーの [boundaries] と、読めた基準それぞれの [boundaries] の和。
+ * セッションが作業ツリーで境界を消しても、ユーザーがマージした宣言の境界は残る（上限と同じく緩める向きを防ぐ）
+ */
+export function effectiveBoundaries(config: ResolvedConfig): EffectiveBoundaries {
+  const external = [...config.boundaries.external];
+  const internal = [...config.boundaries.internal];
+  const add = (into: string[], paths: string[]) => paths.forEach((path) => { if (!into.includes(path)) into.push(path); });
+  const declaredHere = external.length > 0 || internal.length > 0;
+  // 作業ツリーに宣言が無くても、基準の境界は効くので常に読む
+  const effective = effectiveDeclaration(config);
+  const reasons: string[] = [];
+  for (const baseline of effective.baselines) {
+    // 基準の [boundaries] が壊れている（設定ファイル自体を解釈できない場合を含む）: どの境界が宣言されているか分からない
+    if (baseline.boundariesUnreadable !== undefined) reasons.push(baseline.boundariesUnreadable);
+    // [app] だけが読めなかった基準でも、読めた境界は効かせる
+    if (baseline.boundaries === undefined) continue;
+    add(external, baseline.boundaries.external);
+    add(internal, baseline.boundaries.internal);
+  }
+  // 基準が1つも無い（origin/HEAD も base_branch も無い）ときも、読めないのと同じく確かめられない
+  const noneReadable = effective.baselines.every((baseline) => baseline.unavailable !== undefined);
+  if (declaredHere && noneReadable) {
+    reasons.push(...(effective.notices.length > 0 ? effective.notices : ["基準のブランチがありません"]));
+  }
+  return { external, internal, unverified: reasons.length > 0, reasons };
 }
 
 function lines(output: string | undefined, separator = "\n"): string[] {

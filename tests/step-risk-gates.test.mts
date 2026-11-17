@@ -432,3 +432,123 @@ test("G4: ADR の一覧を読めなければ同意に倒し、理由を notices 
   assert.equal(g4.args?.["verified"], false);
   assert.ok(g4.notices?.some((notice) => notice.includes("G3 の申告を裏取りできない")), JSON.stringify(g4.notices));
 });
+
+// ---------------------------------------------------------------------------
+// G4 の境界（[boundaries]。build-12）
+
+function boundaries(external: string[], internal: string[] = []): string {
+  const list = (paths: string[]) => `[${paths.map((path) => `"${path}"`).join(", ")}]`;
+  return `\n[boundaries]\nexternal = ${list(external)}\ninternal = ${list(internal)}\n`;
+}
+
+const PUBLIC_DELTA = "# 設計差分\n\n- `src/api/handler.ts` を変える\n";
+
+test("G4: 外との境界に触れる設計は express でも同意で、args に境界の変更が載る", (t) => {
+  const directory = workspace(t, { committed: declaration(HIGH) + boundaries(["src/api/**"]) });
+  const g4 = driveTo(directory, ["G4", "build-split"], { options: ["--harm", "中", "--paths", "src/api/**"], delta: PUBLIC_DELTA });
+  assert.deepEqual([g4.step, g4.approval], ["G4", "consent"]);
+  assert.match(g4.approvalReason ?? "", /外との境界（src\/api\/\*\*）/);
+  assert.deepEqual(g4.args?.["boundaries"], {
+    declared: true,
+    external: [{ boundary: "src/api/**", touched: ["src/api/handler.ts"] }],
+    internal: [],
+  });
+});
+
+test("G4: [app] が無く [boundaries] だけのワークスペースでも同意になり、args が揃う", (t) => {
+  const directory = workspace(t, { committed: boundaries(["src/api/**"]) });
+  const g4 = driveTo(directory, ["G4", "build-split"], { options: [], delta: PUBLIC_DELTA });
+  assert.deepEqual([g4.step, g4.approval], ["G4", "consent"]);
+  assert.deepEqual(g4.args?.["undeclaredAreas"], []);
+  assert.deepEqual((g4.args?.["boundaries"] as { external: unknown[] }).external.length, 1);
+});
+
+test("G4: 内部の境界にだけ触れるなら確認のままで、express では省ける", (t) => {
+  const standard = workspace(t, { profile: "standard", committed: boundaries([], ["src/auth/**"]) });
+  const g4 = driveTo(standard, ["G4"], { options: [], delta: "# 設計差分\n\n- `src/auth/session.ts`\n" });
+  assert.deepEqual([g4.step, g4.approval], ["G4", "confirm"]);
+  assert.deepEqual(g4.args?.["boundaries"], {
+    declared: true,
+    external: [],
+    internal: [{ boundary: "src/auth/**", touched: ["src/auth/session.ts"] }],
+  });
+  const express = workspace(t, { committed: boundaries([], ["src/auth/**"]) });
+  const after = driveTo(express, ["G4", "build-split"], { options: [], delta: "# 設計差分\n\n- `src/auth/session.ts`\n" });
+  assert.equal(after.step, "build-split");
+});
+
+test("G4: 作業ツリーで外との境界を消しても、基準の境界で同意になる", (t) => {
+  const directory = workspace(t, { committed: boundaries(["src/api/**"]), working: "" });
+  const g4 = driveTo(directory, ["G4", "build-split"], { options: [], delta: PUBLIC_DELTA });
+  assert.deepEqual([g4.step, g4.approval], ["G4", "consent"]);
+});
+
+test("G4: 作業ツリーだけの境界の宣言で基準を読めなければ、同意に倒す", (t) => {
+  const directory = workspace(t, { noOrigin: true, working: boundaries([], ["src/auth/**"]) });
+  const g4 = driveTo(directory, ["G4", "build-split"], { options: [], delta: "# 設計差分\n\n- `src/billing/invoice.ts`\n" });
+  assert.deepEqual([g4.step, g4.approval], ["G4", "consent"]);
+  assert.match(g4.approvalReason ?? "", /基準の \[boundaries\] を確かめられず/);
+  assert.ok(g4.notices?.some((notice) => notice.includes("G4 を同意にしています")), JSON.stringify(g4.notices));
+});
+
+test("G4: 基準の [boundaries] だけが壊れていれば、[app] の上限は読めたまま G4 を同意にする", (t) => {
+  const directory = workspace(t, {
+    committed: `${declaration(HIGH)}\n[boundaries]\nexternal = ["src/api/**"]\nunknown = ["x"]\n`,
+    working: declaration(HIGH),
+  });
+  const g3 = toG3(directory, ["--harm", "中", "--paths", "src/api/**"]);
+  assert.equal(g3.step, "adr", "[app] は読めるので、G3 は上限以内で省ける（incomplete にしない）");
+  const g4 = driveTo(directory, ["G4", "build-split"], { delta: "# 設計差分\n" });
+  assert.deepEqual([g4.step, g4.approval], ["G4", "consent"]);
+  assert.ok(g4.notices?.some((notice) => notice.includes("[boundaries] を読めません")), JSON.stringify(g4.notices));
+});
+
+test("G4: 外との境界と重い領域の裏取りが両方あれば、args に両方が並ぶ", (t) => {
+  const directory = workspace(t, { committed: declaration(HIGH, [BILLING]) + boundaries(["src/api/**"]) });
+  const g4 = driveTo(directory, ["G4", "build-split"], {
+    options: ["--harm", "中", "--paths", "src/api/**"],
+    delta: "# 設計差分\n\n- `src/api/handler.ts` と `src/billing/invoice.ts`\n",
+  });
+  assert.equal(g4.approval, "consent");
+  assert.equal((g4.args?.["boundaries"] as { external: unknown[] }).external.length, 1);
+  assert.deepEqual(g4.args?.["undeclaredAreas"], [{ name: "billing", touched: ["src/billing/invoice.ts"] }]);
+});
+
+test("G4: 宣言が無ければ境界は declared: false で、判定も notices も従来どおり", (t) => {
+  const directory = workspace(t, { profile: "standard" });
+  const g4 = driveTo(directory, ["G4"], { options: [], delta: PUBLIC_DELTA });
+  assert.equal(g4.approval, "confirm");
+  assert.deepEqual(g4.args?.["boundaries"], { declared: false, external: [], internal: [] });
+  assert.deepEqual(g4.notices, []);
+});
+
+test("G4: 境界を宣言していて ADR を読めなければ同意に倒し、notices に出す", (t) => {
+  const directory = workspace(t, { profile: "standard", committed: boundaries(["src/api/**"]) });
+  const before = driveTo(directory, ["architecture-review", "G4"], { options: [], delta: "# 設計差分\n" });
+  writeFileSync(join(directory, "docs/hikyaku/document-guide.md"), "壊れたガイド\n");
+  const g4 = before.step === "architecture-review" ? report(directory, "architecture-review", "--result", "done") : next(directory);
+  assert.deepEqual([g4.step, g4.approval], ["G4", "consent"]);
+  assert.ok(g4.notices?.some((notice) => notice.includes("外との境界を照合できない")), JSON.stringify(g4.notices));
+});
+
+test("G4: 境界を宣言していなければ、ADR を読めなくても境界を理由に同意にしない", (t) => {
+  const directory = workspace(t, { profile: "standard" });
+  const before = driveTo(directory, ["architecture-review", "G4"], { options: [], delta: "# 設計差分\n" });
+  writeFileSync(join(directory, "docs/hikyaku/document-guide.md"), "壊れたガイド\n");
+  const g4 = before.step === "architecture-review" ? report(directory, "architecture-review", "--result", "done") : next(directory);
+  assert.equal(g4.approval, "confirm");
+  assert.doesNotMatch(`${g4.approvalReason ?? ""}${JSON.stringify(g4.notices)}`, /境界/);
+});
+
+test("gate brief G4: 境界の変更と裏取りを JSON で出し、テキストは外と内を分ける", (t) => {
+  const directory = workspace(t, { committed: boundaries(["src/api/**"], ["src/auth/**"]) });
+  driveTo(directory, ["G4", "build-split"], { options: [], delta: "# 設計差分\n\n- `src/api/handler.ts` と `src/auth/session.ts`\n" });
+  const json = JSON.parse(succeeds(directory, "gate", "brief", "G4", "architect", "001", "--json"));
+  assert.deepEqual(json.boundaries.external, [{ boundary: "src/api/**", touched: ["src/api/handler.ts"] }]);
+  assert.deepEqual(json.boundaries.internal, [{ boundary: "src/auth/**", touched: ["src/auth/session.ts"] }]);
+  assert.deepEqual([json.undeclaredAreas, json.verified], [[], true]);
+  const text = succeeds(directory, "gate", "brief", "G4", "architect", "001");
+  assert.match(text, /外との境界の変更（同意が要る）\n\n- src\/api\/\*\*: src\/api\/handler\.ts/);
+  assert.doesNotMatch(text, /全文/);
+  assert.match(succeeds(directory, "gate", "brief", "G4", "architect", "001", "--full"), /design-delta\.md（全文）/);
+});
