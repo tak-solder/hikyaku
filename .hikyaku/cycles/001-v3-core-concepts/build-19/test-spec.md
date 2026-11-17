@@ -38,11 +38,11 @@
 - When: `isLastBuild(cycleDirectory, "build-03")` を呼ぶ
 - Then: false が返る
 
-### isLastBuild: 自分の PR 列が埋まっていても判定には使わない（解釈）
+### isLastBuild: 自分の PR 列が埋まっていても最後と判定する
 - 対応: —
-- Given: build-01 の PR 列が空、build-02 が `#12`、build-03 が `#13`
+- Given: build-01 が `#11`、build-02 が `#12`、build-03 が `#13`（すべて埋まっている）
 - When: `isLastBuild(cycleDirectory, "build-03")` を呼ぶ
-- Then: false が返る（build-01 が埋まっていないため）
+- Then: true が返る（判定に使うのは build-03 以外の PR 列だけ）
 
 ### isLastBuild: build-NN でない単位は false
 - 対応: —
@@ -192,7 +192,7 @@
 - 対応: —
 - Given: 事後同意が有効、`HIKYAKU_CONDUCTOR_CHILD` 未設定、build-01・02 の PR 列が埋まっている、build-03 が pr の手前。記録には `architect.1-aaaa`（when=merge@architect）だけがある
 - When: `step next builder 001 build-03 --json` を呼ぶ
-- Then: build-18 までと同じ評価になり、args.items に `architect.1-aaaa` は入らない（ゲートが出るならその単位の対象だけ）
+- Then: 同意ゲートは現れず次の1手は `pr`（子でないセッションの対象は when=merge@build-03 の事項だけで、`architect.1-aaaa` は build-03 の対象にならない）
 
 ## consentProblem（pr の accepts）
 
@@ -402,11 +402,11 @@
 - When: `ledger decide build-02 build-02.3-llll 001 --decision decided --by supervisor --input "ログの保持を延ばす" --loses "保持を短くして漏えい時の範囲を狭める利点"` を呼ぶ
 - Then: build-02 の decisions.jsonl に、決定（token=t-001）と、type=risk・who=user・when=merge@build-02・harm=高・premises=[app.exposure]・loses="保持を短くして漏えい時の範囲を狭める利点"・ask=questions・source=supervisor-answer・token=t-001 の事項が書かれる
 
-### decide: 同時に書く risk の事項の要約は監督の答えと事項の要約から作る
+### decide: 同時に書く risk の事項の要約は監督の答えと事項の要約から作る（解釈）
 - 対応: —
 - Given: 上と同じ環境で、`build-02.3-llll` の要約が「ログの保持期間」、`HIKYAKU_ANSWER_CHOICE` が無い
 - When: 上の decide を呼ぶ
-- Then: risk の事項の summary が「監督の答え（questions / …）で受け入れたリスク: ログの保持期間」の形になる（{choice} の欄の値は実装の既定に従う）
+- Then: risk の事項の summary が「監督の答え（questions）で受け入れたリスク: ログの保持期間」になる（choice が無ければ問いの ID だけ。choice があれば「questions / proceed」の形）
 
 ### decide: DEFER でない監督の答えには risk の事項を書かない（解釈）
 - 対応: —
@@ -416,9 +416,9 @@
 
 ### decide: supervisor-answer の risk は G3・G4 の deferred の判定に数えない
 - 対応: —
-- Given: 事後同意が有効、architect の子。記録に source=supervisor-answer の risk（when=merge@architect）だけがあり、source=step-report の事項は無い
-- When: 子の環境で `step next architect 001 --json` を呼び、G3 の位置にいる
-- Then: G3 の承認の種類は `consent` のまま（supervisor-answer の事項で確認に変わらない）
+- Given: 事後同意が有効、architect の子。options を `--harm 高 --paths src/api/**` で報告して step report が積んだ risk（source=step-report・ask=G3）を、ユーザーが rejected にした。そのうえで、ask=G3 の source=supervisor-answer の risk（when=merge@architect、前提 app.exposure）を記録に足した
+- When: 子の環境で `step next architect 001 --json` を呼ぶ（G3 の位置）
+- Then: G3 の承認の種類は `consent`（その場の同意）のまま。supervisor-answer の事項は、同意を遅らせる根拠（source=step-report の事項）に数えない
 
 ### decide: 同時に書いた risk の事項は最後のビルドの同意ゲートに載る
 - 対応: US-15.4, US-21.1
@@ -502,7 +502,7 @@
 
 ### launch: 宣言にある area を前提に挙げた上限を超える申告は受け付ける
 - 対応: —
-- Given: 事後同意が有効、宣言に重い領域 `billing`、build-02 の子が s-02 で止まっている
+- Given: 事後同意が有効、全体の上限は「中まで」、`[[app.areas]]` に重い領域 `billing`（paths `src/billing/**`）が宣言されている。重い領域を前提に挙げた申告は、害が中でも上限を超えるとみなす（既存の `exceedsCeilingFor`。build-07 のテスト「重い領域を前提に挙げた申告を害が中でも拒み」と同じ判定）。build-02 の子が s-02 で止まっている
 - When: `--ask questions --harm 中 --premises area:billing` で launch を呼ぶ
 - Then: 終了コード 0 で `HIKYAKU_ANSWER_DEFER=1` が入る
 
@@ -595,3 +595,17 @@
 - Given: 事後同意が有効、build-03 が最後のビルドの子、architect の decisions.jsonl が壊れている
 - When: 監督の childStep で現在地を評価する
 - Then: `consent` を現在地とする（子の step next と同じ）
+
+## ledger premises（最後の PR の宣言の変更）
+
+### premises: conductor ブランチで変えた宣言と、それを拠り所にした全フェーズの受け入れが PR の節に載る
+- 対応: US-20.9
+- Given: main の `[app]` は `exposure = "internal"`。conductor ブランチ（main から分岐）で `exposure = "personal"` に変えてコミットした。記録には architect の risk `architect.1-aaaa`（premises `app.exposure`）と build-01 の risk `build-01.1-bbbb`（premises `app.exposure`）、build-01 の risk `build-01.2-cccc`（premises `app.data`）がある
+- When: 最後のビルドのブランチで `ledger premises --changed-from main --format pr` を呼ぶ
+- Then: 出力に変わったキー `app.exposure` と、その下に `architect.1-aaaa`・`build-01.1-bbbb` が並ぶ。`build-01.2-cccc` は並ばない
+
+### premises: 宣言を変えていなければ節は空
+- 対応: US-20.9
+- Given: conductor ブランチの `[app]` が main と同じ
+- When: `ledger premises --changed-from main --format pr` を呼ぶ
+- Then: 出力が空（最後の PR の本文に節を貼らない）
