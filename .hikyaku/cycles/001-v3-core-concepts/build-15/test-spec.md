@@ -158,7 +158,25 @@
 - When: `step next architect 001` で adr の directive を得る
 - Then: `args.designChoiceGate` が true
 
+### designChoiceGate: options の done のあと、上限以内なら adr に false を渡す
+- 対応: US-10.3
+- Given: 宣言の上限が中、重い領域は `src/auth/**` だけ、profile は express、options の done を `--harm 中 --paths "src/api/**"` で記録済み
+- When: `step next architect 001` で adr の directive を得る
+- Then: G3 は返らず、adr の `args.designChoiceGate` が false
+
 ## scripts/lib/steps/architect.mts（G4 の consent・args: undeclaredAreas）
+
+### G4 consent: 基準の宣言を読めない（incomplete）なら申告が当たらなくても同意
+- 対応: US-13.3
+- Given: origin/main のルート設定の `[app]` が壊れている。作業ツリーには正しい宣言（上限は高、重い領域 `auth`）があり、profile は express。options の done は `--harm 中 --paths "src/api/**"`、design-delta.md は `src/api/` にしか触れない
+- When: `step next architect 001` で G4 に進む
+- Then: G4 が `approval: "consent"` で返る
+
+### G4 consent: 申告に `--paths` が無い回は、申告を空とみなして裏取りする
+- 対応: US-13.3
+- Given: 宣言の上限が高、重い領域 `auth`（`src/auth/**`）。options の done を `--harm 中` だけで記録し（G3 は申告の欠けで同意として承認済み）、design-delta.md が `` `src/auth/session.ts` `` に触れる。profile は express
+- When: `step next architect 001` で G4 に進む
+- Then: G4 が `approval: "consent"` で返り、`args.undeclaredAreas` に `auth` が入る
 
 ### G4 consent: design-delta.md が G3 の申告に無い重い領域に触れれば同意
 - 対応: US-13.3
