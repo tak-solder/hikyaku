@@ -229,6 +229,120 @@ function isFixed(id: string): boolean {
   return ask !== undefined && FIXED_CATEGORIES.includes(ask.category);
 }
 
+// ---------------------------------------------------------------------------
+// 監督が答えてよい値（安全側の既定）— US-15.1・US-15.2
+
+/** 監督が答えてよい問いの、答えの値の表。safe に無い値を監督が渡すと conductor launch が拒む */
+export interface SafeAnswer {
+  /** 答えの値と、その意味（監督とユーザーに示す） */
+  choices: Record<string, string>;
+  /** 監督が選んでよい値（安全側） */
+  safe: string[];
+  /** スクリプトが決めた既定（推奨案・安全な分割・差し戻し）。監督が判断に迷ったときに選ぶ値 */
+  default: string;
+}
+
+/**
+ * 確認ゲートは承認と差し戻しの両方が安全側。承認は確認として監督に委ねた範囲で（同意の回は handler が
+ * user になり、監督は答えない）、差し戻しは受け入れを増やさない。既定は差し戻し
+ */
+const CONFIRM_ANSWER: SafeAnswer = {
+  choices: { approved: "承認する", rejected: "差し戻す（フィードバックを返す）" },
+  safe: ["approved", "rejected"],
+  default: "rejected",
+};
+
+export const SAFE_ANSWERS: Record<string, SafeAnswer> = {
+  ...Object.fromEntries(["G2", "G4", "G6", "G7", "G8", "G10", "docs-link"].map((id) => [id, CONFIRM_ANSWER])),
+  G3: {
+    choices: { recommended: "推奨案を選ぶ", other: "推奨以外の案を選ぶ", rejected: "差し戻す（案を作り直させる）" },
+    safe: ["recommended", "rejected"],
+    default: "recommended",
+  },
+  retrospective: {
+    choices: { run: "振り返りを実施する", skip: "振り返りを省く" },
+    safe: ["run"],
+    default: "run",
+  },
+  "design-conflict": {
+    choices: { return: "architect に差し戻す", conform: "設計に合わせて要件を改める", adjust: "ビルドの中で設計を改める" },
+    safe: ["return"],
+    default: "return",
+  },
+  "unsafe-split": {
+    choices: { merge: "上限を超えたまま1ビルドにまとめる", redesign: "設計に戻る", unsafe: "安全でない分割を選ぶ" },
+    safe: ["merge"],
+    default: "merge",
+  },
+  "review-findings": {
+    choices: { fix: "今修正する", "new-build": "新ビルド化して後で対応する", proceed: "そのまま進める（リスクの申告が要る）" },
+    safe: ["fix", "new-build", "proceed"],
+    default: "fix",
+  },
+};
+
+export function safeAnswerOf(id: string): SafeAnswer | undefined {
+  return SAFE_ANSWERS[id];
+}
+
+/** リスクの申告（--harm か --no-risk）が要りうる問い。questions は常に、review-findings は proceed のとき */
+const RISK_DECLARING_ASKS = ["questions", "review-findings"];
+
+/**
+ * 監督の答えにリスクの申告が要るか。conductor launch と ledger decide が同じ関数を使い、監督と子の判定を割らない。
+ * 付け忘れで上げる向きと逆に倒れないため、受け入れうる答えには申告を必須にする
+ */
+export function needsRiskDeclaration(ask: string | undefined, choice: string | undefined): boolean {
+  if (ask === "questions") return true;
+  return ask === "review-findings" && choice === "proceed";
+}
+
+/** 子に渡す答えの環境変数（conductor launch だけが組み立て、ledger decide / object が読む） */
+export const ANSWER_ENV = {
+  from: "HIKYAKU_ANSWER_FROM",
+  items: "HIKYAKU_ANSWER_ITEMS",
+  ask: "HIKYAKU_ANSWER_ASK",
+  choice: "HIKYAKU_ANSWER_CHOICE",
+  risk: "HIKYAKU_ANSWER_RISK",
+  token: "HIKYAKU_ANSWER_TOKEN",
+} as const;
+
+/** ユーザーに上げる問いを記録させる固定文の作業単位（builder は build-NN、architect は architect、close-cycle は close） */
+export function escalateUnit(phase: ConductorPhase, buildId: string | undefined): string {
+  if (phase === "close-cycle") return "close";
+  if (phase === "architect") return "architect";
+  return `build-${(buildId ?? "").padStart(2, "0")}`;
+}
+
+/**
+ * ユーザーに上げる問いを、子に記録させる固定文（conductor launch --escalate）。子は答えを待たずに記録して
+ * blocked で終え、監督は依存しないビルドを先に進める（ADR conductor-runs-to-end）
+ */
+export function escalateMessage(unit: string, cycle: string, ask: string): string {
+  return [
+    `この問い（${ask}）はユーザーに上げます。答えは後で、このセッションの再開か新しい起動で届きます。`,
+    "次の順に行って終えてください。承認の後のステップ（実装など）は先に進めないでください。",
+    "",
+    `1. 問いを記録する: hikyaku ledger open ${unit} ${cycle} --type question --who user --when now --ask ${ask} --summary "<問いの本文の要約>"`,
+    "   問いの本文・選択肢・推奨（スキルが推奨を示す問いなら）は、記録先のファイル（builder なら build-NN/questions.md、",
+    "   architect なら design/design-questions.md）に「未回答（ユーザーが決める）」として書く",
+    "2. 成果物と記録をコミットして push する",
+    "3. 本文の行頭に `waiting: <記録した ID>` の行を置いた blocked ブロックで終える（行き詰まりの報告の節は要らない）",
+  ].join("\n");
+}
+
+/** --closes の事項をユーザーの答えで閉じる固定文。子が ID を知らない新しい起動でも閉じられるよう、回答の先頭に置く */
+export function closesMessage(unit: string, cycle: string, items: string[], answer: string): string {
+  const input = answer.replace(/\s+/g, " ").trim().replace(/"/g, "'");
+  return [
+    "次の事項はユーザーの答えで閉じます。続きに進む前に、それぞれを記録してください。",
+    ...items.map((id) => `- hikyaku ledger decide ${unit} ${id} ${cycle} --decision decided --by user --input "${input}"`),
+    "",
+    "ユーザーの答え:",
+    answer,
+  ].join("\n");
+}
+
 export interface ResolvedAsk {
   id: string;
   category: AskCategory;
@@ -239,6 +353,10 @@ export interface ResolvedAsk {
   source: "default" | "escalate" | "delegate" | "fixed";
   /** profile や設定で無効なら false（その問いは出ない） */
   enabled: boolean;
+  /** 監督が答えてよい値の表（自由文で答える問いは null） */
+  safe: SafeAnswer | null;
+  /** 監督の答えにリスクの申告（--harm か --no-risk）が要りうる問いか */
+  declaresRisk: boolean;
 }
 
 /**
@@ -264,6 +382,8 @@ export function resolveAsk(
     categoryLabel: CATEGORY_LABELS[category],
     where: ask.where,
     enabled: approval !== undefined || ask.enabledWhen === undefined ? true : ask.enabledWhen(settings),
+    safe: safeAnswerOf(id) ?? null,
+    declaresRisk: RISK_DECLARING_ASKS.includes(id),
   };
 
   if (FIXED_CATEGORIES.includes(category)) {
@@ -295,14 +415,26 @@ export interface ParsedResult {
   costUsd: number | null;
   /** violation / error の理由 */
   reason?: string;
+  /** 答えを待つ blocked が指す、ユーザーの答えを待つ事項の ID（本文の行頭の waiting: <id>） */
+  waiting?: string[];
 }
+
+export interface ParseOptions {
+  /**
+   * 本文の waiting: <id> が、実在する未決のユーザーの事項（question・who=user・when=now）か。
+   * 渡さなければ waiting を信じず、従来どおり行き詰まりの報告を検査する
+   */
+  isWaitingItem?: (id: string) => boolean;
+}
+
+const WAITING_LINE = /^waiting:\s*(\S+)\s*$/gm;
 
 const BLOCK_PATTERN =
   /^<hikyaku-(gate|done|blocked)((?:\s+[a-z]+="[^"]*")*)\s*>\n?([\s\S]*?)\n?^<\/hikyaku-\1>\s*$/gm;
 const ATTRIBUTE_PATTERN = /([a-z]+)="([^"]*)"/g;
 
 /** 最終出力の末尾に置かれたブロックを1つ取り出す */
-export function parseFinalText(text: string): Omit<ParsedResult, "sessionId" | "costUsd"> {
+export function parseFinalText(text: string, options: ParseOptions = {}): Omit<ParsedResult, "sessionId" | "costUsd"> {
   const blocks = [...text.matchAll(BLOCK_PATTERN)];
   const tail = text.trimEnd().slice(-2000);
 
@@ -335,6 +467,13 @@ export function parseFinalText(text: string): Omit<ParsedResult, "sessionId" | "
     return { outcome: "gate", id, body };
   }
   if (kind === "done") return { outcome: "done", next: attributes.get("next") ?? "", body };
+  // 答えを待つ blocked（ユーザーに上げる問いを記録して終えた）は行き詰まりではないので検査から外す。
+  // 外すのは、指す ID がすべて記録に裏取りできたときだけ（1つでも指す先が無ければ従来どおり検査する）
+  const waiting = [...body.matchAll(WAITING_LINE)].map((m) => m[1] as string);
+  const isWaitingItem = options.isWaitingItem;
+  if (waiting.length > 0 && isWaitingItem !== undefined && waiting.every((id) => isWaitingItem(id))) {
+    return { outcome: "blocked", body, waiting };
+  }
   // blocked はユーザーに上げる行き詰まりの報告。欠けていれば violation にして、書き直させるかユーザーに上げる（US-3.4）
   const check = checkEscalation(body);
   if (!check.ok) return { outcome: "violation", body, reason: describeEscalationProblems(check.problems) };
@@ -347,7 +486,7 @@ export function parseFinalText(text: string): Omit<ParsedResult, "sessionId" | "
  * 予算超過やターン上限で終わった場合は result が無いか、途中の出力になる。
  * それを規約違反と混同しないよう、is_error / subtype を先に見る
  */
-export function parseResultJson(raw: string): ParsedResult {
+export function parseResultJson(raw: string, options: ParseOptions = {}): ParsedResult {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -388,7 +527,7 @@ export function parseResultJson(raw: string): ParsedResult {
     };
   }
 
-  return { ...parseFinalText(result), sessionId, costUsd };
+  return { ...parseFinalText(result, options), sessionId, costUsd };
 }
 
 // ---------------------------------------------------------------------------

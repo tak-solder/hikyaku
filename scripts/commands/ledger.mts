@@ -1,11 +1,14 @@
-/** ledger open / decide / object / list / show / consent-list / pr-section / return-draft —未決事項と決定の記録（decisions.jsonl） */
+/** ledger open / decide / object / list / show / consent-list / pr-section / answers / return-draft —未決事項と決定の記録（decisions.jsonl） */
 
 import { flagString, type ParsedArgs } from "../lib/args.mts";
 import { ASK_IDS } from "../lib/conductor.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { relative } from "node:path";
 import {
+  answerFields,
+  answerProblem,
   assertDecider,
+  childAnswer,
   consentDecided,
   consentItemsOf,
   cycleTimeline,
@@ -225,6 +228,14 @@ register({
     "ユーザーが決める事項（who=user）は --by user でしか決められません。--by user には --input（ユーザーの答え）が必須です。",
     "AI・監督が決める事項は、who と同じ決め手（ai:<フェーズ> は同じフェーズ）か、ユーザーが決められます。",
     "--by ai:<フェーズ> は、決めた作業単位 <phase> と同じフェーズだけです。決める人を付け替える手順はありません。",
+    "",
+    "conductor の子（HIKYAKU_CONDUCTOR_CHILD=1）では、答えの出どころで書ける決定を縛ります（--dry-run でも同じ）:",
+    "  --by user         ユーザーの答えで再開された子（HIKYAKU_ANSWER_FROM=user）が、launch の --closes で渡された",
+    "                    ID（HIKYAKU_ANSWER_ITEMS）の事項にだけ書けます",
+    "  --by supervisor   監督の答えで再開された子（HIKYAKU_ANSWER_FROM=supervisor）だけが書けます。問い・答えの値・",
+    "                    リスクの申告・起動の印（ask・choice・risk・token）を環境変数から決定に必ず残します。",
+    "                    リスクの申告が要る答え（questions、review-findings の proceed）で申告が無ければ拒みます",
+    "答えの出どころ（from）も決定に残します。子でないセッションは検査せず、欄も足しません。",
   ].join("\n"),
   writes: true,
   options: ["decision", "by", "input", "accepts", "reason"],
@@ -244,6 +255,10 @@ register({
     const input = flagString(args, "input");
     const accepts = flagString(args, "accepts");
     const reason = flagString(args, "reason");
+    // conductor の子では、答えの出どころ（launch が置いた環境変数）で書ける決定を縛る（--dry-run でも同じ検査）
+    const answer = childAnswer();
+    const problem = answerProblem(by, id, answer);
+    if (problem !== undefined) throw new HikyakuError(problem);
     const ledger = readLedger(opened.cycle.directory);
     const record: DecideRecord = {
       record: "decide",
@@ -255,6 +270,7 @@ register({
       ...(input === undefined ? {} : { input }),
       ...(accepts === undefined ? {} : { accepts }),
       ...(reason === undefined ? {} : { reason }),
+      ...answerFields(by, answer),
       ...meta(),
     };
     const dryRun = args.flags.get("dry-run") === true;
@@ -279,7 +295,7 @@ register({
   name: "ledger object",
   summary: "ゲートや問いでの異議と、それへのユーザーの決定を対で記録する",
   usage:
-    "hikyaku ledger object <phase> [<cycle>] --summary <text> --basis <text> --loses <text> --harm 高|中 (--decision consented|decided --input <ユーザーの答え> [--accepts <text>] | --defer) [--premises <ref,...>] [--ask <id>] [--dry-run] [--json]",
+    "hikyaku ledger object <phase> [<cycle>] --summary <text> --basis <text> --loses <text> --harm 高|中 (--decision consented|decided --input <ユーザーの答え> [--accepts <text>] [--answers <id>] | --defer) [--premises <ref,...>] [--ask <id>] [--dry-run] [--json]",
   details: [
     "ユーザーの選択が、その人自身の宣言・記録・前提と食い違うときに唱えた異議（objection）と、ユーザーの決定を",
     "その作業単位の decisions.jsonl に対で書きます。好みの違いには異を唱えません。",
@@ -292,6 +308,9 @@ register({
     "  --accepts   ユーザーが受け入れると自分の言葉で書いたこと",
     "  --premises  拠り所にした外の前提の参照（ledger open と同じ書式）",
     "  --ask       問いの ID（ゲートの ID か conductor の問いの ID）",
+    "  --answers   決定が閉じる、ユーザーの答えを待っていた事項の ID。conductor の子（HIKYAKU_CONDUCTOR_CHILD=1）の",
+    "              決定つきの記録では必須で、ユーザーの答えで再開されたとき（launch の --from user --closes）に渡された",
+    "              ID だけを受け付けます。子でなければ任意で、検査しません",
     "",
     "害が高で consented なら --accepts と --premises が必須です。害が中でも、AI に任せてよい上限（[app] の宣言）を",
     "超える異議は高と同じに扱い、consented には --accepts と --premises が要ります（事後同意が有効かに関わらず）。",
@@ -307,7 +326,7 @@ register({
     "記録したときのその作業単位の現在のステップを step に残すので、ゲートを提示している間に呼んでください。",
   ].join("\n"),
   writes: true,
-  options: ["summary", "basis", "loses", "harm", "decision", "input", "accepts", "premises", "ask", "defer"],
+  options: ["summary", "basis", "loses", "harm", "decision", "input", "accepts", "premises", "ask", "defer", "answers"],
   maxOperands: 2,
   run: ({ args, operands }) => {
     const opened = openUnit(args, operands[0], operands[1]);
@@ -324,6 +343,8 @@ register({
       throw new HikyakuError(`--ask の値が不正です: ${ask}`, "conductor の問いの ID（hikyaku conductor asks）か、ゲートの ID を指定してください。");
     }
     const exceedsCeiling = exceedsCeilingFor(effectiveDeclaration(opened.ctx.config), harm, premises);
+    const answer = childAnswer();
+    const answersId = flagString(args, "answers");
 
     let decision: Decision | undefined;
     let input: string | undefined;
@@ -342,6 +363,18 @@ register({
       }
       input = required(args, "input");
       accepts = flagString(args, "accepts");
+      // 異議の事項はその場で作るので ID が前もって無い。conductor の子では、ユーザーの答えで閉じる待ちの事項（--answers）を
+      // 示させ、その ID がユーザーの答えた事項（HIKYAKU_ANSWER_ITEMS）にあるときだけ書ける
+      if (answer !== undefined) {
+        if (answersId === undefined || answersId.trim() === "") {
+          throw new HikyakuError(
+            "conductor の子では、決定つきの異議に --answers（ユーザーの答えで閉じる待ちの事項の ID）を添えてください",
+            "ユーザーに上げる問いなら、ledger open で記録して blocked で終えてください。",
+          );
+        }
+        const problem = answerProblem("user", answersId.trim(), answer);
+        if (problem !== undefined) throw new HikyakuError(problem);
+      }
       if ((harm === "高" || exceedsCeiling) && decision === "consented") {
         const what = harm === "高" ? "害が高" : "AI に任せてよい上限を超える";
         if (accepts === undefined || accepts.trim() === "") {
@@ -386,6 +419,8 @@ register({
       by: "user",
       ...(input === undefined ? {} : { input }),
       ...(accepts === undefined ? {} : { accepts }),
+      ...(answersId === undefined || answersId.trim() === "" ? {} : { answers: answersId.trim() }),
+      ...answerFields("user", answer),
       ...meta(),
     };
     const dryRun = args.flags.get("dry-run") === true;
@@ -704,6 +739,70 @@ register({
     const section = prSection(readLedger(opened.cycle.directory), cycleTimeline(opened.ctx.config, opened.cycle), opened.phase);
     const { markdown, ...ids } = section;
     emit({ phase: opened.phase, cycle: opened.cycle.name, section: markdown, ...ids }, () => markdown);
+  },
+});
+
+// ---------------------------------------------------------------------------
+// 監督が答えた問い（build-07）
+
+/** 監督の答えのリスクの申告の表示。申告の無い決定（このビルドより前の記録など）は何も示さない */
+function riskText(record: DecideRecord): string | undefined {
+  if (record.risk === undefined) return undefined;
+  if (record.risk.kind === "none") return "リスクなしと申告";
+  return `害 ${record.risk.harm}・前提 ${record.risk.premises.join(", ") || "（なし）"}`;
+}
+
+/** サイクル全体の監督の決定（by=supervisor）。事項がこのツリーに無い決定も含め、記録順 */
+function supervisorAnswers(ledger: Ledger): { record: DecideRecord; summary: string | undefined }[] {
+  const answers = [
+    ...ledger.items.flatMap((item) => item.decisions.map((record) => ({ record, summary: item.open.summary as string | undefined }))),
+    ...ledger.orphans.map((record) => ({ record, summary: undefined })),
+  ].filter((entry) => entry.record.by === "supervisor");
+  return answers.sort((a, b) => (a.record.at < b.record.at ? -1 : a.record.at > b.record.at ? 1 : 0));
+}
+
+function answersSection(answers: { record: DecideRecord; summary: string | undefined }[]): string {
+  if (answers.length === 0) return "";
+  const lines = answers.map(({ record, summary }) => {
+    const asked = [record.ask, record.choice].filter((part) => part !== undefined).join(" / ");
+    const parts = [
+      `- ${record.id}${asked === "" ? "" : `（${asked}）`}: ${summary ?? "（事項がこのツリーにありません）"}`,
+      ...(record.input === undefined ? [] : [`答え「${record.input}」`]),
+      ...(riskText(record) === undefined ? [] : [riskText(record) as string]),
+    ];
+    return parts.join(" — ");
+  });
+  return ["## 監督が答えた問い", "", ...lines].join("\n");
+}
+
+register({
+  name: "ledger answers",
+  summary: "サイクル全体で監督が答えた問い（by=supervisor の決定）を、問いとリスクの申告つきで並べる",
+  usage: "hikyaku ledger answers [<cycle>] [--format text|pr] [--json]",
+  details: [
+    "作業ツリーのサイクルの全 decisions.jsonl から、監督の決定を記録順に並べます。書き込みはしません。",
+    "conductor の最後の PR の本文に貼る「監督が答えた問い」の節は、--format pr の出力をそのまま使います（監督が書き写さない）。",
+    "",
+    "リスクの申告は、子が監督の答えを記録したときに conductor launch の環境変数から決定に残したものです。",
+    "--no-risk で答えた問いは「リスクなしと申告」、害と前提を申告した問いはその値を示します。",
+    "申告の欄の無い決定（このビルドより前の記録など）は、申告を示さずにそのまま出します。",
+  ].join("\n"),
+  options: ["format"],
+  maxOperands: 1,
+  run: ({ args, operands }) => {
+    const format = flagString(args, "format") ?? "text";
+    if (format !== "text" && format !== "pr") throw new HikyakuError(`--format の値が不正です: ${format}`, "使用できる値: text / pr");
+    const opened = openCycle(args, operands[0]);
+    const answers = supervisorAnswers(readLedger(opened.context.directory));
+    const section = answersSection(answers);
+    emit(
+      {
+        cycle: opened.context.name,
+        answers: answers.map(({ record, summary }) => ({ ...record, summary: summary ?? null })),
+        ...(format === "pr" ? { section } : {}),
+      },
+      () => (format === "pr" ? section : section === "" ? `サイクル ${opened.context.name} に監督が答えた問いはありません。` : section),
+    );
   },
 });
 

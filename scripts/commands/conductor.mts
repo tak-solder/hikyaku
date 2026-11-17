@@ -4,8 +4,15 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { flagBoolean, flagString, type ParsedArgs } from "../lib/args.mts";
+import { flagBoolean, flagList, flagString, type ParsedArgs } from "../lib/args.mts";
 import {
+  ANSWER_ENV,
+  type Approval,
+  ASK_IDS,
+  closesMessage,
+  escalateMessage,
+  escalateUnit,
+  needsRiskDeclaration,
   CATEGORY_LABELS,
   collectTags,
   CONDUCTED_SKILLS,
@@ -37,6 +44,17 @@ import { asConductorChild } from "../lib/steps/consent.mts";
 import { directiveOf, locateSession } from "../lib/steps/locate.mts";
 import { normalizeBuildId } from "../lib/tasklist.mts";
 import type { ResolvedConfig } from "../lib/config.mts";
+import {
+  formatRiskDeclaration,
+  HARMS,
+  isWaitingItem,
+  parsePremises,
+  readLedger,
+  type Ledger,
+  type RiskDeclaration,
+} from "../lib/ledger.mts";
+import { effectiveDeclaration, exceedsCeilingFor, type Harm } from "../lib/risk.mts";
+import { deriveWaiting, waitingLines } from "../lib/waiting.mts";
 import { openCycle, type CycleContext } from "../lib/workspace.mts";
 
 /**
@@ -45,6 +63,10 @@ import { openCycle, type CycleContext } from "../lib/workspace.mts";
  * 結果ファイルも完了の通知も監督に届かない
  */
 const DISALLOWED_TOOLS = ["AskUserQuestion", "ScheduleWakeup", "CronCreate"];
+
+/** 問いを積む方針（conductor asks が示し、監督が Step 0 でユーザーに確認する） */
+const QUEUEING =
+  "ユーザーに上げる問いは記録に積み、依存しないビルドを先に進める（着手できるビルドが無くなったら、待っている問いをまとめて尋ねる。障害・2回目の違反・PR の検証の不合格はその場で上げる）";
 
 register({
   name: "conductor asks",
@@ -66,6 +88,8 @@ register({
     "JSON 出力には、子に許可するツールの一覧（allowedTools）と、委任の範囲を決める",
     "設定のダイジェスト（digest）も含みます。監督はユーザーと合意したときの digest を、",
     "以後の conductor launch / parse に --expect-digest で渡します。",
+    "各問いには、監督が選べる答えの表（safe。自由文で答える問いは null）と、リスクの申告が要りうるか（declaresRisk）、",
+    "JSON の queueing には問いを積む方針（ユーザーに上げる問いは記録に積み、依存しないビルドを先に進める）が入ります。",
   ].join("\n"),
   run: ({ args, operands }) => {
     const { config, context } = openCycle(args, operands[0]);
@@ -84,7 +108,7 @@ register({
       skipped: config.pr.reviewersSkip,
     };
 
-    emit({ cycle: context.name, profile: config.profile, digest, allowedTools, models, review, asks, consentWhen: CONSENT_WHEN }, () => {
+    emit({ cycle: context.name, profile: config.profile, digest, allowedTools, models, review, asks, consentWhen: CONSENT_WHEN, queueing: QUEUEING }, () => {
       // profile で出ない問いでも、回によって同意になるゲートは条件を添える（その回は出てユーザーに上がる）
       const ids = (filter: (ask: ResolvedAsk) => boolean): string =>
         asks
@@ -100,6 +124,7 @@ register({
         `監督が判断する問い: ${ids((a) => a.enabled && a.handler === "supervisor")}`,
         `ユーザーに上げるその他の問い: ${ids((a) => !consent(a) && a.enabled && a.handler === "user")}`,
         `この profile では出ない問い: ${ids((a) => !a.enabled)}`,
+        `問いの扱い: ${QUEUEING}`,
         `子に許可するツール: ${allowedTools.join(" ")}`,
         `子のモデル: ${CONDUCTOR_PHASES.map((phase) => `${phase}=${models[phase] ?? "既定"}`).join(" / ")}`,
         `フェーズの PR のレビュアー: ${review.phaseReviewers.length === 0 ? "なし" : review.phaseReviewers.join(", ")}（待つ上限 ${review.timeoutMinutes} 分、承認${review.requireApproval ? "必須" : "不問"}）`,
@@ -126,7 +151,9 @@ register({
   summary: "子セッション（claude -p）の起動コマンドを組み立てる。自分では実行しない",
   usage:
     "hikyaku conductor launch <architect|builder|close-cycle> [<cycle>] [<build>|add] --expect-digest <digest> " +
-    "[--resume <session-id>] [--message <file>] [--out <file>] [--root <path>] [--json]",
+    "[--resume <session-id>] [--message <file> (--from user --closes <ID,...> [--ask <id>] | " +
+    "--from supervisor --ask <id> [--choice <値>] [--harm 高|中 --premises <ref,...> | --no-risk] | --notice)] " +
+    "[--escalate --ask <id>] [--out <file>] [--root <path>] [--json]",
   details: [
     "実行すべきコマンド行と session-id を返します。起動は呼び出し元（監督）が行います。",
     "起動を監督の Bash に置くのは、許可ルール（Bash(claude -p:*)）で人間が制御できる",
@@ -138,10 +165,31 @@ register({
     "  close-cycle   /hikyaku:close-cycle <cycle>",
     "",
     "--resume と --message は、gate で止まった子を再開するときに組で渡します。",
-    "--message のファイルの中身が、子への回答としてそのまま渡ります。",
+    "--message のファイルの中身が、子への回答としてそのまま渡ります。再開の --message には、",
+    "答えの出どころ（--from）か、答えではないこと（--notice）を必ず添えます。",
+    "",
+    "  --from user        ユーザーの答え。--closes に答えで閉じる待ちの事項の ID（作業ツリーの記録にある、",
+    "                     決定の無い question・who=user・when=now）が要ります。回答の先頭に、その ID を",
+    "                     ledger decide --by user で閉じる固定文を足します",
+    "  --from supervisor  監督の答え。--ask が要ります。答えの値の表がある問い（conductor asks の safe）は",
+    "                     --choice が要り、安全側（safe）に無い値は拒みます。handler が user の問い（同意の回、",
+    "                     escalate、中止など）も拒みます。リスクを受け入れうる答え（questions、review-findings の",
+    "                     proceed）は --harm と --premises か --no-risk が要り、上限（[app] の宣言）を超える",
+    "                     申告は拒みます。拒まれたら --escalate でユーザーに上げます",
+    "  --notice           答えではない知らせ（中断からの再開、書き直しの依頼、ブランチを取り込んだ知らせ）",
+    "",
+    "--from を添えたときは、子のコマンドの前に答えの環境変数（HIKYAKU_ANSWER_FROM・_ITEMS・_ASK・_CHOICE・",
+    "_RISK・_TOKEN）を置きます。子の中の ledger decide / object は、この値で書ける決定を縛られ、監督の答えの",
+    "問い・値・申告を決定に必ず残します。JSON の answerToken は、conductor parse --expect-answer に渡します。",
+    "",
+    "--escalate はユーザーに上げる問いを、子に記録させる固定文（ledger open --type question --who user",
+    "--when now --ask <id>、コミット・push、本文に waiting: <ID> を置いた blocked）で再開します。",
+    "--message は取りません。",
     "",
     "architect の add（指摘からの追加設計）では、--resume なしの初回の起動にも --message が要ります。",
     "ファイルの中身（対応する指摘）が、プロンプトの add の後ろに続けて渡ります。",
+    "--from を添えれば、ほかのフェーズでも初回の起動に --message を渡せます（session-id が手元に無く、",
+    "答えを新しい起動で渡すとき）。",
     "",
     "組み立てるコマンドには次が必ず入ります。",
     "",
@@ -173,17 +221,55 @@ register({
 
     const resume = flagString(args, "resume");
     const messageFile = flagString(args, "message");
-    if (adding && resume === undefined && messageFile === undefined) {
-      throw new HikyakuError(
-        "architect の add には、対応する指摘を書いたファイルを --message で渡してください",
-        "指摘の内容が、子への最初のプロンプトとして渡ります。",
-      );
+    const fromRaw = flagString(args, "from");
+    if (fromRaw !== undefined && fromRaw !== "user" && fromRaw !== "supervisor") {
+      throw new HikyakuError(`--from の値が不正です: ${fromRaw}`, "使用できる値: user | supervisor");
     }
-    if (!(adding && resume === undefined) && (resume === undefined) !== (messageFile === undefined)) {
-      throw new HikyakuError(
-        "--resume と --message は組で指定してください",
-        "gate で止まった子を再開するときは、子の session-id と回答を書いたファイルの両方が要ります。",
-      );
+    const from = fromRaw as "user" | "supervisor" | undefined;
+    const notice = flagBoolean(args, "notice");
+    const escalate = flagBoolean(args, "escalate");
+    const ask = flagString(args, "ask");
+    const unit = escalateUnit(phase, phase === "builder" && operands[2] !== undefined ? normalizeBuildId(operands[2]) : undefined);
+
+    if (from !== undefined && notice) {
+      throw new HikyakuError("--from と --notice は一緒に指定できません", "答えを渡す再開は --from、答えではない知らせ（中断からの再開・書き直しの依頼）は --notice です。");
+    }
+    if (escalate) {
+      if (messageFile !== undefined || from !== undefined || notice) {
+        throw new HikyakuError("--escalate は --message・--from・--notice と一緒に指定できません", "--escalate は、ユーザーに上げる問いを記録させる固定文だけで子を再開します。");
+      }
+      if (resume === undefined) throw new HikyakuError("--escalate には --resume で子の session-id を渡してください");
+      if (ask === undefined) throw new HikyakuError("--escalate には --ask で問いの ID を渡してください");
+    } else {
+      if (adding && resume === undefined && messageFile === undefined) {
+        throw new HikyakuError(
+          "architect の add には、対応する指摘を書いたファイルを --message で渡してください",
+          "指摘の内容が、子への最初のプロンプトとして渡ります。",
+        );
+      }
+      if (resume !== undefined && messageFile === undefined) {
+        throw new HikyakuError(
+          "--resume には --message（回答か知らせのファイル）を添えてください",
+          "ユーザーに上げる問いを子に記録させるときは --escalate --ask <id> を使います。",
+        );
+      }
+      if ((from !== undefined || notice) && messageFile === undefined) {
+        throw new HikyakuError(`--${from !== undefined ? "from" : "notice"} には --message で回答か知らせのファイルを渡してください`);
+      }
+      // 回答の無い初回の起動に --message を渡せるのは、architect の add と、答えを新しい起動で渡すとき（--from）だけ
+      if (messageFile !== undefined && resume === undefined && !adding && from === undefined) {
+        throw new HikyakuError(
+          "初回の起動に --message を渡せるのは、architect の add と、--from を添えて答えを渡すときだけです",
+          "gate で止まった子を再開するときは --resume で子の session-id を渡してください。",
+        );
+      }
+      // 再開の --message が答えか否かを監督に明示させる（答えなら出どころを子の記録に縛る）
+      if (messageFile !== undefined && resume !== undefined && from === undefined && !notice) {
+        throw new HikyakuError(
+          "再開の --message には --from user|supervisor か --notice を添えてください",
+          "答えを渡すなら --from（ユーザーの答えは --from user --closes <ID>、監督の答えは --from supervisor --ask <id>）、答えではない知らせなら --notice です。",
+        );
+      }
     }
 
     let message: string | undefined;
@@ -191,6 +277,45 @@ register({
       if (!existsSync(messageFile)) throw new HikyakuError(`--message のファイルがありません: ${messageFile}`);
       message = readFileSync(messageFile, "utf8").trim();
       if (message === "") throw new HikyakuError(`--message のファイルが空です: ${messageFile}`);
+    }
+
+    // 子に渡す答えの環境変数。子の中の ledger decide / object は、この値で書ける決定を縛られる（US-19.7）
+    const answerEnv: [string, string][] = [];
+    let answerToken: string | null = null;
+    if (escalate) {
+      if (!ASK_IDS.includes(ask as string)) {
+        throw new HikyakuError(`--ask の値が不正です: ${ask}`, "conductor の問いの ID（hikyaku conductor asks）を指定してください。");
+      }
+      message = escalateMessage(unit, context.name, ask as string);
+    } else if (from === "user") {
+      const closes = flagList(args, "closes") ?? [];
+      if (closes.length === 0) {
+        throw new HikyakuError(
+          "--from user には --closes で、ユーザーの答えで閉じる待ちの事項の ID を渡してください",
+          "待っている事項は hikyaku conductor waiting で確かめられます。",
+        );
+      }
+      const ledger = readLedger(context.directory);
+      const unclosable = closes.filter((id) => {
+        const item = ledger.items.find((entry) => entry.open.id === id);
+        return item === undefined || !isWaitingItem(item);
+      });
+      if (unclosable.length > 0) {
+        throw new HikyakuError(
+          `--closes に、ユーザーの答えを待つ未決の事項ではない ID があります: ${unclosable.join(", ")}`,
+          "作業ツリーの記録に、その ID の question（who=user・when=now）が決定なしであることを確かめてください（待ちのビルドのブランチへ conductor ブランチを取り込んでから再開します）。",
+        );
+      }
+      message = closesMessage(unit, context.name, closes, message as string);
+      answerEnv.push([ANSWER_ENV.from, "user"], [ANSWER_ENV.items, closes.join(",")]);
+      if (ask !== undefined) answerEnv.push([ANSWER_ENV.ask, ask]);
+    } else if (from === "supervisor") {
+      const checked = checkSupervisorAnswer(args, config, context, ask, resume);
+      answerToken = randomUUID();
+      answerEnv.push([ANSWER_ENV.from, "supervisor"], [ANSWER_ENV.ask, checked.ask]);
+      if (checked.choice !== undefined) answerEnv.push([ANSWER_ENV.choice, checked.choice]);
+      if (checked.risk !== undefined) answerEnv.push([ANSWER_ENV.risk, formatRiskDeclaration(checked.risk)]);
+      answerEnv.push([ANSWER_ENV.token, answerToken]);
     }
 
     const sessionId = resume ?? randomUUID();
@@ -219,7 +344,8 @@ register({
       "--output-format",
       "json",
     ];
-    const command = `HIKYAKU_CONDUCTOR_CHILD=1 ${argv.map(shellQuote).join(" ")} < /dev/null > ${shellQuote(out)}`;
+    const envPrefix = [["HIKYAKU_CONDUCTOR_CHILD", "1"], ...answerEnv].map(([key, value]) => `${key}=${shellQuote(value as string)}`).join(" ");
+    const command = `${envPrefix} ${argv.map(shellQuote).join(" ")} < /dev/null > ${shellQuote(out)}`;
 
     emit(
       {
@@ -227,6 +353,9 @@ register({
         cycle: context.name,
         prompt,
         sessionId,
+        answerFrom: from ?? null,
+        answerEnv: Object.fromEntries(answerEnv),
+        answerToken,
         resumed: resume !== undefined,
         resultFile: out,
         budgetPerRun: config.conductor.budgetPerRun,
@@ -250,13 +379,15 @@ register({
 register({
   name: "conductor parse",
   summary: "子セッションの結果から gate / done / blocked を取り出し、問いの振り分けを返す",
-  usage: "hikyaku conductor parse <result.json> [<cycle>] --expect-digest <digest> [--root <path>] [--json]",
+  usage: "hikyaku conductor parse <result.json> [<cycle>] --expect-digest <digest> [--expect-answer <token>] [--root <path>] [--json]",
   details: [
     "conductor launch が組み立てたコマンドの結果ファイルを読みます。",
     "",
     "  gate       問いで止まった。id と、監督・ユーザーのどちらが答えるか（ask）を返す",
     "  done       フェーズを終えた。next に子が案内した次のコマンド",
-    "  blocked    子が続行できないと判断した。cycle status で次を決める",
+    "  blocked    子が続行できないと判断した。cycle status で次を決める。本文の行頭の waiting: <ID> が",
+    "             作業ツリーの記録にある未決のユーザーの問い（question・who=user・when=now）を指せば、",
+    "             答えを待つ blocked として waiting に ID を返し、行き詰まりの報告の検査を外す",
     "  violation  規約どおりのブロックが無い。監督は自由文から推測せず、人間に上げる",
     "  error      予算超過などで子が異常終了した",
     "",
@@ -274,6 +405,10 @@ register({
     "問いの振り分けは conductor asks と同じ規則です。ただし、子の手順がそのゲートで止まっていれば、",
     "その回の承認の種類（step.approval）を優先します。同意なら escalate / delegate に関わらずユーザーに上げます",
     "（差し戻しからの再設計の回の G3 / G4 など）。",
+    "gate の ask には、監督が選べる答えの表（safe）と、リスクの申告が要りうるか（declaresRisk）も入ります。",
+    "",
+    "--expect-answer には、監督の答えで再開したときの conductor launch の answerToken を渡します。",
+    "その token を持つ監督の決定が作業ツリーの記録に無ければ、stepProblems に入れます。",
   ].join("\n"),
   run: ({ args, operands }) => {
     const file = operands[0];
@@ -282,8 +417,32 @@ register({
 
     const { config, context } = openCycle(args, operands[1]);
     requireDigest(args, config);
-    const parsed = parseResultJson(readFileSync(file, "utf8"));
+    // 答えを待つ blocked の waiting: <id> は、作業ツリーの記録で裏取りできるときだけ信じる。
+    // 記録を読めなければ信じない（従来どおり行き詰まりの報告として検査する）
+    let ledger: Ledger | undefined;
+    try {
+      ledger = readLedger(context.directory);
+    } catch {
+      ledger = undefined;
+    }
+    const parsed = parseResultJson(readFileSync(file, "utf8"), {
+      isWaitingItem: (id) => {
+        const item = ledger?.items.find((entry) => entry.open.id === id);
+        return item !== undefined && isWaitingItem(item);
+      },
+    });
     const step = childStep(parsed, config, context, flagString(args, "root"));
+    // 監督の答えで再開した子が、その答えを記録せずに進めていないか（launch の answerToken）
+    const expectAnswer = flagString(args, "expect-answer");
+    if (expectAnswer !== undefined) {
+      const recorded = ledger !== undefined && [...ledger.items.flatMap((item) => item.decisions), ...ledger.orphans]
+        .some((record) => record.by === "supervisor" && record.token === expectAnswer);
+      if (!recorded) {
+        step.problems.push(
+          `監督の答え（answerToken ${expectAnswer}）を記録した決定（by: supervisor）が、作業ツリーのサイクルの記録にありません。子が監督の答えを記録せずに進めた可能性があります`,
+        );
+      }
+    }
     // 子の手順がそのゲートで止まっていれば、その回の承認の種類（同意か確認か）で振り分ける
     const position = step.position;
     const confirmed =
@@ -305,6 +464,11 @@ register({
           `問い: ${ask.id}（${CATEGORY_LABELS[ask.category]}）→ ${ask.handler === "supervisor" ? "監督が答える" : "ユーザーに上げる"}`,
         );
       }
+      if (ask?.safe) {
+        lines.push(`監督が選べる答え: ${ask.safe.safe.join(" | ")}（既定: ${ask.safe.default}）`);
+      }
+      if (ask?.declaresRisk) lines.push("監督が答えるときは、リスクの申告（--harm と --premises か --no-risk）が要りうる");
+      if (parsed.waiting) lines.push(`答えを待つ事項: ${parsed.waiting.join(", ")}（行き詰まりではない）`);
       if (parsed.next) lines.push(`次: ${parsed.next}`);
       if (parsed.reason) lines.push(`理由: ${parsed.reason}`);
       lines.push(`session-id: ${parsed.sessionId ?? "不明"}`);
@@ -396,6 +560,96 @@ function childStep(
     }
   }
   return { position, problems };
+}
+
+const ESCALATE_HINT = "監督は答えずに、conductor launch --resume <session-id> --escalate --ask <id> でユーザーに上げてください。";
+
+/**
+ * --from supervisor の答えの検査（US-15.1〜15.3・US-13.3）。監督は安全側にだけ倒せる:
+ * handler が user の問い・safe に無い値・申告の無い受け入れ・上限を超える申告は拒み、ユーザーに上げさせる
+ */
+function checkSupervisorAnswer(
+  args: ParsedArgs,
+  config: ResolvedConfig,
+  context: CycleContext,
+  ask: string | undefined,
+  resume: string | undefined,
+): { ask: string; choice: string | undefined; risk: RiskDeclaration | undefined } {
+  if (ask === undefined) throw new HikyakuError("--from supervisor には --ask で答える問いの ID を渡してください");
+
+  // 1. 振り分け。子の手順がその問いのゲートで止まっていれば、その回の承認の種類で判定する（parse と同じ）。
+  //    回によって同意になるゲートで位置を確かめられなければ、同意に倒す
+  const position = resume === undefined
+    ? undefined
+    : locateSession(config.hikyakuRoot, { records: [context.record], explicit: true }, resume);
+  let confirmed: Approval | undefined;
+  if (position !== undefined) {
+    const root = flagString(args, "root");
+    const { directive } = asConductorChild(() => directiveOf(position.unit, root === undefined ? {} : { root }));
+    if (directive.kind === "gate" && directive.ask === ask && directive.approval !== undefined) confirmed = directive.approval;
+  }
+  const approval = confirmed ?? (CONSENT_WHEN[ask] !== undefined ? "consent" : undefined);
+  const resolved = resolveAsk(ask, config.conductor, config, approval);
+  if (resolved.handler === "user") {
+    throw new HikyakuError(
+      `${ask} は${resolved.categoryLabel}${approval === "consent" && CONSENT_WHEN[ask] !== undefined ? "（この回は同意、または位置を確かめられない）" : ""}で、ユーザーが答える問いです。監督の答えは受け付けません`,
+      ESCALATE_HINT,
+    );
+  }
+
+  // 2. 監督が答えてよい値
+  const choice = flagString(args, "choice");
+  const safe = resolved.safe;
+  if (safe !== null) {
+    if (choice === undefined) {
+      throw new HikyakuError(`${ask} の答えには --choice を渡してください`, `使用できる値: ${Object.keys(safe.choices).join(" | ")}（監督が選べるのは ${safe.safe.join(" | ")}）`);
+    }
+    if (safe.choices[choice] === undefined) {
+      throw new HikyakuError(`--choice の値が不正です: ${choice}`, `使用できる値: ${Object.keys(safe.choices).join(" | ")}`);
+    }
+    if (!safe.safe.includes(choice)) {
+      throw new HikyakuError(
+        `${ask} の「${safe.choices[choice]}」（${choice}）は安全側の答えではないので、監督は選べません`,
+        `監督が選べるのは ${safe.safe.join(" | ")} です。${ESCALATE_HINT}`,
+      );
+    }
+  } else if (choice !== undefined) {
+    throw new HikyakuError(`${ask} は自由文で答える問いなので、--choice は渡せません`);
+  }
+
+  // 3. リスクの申告。受け入れうる答えには必須（付け忘れで上げる向きと逆に倒れないため）
+  const harm = flagString(args, "harm");
+  const premisesRaw = flagString(args, "premises");
+  const noRisk = flagBoolean(args, "no-risk");
+  if (noRisk && (harm !== undefined || premisesRaw !== undefined)) {
+    throw new HikyakuError("--no-risk と --harm / --premises は一緒に指定できません");
+  }
+  if (premisesRaw !== undefined && harm === undefined) throw new HikyakuError("--premises には --harm を添えてください");
+  let risk: RiskDeclaration | undefined;
+  if (harm !== undefined) {
+    if (!HARMS.includes(harm as Harm)) throw new HikyakuError(`--harm の値が不正です: ${harm}`, `使用できる値: ${HARMS.join(" / ")}`);
+    if (premisesRaw === undefined || premisesRaw.trim() === "") {
+      throw new HikyakuError("--harm には --premises で拠り所にした前提の参照を添えてください");
+    }
+    risk = { kind: "declared", harm: harm as Harm, premises: parsePremises(premisesRaw) };
+  } else if (noRisk) {
+    risk = { kind: "none" };
+  }
+  if (risk === undefined && needsRiskDeclaration(ask, choice)) {
+    throw new HikyakuError(
+      `この答え（${ask}${choice === undefined ? "" : ` / ${choice}`}）はリスクを受け入れうるので、--harm 高|中 と --premises か、--no-risk を渡してください`,
+      "受け入れるリスクが無いと判断したなら --no-risk です。申告は子の決定の記録に残り、最後の PR の本文に出ます。",
+    );
+  }
+
+  // 4. 上限との比較。超える受け入れは、事後同意の有無に関わらず監督には答えさせない（build-19 まで）
+  if (risk?.kind === "declared" && exceedsCeilingFor(effectiveDeclaration(config), risk.harm, risk.premises)) {
+    throw new HikyakuError(
+      `申告したリスク（害 ${risk.harm}・前提 ${risk.premises.join(", ")}）は AI に任せてよい上限を超えるので、監督は受け入れられません`,
+      ESCALATE_HINT,
+    );
+  }
+  return { ask, choice, risk };
 }
 
 /** --wait のとき、CI のチェックが1つも無くても none と判定せずに待つ時間（PR を作った直後の猶予） */
@@ -534,6 +788,33 @@ register({
         ].join("\n"),
     );
     if (!verdict.ok) throw new ValidationError(verdict.problems);
+  },
+});
+
+register({
+  name: "conductor waiting",
+  summary: "ユーザーの答えを待っている問いと、それを待っているビルドを導く（状態は保存しない）",
+  usage: "hikyaku conductor waiting [<cycle>] [--root <path>] [--json]",
+  details: [
+    "作業ツリーと、architect・tasklist の各ビルドの origin のブランチにある decisions.jsonl から、",
+    "決定の無いユーザーの問い（question・who=user・when=now）を集めます。同じ ID は1つに重ね、",
+    "どれかの断面に決定があれば待ちにしません。",
+    "",
+    "待っているビルドは、問いを出したビルドと、依存グラフで推移的に依存するビルドです。",
+    "ARCHITECT（architect・plan）の問いは全ビルドが待ちます。close-cycle の問いを待つビルドはありません。",
+    "",
+    "origin に無いブランチは読みません。読めない断面は unavailable に入れ、判定は続けます。",
+    "監督は着手できるビルドが無くなったとき、これで待っている問いをまとめてユーザーに尋ねます。",
+    "next --json の waiting も同じ導出です。",
+  ].join("\n"),
+  run: async ({ args, operands }) => {
+    const { config, context } = openCycle(args, operands[0]);
+    const waiting = await deriveWaiting(config, context, context.builds);
+    emit({ cycle: context.name, ...waiting }, () => {
+      const lines = waitingLines(waiting, context.builds);
+      const body = lines.length === 0 ? [`サイクル ${context.name} に、ユーザーの答えを待っている問いはありません。`] : lines;
+      return [...body, ...waiting.unavailable.map((reason) => `! 読めない断面: ${reason}`)].join("\n");
+    });
   },
 });
 

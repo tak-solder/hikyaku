@@ -26,6 +26,9 @@ const BOOLEAN_FLAGS = new Set([
   "ref",
   "full",
   "defer",
+  "notice",
+  "escalate",
+  "no-risk",
 ]);
 
 /** すべてのコマンドが受け付けるグローバルオプション */

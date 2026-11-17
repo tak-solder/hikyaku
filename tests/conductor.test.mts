@@ -340,7 +340,8 @@ test("CLI: conductor launch の architect add は指摘のファイルを必須�
   write(directory, "answer.md", "回答（委任された判断）: 承認\n");
   const resumed = JSON.parse(succeeds(
     directory, "conductor", "launch", "architect", "001", "add", "--resume", output.sessionId,
-    "--message", join(directory, "answer.md"), "--expect-digest", expected, "--json",
+    "--message", join(directory, "answer.md"), "--from", "supervisor", "--ask", "G6", "--choice", "approved",
+    "--expect-digest", expected, "--json",
   ));
   assert.equal(resumed.argv[2], "回答（委任された判断）: 承認");
   assert.ok(resumed.argv.includes("--resume"));
@@ -353,7 +354,7 @@ test("CLI: conductor launch は再開時に回答ファイルを渡し、組で�
   const expected = digest(directory);
   const output = JSON.parse(succeeds(
     directory, "conductor", "launch", "builder", "001", "1", "--resume", "s-1", "--message", "answer.txt",
-    "--expect-digest", expected, "--json",
+    "--from", "supervisor", "--ask", "G8", "--choice", "approved", "--expect-digest", expected, "--json",
   ));
   assert.equal(output.resumed, true);
   assert.equal(output.sessionId, "s-1");

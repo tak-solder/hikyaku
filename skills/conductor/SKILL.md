@@ -37,6 +37,12 @@ PLAN を終えたサイクルを、ARCHITECT から最後のビルドまで進�
 - **子の手順の位置は `conductor parse` の `step` で読む。** 子が最後に進めた作業単位の次の1手
   （`step next` と同じ判定）が入る。progress.jsonl を自分で読んで位置を判断しない
 - **逐次実行。** `next` が複数のビルドを返しても1件ずつ進める
+- **走りきる。** ユーザーに上げる問いは、その場で尋ねずに子に記録させ（`--escalate`）、それに依存しない
+  ビルドを先に進める。待っている問いは、着手できるビルドが無くなったときにまとめて尋ねる。待ちは
+  `conductor waiting` が記録から導く（保存しない）。障害（error）・2回目の violation・stepProblems・
+  `check-pr` の不合格は、従来どおりその場でユーザーに上げる
+- **監督は安全側にだけ倒す。** 監督の答えは `conductor launch --from supervisor` で渡し、CLI が
+  安全側の値（`ask.safe`）・リスクの申告・上限を検査する。拒まれたら答えずにユーザーに上げる
 
 ## 作業ステップ
 
@@ -89,6 +95,7 @@ planning/user-stories.md を承認済みの要件として扱います。
 子のモデル: {asks の出力の models。null は「既定」と書く}
 フェーズの PR のレビュアーと、待つ上限: {asks の出力の review}
 最後の PR のレビュアー: {asks の出力の review.finalReviewers}
+問いの扱い: {asks の出力の queueing}
 各フェーズの PR は conductor ブランチ（{conductor}）に向け、監督が取り込みます。
 デフォルトブランチにはマージしません。最後のビルドが終わったら、{conductor} → デフォルトブランチの
 PR を作って止まります。
@@ -114,17 +121,44 @@ PR を作って止まります。
 状態は **conductor ブランチの上で**見る（途中のビルドを再開するときは、そのビルドのブランチの上）。
 デフォルトブランチの上では、取り込み済みの成果物が見えない。
 
-`building` のときは、次の順に決める。
+`building` のときは、次の順に決める。待っているビルドは `next --json` の `waiting.builds` にある
+（`architecting` のときも、`waiting.items` に architect の問いがあれば、下の「待っている問いを尋ねる」へ）。
 
-- `cycle status` の `resumeAt` が `build-NN/…` を指していれば、途中で止まったそのビルドを再開する
-- そうでなければ `next` を実行し、`available` のうち**番号が最も小さい1件**を選ぶ
+- `cycle status` の `resumeAt` が `build-NN/…` を指し、そのビルドが `waiting.builds` に**無ければ**、途中で
+  止まったそのビルドを再開する（待っているビルドは再開に選ばない）
+- そうでなければ `next` を実行し、`available` のうち `waiting.builds` に無い、**番号が最も小さい1件**を選ぶ
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle} --json
 ```
 
-- `available` が空で、`tasklist read {cycle}` で全ビルドが完了なら Step 4 へ
-- それ以外（依存が満たされず進めない）は、`next` の出力を示して人間に上げる
+- 選べるビルドが無く、`waiting.items` が空でなければ、下の「待っている問いを尋ねる」へ
+- 選べるビルドが無く、`tasklist read {cycle}` で全ビルドが完了なら Step 4 へ
+- それ以外（依存が満たされず進めない）は、`next` の出力を示してユーザーに上げる
+
+#### 待っている問いを尋ねる
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor waiting {cycle} --json
+```
+
+- [ ] `items` の問いを、`AskUserQuestion` でまとめて尋ねる。各問いの本文・選択肢・推奨は、問いを出した
+  子の記録先（builder なら `build-NN/questions.md`、architect なら `design/design-questions.md`。`source` の
+  ブランチの上にある）から読み、要約せずに示す
+- [ ] 答えごとに、待っている作業単位のブランチ（`build-NN`、ARCHITECT なら `architect`）へ conductor ブランチを
+  取り込む（`git switch {ブランチ}`・`git merge {conductor}`・push）。取り込みで衝突したら、ユーザーに上げる
+- [ ] 答えをスクラッチパッドのファイルに `回答（ユーザーの判断）: …` の形で書き、`--from user --closes {待ちの ID}` で
+  子を再開する。session-id が会話に無ければ（監督が落ちた後など）、`--resume` を外して新しく起動する
+  （`--from` を添えれば初回の起動でも `--message` を渡せる）
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {phase} {cycle} [{build}] \
+  [--resume {sessionId}] --message {回答ファイル} --from user --closes {ID,...} --expect-digest {digest} --json
+```
+
+  - 1件ずつ再開し、結果を Step 3 の解析から処理する（逐次実行は保つ）。`--closes` に渡せるのは、作業ツリーの
+    記録にある未決の待ちの事項だけ（取り込み前のブランチで再開すると拒まれる）
+  - 答えを渡し終えたら Step 1 へ
 
 ### Step 2: ブランチを用意する
 
@@ -177,32 +211,47 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {architect|bui
 - [ ] 完了したら結果を解析する
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor parse {resultFile} {cycle} --expect-digest {digest} --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor parse {resultFile} {cycle} --expect-digest {digest} \
+  [--expect-answer {answerToken}] --json
 ```
+
+監督の答え（`--from supervisor`）で再開した子の結果は、そのときの launch の `answerToken` を `--expect-answer` に
+渡して読む。子が監督の答えを記録せずに進めていれば、`stepProblems` に入る。
 
 `outcome` で分岐する。その前に `stepProblems` を見る。
 
 - **`stepProblems` が空でなければ、`outcome` で分岐しない。** 子のブロックと手順の位置が食い違っている
   （done なのに手順が終わっていない、G8 で止まったのに手順がそのゲートに居ない、など）。violation と
-  同じく、1回目は同じ session-id で再開し、「`step next` で現在地を確かめ、返った1手から続けてください。
-  {stepProblems の内容}」とだけ伝える。2回目も食い違えば、`stepProblems` と `body` を示して人間に上げる
+  同じく、1回目は同じ session-id で `--notice` で再開し、「`step next` で現在地を確かめ、返った1手から続けてください。
+  {stepProblems の内容}」とだけ伝える。ただし `--expect-answer` の食い違い（監督の答えの記録が無い）の1回目は、
+  同じ答え（`--from supervisor --ask --choice` と申告）で再開し直し、次の parse には新しい `answerToken` を渡す。
+  2回目も食い違えば、`stepProblems` と `body` を示してユーザーに上げる
 
 #### gate
 
 `ask.handler` で分岐する。
 
-- **`supervisor`**: 「問いへの答え方」に従って判断する。ただし、そこに書いた「人間に上げる」条件に
+- **`supervisor`**: 「問いへの答え方」に従って判断する。ただし、そこに書いたユーザーに上げる条件に
   当たれば `user` と同じに扱う。ゲート（`step.kind` が `gate`）なら、承認の観点と読む成果物は `step.read` の
-  指示ファイルにある（成果物のパスは `step.directory` から辿る）
-- **`user`**: 子の問い（`body`）を要約せずに `AskUserQuestion` でユーザーに示し、回答を得る。同意ゲート
-  （`ask.category` が `consent`。理由は `step.approvalReason`）はこちらに固定され、監督は答えない
-
-回答をスクラッチパッドのファイルに書き、同じ session-id で再開する。
+  指示ファイルにある（成果物のパスは `step.directory` から辿る）。答えの値は `ask.safe.safe` から選ぶ（迷ったら
+  `ask.safe.default`）。`ask.declaresRisk` の問いで受け入れうる答え（questions、review-findings の `proceed`）には、
+  受け入れるリスクの申告（`--harm 高|中 --premises <ref,...>`、無ければ `--no-risk`）を添える
+- **`user`**: `AskUserQuestion` を出さず、子に問いを記録させる。同意ゲート（`ask.category` が `consent`）も
+  こちらに固定され、監督は答えない
 
 ```bash
+# supervisor: 監督の答え（拒まれたら答えずに、下の user の手順でユーザーに上げる）
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {phase} {cycle} [{build}] \
-  --resume {sessionId} --message {回答ファイル} --expect-digest {digest} --json
+  --resume {sessionId} --message {回答ファイル} --from supervisor --ask {id} [--choice {値}] \
+  [--harm 高|中 --premises {ref,...} | --no-risk] --expect-digest {digest} --json
+
+# user: 子に問いを記録させ、答えを待つ blocked で終えさせる
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {phase} {cycle} [{build}] \
+  --resume {sessionId} --escalate --ask {id} --expect-digest {digest} --json
 ```
+
+launch が `--from supervisor` を拒んだら（ユーザーが答える問い、安全側でない値、申告の無い受け入れ、上限を
+超える申告）、答えを変えて通そうとせず、`--escalate` でユーザーに上げる。
 
 回答ファイルの書式（監督が判断した場合）:
 
@@ -211,8 +260,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {phase} {cycle
 根拠: {どの成果物の、どの記述に基づくか}
 ```
 
-人間が答えた場合は `回答（人間の判断）:` とし、根拠は書かない。子は「委任された判断」を
-非対話規約に従って記録する。
+子は「委任された判断」を非対話規約に従って記録する。ユーザーの答えは「待っている問いを尋ねる」で渡す。
 
 → 再開した子の結果を、また Step 3 の解析から処理する。
 
@@ -298,14 +346,16 @@ git push origin --delete {フェーズのブランチ}
 
 - [ ] `cycle status {cycle} --json` を実行する。`step` があれば、子がどこで止まったか（`step.kind` が `stop` なら
   `step.message`）も人間に上げるときに添える
+- `waiting` があれば（答えを待つ blocked。`--escalate` で記録させた問い）、ユーザーに上げずに conductor ブランチへ
+  切り替えて Step 1 へ（問いは「待っている問いを尋ねる」でまとめて尋ねる）
 - `returned` があれば（builder からの差し戻し）→ Step 1 へ（architect が差し戻しを扱う）
-- それ以外は、`body` を示して人間に上げる。指示があればそれに従い、無ければ**終了**する
+- それ以外は、`body` を示してユーザーに上げる。指示があればそれに従い、無ければ**終了**する
 
 #### violation
 
 規約どおりのブロックが無い。**子の自由文から問いや結果を推測しない。**
 
-- 1回目: 同じ session-id で再開し、「非対話規約に従い、最後に gate / done / blocked のどれか1つを
+- 1回目: 同じ session-id で `--notice` で再開し、「非対話規約に従い、最後に gate / done / blocked のどれか1つを
   出力してください」と伝え、`reason` を添える（blocked の行き詰まりの報告が欠けていたときは、欠けた節が
   `reason` にある）
 - 2回目も violation なら、`body`（出力の末尾）と `reason` を示して人間に上げる
@@ -313,7 +363,7 @@ git push origin --delete {フェーズのブランチ}
 #### error
 
 予算超過や利用上限への到達などで子が異常終了した。`reason` と `costUsd` を示して人間に上げ、再開するかを尋ねる。
-再開するなら、**同じ session-id で** `--resume` し、「中断したところから続けてください」とだけ伝える。
+再開するなら、**同じ session-id で** `--resume` と `--notice` を付け、「中断したところから続けてください」とだけ伝える。
 子は止まる直前の文脈を持っているので、新しい session で起動し直すより確実に続きから進む。
 `--resume` 自体が失敗したときだけ、新しい session で起動し直す（子は `step next` で progress.jsonl から続きを導く）。
 
@@ -341,8 +391,10 @@ gh pr list --head {conductor ブランチ} --base {baseBranch} --state open --js
 - [ ] conductor ブランチ → デフォルトブランチの PR を作る
   - タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title conductor {cycle}` で生成する
   - `gh pr create --draft` で作る。Draft に対応していない場合だけ通常の PR で作り、その旨を案内する
-  - 本文に、取り込んだフェーズの PR を順に並べ、それぞれで**監督が答えた確認ゲート**と、子が解釈で
-    決めた振る舞いを1行ずつ示す（ユーザーがレビューで確認するため）
+  - 本文に、取り込んだフェーズの PR を順に並べ、それぞれで子が解釈で決めた振る舞いを1行ずつ示す
+    （ユーザーがレビューで確認するため）
+  - `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger answers {cycle} --format pr` の出力（「監督が答えた問い」の節）を、
+    本文にそのまま貼る。`--no-risk` で答えた問いの「リスクなしと申告」も、スクリプトが決定の記録から示す。監督は書き写さない
   - `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger premises --format pr` の出力が空でなければ、本文にそのまま貼る
     （サイクルで宣言を変えたなら、それを拠り所にした受け入れをユーザーが見直すのはこの PR。フェーズの PR は監督が取り込む）
   - 外部連携が有効なら、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref conductor {cycle}` の行
@@ -390,7 +442,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch architect {cyc
 
   - 以後は Step 3 と同じ。architect の PR を検証して conductor ブランチに取り込み、Step 1 から
     追加したビルドを進める。最後のビルドを取り込むと、またこの節に来て本文に追記する
-  - 再開（`--resume`）では、通常どおり回答のファイルだけを `--message` に渡す
+  - 再開（`--resume`）では、Step 3 と同じく回答のファイルを `--message` に渡し、`--from` か `--notice` を添える
 
 ### Step 5: 完了
 
@@ -406,7 +458,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr ready close {cycle} --pr {CL
 ## 問いへの答え方
 
 監督が答えてよいのは、**issue と承認済みの成果物から導ける回答**と、**挙動を狭める回答**だけ。
-スコープを広げる回答、issue や user-stories と矛盾する回答が必要なら、どの種別でも人間に上げる。
+スコープを広げる回答、issue や user-stories と矛盾する回答が必要なら、どの種別でもユーザーに上げる。
+`（--choice …）` は launch に渡す値。監督が選べる値は `conductor parse` の `ask.safe.safe` が正で、それ以外は launch が拒む。
 
 | id | 答え方 |
 |---|---|
@@ -414,17 +467,17 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr ready close {cycle} --pr {CL
 | `branch` | Step 2 で用意したブランチなら「Hikyaku の規則に従う」。食い違いの理由が分からなければ人間に上げる |
 | `build-select` | Step 1 で選んだビルドを答える |
 | `overlap` | このサイクルの design-delta で分担を決められるなら答える。**他のサイクルの設計を変える必要があれば人間に上げる** |
-| `G3` | 推奨案が user-stories と `constraints` に反していなければ推奨案を選ぶ（同意の回は `handler` が `user` になり、答えない） |
-| `G2` / `G4` / `G7` | 成果物を読み、承認観点（スキルが示すもの）に沿って承認するか差し戻す（G4 の同意の回は答えない） |
-| `retrospective` | 実施する |
-| `docs-link` | `--dry-run` の差分がマーカーで囲まれた索引ブロックの中だけなら承認する |
-| `G6` | 分割・依存が design-delta と矛盾せず、各ビルドの予測ピークが `split_above` 以下（超えるなら issue.md に許容する理由がある）なら承認する。「マージ時点で残る危険」を書いたビルドがあれば、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json` の `unsafeSplit.allowed` が true であることも確かめる |
-| `G8` | 「検証の義務」の G8 を行い、満たしていれば承認する |
-| `questions` | 成果物から導けるものだけ答える。導けないものは人間に上げる |
+| `G3` | 推奨案が user-stories と `constraints` に反していなければ推奨案を選ぶ（`--choice recommended`）。反していれば差し戻す（`rejected`）。推奨以外の案（`other`）は選べない。同意の回は `handler` が `user` になり、答えない |
+| `G2` / `G4` / `G7` | 成果物を読み、承認観点（スキルが示すもの）に沿って承認するか差し戻す（`approved` / `rejected`。G4 の同意の回は答えない） |
+| `retrospective` | 実施する（`run`） |
+| `docs-link` | `--dry-run` の差分がマーカーで囲まれた索引ブロックの中だけなら承認する（`approved`） |
+| `G6` | 分割・依存が design-delta と矛盾せず、各ビルドの予測ピークが `split_above` 以下（超えるなら issue.md に許容する理由がある）なら承認する（`approved`）。「マージ時点で残る危険」を書いたビルドがあれば、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json` の `unsafeSplit.allowed` が true であることも確かめる |
+| `G8` | 「検証の義務」の G8 を行い、満たしていれば承認する（`approved`） |
+| `questions` | 成果物から導けるものだけ答える（`--choice` なし。リスクの申告が要る）。導けないものはユーザーに上げる |
 | `adr-status` | 既存の形式に欄を足さない（挙動を狭める側） |
-| `design-conflict` | 「architect に差し戻す」を選ぶ。**「設計に合わせる（要件を改める）」が必要なら人間に上げる**。ビルドの中で設計を改めるのは、変更が plan.md の範囲に収まり ADR を覆さない場合だけ |
-| `unsafe-split` | 「上限を超えたまま1ビルドにまとめる」を選ぶ（データ安全を保つ側）。**安全でない分割を選ぶ必要があれば、または設計に戻る必要があれば人間に上げる** |
-| `review-findings` | 明確なバグ・規約違反は「今修正する」。スコープ外は「新ビルド化」。「そのまま進める」は確度の低い懸念だけ |
+| `design-conflict` | 「architect に差し戻す」を選ぶ（`return`）。設計に合わせて要件を改める（`conform`）・ビルドの中で設計を改める（`adjust`）は選べず、必要ならユーザーに上げる |
+| `unsafe-split` | 「上限を超えたまま1ビルドにまとめる」を選ぶ（`merge`。データ安全を保つ側）。**安全でない分割（`unsafe`）や設計に戻る（`redesign`）が必要ならユーザーに上げる** |
+| `review-findings` | 明確なバグ・規約違反は「今修正する」（`fix`）。スコープ外は「新ビルド化」（`new-build`）。「そのまま進める」（`proceed`）は確度の低い懸念だけで、リスクの申告が要る |
 
 ## 検証の義務
 
@@ -435,15 +488,16 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr ready close {cycle} --pr {CL
 
 テストのコマンドは handoff.md / plan.md から引く。再実行に許可が要れば人間に案内する。
 
-## 人間に上げるとき
+## ユーザーに上げるとき
 
-`AskUserQuestion` で、次を含めて尋ねる。
+子の問いは `--escalate` で記録させて積み、「待っている問いを尋ねる」でまとめて尋ねる。障害（error）・
+2回目の violation・stepProblems・`check-pr` の不合格・設定の変化（digest の食い違い）は、その場で尋ねる。
+どちらも `AskUserQuestion` で、次を含めて尋ねる。
 
 - どのフェーズの、どの問いか（`id` と種別）
 - 子の問いの本文（要約しない）
-- 監督が自分で答えなかった理由
+- 監督が自分で答えなかった理由（launch が拒んだならその理由）
 - 選択肢（子が示したもの）
 
-人間の回答は「回答（人間の判断）」として子に渡す。人間が「監督に任せる」と答えたら、
-その問いに限って監督が判断し、「委任された判断」として渡す。ただし同意の問い（`ask.category` が
-`consent`）は、ユーザーが「監督に任せる」と答えても監督は判断せず、ユーザーに答えを求める。
+ユーザーの回答は「回答（ユーザーの判断）」として `--from user` で子に渡す。ユーザーが「監督に任せる」と
+答えても、監督は判断しない。ユーザーが答える問いへの `--from supervisor` は launch が拒むので、ユーザーに答えを求める。
