@@ -23,7 +23,7 @@
 | 12      | G4 と G8 の提示（gate brief）                                   | 280k       | 2, 15                                         | —                                                      |
 | 13      | 中身を含まないフィードバックと、document-guide のアンカー       | 295k       | —                                             | [#118](https://github.com/tak-solder/hikyaku/pull/118) |
 | 14      | 操作する人を「ユーザー」と書く用語の統一                        | 275k       | 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15 | —                                                      |
-| 15      | G3・G4 を宣言の上限で同意にする（害とパスの申告と裏取り）       | 350k       | 2                                             | —                                                      |
+| 15      | G3・G4 を宣言の上限で同意にする（害とパスの申告と裏取り）       | 350k       | 2                                             | [#119](https://github.com/tak-solder/hikyaku/pull/119) |
 
 ## 依存グラフ
 
@@ -51,11 +51,11 @@ graph TD
   b03 --> b05
   b04 --> b06
   b09 --> b06
-  b15 -.-> b06
+  b15 --> b06
   b06 -.-> b07
   b05 --> b10
   b10 --> b11
-  b15 -.-> b12
+  b15 --> b12
   b07 -.-> b14
   b08 --> b14
   b11 --> b14
@@ -65,10 +65,10 @@ graph TD
   classDef merged fill:#fbefff,stroke:#8250df,color:#6639ba
   classDef ready fill:#dafbe1,stroke:#1a7f37,color:#116329
   classDef blocked fill:#f6f8fa,stroke:#8c959f,color:#57606a
-  class b01,b02,b03,b04,b05,b08,b09,b10,b11,b13 merged
-  class b15 ready
-  class b06,b07,b12,b14 blocked
-  linkStyle 7,8,11,12,15 stroke:#8c959f,stroke-dasharray:5 5
+  class b01,b02,b03,b04,b05,b08,b09,b10,b11,b13,b15 merged
+  class b06,b12 ready
+  class b07,b14 blocked
+  linkStyle 8,12,15 stroke:#8c959f,stroke-dasharray:5 5
 ```
 
 紫: 完了（merged） / 緑: 着手可能（ready） / グレー: 待機中（blocked）。点線は先行ビルドが未完了の依存
