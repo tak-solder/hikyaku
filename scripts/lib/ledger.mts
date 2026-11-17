@@ -450,7 +450,7 @@ export function decideItem(cycleDirectory: string, record: DecideRecord, ledger:
  * consented）。拠り所の前提は、記録するとき（ledger open / object）に求める。決定では前提を足せないので、
  * ここで求めると前提の無い事項を受け入れで片づける手段が無くなる
  */
-function objectionSettled(item: LedgerItem): boolean {
+export function objectionSettled(item: LedgerItem): boolean {
   const latest = item.latest;
   if (latest === undefined || latest.by !== "user") return false;
   if (latest.decision === "decided") return true;
@@ -522,6 +522,71 @@ export function latestOpenAt(unitDirectory: string, matches: (record: OpenRecord
     if (record.record === "open" && matches(record) && (latest === undefined || record.at > latest)) latest = record.at;
   }
   return latest;
+}
+
+// ---------------------------------------------------------------------------
+// 事後同意（build-06）
+
+/** 同意ゲートの対象になる記録か: risk / objection、who=user、when=merge@<unit>（記録した作業単位は問わない） */
+function isConsentRecord(record: OpenRecord, unit: string): boolean {
+  return (record.type === "risk" || record.type === "objection") && record.who === "user" && record.when === `merge@${unit}`;
+}
+
+/** 同意ゲートの一覧の対象 */
+export function isConsentItem(item: LedgerItem, unit: string): boolean {
+  return isConsentRecord(item.open, unit);
+}
+
+/** その作業単位の同意ゲートの一覧（サイクル全体の記録から、記録順） */
+export function consentItemsOf(ledger: Ledger, unit: string): LedgerItem[] {
+  return ledger.items.filter((item) => isConsentItem(item, unit));
+}
+
+/**
+ * ユーザーの決定があるか。最新の決定が by=user の consented / decided / resolved なら決定とする。
+ * rejected は数えない（作り直しのあとユーザーが resolved を記録するまで止める）。害が高の異議は
+ * 受け入れの言葉の無い consented を数えない（objectionSettled と同じ基準。resolved は片づきとして数える）
+ */
+export function consentDecided(item: LedgerItem): boolean {
+  const latest = item.latest;
+  if (latest === undefined || latest.by !== "user") return false;
+  if (latest.decision === "rejected") return false;
+  if (latest.decision === "resolved") return true;
+  if (item.open.type === "objection" && item.open.harm === "高") return objectionSettled(item);
+  return true;
+}
+
+/** 決定が足りない項目（決定が無い、ユーザーの決定でない、最新が rejected、受け入れの言葉の無い高の異議） */
+export function undecidedConsentItems(items: LedgerItem[]): LedgerItem[] {
+  return items.filter((item) => !consentDecided(item));
+}
+
+/**
+ * その作業単位の decisions.jsonl 1つだけに同意の対象があるか。手順の位置だけを読む経路（Stop フック・
+ * step where・conductor parse）も同意ゲートの when でこれを呼ぶ（builder の delegation のきっかけと同じ種類の
+ * 例外）。読めなければ true（ゲートを手順に入れる＝安全側）
+ */
+export function unitHasConsentItems(unitDirectory: string, unit: string): boolean {
+  try {
+    return readJsonl(join(unitDirectory, LEDGER_FILE), isRecord, LABELS).some(
+      (record) => record.record === "open" && isConsentRecord(record, unit),
+    );
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * その作業単位の decisions.jsonl 1つだけから、ある時刻より後に記録した決定の足りない同意の対象。
+ * 同意ゲートの承認のあとに対象が足されたら承認を取り直すのに使う。読めなければ undefined
+ */
+export function unitConsentItemsAfter(cycleDirectory: string, unit: string, at: string): LedgerItem[] | undefined {
+  try {
+    const ledger = readUnitLedger(cycleDirectory, unit);
+    return undecidedConsentItems(consentItemsOf(ledger, unit)).filter((item) => item.open.at > at);
+  } catch {
+    return undefined;
+  }
 }
 
 // ---------------------------------------------------------------------------

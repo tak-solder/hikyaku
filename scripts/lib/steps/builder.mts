@@ -9,6 +9,7 @@
 
 import { latestOpenAt, unitLedgerProblem } from "../ledger.mts";
 import { publicationStep } from "./publication.mts";
+import { consentProblem, consentStep } from "./consent.mts";
 import { declarationArgs } from "../premises.mts";
 import { describeEscalationProblems } from "../escalation.mts";
 import { readReturn, RETURN_FILE } from "../phase.mts";
@@ -155,7 +156,16 @@ export const BUILDER_STEPS: SkillSteps = {
       when: (ctx) => ctx.config.reviews.retrospective !== "skip",
       reason: () => "PR 作成前の振り返り",
     },
-    { id: "pr", kind: "run", title: "PR の作成と完了の記録", evidence: prRecorded, recordsPr: true, args: declarationArgs },
+    consentStep("builder"),
+    {
+      id: "pr",
+      kind: "run",
+      title: "PR の作成と完了の記録",
+      evidence: prRecorded,
+      recordsPr: true,
+      accepts: consentProblem("builder"),
+      args: declarationArgs,
+    },
     publicationStep("builder"),
   ],
 };

@@ -21,6 +21,13 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr base build-{NN} {cycle}
 スタックしている場合はスタック元のブランチが返る。デフォルトブランチ宛てに作ると、
 先行ビルドの差分まで含んだ PR になる。
 
+- [ ] PR を作る前に、マージの前にユーザーが同意する項目に決定が足りないかを確かめる
+  （`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger consent-list build-{NN} {cycle}` の最後の行「決定が足りない項目」が「なし」か）。
+  同意ゲートはこのビルドで記録した項目だけで現れるので、ほかのフェーズで記録した項目はここで見つかる。
+  足りなければ一覧をその場でユーザーに示し、項目ごとに
+  `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger decide build-{NN} <ID> {cycle} --decision <consented|decided|rejected> --by user --input "<ユーザーの答え>"`
+  で記録してから作る（ask: deferred-consent）。conductor の子なら、PR を作らずに blocked でユーザーに上げる。
+  決定が足りないままでは `done` を受け付けない
 - [ ] ここまでのコミットをすべて push する
 - [ ] PR を Draft で作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title build-{NN} {cycle} --build-title "{title}"` で生成）
   - マージ先は上で取得した base
@@ -29,6 +36,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr base build-{NN} {cycle}
     （差分の事実と、agreement.md の返した理由。手で書き直さない）
   - 値 `declarationChanged` が `false` でなければ、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger premises --format pr`
     の出力を本文にそのまま貼る（変わった宣言を拠り所にした受け入れを、ユーザーがマージの前に見直すため）
+  - `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger pr-section build-{NN} {cycle}` の出力を本文にそのまま貼る
+    （受け入れたリスク・未解決の退け・マージの前に決める事項・期限を過ぎた事項。空なら何も貼らない）
   - 「確度: 要確認」の懸念が残る場合は、未決事項の ID と要点を本文に入れる。懸念の本文は未決事項の記録
     （`hikyaku ledger show <ID>`）に置き、PR に重複して転記しない
   - PR 作成前の承認は取らない。PR はレビューのための提案であって不可逆ではなく、

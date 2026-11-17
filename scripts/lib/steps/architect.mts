@@ -21,6 +21,7 @@
  */
 
 import { publicationStep } from "./publication.mts";
+import { consentProblem, consentStep } from "./consent.mts";
 import { declarationArgs } from "../premises.mts";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -450,12 +451,14 @@ export const ARCHITECT_STEPS: SkillSteps = {
       when: (ctx) => roundOf(ctx) === "return",
       evidence: (ctx) => ctx.cycle !== undefined && !existsSync(join(ctx.cycle.directory, RETURN_FILE)),
     },
+    consentStep("architect", (ctx) => roundOf(ctx) !== "return"),
     {
       id: "pr",
       kind: "run",
       title: "PR の作成とレビュアーのアサイン",
       when: (ctx) => roundOf(ctx) !== "return",
       recordsPr: true,
+      accepts: consentProblem("architect"),
       args: (ctx) => ({ ...designChoiceGate(ctx), round: roundOf(ctx), ...declarationArgs(ctx) }),
     },
     publicationStep("architect", (ctx) => roundOf(ctx) !== "return"),

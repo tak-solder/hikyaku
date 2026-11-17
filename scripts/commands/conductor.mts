@@ -33,6 +33,7 @@ import { emit, table } from "../lib/output.mts";
 import { pluginRoot } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
 import type { Directive } from "../lib/steps/directive.mts";
+import { asConductorChild } from "../lib/steps/consent.mts";
 import { directiveOf, locateSession } from "../lib/steps/locate.mts";
 import { normalizeBuildId } from "../lib/tasklist.mts";
 import type { ResolvedConfig } from "../lib/config.mts";
@@ -366,7 +367,8 @@ function childStep(
     }
     return { position: null, problems };
   }
-  const { directive } = directiveOf(located.unit, root === undefined ? {} : { root });
+  // 子と同じ条件で評価する（子は同意ゲートを手順に入れないので、親がそのまま評価すると位置が食い違う）
+  const { directive } = asConductorChild(() => directiveOf(located.unit, root === undefined ? {} : { root }));
   const position: ChildStep = {
     unit: directive.unit,
     skill: directive.skill,

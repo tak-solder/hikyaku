@@ -9,6 +9,7 @@
  */
 
 import { publicationStep } from "./publication.mts";
+import { consentProblem } from "./consent.mts";
 import { declarationArgs } from "../premises.mts";
 import type { SkillSteps } from "./engine.mts";
 
@@ -48,7 +49,8 @@ export const PLANNER_STEPS: SkillSteps = {
       when: (ctx) => ctx.config.reviews.retrospective !== "skip",
       reason: () => "企画フェーズの最後の振り返り",
     },
-    { id: "pr", kind: "run", title: "サイクルの issue と PR の作成", recordsPr: true, args: declarationArgs },
+    // merge@plan の who=user の事項が決定なしで PR になるのを防ぐ（同意ゲートは置かない）
+    { id: "pr", kind: "run", title: "サイクルの issue と PR の作成", recordsPr: true, accepts: consentProblem("planner"), args: declarationArgs },
     publicationStep("planner"),
   ],
 };

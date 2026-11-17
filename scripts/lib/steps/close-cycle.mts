@@ -23,6 +23,7 @@
  */
 
 import { publicationStep } from "./publication.mts";
+import { consentProblem } from "./consent.mts";
 import { declarationArgs } from "../premises.mts";
 import type { ProgressEvent } from "../progress.mts";
 import { collectPromotions, promotionConsent, type PromotionConsent } from "../promotions.mts";
@@ -147,7 +148,8 @@ export const CLOSE_CYCLE_STEPS: SkillSteps = {
       args: (ctx) => ({ promotionGate: g10Approval(ctx) === undefined ? "skipped" : "approved" }),
     },
     { id: "close", kind: "run", title: "サイクルの終了（cycle close）", evidence: cycleClosed },
-    { id: "pr", kind: "run", title: "PR の作成", recordsPr: true, args: declarationArgs },
+    // merge@close の who=user の事項が決定なしで PR になるのを防ぐ（同意ゲートは置かない）
+    { id: "pr", kind: "run", title: "PR の作成", recordsPr: true, accepts: consentProblem("close-cycle"), args: declarationArgs },
     publicationStep("close-cycle"),
     {
       id: "followups",
