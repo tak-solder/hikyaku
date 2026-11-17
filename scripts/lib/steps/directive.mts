@@ -13,6 +13,7 @@ import type { ContextBudget } from "../config.mts";
 import { HikyakuError } from "../errors.mts";
 import { docRef, loadGuide } from "../docs.mts";
 import { cycleTimeline, noticeLines, readLedger, summarize } from "../ledger.mts";
+import { deferredConsentNotice } from "../deferred-consent.mts";
 import { pluginRoot } from "../paths.mts";
 import { readProgress, type StepResult } from "../progress.mts";
 import { formatTokens, measureCurrent, type CurrentContext } from "../session.mts";
@@ -306,7 +307,12 @@ export function buildDirective(opened: Opened, evaluation: Evaluation, options: 
     };
   }
 
-  if (options.notices !== false) base.notices.push(...ledgerNotices(opened, evaluation));
+  if (options.notices !== false) {
+    base.notices.push(...ledgerNotices(opened, evaluation));
+    // 事後同意を選んだのに有効でない理由は、有効になるまで出し続ける（手順の位置だけを読む経路では git を読まない）
+    const deferred = deferredConsentNotice(ctx.config, ctx.cycle?.directory);
+    if (deferred !== undefined) base.notices.push(deferred);
+  }
 
   const overruns = checkpointsOf(ctx.events, ctx.config.context).filter((entry) => entry.over);
   const current = evaluation.current;

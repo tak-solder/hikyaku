@@ -26,7 +26,10 @@ import { declarationArgs } from "../premises.mts";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { loadCycles } from "../cycles.mts";
+import { deferredConsent } from "../deferred-consent.mts";
+import { readUnitLedger } from "../ledger.mts";
 import {
+  ceilingAxes,
   ceilingOf,
   effectiveDeclaration,
   exceeds,
@@ -44,6 +47,7 @@ import {
   currentEvents,
   currentRound,
   type ConsentJudgement,
+  type DeferredRisk,
   type SkillSteps,
   type StepContext,
   type StepDefinition,
@@ -137,10 +141,20 @@ function undeclared(ctx: StepContext): boolean {
 const INCOMPLETE = { timing: "now", reason: "基準の宣言を読めず、AI に任せてよい害の上限が分からない" } as const;
 
 /**
- * G3 の同意の判定（ADR approval-kind-in-step-definitions・risk-ceiling-table）。withDeclaration が false なら、
- * 宣言による同意を含めない（options の done の前に designChoiceGate を返すとき。申告がまだ無いため）
+ * 宣言による同意（上限を超えるリスクの受け入れ）。事後同意が有効なら deferred に回せる唯一の種類。
+ * premises は、その受け入れの拠り所（上限を決めた軸 app.<axis>、当たった重い領域 area:<name>）
  */
-function g3Consent(ctx: StepContext, withDeclaration: boolean): ConsentJudgement {
+interface Exceeded {
+  exceeded: { reason: string; premises: string[]; harm?: Harm };
+}
+
+/**
+ * G3 の判定の元（ADR approval-kind-in-step-definitions・risk-ceiling-table）。上限を超える受け入れなら Exceeded、
+ * それ以外は判定をそのまま返す（差し戻しの回・基準を読めない回・申告の欠けは事後同意に回さない）。
+ * withDeclaration が false なら、宣言による同意を含めない（options の done の前に designChoiceGate を返すとき。
+ * 申告がまだ無いため）
+ */
+function g3Base(ctx: StepContext, withDeclaration: boolean): ConsentJudgement | Exceeded {
   if (roundOf(ctx) === "return") return ON_RETURN;
   if (!withDeclaration || passedOver(ctx, "options", "adr")) return false;
   // options の done の前は判定するものが無い（git を読まない。G3 は options の後ろなので位置も変わらない）
@@ -154,14 +168,66 @@ function g3Consent(ctx: StepContext, withDeclaration: boolean): ConsentJudgement
     const missing = [declared.harm === undefined ? "--harm" : "", declared.paths === undefined ? "--paths" : ""].filter(Boolean).join(" と ");
     return { timing: "now", reason: `options の申告（${missing}）が欠けている` };
   }
+  const reasons: string[] = [];
+  const premises: string[] = [];
   const ceiling = ceilingOf(declaration.axes);
   if (exceeds(declared.harm, ceiling)) {
-    return { timing: "now", reason: `害の申告（${declared.harm}）が上限（${ceiling === "なし" ? "何も任せない" : `${ceiling}まで`}）を超える` };
+    reasons.push(`害の申告（${declared.harm}）が上限（${ceiling === "なし" ? "何も任せない" : `${ceiling}まで`}）を超える`);
+    premises.push(...ceilingAxes(declaration.axes).map((axis) => `app.${axis}`));
   }
   // 重い領域のパスに触れる受け入れは、害の重さに関わらず上限を超えるとみなす
   const hit = heavyAreasHit(declaration, declared.paths, repositoryFiles(ctx.config));
-  if (hit.length > 0) return { timing: "now", reason: `申告したパスが重い領域（${hit.map((area) => area.name).join(", ")}）に当たる` };
-  return false;
+  if (hit.length > 0) {
+    reasons.push(`申告したパスが重い領域（${hit.map((area) => area.name).join(", ")}）に当たる`);
+    premises.push(...hit.map((area) => `area:${area.name}`));
+  }
+  if (reasons.length === 0) return false;
+  return { exceeded: { reason: reasons.join("。"), premises, harm: declared.harm } };
+}
+
+function isExceeded(judged: ConsentJudgement | Exceeded): judged is Exceeded {
+  return judged !== false && "exceeded" in judged;
+}
+
+/**
+ * 上限を超える受け入れの時機。事後同意が有効で、step report が自動で積んだ事項（source: step-report、ask が
+ * そのゲート、その回の積んだステップの最後の done 以後）があり、その前提がいまの判定の前提をすべて覆うときだけ
+ * deferred。覆っていなければ（設計の文書が変わって新しい重い領域に触れた、など）その場で同意を取る。
+ * 事項は design/ の decisions.jsonl 1つだけを読む。手順の位置だけを読む経路でも同じ結果を返し、G3・G4 の
+ * 位置（step next・Stop フック・conductor parse の現在地）をずらさない（同意ゲートの when と同じ種類の例外）
+ */
+function timingOf(ctx: StepContext, gate: string, step: string, exceeded: Exceeded["exceeded"]): ConsentJudgement {
+  const now = { timing: "now", reason: exceeded.reason } as const;
+  if (ctx.cycle === undefined || !deferredConsent(ctx.config, ctx.cycle.directory).effective) return now;
+  const events = currentEvents(ARCHITECT_STEPS, ctx.events).filter((event) => event.skill === "architect" && event.step === step && event.result === "done");
+  const since = events[events.length - 1]?.at;
+  if (since === undefined) return now;
+  let items;
+  try {
+    items = readUnitLedger(ctx.cycle.directory, "architect").items;
+  } catch {
+    return now;
+  }
+  const covered = items.some(
+    ({ open }) =>
+      open.source === "step-report" && open.type === "risk" && open.ask === gate && open.at >= since &&
+      exceeded.premises.every((premise) => open.premises?.includes(premise) === true),
+  );
+  return covered ? { timing: "deferred", reason: `${exceeded.reason}（事後同意: マージの前の同意ゲートで同意を取る）` } : now;
+}
+
+function g3Consent(ctx: StepContext, withDeclaration: boolean): ConsentJudgement {
+  const judged = g3Base(ctx, withDeclaration);
+  return isExceeded(judged) ? timingOf(ctx, "G3", "options", judged.exceeded) : judged;
+}
+
+/** 事後同意で積む受け入れ（事後同意が有効で、上限を超える受け入れの回だけ） */
+function deferredRisk(ctx: StepContext, gate: string, step: string, judged: ConsentJudgement | Exceeded, summary: string): DeferredRisk | undefined {
+  if (!isExceeded(judged) || ctx.cycle === undefined) return undefined;
+  if (!deferredConsent(ctx.config, ctx.cycle.directory).effective) return undefined;
+  const risk: DeferredRisk = { gate, step, summary: `${summary}: ${judged.exceeded.reason}`, premises: judged.exceeded.premises };
+  if (judged.exceeded.harm !== undefined) risk.harm = judged.exceeded.harm;
+  return risk;
 }
 
 /** 設計が触れた重い領域のうち、G3 の申告（--paths）に当たっていないもの */
@@ -257,6 +323,16 @@ export function g4Verification(ctx: StepContext): { undeclaredAreas: UndeclaredA
 }
 
 function g4Consent(ctx: StepContext): ConsentJudgement {
+  const judged = g4Base(ctx);
+  return isExceeded(judged) ? timingOf(ctx, "G4", "design-delta", judged.exceeded) : judged;
+}
+
+/**
+ * G4 の判定の元。順序は build-12 のまま（差し戻し → design-delta の前 → 通り過ぎた → 外との境界 → 基準を読めない →
+ * 宣言なし → 裏取り）。外との境界はユーザーが同意するもので、事後同意に回さないので、裏取りより先に now を返す。
+ * Exceeded になるのは最後の裏取りの分岐だけ
+ */
+function g4Base(ctx: StepContext): ConsentJudgement | Exceeded {
   if (roundOf(ctx) === "return") return ON_RETURN;
   // design-delta の done の前は裏取りするものが無い（git を読まない。G4 は design-delta の後ろなので位置も変わらない）
   if (!doneThisRound(ctx, "architect", "design-delta")) return false;
@@ -268,7 +344,12 @@ function g4Consent(ctx: StepContext): ConsentJudgement {
   const areas = undeclaredAreas(ctx);
   if (areas instanceof Error) return { timing: "now", reason: "G3 の申告を裏取りできない（このサイクルの ADR を読めない）" };
   if (areas.length > 0) {
-    return { timing: "now", reason: `設計が G3 の申告に無い重い領域（${areas.map((area) => area.name).join(", ")}）に触れている` };
+    return {
+      exceeded: {
+        reason: `設計が G3 の申告に無い重い領域（${areas.map((area) => area.name).join(", ")}）に触れている`,
+        premises: areas.map((area) => `area:${area.name}`),
+      },
+    };
   }
   return false;
 }
@@ -387,6 +468,8 @@ export const ARCHITECT_STEPS: SkillSteps = {
       skippable: true,
       // G3 に提示する案のうち最も重い害と、全案が触れるパス（G3 の同意の判定と G4 の裏取りに使う）
       declaresRisk: true,
+      // 事後同意が有効で G3 が上限を超える受け入れになる回は、止まらずに risk の事項として積む（US-20.2）
+      defers: (ctx) => deferredRisk(ctx, "G3", "options", g3Base(ctx, true), "G3 の設計案の選択"),
       args: designChoiceGate,
     },
     G3,
@@ -403,6 +486,8 @@ export const ARCHITECT_STEPS: SkillSteps = {
       title: "design-delta.md の作成",
       when: designChanges,
       produces: ["design-delta.md"],
+      // 設計が G3 の申告に無い重い領域に触れる回は、事後同意が有効なら risk の事項として積む（外との境界は積まない）
+      defers: (ctx) => deferredRisk(ctx, "G4", "design-delta", g4Base(ctx), "G4 の設計ドキュメントの承認"),
       args: mode,
     },
     {

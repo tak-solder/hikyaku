@@ -62,6 +62,16 @@ export function ceilingOf(axes: AppAxes): Ceiling {
   return "高";
 }
 
+/**
+ * 上限を決めた軸。上限が「なし」なら最上段の軸、「中」なら中段の軸（「高」までなら上限で止まる軸は無いので空）。
+ * 事後同意で積む事項の前提（app.<axis>）に使う。宣言のこの軸が変われば、受け入れの拠り所が崩れる
+ */
+export function ceilingAxes(axes: AppAxes): (typeof AXES)[number][] {
+  const ceiling = ceilingOf(axes);
+  if (ceiling === "高") return [];
+  return AXES.filter((axis) => (ceiling === "なし" ? rank(axis, axes[axis]) >= 2 : rank(axis, axes[axis]) === 1));
+}
+
 /** 害の申告が上限を超えるか */
 export function exceeds(harm: Harm, ceiling: Ceiling): boolean {
   if (ceiling === "なし") return true;

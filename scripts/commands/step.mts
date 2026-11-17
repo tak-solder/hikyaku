@@ -44,7 +44,16 @@ import {
   type Evaluation,
 } from "../lib/steps/engine.mts";
 import { checkpointsOf, CHECKPOINT_STEPS } from "../lib/steps/checkpoints.mts";
-import { readLedger, readUnitLedger, unacceptedObjections } from "../lib/ledger.mts";
+import {
+  nextItemId,
+  openItem,
+  readLedger,
+  readUnitLedger,
+  unacceptedObjections,
+  type Ledger,
+  type OpenRecord,
+} from "../lib/ledger.mts";
+import { g1ConsentRecord } from "../lib/deferred-consent.mts";
 import {
   buildDirective,
   CLI,
@@ -101,7 +110,7 @@ register({
   name: "step report",
   summary: "1手の結果を進捗に記録し、次の1手を返す",
   usage:
-    "hikyaku step report <phase> <step> [<cycle>] [--skill <内部スキル>] --result done|skipped|approved|rejected|failed [--reason <理由>] [--input <答え>] [--peak <トークン数>] [--harm 高|中] [--paths <glob,...>] [--pr <URL|番号>] [--dry-run] [--json]",
+    "hikyaku step report <phase> <step> [<cycle>] [--skill <内部スキル>] --result done|skipped|approved|rejected|failed [--reason <理由>] [--input <答え>] [--peak <トークン数>] [--harm 高|中] [--paths <glob,...>] [--loses <失うもの>] [--pr <URL|番号>] [--dry-run] [--json]",
   writes: true,
   details: [
     "作業単位のディレクトリの progress.jsonl に1行追記します。報告できるのは現在地のステップと、",
@@ -121,6 +130,10 @@ register({
     "--harm と --paths は、architect の options の done に添える申告です（G3 に提示する案のうち最も重い害と、",
     "全案が触れるパスの glob。--paths は波括弧の外のカンマで区切る）。欠けていても受け付けますが、",
     "[app] を宣言したワークスペースでは G3 が同意になります。",
+    "--loses は、事後同意（[consent] deferred）が有効なサイクルで、architect の options（G3）・design-delta（G4）の",
+    "done が上限を超える受け入れになるときに必須です（退けた安全側の案の利点）。そのとき step report は止まらずに",
+    "risk の事項（who=user・when=merge@architect）を decisions.jsonl に積みます（--dry-run では書きません）。",
+    "planner の G1 の承認では、サイクル設定の [consent] deferred の値を設定から読んで記録に残します。",
     "記録には、報告した時点のコンテキスト・セッション ID・Hikyaku の版が入ります（#68）。",
     "progress.jsonl は成果物と一緒にコミットしてください。",
   ].join("\n"),
@@ -136,19 +149,107 @@ register({
         `ステップ: ${opened.skill.steps.map((step) => step.id).join(" / ")}`,
       );
     }
-    const event = buildEvent(opened, evaluation, evaluated, args);
+    const notes: string[] = [];
+    const event = buildEvent(opened, evaluation, evaluated, args, notes);
+    const after: Opened = { ...opened, ctx: { ...opened.ctx, events: [...opened.ctx.events, event] } };
+    const deferred = deferredRiskRecord(opened, after, evaluated, event, args, notes);
 
     if (flagBoolean(args, "dry-run")) {
-      emit({ dryRun: true, event }, () => `（dry-run）次の1行を追記します:\n${JSON.stringify(event)}`);
+      const lines = [`（dry-run）次の1行を追記します:\n${JSON.stringify(event)}`];
+      if (deferred !== undefined) lines.push(`事後同意の事項として、decisions.jsonl に次の1行を追記します:\n${JSON.stringify(deferred.record)}`);
+      emit({ dryRun: true, event, ...(deferred === undefined ? {} : { deferredRisk: deferred.record }) }, () => [...lines, ...notes].join("\n"));
       return;
     }
     appendProgress(opened.ctx.unitDirectory, event);
-    const after: Opened = { ...opened, ctx: { ...opened.ctx, events: [...opened.ctx.events, event] } };
-    emitDirective(buildDirective(after, evaluate(after.skill, after.ctx)), { recorded: event }, `記録しました: ${stepId} ${event.result}\n\n`);
+    if (deferred !== undefined) {
+      // 進捗を書いたあとに積む（事項の at が done より後になり、G3・G4 の consent がこの回の事項として数える）
+      const record = { ...deferred.record, at: new Date().toISOString() };
+      openItem(deferred.cycleDirectory, record, deferred.ledger);
+      notes.push(`上限を超える受け入れを事後同意の事項 ${record.id} として積みました（マージの前の同意ゲートでユーザーが同意します）`);
+    }
+    const prefix = [`記録しました: ${stepId} ${event.result}`, ...notes].join("\n");
+    emitDirective(buildDirective(after, evaluate(after.skill, after.ctx)), { recorded: event }, `${prefix}\n\n`);
   },
 });
 
-function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: EvaluatedStep, args: ParsedArgs): ProgressEvent {
+/**
+ * done の報告で、上限を超える受け入れを事後同意の事項（risk）として積むか（defers のステップ）。報告を足した後の
+ * 記録で評価し、値を返せば --loses を必須にする。ledger は進捗を書く前に読み、読めなければ報告を受け付けない
+ * （進捗だけが書かれ、事項の無いまま G3・G4 が同意に戻るのを避ける）
+ */
+function deferredRiskRecord(
+  opened: Opened,
+  after: Opened,
+  evaluated: EvaluatedStep,
+  event: ProgressEvent,
+  args: ParsedArgs,
+  notes: string[],
+): { record: OpenRecord; ledger: Ledger; cycleDirectory: string } | undefined {
+  const definition = evaluated.definition;
+  const loses = flagString(args, "loses");
+  if (loses !== undefined && definition.defers === undefined) throw new HikyakuError(`${definition.id} には --loses を添えられません`);
+  if (definition.defers === undefined || event.result !== "done") {
+    if (loses !== undefined) throw new HikyakuError("--loses は done の報告にだけ添えられます");
+    return undefined;
+  }
+  const cycle = opened.ctx.cycle;
+  const risk = cycle === undefined ? undefined : definition.defers(after.ctx);
+  if (risk === undefined || cycle === undefined) {
+    if (loses !== undefined) notes.push("--loses は使いませんでした（この回は上限を超える受け入れを事後同意に回しません）");
+    return undefined;
+  }
+  if (loses === undefined || loses.trim() === "") {
+    throw new HikyakuError(
+      `${definition.id} の done には --loses で、退けた安全側の案の利点（失うもの）を添えてください`,
+      [
+        `事後同意が有効なので、${risk.gate} の上限を超える受け入れ（${risk.summary}）を止まらずに risk の事項として積みます。`,
+        "ユーザーがマージの前に同意するときに読む「失うもの」を、この報告で書いてください。",
+      ].join("\n"),
+    );
+  }
+  let ledger: Ledger;
+  try {
+    ledger = readLedger(cycle.directory);
+  } catch (error) {
+    throw new HikyakuError(
+      `${definition.id} の報告を受け付けません: 未決事項の記録を読めず、事後同意の事項を積めません`,
+      `${error instanceof Error ? error.message : String(error)}（hikyaku ledger list で確かめてください）`,
+    );
+  }
+  const record: OpenRecord = {
+    record: "open",
+    at: event.at,
+    id: nextItemId(ledger, opened.phase),
+    unit: opened.phase,
+    step: risk.step,
+    type: "risk",
+    summary: risk.summary,
+    when: `merge@${opened.phase}`,
+    who: "user",
+    premises: risk.premises,
+    loses: loses.trim(),
+    ...(risk.harm === undefined ? {} : { harm: risk.harm }),
+    ask: risk.gate,
+    source: "step-report",
+    ...(event.session === undefined ? {} : { session: event.session }),
+    hikyaku: pluginVersion(),
+  };
+  return { record, ledger, cycleDirectory: cycle.directory };
+}
+
+/** planner の G1 の承認で、提示した事後同意の値を記録する（値は設定から読み、LLM の引数では受け取らない） */
+function recordG1Consent(opened: Opened, evaluation: Evaluation, evaluated: EvaluatedStep, event: ProgressEvent, notes: string[]): void {
+  const cycle = opened.ctx.cycle;
+  if (opened.skill.skill !== "planner" || evaluated.definition.id !== "G1" || event.result !== "approved" || cycle === undefined) return;
+  // 提示の時刻: G1 の直前に完了したステップの記録
+  const index = evaluation.steps.indexOf(evaluated);
+  const prior = evaluation.steps.slice(0, index).reverse().find((step) => (step.status === "complete" || step.status === "skipped") && step.event !== undefined);
+  const recorded = g1ConsentRecord(opened.ctx.config, cycle.directory, prior?.event?.at);
+  event.deferredConsent = recorded.value;
+  if (recorded.note !== undefined) notes.push(recorded.note);
+}
+
+function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: EvaluatedStep, args: ParsedArgs, notes: string[]): ProgressEvent {
   const definition = evaluated.definition;
   const resultRaw = flagString(args, "result");
   if (resultRaw === undefined || !STEP_RESULTS.includes(resultRaw as StepResult)) {
@@ -230,6 +331,7 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
     const consent = consentOf(definition, opened.ctx);
     event.approval = consent !== false && consent.timing === "now" ? "consent" : "confirm";
   }
+  recordG1Consent(opened, evaluation, evaluated, event, notes);
 
   if (args.flags.has("bp")) {
     throw new HikyakuError("--bp は廃止しました", "見積もり直した予測ピークを --peak <トークン数>（380k など）で添えてください。");

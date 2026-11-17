@@ -106,8 +106,8 @@ plan と分割の検討を行ったこのセッションは、plan-review（分�
 
 ## 実装ステップ
 
-- [ ] Step 1: config.mts の `[consent]`（サイクル限定・ルートでエラー）と `ResolvedConfig.consent`
-- [ ] Step 2: `lib/deferred-consent.mts`（有効の判定・notice・G1 の記録の値）、`ProgressEvent.deferredConsent`、G1 の args と記録、`config` の出力、directive の notices
-- [ ] Step 3: engine の `defers`（lint を含む）、architect の options・design-delta の `defers` と G3・G4 の `deferred`、step report の `--loses` と risk の自動記録
-- [ ] Step 4: 指示文（G1.md・options.md・design-delta.md）、docs、CHANGELOG
-- [ ] Step 5: テスト（受け入れ基準ごと。deferred の回の `step where` と `step next` の一致を含む）、`conductor lint`・`step lint`・`npx tsc --noEmit`・`npm test`
+- [x] Step 1: config.mts の `[consent]`（サイクル限定・ルートでエラー）と `ResolvedConfig.consent`
+- [x] Step 2: `lib/deferred-consent.mts`（有効の判定・notice・G1 の記録の値）、`ProgressEvent.deferredConsent`、G1 の args と記録、`config` の出力、directive の notices
+- [x] Step 3: engine の `defers`（lint を含む）、architect の options・design-delta の `defers` と G3・G4 の `deferred`、step report の `--loses` と risk の自動記録
+- [x] Step 4: 指示文（G1.md・options.md・design-delta.md）、docs、CHANGELOG
+- [x] Step 5: テスト（受け入れ基準ごと。deferred の回の `step where` と `step next` の一致を含む）、`conductor lint`・`step lint`・`npx tsc --noEmit`・`npm test`
