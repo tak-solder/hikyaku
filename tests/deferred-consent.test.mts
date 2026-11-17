@@ -34,6 +34,19 @@ function commit(directory: string, message: string): void {
   git(directory, "commit", "-q", "--allow-empty", "-m", message);
 }
 
+/**
+ * 1分前の時刻でコミットする。コミットの時刻は秒の精度で、提示と同じ秒のコミットは提示より後とみなすので、
+ * 提示より前に選んだ値を表すコミットはこれで作る（テストが速く進んでも同じ秒にならない）
+ */
+function commitEarlier(directory: string, message: string): void {
+  git(directory, "add", "-A");
+  const date = new Date(Date.now() - 60_000).toISOString();
+  const result = spawnSync("git", ["-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "-m", message], {
+    cwd: directory, encoding: "utf8", env: { ...testEnvironment(), GIT_COMMITTER_DATE: date, GIT_AUTHOR_DATE: date }, timeout: 10_000,
+  });
+  assert.equal(result.status, 0, result.stderr);
+}
+
 /** [app] の宣言。axes は exposure / data / impact */
 function app(options: { exposure?: string; mergeGate?: boolean; areas?: { name: string; paths: string[] }[] } = {}): string {
   const lines = ["", "[app]", `exposure = "${options.exposure ?? "internal"}"`, `data = "none"`, `impact = "low"`];
@@ -305,7 +318,7 @@ test("G1: args に deferredConsent を添え、承認の記録に設定の値を
   const directory = workspace(t);
   git(directory, "checkout", "-q", "-b", "hikyaku/001-test/plan");
   addConsent(directory);
-  commit(directory, "consent を選ぶ");
+  commitEarlier(directory, "consent を選ぶ");
   const g1 = plannerToG1(directory);
   assert.equal(g1.args?.["deferredConsent"], true);
   assert.equal(g1.approval, "consent");
@@ -338,6 +351,36 @@ test("G1: 選んでいなければ false を記録し、G1 の後に足しても
   assert.equal(events(directory, PLANNING).filter((event) => event["step"] === "G1").pop()?.["deferredConsent"], false);
   addConsent(directory);
   commit(directory, "G1 の後に足す");
+  assert.equal(judged(directory).effective, false);
+});
+
+test("G1: 差し戻しを報告してから設定を直してコミットし、提示し直して承認すれば true を記録する", (t) => {
+  const directory = workspace(t);
+  git(directory, "checkout", "-q", "-b", "hikyaku/001-test/plan");
+  plannerToG1(directory);
+  report(directory, "plan", "G1", "--result", "rejected", "--input", "事後同意を選ぶ");
+  addConsent(directory);
+  commit(directory, "consent を選ぶ");
+  report(directory, "plan", "G1", "--result", "approved", "--input", "OK");
+  assert.equal(events(directory, PLANNING).filter((event) => event["step"] === "G1").pop()?.["deferredConsent"], true);
+  assert.equal(judged(directory).effective, true);
+});
+
+test("G1: 承認のあとに差し戻した・planner を回し直したら、前の承認の値は数えない", (t) => {
+  const directory = workspace(t);
+  git(directory, "checkout", "-q", "-b", "hikyaku/001-test/plan");
+  addConsent(directory);
+  commitEarlier(directory, "consent を選ぶ");
+  plannerToG1(directory);
+  report(directory, "plan", "G1", "--result", "approved", "--input", "OK");
+  assert.equal(judged(directory).effective, true);
+  // 報告し直して G1 を差し戻す
+  report(directory, "plan", "review", "--result", "done");
+  report(directory, "plan", "G1", "--result", "rejected", "--input", "直す");
+  assert.equal(judged(directory).effective, false);
+  report(directory, "plan", "G1", "--result", "approved", "--input", "OK");
+  assert.equal(judged(directory).effective, true);
+  succeeds(directory, "step", "restart", "plan", "001", "--reason", "回し直す");
   assert.equal(judged(directory).effective, false);
 });
 

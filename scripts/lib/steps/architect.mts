@@ -174,6 +174,11 @@ function g3Base(ctx: StepContext, withDeclaration: boolean): ConsentJudgement | 
   if (exceeds(declared.harm, ceiling)) {
     reasons.push(`害の申告（${declared.harm}）が上限（${ceiling === "なし" ? "何も任せない" : `${ceiling}まで`}）を超える`);
     premises.push(...ceilingAxes(declaration.axes).map((axis) => `app.${axis}`));
+    // 事後同意が無効なら、重い領域の照合（リポジトリ全体のファイル一覧）は判定を変えないので省く。
+    // 有効なら、積む事項の前提に当たった領域も要る
+    if (ctx.cycle === undefined || !deferredConsent(ctx.config, ctx.cycle.directory).effective) {
+      return { exceeded: { reason: reasons[0] as string, premises, harm: declared.harm } };
+    }
   }
   // 重い領域のパスに触れる受け入れは、害の重さに関わらず上限を超えるとみなす
   const hit = heavyAreasHit(declaration, declared.paths, repositoryFiles(ctx.config));

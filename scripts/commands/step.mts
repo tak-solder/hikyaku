@@ -241,10 +241,13 @@ function deferredRiskRecord(
 function recordG1Consent(opened: Opened, evaluation: Evaluation, evaluated: EvaluatedStep, event: ProgressEvent, notes: string[]): void {
   const cycle = opened.ctx.cycle;
   if (opened.skill.skill !== "planner" || evaluated.definition.id !== "G1" || event.result !== "approved" || cycle === undefined) return;
-  // 提示の時刻: G1 の直前に完了したステップの記録
+  // 提示の時機: G1 の直前に完了したステップの記録と、その後に差し戻しがあったか（あれば提示し直した回）
   const index = evaluation.steps.indexOf(evaluated);
   const prior = evaluation.steps.slice(0, index).reverse().find((step) => (step.status === "complete" || step.status === "skipped") && step.event !== undefined);
-  const recorded = g1ConsentRecord(opened.ctx.config, cycle.directory, prior?.event?.at);
+  const after = prior?.event?.at;
+  const revised = after !== undefined &&
+    opened.ctx.events.some((recorded) => recorded.skill === "planner" && recorded.step === "G1" && recorded.result === "rejected" && recorded.at > after);
+  const recorded = g1ConsentRecord(opened.ctx.config, cycle.directory, { after, revised });
   event.deferredConsent = recorded.value;
   if (recorded.note !== undefined) notes.push(recorded.note);
 }

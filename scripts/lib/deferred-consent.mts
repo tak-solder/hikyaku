@@ -24,7 +24,7 @@
 import { join, relative, sep } from "node:path";
 import { readConsent, type ResolvedConfig } from "./config.mts";
 import { defaultBranch, gitSync } from "./git.mts";
-import { readProgress } from "./progress.mts";
+import { readProgress, RESTART } from "./progress.mts";
 import { effectiveDeclaration } from "./risk.mts";
 import { parseToml, type TomlTable } from "./toml.mts";
 
@@ -78,7 +78,10 @@ function compute(config: ResolvedConfig, cycleDirectory: string | undefined): De
   return no(`G1 の承認の記録に値が無く、${merged}`);
 }
 
-/** planner の最後の G1 の承認の記録の deferredConsent が true か。記録を読めなければ false */
+/**
+ * planner の今回の手順（最後の step restart より後）で、G1 の最新の記録が承認で、その deferredConsent が true か。
+ * 最新が差し戻し（rejected）なら、その前の承認は数えない。記録を読めなければ false
+ */
 function g1Recorded(cycleDirectory: string): boolean {
   let events;
   try {
@@ -86,8 +89,10 @@ function g1Recorded(cycleDirectory: string): boolean {
   } catch {
     return false;
   }
-  const approvals = events.filter((event) => event.skill === "planner" && event.step === "G1" && event.result === "approved");
-  return approvals[approvals.length - 1]?.deferredConsent === true;
+  const restart = events.findLastIndex((event) => event.skill === "planner" && event.result === RESTART);
+  const g1 = events.slice(restart + 1).filter((event) => event.skill === "planner" && event.step === "G1");
+  const latest = g1[g1.length - 1];
+  return latest?.result === "approved" && latest.deferredConsent === true;
 }
 
 /**
@@ -132,18 +137,30 @@ export function deferredConsentNotice(config: ResolvedConfig, cycleDirectory: st
   return `事後同意（[consent] deferred）は有効になっていません: ${judged.reason}。上限を超える受け入れは、その場でユーザーの同意を取ります`;
 }
 
+/** G1 の提示の時機 */
+export interface G1Presentation {
+  /** G1 の直前に完了したステップの記録の時刻（最初の提示はこれより後） */
+  after: string | undefined;
+  /**
+   * その後に G1 の差し戻し（rejected）がある。ユーザーの答えを反映して提示し直す回なので、設定を直して
+   * コミットしてから提示し直す（G1.md）。提示し直した時刻は記録に無いので、コミットの時刻とは比べない
+   */
+  revised: boolean;
+}
+
 /**
  * G1 の承認で記録する値。requested でなければ false。提示したあとに書き換えた値を承認として残さないよう、
- * サイクル設定に未コミットの変更がある・最後のコミットが提示（presentedAfter: G1 の直前に完了したステップの
- * 記録の時刻）より後・git を読めない、のどれかなら false と、その理由を返す
+ * サイクル設定に未コミットの変更がある・git を読めない・（差し戻しの無い回で）最後のコミットが最初の提示より後、
+ * のどれかなら false と、その理由を返す
  */
 export function g1ConsentRecord(
   config: ResolvedConfig,
   cycleDirectory: string,
-  presentedAfter: string | undefined,
+  presentation: G1Presentation,
 ): { value: boolean; note?: string } {
   if (config.consent.deferred !== true) return { value: false };
   const refuse = (note: string) => ({ value: false, note: `事後同意の値を false で記録しました: ${note}` });
+  const presentedAfter = presentation.after;
   if (presentedAfter === undefined) return refuse("G1 の前に完了したステップの記録が無く、提示の時刻が分かりません");
   const path = join(cycleDirectory, CONFIG_FILE);
   const status = gitSync(config.repoRoot, ["status", "--porcelain", "--", path]);
@@ -154,6 +171,8 @@ export function g1ConsentRecord(
   const committedAt = new Date(committed).getTime();
   const presentedAt = new Date(presentedAfter).getTime();
   if (Number.isNaN(committedAt) || Number.isNaN(presentedAt)) return refuse("サイクル設定のコミットの時刻を読めません");
-  if (committedAt > presentedAt) return refuse("サイクル設定の最後のコミットが G1 の提示より後です（提示したあとに書き換えた値は記録しません）");
+  if (presentation.revised) return { value: true };
+  // コミットの時刻は秒の精度なので、提示と同じ秒のコミットは提示より後とみなす（安全側）
+  if (committedAt >= Math.floor(presentedAt / 1000) * 1000) return refuse("サイクル設定の最後のコミットが G1 の提示より後です（提示したあとに書き換えた値は記録しません）");
   return { value: true };
 }
