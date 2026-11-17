@@ -20,3 +20,9 @@
 {"at":"2026-11-17T04:44:13.454Z","skill":"builder","step":"G8","result":"approved","input":"承認する（実装へ進む）。委任された判断（監督）: 受け入れ基準はすべて test-spec に対応し範囲外のシナリオなし。conductor の子の扱い・決定の数え方・読めないときの扱いは安全側。低の指摘（文言とキー名）は実装で決めてよい","context":163838,"session":"62d86b14-c803-4abf-a99a-8ac573e8e2e0","hikyaku":"3.0.0"}
 {"at":"2026-11-17T05:04:08.747Z","skill":"builder","step":"implement","result":"done","context":236491,"session":"62d86b14-c803-4abf-a99a-8ac573e8e2e0","hikyaku":"3.0.0"}
 {"at":"2026-11-17T05:04:25.527Z","skill":"builder","step":"verify","result":"done","context":240254,"session":"62d86b14-c803-4abf-a99a-8ac573e8e2e0","hikyaku":"3.0.0"}
+{"at":"2026-11-17T05:23:54.458Z","skill":"builder","step":"review","result":"done","context":304306,"session":"62d86b14-c803-4abf-a99a-8ac573e8e2e0","hikyaku":"3.0.0"}
+{"at":"2026-11-17T05:23:57.247Z","skill":"builder","step":"handoff","result":"done","context":306111,"session":"62d86b14-c803-4abf-a99a-8ac573e8e2e0","hikyaku":"3.0.0"}
+{"at":"2026-11-17T05:24:09.403Z","skill":"retrospective","step":"peak-actual","result":"done","context":312453,"session":"62d86b14-c803-4abf-a99a-8ac573e8e2e0","hikyaku":"3.0.0"}
+{"at":"2026-11-17T05:24:20.142Z","skill":"retrospective","step":"analyze","result":"done","context":315042,"session":"62d86b14-c803-4abf-a99a-8ac573e8e2e0","hikyaku":"3.0.0"}
+{"at":"2026-11-17T05:24:45.258Z","skill":"retrospective","step":"write","result":"done","context":320722,"session":"62d86b14-c803-4abf-a99a-8ac573e8e2e0","hikyaku":"3.0.0"}
+{"at":"2026-11-17T05:24:47.543Z","skill":"builder","step":"retrospective","result":"done","context":321015,"session":"62d86b14-c803-4abf-a99a-8ac573e8e2e0","hikyaku":"3.0.0"}
