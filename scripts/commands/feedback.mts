@@ -5,7 +5,7 @@ import { dirname, relative } from "node:path";
 import { flagBoolean, flagString } from "../lib/args.mts";
 import { loadConfig } from "../lib/config.mts";
 import { HikyakuError } from "../lib/errors.mts";
-import { collectFeedback, FEEDBACK_DIR, feedbackDate, freshFeedbackPath, isIgnored, renderFeedback } from "../lib/feedback.mts";
+import { collectFeedback, FEEDBACK_DIR, feedbackDate, freshFeedbackPath, insideWorkTree, isIgnored, renderFeedback } from "../lib/feedback.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 
@@ -23,7 +23,8 @@ register({
     "  - upstream: handoff.md・retrospective.md の「永続化すること」に宛先 upstream で書かれた本文",
     "  - 起票の下書き: issue の本文の枠",
     "",
-    "progress.jsonl から読むのは at / skill / step / result / round / hikyaku の欄だけです。",
+    "progress.jsonl から読むのは at / skill / step / result / hikyaku の欄だけです。",
+    "サイクルに属さない patch の記録（{HIKYAKU_ROOT}/patches/）は読みません（マージのたびに増えるため）。",
     "ユーザーの答え（input）・理由（reason）・PR・セッションは読みません。サイクル名・ビルド番号・",
     "patch の slug・作業単位のパスは出力に含めません。",
     "",
@@ -41,6 +42,12 @@ register({
     const path = freshFeedbackPath(config.hikyakuRoot, date);
     const relPath = relative(config.repoRoot, path);
 
+    if (!insideWorkTree(config.repoRoot)) {
+      throw new HikyakuError(
+        `${config.repoRoot} が git の作業ツリーとして読めないため、${relPath} が追跡対象かを確かめられません`,
+        "git が使えること、ワークスペースが git のリポジトリの中にあることを確かめてください（確かめられないまま書き出すと、コミットされるおそれがあるため止めています）。",
+      );
+    }
     if (!isIgnored(config.repoRoot, path)) {
       throw new HikyakuError(
         `${relPath} が git の追跡対象のため、書き出しません`,

@@ -153,15 +153,17 @@ const IGNORED_ENTRIES: IgnoredEntry[] = [
 ];
 
 /**
- * .gitignore にその行が入っているか。先頭の `/` の有無は問わない。末尾の `/` はディレクトリにだけ当たるので、
- * ディレクトリの行（feedback/）だけ、有無を問わない（`.hikyaku.local/` はファイルの .hikyaku.local を除外しない）
+ * .gitignore がその行を既に扱っているか。先頭の `/` の有無は問わない。末尾の `/` はディレクトリにだけ当たるので、
+ * ディレクトリの行（feedback/）だけ、有無を問わない（`.hikyaku.local/` はファイルの .hikyaku.local を除外しない）。
+ * 否定（`!feedback/`）は、ユーザーが追跡に戻すと決めた方針なので、扱い済みとみなして追記しない
+ * （後ろに足すと、gitignore は後の行が勝つので、ユーザーの規則を黙って覆す）
  */
 function ignores(source: string, entry: IgnoredEntry): boolean {
   const directory = entry.line.endsWith("/");
   const bare = entry.line.replace(/\/$/, "");
   return source
     .split("\n")
-    .map((line) => line.trim().replace(/^\//, ""))
+    .map((line) => line.trim().replace(/^!/, "").replace(/^\//, ""))
     .map((line) => (directory ? line.replace(/\/$/, "") : line))
     .some((line) => line === bare);
 }

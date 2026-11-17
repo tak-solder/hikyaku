@@ -66,6 +66,12 @@ test("CLI: init は .gitignore に無い除外の行だけを足す（先頭の 
   write(directoryOnly, "docs/hikyaku/.gitignore", ".hikyaku.local/\nfeedback/\n");
   succeeds(directoryOnly, "init", "--root", "docs/hikyaku");
   assert.match(readFileSync(join(directoryOnly, "docs/hikyaku/.gitignore"), "utf8"), /^\.hikyaku\.local$/m);
+
+  // `!feedback/` はユーザーが追跡に戻すと決めた方針。後ろに feedback/ を足して覆さない
+  const negated = repository(t);
+  write(negated, "docs/hikyaku/.gitignore", ".hikyaku.local\n!feedback/\n");
+  const kept = JSON.parse(succeeds(negated, "init", "--root", "docs/hikyaku", "--json"));
+  assert.equal(kept.files.find((file: { path: string }) => file.path.endsWith(".gitignore")).status, "skip");
 });
 
 test("CLI: 正規化するとリポジトリルートになる init のパスを拒否する", (t) => {

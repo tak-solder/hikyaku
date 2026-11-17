@@ -7,6 +7,7 @@ import { cli, cliWith, repository, succeeds, temporaryDirectory, workspace, writ
 import {
   feedbackDate,
   feedbackPath,
+  insideWorkTree,
   isIgnored,
   pickFeedbackFields,
   progressFiles,
@@ -30,16 +31,17 @@ function event(at: string, skill: string, step: string, result: FeedbackEvent["r
 
 const EMPTY: FeedbackSummary = { failed: [], gates: [], versions: [], upstream: [] };
 
-test("progressFiles: サイクル・patch の下を再帰で集め、feedback/ の下は集めない", (t) => {
+test("progressFiles: サイクル（中の patch を含む）を再帰で集め、feedback/ とサイクルに属さない patches/ は集めない", (t) => {
   const root = temporaryDirectory(t);
   write(root, "cycles/001-secret-billing/build-03/progress.jsonl", "");
   write(root, "cycles/001-secret-billing/design/progress.jsonl", "");
-  write(root, "patches/202611/fix-login/progress.jsonl", "");
+  write(root, "cycles/001-secret-billing/patches/202611/fix-login/progress.jsonl", "");
+  write(root, "patches/202611/fix-other/progress.jsonl", "");
   write(root, "feedback/progress.jsonl", "");
   assert.deepEqual(progressFiles(root), [
     join(root, "cycles/001-secret-billing/build-03/progress.jsonl"),
     join(root, "cycles/001-secret-billing/design/progress.jsonl"),
-    join(root, "patches/202611/fix-login/progress.jsonl"),
+    join(root, "cycles/001-secret-billing/patches/202611/fix-login/progress.jsonl"),
   ]);
 });
 
@@ -102,7 +104,7 @@ test("summarizeProgress: 先頭・restart の直後・差が負・読めない�
     [event("2026-11-01T10:05:00Z", "architect", "G2", "approved")],
     [
       event("2026-11-01T10:00:00Z", "architect", "design", "done"),
-      event("2026-11-01T11:00:00Z", "architect", "*", "restart", { round: "return" }),
+      event("2026-11-01T11:00:00Z", "architect", "*", "restart"),
       event("2026-11-01T11:40:00Z", "architect", "G3", "approved"),
     ],
     [event("2026-11-01T10:30:00Z", "builder", "plan", "done"), event("2026-11-01T10:00:00Z", "builder", "G8", "approved")],
@@ -111,15 +113,25 @@ test("summarizeProgress: 先頭・restart の直後・差が負・読めない�
   assert.deepEqual(summary.gates, []);
 });
 
-test("summarizeProgress: round は集計の単位に含めず、版を重複なしで集め、件数や最大値は返さない", () => {
+test("summarizeProgress: 同じゲートの rejected の直後（手直しの時間）は数えない", () => {
+  const summary = summarizeProgress([[
+    event("2026-11-01T09:50:00Z", "builder", "test-spec-review", "done"),
+    event("2026-11-01T10:00:00Z", "builder", "G8", "rejected"),
+    event("2026-11-01T13:00:00Z", "builder", "G8", "approved"),
+  ]]);
+  assert.deepEqual(summary.gates, [{ skill: "builder", step: "G8", count: 1, medianMinutes: 10 }]);
+});
+
+test("summarizeProgress: round を読まずにまとめ、版を重複なしで集め、件数や最大値は返さない", () => {
+  const withRound = (entry: FeedbackEvent, round: string): FeedbackEvent => pickFeedbackFields({ ...entry, round });
   const summary = summarizeProgress([
     [
-      event("2026-11-01T10:00:00Z", "architect", "design", "done", { round: "return", hikyaku: "3.0.0" }),
-      event("2026-11-01T10:10:00Z", "architect", "G3", "approved", { round: "return", hikyaku: "3.0.0" }),
+      withRound(event("2026-11-01T10:00:00Z", "architect", "design", "done", { hikyaku: "3.0.0" }), "return"),
+      withRound(event("2026-11-01T10:10:00Z", "architect", "G3", "approved", { hikyaku: "3.0.0" }), "return"),
     ],
     [
-      event("2026-11-01T10:00:00Z", "architect", "design", "done", { round: "add", hikyaku: "3.1.0" }),
-      event("2026-11-01T10:20:00Z", "architect", "G3", "approved", { round: "add" }),
+      withRound(event("2026-11-01T10:00:00Z", "architect", "design", "done", { hikyaku: "3.1.0" }), "add"),
+      withRound(event("2026-11-01T10:20:00Z", "architect", "G3", "approved"), "add"),
     ],
   ]);
   assert.deepEqual(summary.gates, [{ skill: "architect", step: "G3", count: 2, medianMinutes: 15 }]);
@@ -127,13 +139,13 @@ test("summarizeProgress: round は集計の単位に含めず、版を重複な�
   assert.deepEqual(Object.keys(summary).sort(), ["failed", "gates", "versions"]);
 });
 
-test("pickFeedbackFields: input・reason・pr・session を写さない", () => {
+test("pickFeedbackFields: input・reason・pr・session・round を写さない", () => {
   const full: ProgressEvent = {
     at: "2026-11-01T10:00:00Z", skill: "builder", step: "G8", result: "approved", round: "return", hikyaku: "3.0.0",
     input: "顧客 ACME の要件で承認", reason: "理由", pr: "https://github.com/acme/secret/pull/42", session: "sess-abc123", peak: 300_000, context: 1,
   };
   assert.deepEqual(pickFeedbackFields(full), {
-    at: "2026-11-01T10:00:00Z", skill: "builder", step: "G8", result: "approved", round: "return", hikyaku: "3.0.0",
+    at: "2026-11-01T10:00:00Z", skill: "builder", step: "G8", result: "approved", hikyaku: "3.0.0",
   });
 });
 
@@ -205,7 +217,7 @@ function sensitiveWorkspace(t: Parameters<typeof workspace>[0]): string {
     { at: "2026-11-01T10:20:00Z", skill: "builder", step: "G8", result: "approved", round: "return", ...secret },
     { at: "2026-11-01T10:30:00Z", skill: "builder", step: "verify", result: "failed", ...secret },
   ]));
-  write(directory, `${ROOT}/patches/202611/fix-acme-login/progress.jsonl`, jsonl([
+  write(directory, `${ROOT}/cycles/001-secret-billing/patches/202611/fix-acme-login/progress.jsonl`, jsonl([
     { at: "2026-11-02T10:00:00Z", skill: "patch", step: "verify", result: "failed", ...secret },
   ]));
   return directory;
@@ -254,6 +266,21 @@ test("feedback export: feedback/ が追跡対象なら（--dry-run でも）書�
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /feedback\/ を足してください/);
   }
+  assert.equal(existsSync(join(directory, ROOT, "feedback")), false);
+});
+
+test("insideWorkTree: git の作業ツリーの中だけ true", (t) => {
+  assert.equal(insideWorkTree(repository(t)), true);
+  assert.equal(insideWorkTree(temporaryDirectory(t)), false);
+});
+
+test("feedback export: 作業ツリーの外では「追跡対象」ではなく、確かめられないことを示して止まる", (t) => {
+  const directory = workspace(t);
+  rmSync(join(directory, ".git"), { recursive: true, force: true });
+  const result = cli(directory, "feedback", "export");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /確かめられません/);
+  assert.doesNotMatch(result.stderr, /追跡対象のため/);
   assert.equal(existsSync(join(directory, ROOT, "feedback")), false);
 });
 

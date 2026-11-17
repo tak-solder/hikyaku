@@ -214,7 +214,8 @@ export function documentFiles(config: ResolvedConfig, names: string[]): string[]
   const files: string[] = [];
   for (const entry of loadGuide(config.hikyakuRoot)) {
     if (!names.includes(entry.name) || entry.path === undefined) continue;
-    const absolute = join(config.repoRoot, entry.path.split("#")[0] ?? entry.path);
+    // entry.path はアンカーを除いたパス（docs.mts の parseGuide が分ける）
+    const absolute = join(config.repoRoot, entry.path);
     if (!existsSync(absolute)) continue;
     if (statSync(absolute).isDirectory()) files.push(...markdownUnder(absolute));
     else if (absolute.endsWith(".md")) files.push(absolute);

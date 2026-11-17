@@ -2,7 +2,7 @@
  * Hikyaku へのフィードバックの書き出し（feedback export）。
  *
  * ユーザーのリポジトリの中身を外に出さない（AGENTS.md の原則 15）。そのため:
- *   - progress.jsonl から読むのは、中身を含まない欄（at / skill / step / result / round / hikyaku）だけ。
+ *   - progress.jsonl から読むのは、中身を含まない欄（at / skill / step / result / hikyaku）だけ。
  *     input（ユーザーの答え）・reason（理由）・pr・session は読まない
  *   - 集計の単位はスキルとステップの ID だけ。サイクル名・ビルド番号・patch の slug・作業単位の
  *     パスは出力に含めない。件数の合計や最大値のように、作業の規模や時期の手がかりになる値も出さない
@@ -15,17 +15,18 @@
  */
 
 import { existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { ResolvedConfig } from "./config.mts";
 import { cycleDir, loadCycles } from "./cycles.mts";
 import { gitSync } from "./git.mts";
 import { readProgress, PROGRESS_FILE, RESTART, type ProgressEvent } from "./progress.mts";
+import { PATCHES_DIR } from "./patch.mts";
 import { collectPromotions } from "./promotions.mts";
 
 export const FEEDBACK_DIR = "feedback";
 
 /** 書き出しが読む欄。ここに無い欄（input / reason / pr / session など）は集計に渡さない */
-export type FeedbackEvent = Pick<ProgressEvent, "at" | "skill" | "step" | "result" | "round" | "hikyaku">;
+export type FeedbackEvent = Pick<ProgressEvent, "at" | "skill" | "step" | "result" | "hikyaku">;
 
 export interface StepCount {
   skill: string;
@@ -51,17 +52,20 @@ export interface FeedbackSummary {
 /** 中身を含まない欄だけを写す */
 export function pickFeedbackFields(event: ProgressEvent): FeedbackEvent {
   const picked: FeedbackEvent = { at: event.at, skill: event.skill, step: event.step, result: event.result };
-  if (event.round !== undefined) picked.round = event.round;
   if (event.hikyaku !== undefined) picked.hikyaku = event.hikyaku;
   return picked;
 }
 
-/** HIKYAKU_ROOT の下の progress.jsonl（feedback/ は除く）。ユーザーが手で呼ぶコマンドなので全件を走査する */
+/**
+ * HIKYAKU_ROOT の下の progress.jsonl。feedback/ と、直下の patches/（サイクルに属さない patch）は読まない。
+ * サイクルに属さない patch の記録はマージのたびに増えるので、全件を走査しない（AGENTS.md のスクリプト規約）。
+ * サイクルの中の patch は読む
+ */
 export function progressFiles(hikyakuRoot: string): string[] {
   const found: string[] = [];
   const visit = (directory: string, top: boolean): void => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      if (top && entry.name === FEEDBACK_DIR) continue;
+      if (top && (entry.name === FEEDBACK_DIR || entry.name === PATCHES_DIR)) continue;
       const path = join(directory, entry.name);
       if (entry.isDirectory()) visit(path, false);
       else if (entry.isFile() && entry.name === PROGRESS_FILE) found.push(path);
@@ -91,7 +95,8 @@ function byStep<T extends { skill: string; step: string }>(a: T, b: T): number {
  *
  * ゲートの記録（approved / rejected）は、同じファイルの直前の記録の at との差をかかった時間とする（直前が別のスキルなら数えない）。
  * restart の直後のゲート、日時が読めない・差が負の組は数えない（別の回の記録と差を取らないため）。
- * round は集計の単位に含めない（回の種類で分けると、サイクルを特定しうる組み合わせが増える）
+ * 同じゲートの rejected の直後も数えない（差し戻しから提示し直すまでの手直しの時間で、待ちではない）。
+ * round は読まない（回の種類で分けると、サイクルを特定しうる組み合わせが増える）
  */
 export function summarizeProgress(files: FeedbackEvent[][]): Omit<FeedbackSummary, "upstream"> {
   const failed = new Map<string, StepCount>();
@@ -109,7 +114,7 @@ export function summarizeProgress(files: FeedbackEvent[][]): Omit<FeedbackSummar
         entry.count += 1;
         failed.set(key(event.skill, event.step), entry);
       }
-      if ((event.result === "approved" || event.result === "rejected") && previous !== undefined && previous.result !== RESTART && previous.skill === event.skill) {
+      if ((event.result === "approved" || event.result === "rejected") && previous !== undefined && previous.result !== RESTART && previous.skill === event.skill && !(previous.result === "rejected" && previous.step === event.step)) {
         const minutes = (Date.parse(event.at) - Date.parse(previous.at)) / 60_000;
         if (Number.isFinite(minutes) && minutes >= 0) {
           const entry = waits.get(key(event.skill, event.step)) ?? { skill: event.skill, step: event.step, minutes: [] };
@@ -144,7 +149,7 @@ export function upstreamItems(hikyakuRoot: string): string[] {
 }
 
 export function collectFeedback(config: Pick<ResolvedConfig, "hikyakuRoot">): FeedbackSummary {
-  const files = progressFiles(config.hikyakuRoot).map((path) => readProgress(join(path, "..")).map(pickFeedbackFields));
+  const files = progressFiles(config.hikyakuRoot).map((path) => readProgress(dirname(path)).map(pickFeedbackFields));
   return { ...summarizeProgress(files), upstream: upstreamItems(config.hikyakuRoot) };
 }
 
@@ -175,6 +180,11 @@ export function freshFeedbackPath(hikyakuRoot: string, date: string): string {
  */
 export function isIgnored(repoRoot: string, path: string): boolean {
   return gitSync(repoRoot, ["check-ignore", "-q", "--", path]) !== undefined;
+}
+
+/** git の作業ツリーの中か（git が無い・外なら false）。追跡対象かを判定できない状態を、追跡対象と取り違えないため */
+export function insideWorkTree(repoRoot: string): boolean {
+  return gitSync(repoRoot, ["rev-parse", "--is-inside-work-tree"])?.trim() === "true";
 }
 
 export function renderFeedback(summary: FeedbackSummary, date: string): string {

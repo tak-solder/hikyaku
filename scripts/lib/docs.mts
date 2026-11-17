@@ -180,10 +180,18 @@ export function markdownAnchors(source: string): Set<string> {
     seen.set(base, count + 1);
     anchors.add(count === 0 ? base : `${base}-${count}`);
   };
+  const lines = source.split("\n");
+  // 先頭の YAML frontmatter（`---` で囲む）は読まない。閉じの `---` を setext の見出しと取り違えないため
+  let start = 0;
+  if (lines[0]?.trim() === "---") {
+    const close = lines.findIndex((line, index) => index > 0 && line.trim() === "---");
+    if (close !== -1) start = close + 1;
+  }
   // 閉じるのは、開いたのと同じ文字で、同じ長さ以上の囲み（``` の中の ~~~ では閉じない）
   let fence: { char: string; length: number } | undefined;
-  let previous: string | undefined;
-  for (const line of source.split("\n")) {
+  // setext の見出しになりうる段落の行（下線の直前まで続く行をつなげる）
+  let paragraph: string[] = [];
+  for (const line of lines.slice(start)) {
     const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
     if (fence !== undefined) {
       if (marker && (marker[1] as string)[0] === fence.char && (marker[1] as string).length >= fence.length && (marker[2] as string).trim() === "") {
@@ -193,22 +201,26 @@ export function markdownAnchors(source: string): Set<string> {
     }
     if (marker) {
       fence = { char: (marker[1] as string)[0] as string, length: (marker[1] as string).length };
-      previous = undefined;
+      paragraph = [];
       continue;
     }
     const atx = /^ {0,3}#{1,6}(?:\s+(.*?))?\s*$/.exec(line);
     if (atx) {
       add((atx[1] ?? "").replace(/\s+#+$/, ""));
-      previous = undefined;
+      paragraph = [];
       continue;
     }
-    // setext: 段落の1行の直後の下線。箇条書き・表・引用の行は見出しにしない
-    if (/^ {0,3}(=+|-+)\s*$/.test(line) && previous !== undefined && previous.trim() !== "" && !/^\s*([-*+>|]|\d+[.)])/.test(previous)) {
-      add(previous.trim());
-      previous = undefined;
+    // setext: 段落の直後の下線。箇条書き・表・引用で始まる段落は見出しにしない
+    if (/^ {0,3}(=+|-+)\s*$/.test(line) && paragraph.length > 0) {
+      add(paragraph.map((part) => part.trim()).join(" "));
+      paragraph = [];
       continue;
     }
-    previous = line;
+    if (line.trim() === "" || (paragraph.length === 0 && /^\s*([-*+>|]|\d+[.)])/.test(line))) {
+      paragraph = [];
+      continue;
+    }
+    paragraph.push(line);
   }
   return anchors;
 }
