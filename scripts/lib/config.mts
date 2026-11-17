@@ -1228,7 +1228,8 @@ export function readAppDeclaration(table: TomlTable | undefined, where = "[app]"
   return { axes: { exposure, data, impact }, mergeGate, areas };
 }
 
-function readBoundaries(table: TomlTable | undefined): Boundaries {
+/** [boundaries] を読む。作業ツリーのルート設定と、基準（merge-base）のルート設定の両方で使う */
+export function readBoundaries(table: TomlTable | undefined): Boundaries {
   if (table === undefined) return { external: [], internal: [] };
   const where = "[boundaries]";
   assertKnownKeys(table, ["external", "internal"], where);

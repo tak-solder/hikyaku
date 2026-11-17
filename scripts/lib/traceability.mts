@@ -63,6 +63,71 @@ export function referencedCriteria(issue: string): string[] | undefined {
   return found ? ids : undefined;
 }
 
+/**
+ * test-spec.md で、受け入れ基準から一意に決まらず AI が解釈で決めた振る舞いのシナリオに付ける印。
+ * シナリオの見出し（###）の末尾に付ける。G8 の提示（gate brief G8）がこの印のシナリオだけを示す
+ */
+export const INTERPRETED_MARK = "（解釈）";
+
+/** test-spec.md のシナリオ（### 見出しの単位） */
+export interface TestScenario {
+  /** 見出しの文字列（`### ` を除く） */
+  heading: string;
+  /** 見出しの次の行から、次の見出しの手前まで（前後の空行は除く） */
+  body: string;
+  interpreted: boolean;
+  /** 「- 対応:」の行に書かれた受け入れ基準の番号 */
+  criteria: string[];
+}
+
+/** test-spec.md のシナリオ。コードブロックの中の見出しと番号は読まない */
+export function testSpecScenarios(testSpec: string): TestScenario[] {
+  const scenarios: TestScenario[] = [];
+  let current: { heading: string; lines: string[] } | undefined;
+  const flush = () => {
+    if (current === undefined) return;
+    const body = current.lines.join("\n").trim();
+    const criteria: string[] = [];
+    for (const line of current.lines) {
+      if (/^\s*[-*]\s+対応\s*[:：]/.test(line)) criteria.push(...(line.match(CRITERION) ?? []));
+    }
+    scenarios.push({ heading: current.heading, body, interpreted: current.heading.endsWith(INTERPRETED_MARK), criteria });
+    current = undefined;
+  };
+  for (const line of proseLines(testSpec)) {
+    const heading = /^(#{1,6})\s+(.*?)\s*$/.exec(line);
+    if (heading) {
+      flush();
+      if (heading[1] === "###") current = { heading: heading[2] ?? "", lines: [] };
+      continue;
+    }
+    current?.lines.push(line);
+  }
+  flush();
+  return scenarios;
+}
+
+/** issue.md の見出しの節（見出しの次の行から、同じかより上の階層の次の見出しの手前まで）。無ければ undefined */
+export function markdownSection(source: string, title: string): string | undefined {
+  const lines = source.split("\n");
+  const start = lines.findIndex((line) => new RegExp(`^#{1,6}\\s+${escapeRegExp(title)}\\s*$`).test(line));
+  if (start === -1) return undefined;
+  const level = /^(#+)/.exec(lines[start] ?? "")?.[1]?.length ?? 2;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i += 1) {
+    const match = /^(#{1,6})\s/.exec(lines[i] ?? "");
+    if (match && (match[1]?.length ?? 0) <= level) {
+      end = i;
+      break;
+    }
+  }
+  return lines.slice(start + 1, end).join("\n").trim();
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export interface TraceabilityIssue {
   /** buildID */
   id: string;

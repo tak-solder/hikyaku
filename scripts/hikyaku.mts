@@ -44,6 +44,7 @@ import "./commands/step.mts";
 import "./commands/patch.mts";
 import "./commands/ledger.mts";
 import "./commands/diff.mts";
+import "./commands/gate.mts";
 
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2));

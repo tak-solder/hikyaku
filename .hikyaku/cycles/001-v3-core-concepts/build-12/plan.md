@@ -171,12 +171,12 @@ hikyaku gate brief G4|G8 <phase> [<cycle>] [--full] [--root <path>] [--json]
 
 ## 実装ステップ
 
-- [ ] Step 1: `traceability.mts` に `testSpecScenarios` と `INTERPRETED_MARK`
-- [ ] Step 2: `risk.mts` の基準に `[boundaries]` を読み、`effectiveBoundaries`（`config.mts` の `readBoundaries` を export）
-- [ ] Step 3: `gate-brief.mts`（`boundaryChanges`・`g8Brief`・render）
-- [ ] Step 4: `commands/gate.mts` と `hikyaku.mts` の登録
-- [ ] Step 5: `steps/architect.mts` の G4 の `consent` と `args`
-- [ ] Step 6: `tests/gate-brief.test.mts`、`tests/step-risk-gates.test.mts`（外の境界での同意、`[boundaries]` だけの場合、作業ツリーだけの宣言で基準を読めない場合）、`tests/risk.test.mts`（基準の境界との和、作業ツリーで消しても残ること）への追加
-- [ ] Step 7: G4.md・G8.md・test-spec.md の手順
-- [ ] Step 8: docs と CHANGELOG
-- [ ] Step 9: ローカル検証（`npx tsc --noEmit`・`npm test`）
+- [x] Step 1: `traceability.mts` に `testSpecScenarios` と `INTERPRETED_MARK`
+- [x] Step 2: `risk.mts` の基準に `[boundaries]` を読み、`effectiveBoundaries`（`config.mts` の `readBoundaries` を export）
+- [x] Step 3: `gate-brief.mts`（`boundaryChanges`・`g8Brief`・render）
+- [x] Step 4: `commands/gate.mts` と `hikyaku.mts` の登録
+- [x] Step 5: `steps/architect.mts` の G4 の `consent` と `args`
+- [x] Step 6: `tests/gate-brief.test.mts`、`tests/step-risk-gates.test.mts`（外の境界での同意、`[boundaries]` だけの場合、作業ツリーだけの宣言で基準を読めない場合）、`tests/risk.test.mts`（基準の境界との和、作業ツリーで消しても残ること）への追加
+- [x] Step 7: G4.md・G8.md・test-spec.md の手順
+- [x] Step 8: docs と CHANGELOG
+- [x] Step 9: ローカル検証（`npx tsc --noEmit`・`npm test`）

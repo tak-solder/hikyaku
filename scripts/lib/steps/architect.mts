@@ -29,6 +29,7 @@ import { loadCycles } from "../cycles.mts";
 import {
   ceilingOf,
   cycleAdrs,
+  effectiveBoundaries,
   effectiveDeclaration,
   exceeds,
   heavyAreasHit,
@@ -37,6 +38,7 @@ import {
   touchedPaths,
   type Harm,
 } from "../risk.mts";
+import { boundaryChanges, DESIGN_DELTA, type BoundaryChanges } from "../gate-brief.mts";
 import { pluginRoot } from "../paths.mts";
 import { describeEscalationProblems } from "../escalation.mts";
 import { readReturn, RETURN_FILE } from "../phase.mts";
@@ -245,11 +247,43 @@ function declaredPaths(ctx: StepContext): string[] {
   return [...own, ...earlier];
 }
 
+/** G4 の境界の照合。1回の評価で consent・args・notices から呼ばれるので、undeclaredAreas と同じく events を鍵に持つ */
+function boundaries(ctx: StepContext): BoundaryChanges | Error {
+  const cached = boundariesCache.get(ctx.events);
+  if (cached !== undefined) return cached;
+  const result = boundaryChanges(ctx.config, ctx.unitDirectory);
+  boundariesCache.set(ctx.events, result);
+  return result;
+}
+
+const boundariesCache = new WeakMap<StepContext["events"], BoundaryChanges | Error>();
+
+/**
+ * 外との境界による同意。外との境界はユーザーが同意するもので、事後同意（deferred）には回さない。
+ * [app] の宣言の有無に関わらず判定する（[boundaries] だけを宣言したワークスペースでも効かせる）
+ */
+function boundaryConsent(ctx: StepContext): ConsentJudgement {
+  const changes = boundaries(ctx);
+  if (changes instanceof Error) {
+    // 境界を宣言しているかは、ADR を読む前に分かる。宣言していなければ境界を理由に同意にしない
+    const declared = effectiveBoundaries(ctx.config);
+    if (declared.external.length === 0 && declared.internal.length === 0) return false;
+    return { timing: "now", reason: "外との境界を照合できない（このサイクルの ADR を読めない）" };
+  }
+  if (changes.unverified) return { timing: "now", reason: "基準の [boundaries] を読めず、作業ツリーの境界が狭められていないかを確かめられない" };
+  if (changes.external.length > 0) {
+    return { timing: "now", reason: `設計が外との境界（${changes.external.map((hit) => hit.boundary).join(", ")}）に触れている` };
+  }
+  return false;
+}
+
 function g4Consent(ctx: StepContext): ConsentJudgement {
   if (roundOf(ctx) === "return") return ON_RETURN;
   // design-delta の done の前は裏取りするものが無い（git を読まない。G4 は design-delta の後ろなので位置も変わらない）
   if (!doneThisRound(ctx, "architect", "design-delta")) return false;
   if (passedOver(ctx, "design-delta", "build-split")) return false;
+  const boundary = boundaryConsent(ctx);
+  if (boundary !== false) return boundary;
   if (effectiveDeclaration(ctx.config).incomplete) return INCOMPLETE;
   if (undeclared(ctx)) return false;
   const areas = undeclaredAreas(ctx);
@@ -406,14 +440,24 @@ export const ARCHITECT_STEPS: SkillSteps = {
       enabled: (ctx) => ctx.config.gates.architecture,
       consent: g4Consent,
       // 当たった領域を G4 の提示に使う（宣言が無ければ空）。手順の位置だけを読む経路では組み立てない
+      // 提示の正は gate brief G4。args は G4.md と conductor の分岐に使う。境界は [app] の宣言の有無より先に組む
       args: (ctx) => {
-        if (ctx.positionOnly === true || undeclared(ctx)) return { undeclaredAreas: [] };
+        if (ctx.positionOnly === true) return { undeclaredAreas: [] };
+        const changes = boundaries(ctx);
+        const boundaryArgs = changes instanceof Error
+          ? { boundaries: { declared: true, external: [], internal: [], error: changes.message } }
+          : { boundaries: { declared: changes.declared, external: changes.external, internal: changes.internal } };
+        if (undeclared(ctx)) return { undeclaredAreas: [], ...boundaryArgs };
         const areas = undeclaredAreas(ctx);
         // 裏取りできなかった回は、領域が空でも同意になる。提示で取り違えないよう、そのことを値でも示す
-        return areas instanceof Error ? { undeclaredAreas: [], verified: false } : { undeclaredAreas: areas };
+        return areas instanceof Error ? { undeclaredAreas: [], verified: false, ...boundaryArgs } : { undeclaredAreas: areas, ...boundaryArgs };
       },
       notices: (ctx) => {
-        const notices = declarationNotices(ctx);
+        const changes = boundaries(ctx);
+        const boundaryNotices = changes instanceof Error
+          ? (boundaryConsent(ctx) === false ? [] : [`外との境界を照合できないので、G4 を同意にしています: ${changes.message}`])
+          : changes.notices.filter((notice) => !notice.startsWith(DESIGN_DELTA));
+        const notices = [...declarationNotices(ctx), ...boundaryNotices];
         if (undeclared(ctx)) return notices;
         const areas = undeclaredAreas(ctx);
         return areas instanceof Error ? [...notices, `G3 の申告を裏取りできないので、G4 を同意にしています: ${areas.message}`] : notices;
