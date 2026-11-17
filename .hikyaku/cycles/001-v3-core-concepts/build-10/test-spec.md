@@ -58,11 +58,17 @@
 - When: それぞれ `parseCriterionReasons` に渡す
 - Then: どちらも `text` が元の文字列のまま、`reasons` が `undefined` で返る（エラーにしない）
 
-### parseCriterionReasons: 理由の欄が崩れていれば問題を返す
+### parseCriterionReasons: 「立つ」が欠けていれば問題を返す
 - 対応: —
-- Given: 文字列 `X を使う（防ぐ: 二重送信 / 重要度: 低）`（`立つ` が無く、重要度が `低`）
+- Given: 文字列 `X を使う（防ぐ: 二重送信 / 重要度: 中）`（`立つ` が無い）
 - When: `parseCriterionReasons` に渡す
-- Then: 問題を説明する文字列が返る
+- Then: 「立つ」の欠落を示す文字列が返る
+
+### parseCriterionReasons: 重要度が高・中以外なら問題を返す
+- 対応: —
+- Given: 文字列 `X を使う（防ぐ: 二重送信 / 立つ: 冪等性 / 重要度: 低）`
+- When: `parseCriterionReasons` に渡す
+- Then: 重要度の値が不正である旨（`低`）を示す文字列が返る
 
 ### collectPromotions: 行の `[高]` と理由の重要度が食い違えば unparsed
 - 対応: US-9.1
@@ -86,7 +92,16 @@
 - 対応: US-4.2
 - Given: 定数 `REVIEW_RECORD_HEADING`、`skills/builder/references/templates.md`、`skills/close-cycle/references/persistence.md`
 - When: 定数の値と、2つのファイルの見出し・宛先の語を突き合わせる
-- Then: 定数が `レビューの記録` で、両ファイルにその見出しがあり、persistence.md の宛先の一覧に `refactor` がある
+- Then: 定数が `レビューの記録` で、両ファイルにその見出しがあり、persistence.md の宛先の一覧に `refactor` がある。
+  templates.md と `skills/retrospective/steps/write.md` の「永続化すること」の例の理由の欄が `parseCriterionReasons` で読め、
+  persistence.md の例の行が `parseCandidate` で読める
+
+### 文書の整合: 置き場の順の先頭が「なくす」で、doc-triager に順の写しが無い
+- 対応: US-4.1
+- Given: `skills/close-cycle/references/persistence.md`、`agents/doc-triager.md`、`skills/builder/SKILL.md`
+- When: persistence.md の「置き場を選ぶ」の表の最初の行、doc-triager.md の本文、builder の SKILL.md の知見の表の最初の行を読む
+- Then: persistence.md の表の最初の行が「なくす」で宛先 `refactor` を含み、doc-triager.md に「機械で防ぐ → パス指定の rule」の順の写しが無く、
+  builder の SKILL.md の表の最初の行が「なくす」になっている
 
 ## review-records（`scripts/lib/review-records.mts`）
 
@@ -176,9 +191,9 @@
 - When: `ruleCandidates` を呼ぶ
 - Then: 閾値に関わらず `kind: "missing"`、`path: ".claude/rules/apii.md"`、`hits: 1` の候補が出る
 
-### ruleCandidates: 日数は rule の paths に当たる追跡ファイルの最終変更から
+### ruleCandidates: 入力の最終変更日から日数を求める
 - 対応: US-5.3
-- Given: rule の最終変更日の入力に、`paths` に当たる `src/api/pay.ts` の最終変更から求めた日数 40（rule ファイル自身は 2 日前に変更）
+- Given: rule の最終変更日の入力が `now` の 40 日前
 - When: `ruleCandidates` を呼ぶ
 - Then: 候補の `lastTouchedDays` が `40` になる
 
@@ -286,15 +301,15 @@
 
 ### rules candidates: 各行に最終変更からの日数と理由が出る
 - 対応: US-5.3, US-5.4, US-9.1
-- Given: `.claude/rules/api.md`（`prevents: 二重課金`・`basis: 決済 API`・`importance: 高`）が移す候補で、`src/api/x.ts` を実行時刻の 400 日前の `GIT_COMMITTER_DATE`/`GIT_AUTHOR_DATE` でコミット。`old.md`（一致なし）を 250 日前にコミット
+- Given: `.claude/rules/api.md`（`prevents: 二重課金`・`basis: 決済 API`・`importance: 高`）が移す候補で、`src/api/x.ts` を実行時刻の 400 日前の `GIT_COMMITTER_DATE`/`GIT_AUTHOR_DATE` でコミットし、`api.md` 自身は 2 日前にコミット。`old.md`（一致なし）を 250 日前にコミット
 - When: `hikyaku rules candidates` を実行する
-- Then: api.md の行に `400` 日、`二重課金`・`決済 API`・`高` が、old.md の行に `250` 日が出る
+- Then: api.md の行に `400` 日（rule ファイル自身の 2 日ではない）、`二重課金`・`決済 API`・`高` が、old.md の行に `250` 日（rule ファイル自身から）が出る
 
 ### rules candidates: 候補を並べるだけで、ファイルを変えず終了コード 0
 - 対応: US-4.4
 - Given: 移す候補・一致しない rule・存在しない rule が1件ずつある一時リポジトリ（作業ツリーはクリーン）
 - When: `hikyaku rules candidates` を実行する
-- Then: 終了コードが 0（`rules check` なら 2 になる状況でも）、実行後の `git status --porcelain` が空で `.claude/rules/` の内容も変わらず、出力に「移す」「消す」の決定や推奨の文言が無い
+- Then: 終了コードが 0（`rules check` なら 2 になる状況でも）、実行後の `git status --porcelain` が空で `.claude/rules/` の内容も変わらず、出力に推奨の述語（「移すべき」「消してください」「削除します」）が無い（候補の分類名だけが出る）
 
 ## CLI: areas dormant（`scripts/commands/areas.mts`）
 
