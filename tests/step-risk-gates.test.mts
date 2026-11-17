@@ -197,7 +197,7 @@ test("step report: --harm に高・中以外、--paths に空の要素はエラ�
   const harm = cli(directory, "step", "report", "architect", "options", "001", "--result", "done", "--harm", "低");
   assert.equal(harm.status, 1);
   assert.match(harm.stderr, /--harm は 高 か 中/);
-  for (const paths of ["src/a/**,,src/b/**", "src/a/**,", ","]) {
+  for (const paths of ["src/a/**,,src/b/**", "src/a/**,", ",", "src/{api,web/**,src/auth/**", "src/a}/**"]) {
     const result = cli(directory, "step", "report", "architect", "options", "001", "--result", "done", "--paths", paths);
     assert.equal(result.status, 1, paths);
     assert.match(result.stderr, /--paths は/);
@@ -316,19 +316,25 @@ test("G3: 作業ツリーで宣言を緩めても、基準の厳しい宣言で�
   assert.equal(toG3(directory, ["--harm", "高", "--paths", "src/api/**"]).approval, "consent");
 });
 
-test("G3・G4: 通り過ぎたあとに宣言を足しても、承認の記録の無いゲートを現在地に戻さない", (t) => {
+test("G3: 通り過ぎた（adr を終えた）あとに宣言を足しても、承認の記録の無い G3 を現在地に戻さない", (t) => {
   const directory = workspace(t, {});
-  const split = driveTo(directory, ["build-split"], { options: [], delta: "# 設計差分\n\n- `src/auth/session.ts`\n" });
-  assert.equal(split.step, "build-split");
-  // build-split まで進んだ記録（成果物を作らずに残せる failed で記録する）
-  report(directory, "build-split", "--result", "failed", "--reason", "中断");
-  // 通り過ぎたあとで、main に宣言（上限なし・重い領域）がマージされた
+  assert.equal(driveTo(directory, ["design-delta"], { options: [] }).step, "design-delta");
+  // 通り過ぎたあとで、main に宣言（上限なし）がマージされた
   const config = join(directory, ".hikyaku.config");
-  writeFileSync(config, `${readFileSync(config, "utf8")}${declaration(NONE, [AUTH])}`);
+  writeFileSync(config, `${readFileSync(config, "utf8")}${declaration(NONE)}`);
   commit(directory, "宣言を足す");
-  const after = statuses(directory);
-  assert.ok(after.includes("G3:off") && after.includes("G4:off"), after.join(", "));
-  assert.notEqual(next(directory).step, "G3");
+  assert.ok(statuses(directory).includes("G3:off"));
+  assert.equal(next(directory).step, "design-delta");
+});
+
+test("G4: 前の回の options で申告した領域は、追加設計の回の裏取りで上げない", (t) => {
+  const directory = workspace(t, { committed: declaration(HIGH, [AUTH]) });
+  const delta = "# 設計差分\n\n- `src/auth/session.ts`\n";
+  driveTo(directory, ["build-split"], { options: ["--harm", "中", "--paths", "src/auth/**"], delta });
+  succeeds(directory, "step", "restart", "architect", "001", "--round", "add", "--reason", "指摘");
+  report(directory, "design-change", "--result", "done");
+  const g4 = driveTo(directory, ["G4", "build-split"], { options: "skip", delta });
+  assert.equal(g4.step, "build-split");
 });
 
 // ---------------------------------------------------------------------------

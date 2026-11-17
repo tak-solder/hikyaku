@@ -31,6 +31,7 @@ import {
   effectiveDeclaration,
   exceeds,
   heavyAreasHit,
+  overlaps,
   repositoryFiles,
   touchedPaths,
   type Harm,
@@ -114,7 +115,10 @@ export function riskDeclaration(ctx: StepContext): { harm?: Harm; paths?: string
     (event) => event.skill === "architect" && event.step === "options" && event.result === "done",
   );
   const event = events[events.length - 1];
-  if (event === undefined) return undefined;
+  return event === undefined ? undefined : declarationOf(event);
+}
+
+function declarationOf(event: StepContext["events"][number]): { harm?: Harm; paths?: string[] } {
   const out: { harm?: Harm; paths?: string[] } = {};
   if (event.harm === "高" || event.harm === "中") out.harm = event.harm;
   const paths: unknown = event.paths;
@@ -139,13 +143,15 @@ const INCOMPLETE = { timing: "now", reason: "基準の宣言を読めず、AI �
 function g3Consent(ctx: StepContext, withDeclaration: boolean): ConsentJudgement {
   if (roundOf(ctx) === "return") return ON_RETURN;
   if (!withDeclaration || passedOver(ctx, "options", "adr")) return false;
+  // options の done の前は判定するものが無い（git を読まない。G3 は options の後ろなので位置も変わらない）
+  const declared = riskDeclaration(ctx);
+  if (declared === undefined) return false;
   const effective = effectiveDeclaration(ctx.config);
   if (effective.incomplete) return INCOMPLETE;
   const declaration = effective.declaration;
   if (declaration === undefined) return false;
-  const declared = riskDeclaration(ctx);
-  if (declared?.harm === undefined || declared.paths === undefined) {
-    const missing = [declared?.harm === undefined ? "--harm" : "", declared?.paths === undefined ? "--paths" : ""].filter(Boolean).join(" と ");
+  if (declared.harm === undefined || declared.paths === undefined) {
+    const missing = [declared.harm === undefined ? "--harm" : "", declared.paths === undefined ? "--paths" : ""].filter(Boolean).join(" と ");
     return { timing: "now", reason: `options の申告（${missing}）が欠けている` };
   }
   const ceiling = ceilingOf(declaration.axes);
@@ -182,7 +188,8 @@ function undeclaredAreas(ctx: StepContext): UndeclaredArea[] | Error {
 const areasCache = new WeakMap<StepContext["events"], UndeclaredArea[] | Error>();
 
 /**
- * その回で、ゲートの前のステップ（before）の最後の done より後に、ゲートの後のステップ（after）の記録があるか。
+ * その回で、ゲートの前のステップ（before）の最後の done より後に、ゲートの後のステップ（after）の done があるか。
+ * failed は数えない（中断したあとに直した文書や、同意として受けた承認を、通り過ぎたものとして扱わないため）。
  * あれば、ゲートはその時点の判定で通り過ぎている。宣言による同意は、通り過ぎたあとに宣言や設計の文書が
  * 変わっても付け直さない（付け直すと、承認の記録の無いゲートが現在地に戻り、後ろの作業がやり直しになる）。
  * 前のステップを報告し直せば、また判定する
@@ -191,7 +198,7 @@ function passedOver(ctx: StepContext, before: string, after: string): boolean {
   const events = currentEvents(ARCHITECT_STEPS, ctx.events);
   const last = events.findLastIndex((event) => event.skill === "architect" && event.step === before && event.result === "done");
   if (last === -1) return false;
-  return events.slice(last + 1).some((event) => event.skill === "architect" && event.step === after);
+  return events.slice(last + 1).some((event) => event.skill === "architect" && event.step === after && event.result === "done");
 }
 
 function computeUndeclaredAreas(ctx: StepContext): UndeclaredArea[] | Error {
@@ -216,15 +223,31 @@ function computeUndeclaredAreas(ctx: StepContext): UndeclaredArea[] | Error {
     }
     for (const entry of touchedPaths(text)) if (!touched.includes(entry)) touched.push(entry);
   }
-  const declaredPaths = skipped(ctx, "options") ? [] : (riskDeclaration(ctx)?.paths ?? []);
-  const covered = new Set(heavyAreasHit(declaration, declaredPaths, files).map((area) => area.name));
-  return heavyAreasHit(declaration, touched, files)
+  const covered = new Set(heavyAreasHit(declaration, declaredPaths(ctx), files).map((area) => area.name));
+  return declaration.areas
     .filter((area) => !covered.has(area.name))
-    .map((area) => ({ name: area.name, touched: touched.filter((path) => heavyAreasHit({ ...declaration, areas: [area] }, [path], files).length > 0) }));
+    .map((area) => ({ name: area.name, touched: touched.filter((path) => area.paths.some((own) => overlaps(own, path, files))) }))
+    .filter((area) => area.touched.length > 0);
+}
+
+/**
+ * 申告として数えるパス。この回の options をスキップした・--paths が無いときは、この回の分は空とみなす。
+ * 前の回（追加設計より前の設計など）の options の申告も足す。design-delta.md と ADR はサイクルで積み上がるので、
+ * 前の回に G3 で申告した領域まで、この回の申告に無いとして毎回上げないため
+ */
+function declaredPaths(ctx: StepContext): string[] {
+  const own = skipped(ctx, "options") ? [] : (riskDeclaration(ctx)?.paths ?? []);
+  const current = new Set(currentEvents(ARCHITECT_STEPS, ctx.events));
+  const earlier = ctx.events
+    .filter((event) => !current.has(event) && event.skill === "architect" && event.step === "options" && event.result === "done")
+    .flatMap((event) => declarationOf(event).paths ?? []);
+  return [...own, ...earlier];
 }
 
 function g4Consent(ctx: StepContext): ConsentJudgement {
   if (roundOf(ctx) === "return") return ON_RETURN;
+  // design-delta の done の前は裏取りするものが無い（git を読まない。G4 は design-delta の後ろなので位置も変わらない）
+  if (!doneThisRound(ctx, "architect", "design-delta")) return false;
   if (passedOver(ctx, "design-delta", "build-split")) return false;
   if (effectiveDeclaration(ctx.config).incomplete) return INCOMPLETE;
   if (undeclared(ctx)) return false;

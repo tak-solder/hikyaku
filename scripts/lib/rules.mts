@@ -158,8 +158,11 @@ function unquote(value: string): string {
   return /^(["']).*\1$/.test(trimmed) ? trimmed.slice(1, -1) : trimmed;
 }
 
-/** カンマで分ける。`{a,b}` の中のカンマでは分けない（`--paths` のように glob を並べる引数にも使う） */
-export function splitList(value: string): string[] {
+/**
+ * カンマで分ける。`{a,b}` の中のカンマでは分けない（`--paths` のように glob を並べる引数にも使う）。
+ * keepEmpty なら、波括弧の外の空の要素も残す（書き損じを見つけるため）
+ */
+export function splitList(value: string, options: { keepEmpty?: boolean } = {}): string[] {
   const parts: string[] = [];
   let current = "";
   let depth = 0;
@@ -174,7 +177,8 @@ export function splitList(value: string): string[] {
     current += ch;
   }
   parts.push(current);
-  return parts.map(unquote).filter((part) => part !== "");
+  const unquoted = parts.map(unquote);
+  return options.keepEmpty === true ? unquoted : unquoted.filter((part) => part !== "");
 }
 
 /**

@@ -283,25 +283,14 @@ function readRiskDeclaration(definition: EvaluatedStep["definition"], result: St
   if (paths !== undefined) {
     // 波括弧の外のカンマで区切る（`src/{a,b}/**` を1つの glob として読む）。波括弧の外の空の要素は書き損じなので
     // 受け付けない（波括弧の中の空の選択肢 `src/foo{,.test}.ts` は glob として正しい）
-    const list = splitList(paths).map((path) => path.trim());
-    if (list.length === 0 || topLevelParts(paths).some((part) => part.trim() === "")) {
+    // 波括弧の釣り合わない glob は、後ろのカンマをすべて波括弧の中と読んで複数の glob を1つにしてしまう
+    const balanced = [...paths].reduce((depth, ch) => (depth < 0 ? depth : depth + (ch === "{" ? 1 : ch === "}" ? -1 : 0)), 0) === 0;
+    const list = splitList(paths);
+    if (!balanced || list.length === 0 || splitList(paths, { keepEmpty: true }).some((part) => part.trim() === "")) {
       throw new HikyakuError(`--paths は触れるパスの glob をカンマで区切って指定してください（現在: ${paths}）`, "例: --paths \"src/api/**,src/{auth,billing}/**\"");
     }
     event.paths = list;
   }
-}
-
-/** 波括弧の外のカンマで分けた要素。splitList と違って空の要素を残す（書き損じを見つけるため） */
-function topLevelParts(value: string): string[] {
-  const parts = [""];
-  let depth = 0;
-  for (const ch of value) {
-    if (ch === "{") depth += 1;
-    if (ch === "}") depth -= 1;
-    if (ch === "," && depth === 0) parts.push("");
-    else parts[parts.length - 1] += ch;
-  }
-  return parts;
 }
 
 /**
