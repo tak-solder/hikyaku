@@ -2,3 +2,4 @@
 {"at":"2026-11-17T09:29:13.986Z","skill":"builder","step":"plan-review","result":"done","peak":395000,"context":207681,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
 {"at":"2026-11-17T09:33:25.274Z","skill":"builder","step":"test-spec","result":"done","context":217894,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
 {"at":"2026-11-17T09:35:02.806Z","skill":"builder","step":"test-spec-review","result":"done","context":227780,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T09:35:58.522Z","skill":"builder","step":"G8","result":"approved","input":"承認（監督の委任された判断）。ADR との差は handoff の永続化すること（decisions 宛て）に、要確認の2点は残したことに残す。解釈3件も受け入れる","context":231304,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
