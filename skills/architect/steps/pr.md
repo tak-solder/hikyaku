@@ -6,6 +6,13 @@
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify architect {cycle}
 ```
 
+- [ ] PR を作る前に、マージの前にユーザーが同意する項目に決定が足りないかを確かめる
+  （`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger consent-list architect {cycle}` の「決定が足りない」が 0 か）。
+  同意ゲートは設計フェーズで記録した項目だけで現れるので、ほかのフェーズで記録した項目はここで見つかる。
+  足りなければ一覧をその場でユーザーに示し、項目ごとに
+  `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger decide architect <ID> {cycle} --decision <consented|decided|rejected> --by user --input "<ユーザーの答え>"`
+  で記録してから作る（ask: deferred-consent）。conductor の子なら、PR を作らずに blocked でユーザーに上げる。
+  決定が足りないままでは `done` を受け付けない
 - [ ] 外部連携が有効なら、参照行を生成する（`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref architect {cycle}`）
 - [ ] PR を Draft で作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title architect {cycle}` で生成）
   - `external ref` が返した行（`Refs #12` など）を本文の末尾に入れる。空なら入れない

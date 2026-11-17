@@ -30,6 +30,21 @@ export function isConductorChild(env: NodeJS.ProcessEnv = process.env): boolean 
   return env["HIKYAKU_CONDUCTOR_CHILD"] === "1";
 }
 
+/**
+ * conductor の子として手順を評価する。監督（親）が子の手順の位置を確かめるときに使う。親のプロセスには
+ * HIKYAKU_CONDUCTOR_CHILD が無いので、そのまま評価すると子が外した同意ゲートを現在地と読み、正しく終えた子を違反とする
+ */
+export function asConductorChild<T>(run: () => T): T {
+  const saved = process.env["HIKYAKU_CONDUCTOR_CHILD"];
+  process.env["HIKYAKU_CONDUCTOR_CHILD"] = "1";
+  try {
+    return run();
+  } finally {
+    if (saved === undefined) delete process.env["HIKYAKU_CONDUCTOR_CHILD"];
+    else process.env["HIKYAKU_CONDUCTOR_CHILD"] = saved;
+  }
+}
+
 /** 同意ゲートを手順に置くスキル。それ以外（planner・close-cycle）は pr の accepts だけを持つ */
 const GATED = new Set(["architect", "builder", "patch"]);
 
@@ -48,11 +63,13 @@ export function consentProblem(skill: string): (ctx: StepContext) => string | un
     }
     if (pending.length === 0) return undefined;
     const ids = pending.map((item) => item.open.id).join(", ");
-    const guide = !GATED.has(skill)
-      ? "その場で一覧（hikyaku ledger consent-list）をユーザーに示し、項目ごとにユーザーの決定を記録してから報告し直してください。"
-      : isConductorChild()
-        ? "conductor の子では同意ゲートが手順に入りません。PR を完了にせず、blocked でユーザーに上げてください。"
-        : `skills/${skill}/steps/consent.md の手順で一覧をユーザーに示し、決定を記録してから報告し直してください。`;
+    // 同意ゲートが手順に入るのは、この作業単位のファイルに対象があるときだけ。ほかの単位で記録した対象だけなら
+    // ゲートは外れているので、consent.md（承認の報告で終わる）ではなく、その場で示す案内にする
+    const guide = isConductorChild()
+      ? "conductor の子では同意ゲートが手順に入りません。PR を完了にせず、blocked でユーザーに上げてください。"
+      : GATED.has(skill) && unitHasConsentItems(ctx.unitDirectory, ctx.unit)
+        ? `skills/${skill}/steps/consent.md の手順で一覧をユーザーに示し、決定を記録してから報告し直してください。`
+        : `その場で一覧（hikyaku ledger consent-list ${ctx.unit}）をユーザーに示し、項目ごとにユーザーの決定を hikyaku ledger decide ${ctx.unit} <ID> --decision <decision> --by user --input "<ユーザーの答え>" で記録してから報告し直してください。`;
     return `マージの前にユーザーの同意が要る項目に、ユーザーの決定がありません（${ids}）。${guide}`;
   };
 }

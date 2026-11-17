@@ -18,7 +18,7 @@ import {
 import { ARCHITECT_STEPS } from "../scripts/lib/steps/architect.mts";
 import { BUILDER_STEPS } from "../scripts/lib/steps/builder.mts";
 import { CLOSE_CYCLE_STEPS } from "../scripts/lib/steps/close-cycle.mts";
-import { consentProblem } from "../scripts/lib/steps/consent.mts";
+import { asConductorChild, consentProblem } from "../scripts/lib/steps/consent.mts";
 import type { SkillSteps, StepContext, StepDefinition } from "../scripts/lib/steps/engine.mts";
 import { PATCH_STEPS } from "../scripts/lib/steps/patch.mts";
 import { PLANNER_STEPS } from "../scripts/lib/steps/planner.mts";
@@ -197,8 +197,22 @@ test("consentProblem: 決定が足りなければ ID と案内を返す。ゲー
   assert.match(planner, /plan\.1-aaaa/);
   assert.match(planner, /その場で/);
   assert.doesNotMatch(planner, /consent\.md/);
+  // ほかの単位で記録した対象だけなら同意ゲートは外れているので、consent.md ではなくその場で示す案内
+  const cross = consentProblem("builder")(context(t, "build-01", { design: [open("architect.1-aaaa", { unit: "architect" })] })) ?? "";
+  assert.match(cross, /architect\.1-aaaa/);
+  assert.doesNotMatch(cross, /consent\.md/);
+  assert.match(cross, /ledger decide build-01 <ID> --decision/);
   assert.equal(consentProblem("builder")({ ...ctx, cycle: undefined }), undefined, "サイクルに属さない");
   assert.equal(consentProblem("builder")(context(t, "build-01", {})), undefined, "対象が無い");
+});
+
+test("asConductorChild: 監督が子と同じ条件で評価し、評価のあとに環境を戻す", (t) => {
+  const gate = stepOf(BUILDER_STEPS, "consent");
+  const ctx = context(t, "build-01", { "build-01": [open("build-01.1-aaaa")] });
+  assert.equal(asConductorChild(() => gate.when?.(ctx)), false);
+  assert.equal(process.env["HIKYAKU_CONDUCTOR_CHILD"], undefined);
+  assert.equal(gate.when?.(ctx), true);
+  assert.equal(withEnv({ HIKYAKU_CONDUCTOR_CHILD: "0" }, () => (asConductorChild(() => undefined), process.env["HIKYAKU_CONDUCTOR_CHILD"])), "0");
 });
 
 test("consentProblem: 記録を読めなければ受け付けない（安全側）", (t) => {
@@ -442,6 +456,7 @@ test("ledger pr-section: 中身のある節だけを出し、どれも無けれ�
   const json = JSON.parse(succeeds(directory, "ledger", "pr-section", "build-01", "001", "--json")) as Record<string, unknown>;
   assert.deepEqual([json["accepted"], json["undecided"], json["rejected"], json["beforeMerge"], json["overdue"]], [[accepted], [undecided], [rejected], [question], []]);
   assert.equal(json["section"], text.trimEnd());
+  assert.equal(json["markdown"], undefined, "本文は section の1つだけ");
   assert.deepEqual(snapshot(directory), before, "書き込まない");
 });
 

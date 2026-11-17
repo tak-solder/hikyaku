@@ -21,6 +21,13 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr base build-{NN} {cycle}
 スタックしている場合はスタック元のブランチが返る。デフォルトブランチ宛てに作ると、
 先行ビルドの差分まで含んだ PR になる。
 
+- [ ] PR を作る前に、マージの前にユーザーが同意する項目に決定が足りないかを確かめる
+  （`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger consent-list build-{NN} {cycle}` の「決定が足りない」が 0 か）。
+  同意ゲートはこのビルドで記録した項目だけで現れるので、ほかのフェーズで記録した項目はここで見つかる。
+  足りなければ一覧をその場でユーザーに示し、項目ごとに
+  `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger decide build-{NN} <ID> {cycle} --decision <consented|decided|rejected> --by user --input "<ユーザーの答え>"`
+  で記録してから作る（ask: deferred-consent）。conductor の子なら、PR を作らずに blocked でユーザーに上げる。
+  決定が足りないままでは `done` を受け付けない
 - [ ] ここまでのコミットをすべて push する
 - [ ] PR を Draft で作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title build-{NN} {cycle} --build-title "{title}"` で生成）
   - マージ先は上で取得した base

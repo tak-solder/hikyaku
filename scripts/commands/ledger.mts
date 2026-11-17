@@ -603,7 +603,8 @@ register({
   run: ({ args, operands }) => {
     const opened = openUnit(args, operands[0], operands[1]);
     const section = prSection(readLedger(opened.cycle.directory), cycleTimeline(opened.ctx.config, opened.cycle), opened.phase);
-    emit({ phase: opened.phase, cycle: opened.cycle.name, section: section.markdown, ...section }, () => section.markdown);
+    const { markdown, ...ids } = section;
+    emit({ phase: opened.phase, cycle: opened.cycle.name, section: markdown, ...ids }, () => markdown);
   },
 });
 
