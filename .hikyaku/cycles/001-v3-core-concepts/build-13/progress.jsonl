@@ -5,3 +5,9 @@
 {"at":"2026-11-17T02:28:48.389Z","skill":"builder","step":"G8","result":"approved","input":"委任された判断（監督）: 承認（実装に進む）。根拠は build-13/questions.md","context":167682,"session":"b9286b9b-c623-46fe-a0fe-1826244e92bb","hikyaku":"3.0.0"}
 {"at":"2026-11-17T02:35:12.464Z","skill":"builder","step":"implement","result":"done","context":233525,"session":"b9286b9b-c623-46fe-a0fe-1826244e92bb","hikyaku":"3.0.0"}
 {"at":"2026-11-17T02:39:24.170Z","skill":"builder","step":"verify","result":"done","context":245433,"session":"b9286b9b-c623-46fe-a0fe-1826244e92bb","hikyaku":"3.0.0"}
+{"at":"2026-11-17T03:01:03.899Z","skill":"builder","step":"review","result":"done","context":293313,"session":"b9286b9b-c623-46fe-a0fe-1826244e92bb","hikyaku":"3.0.0"}
+{"at":"2026-11-17T03:01:30.662Z","skill":"builder","step":"handoff","result":"done","context":298143,"session":"b9286b9b-c623-46fe-a0fe-1826244e92bb","hikyaku":"3.0.0"}
+{"at":"2026-11-17T03:01:43.707Z","skill":"retrospective","step":"peak-actual","result":"done","context":306794,"session":"b9286b9b-c623-46fe-a0fe-1826244e92bb","hikyaku":"3.0.0"}
+{"at":"2026-11-17T03:01:52.205Z","skill":"retrospective","step":"analyze","result":"done","context":308349,"session":"b9286b9b-c623-46fe-a0fe-1826244e92bb","hikyaku":"3.0.0"}
+{"at":"2026-11-17T03:02:11.312Z","skill":"retrospective","step":"write","result":"done","context":311743,"session":"b9286b9b-c623-46fe-a0fe-1826244e92bb","hikyaku":"3.0.0"}
+{"at":"2026-11-17T03:02:13.661Z","skill":"builder","step":"retrospective","result":"done","context":313999,"session":"b9286b9b-c623-46fe-a0fe-1826244e92bb","hikyaku":"3.0.0"}
