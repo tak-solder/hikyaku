@@ -152,12 +152,17 @@ const IGNORED_ENTRIES: IgnoredEntry[] = [
   { line: "feedback/", comment: "hikyaku feedback export の書き出し（送るかはユーザーが決める。コミットしない）" },
 ];
 
-/** .gitignore にその行が入っているか（先頭の `/` と、ディレクトリの末尾の `/` の有無は問わない） */
+/**
+ * .gitignore にその行が入っているか。先頭の `/` の有無は問わない。末尾の `/` はディレクトリにだけ当たるので、
+ * ディレクトリの行（feedback/）だけ、有無を問わない（`.hikyaku.local/` はファイルの .hikyaku.local を除外しない）
+ */
 function ignores(source: string, entry: IgnoredEntry): boolean {
+  const directory = entry.line.endsWith("/");
   const bare = entry.line.replace(/\/$/, "");
   return source
     .split("\n")
-    .map((line) => line.trim().replace(/^\//, "").replace(/\/$/, ""))
+    .map((line) => line.trim().replace(/^\//, ""))
+    .map((line) => (directory ? line.replace(/\/$/, "") : line))
     .some((line) => line === bare);
 }
 

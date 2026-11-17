@@ -31,8 +31,10 @@ interface Suggestion {
   ref: string;
   /** どこから来た候補か */
   origin: "doc" | "cycle" | "build" | "workflow";
-  /** リポジトリルートからの相対パス */
+  /** リポジトリルートからの相対パス。節を指して登録した永続ドキュメントはアンカー付き（`docs/concepts.md#用語`） */
   path: string;
+  /** 開くファイル（アンカーを除いた path）。永続ドキュメントだけが持つ */
+  file?: string;
   /** document-guide の管理列。永続ドキュメント以外は undefined */
   ownership?: string;
   /** なぜ読むのか。概要欄と違い、Hikyaku 側の理由 */
@@ -278,6 +280,7 @@ function collectDocSuggestions(config: ResolvedConfig, phase: Phase): { suggesti
       origin: "doc",
       // 存在の検査はアンカーを除いたパスで行い、返すのは節まで指したポインタ
       path: docRef(entry) ?? path,
+      file: path,
       ownership: entry.ownership,
       reason: docReasons(phase)[entry.name] as string,
       summary: entry.summary,

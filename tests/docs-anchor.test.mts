@@ -70,6 +70,26 @@ test("markdownAnchors: 見出しから集め、重複に -1 を付け、コー�
   assert.deepEqual([...anchors], ["概要", "用語", "用語-1", "config-の-書き方"]);
 });
 
+test("markdownAnchors: setext と字下げした ATX の見出しを読み、囲みは同じ文字と長さでだけ閉じる", () => {
+  const anchors = markdownAnchors([
+    "Overview",
+    "========",
+    "",
+    "  ## 字下げ",
+    "",
+    "- 箇条書き",
+    "---",
+    "````",
+    "~~~",
+    "## コードの中",
+    "```",
+    "## まだコードの中",
+    "````",
+    "## 囲みの後",
+  ].join("\n"));
+  assert.deepEqual([...anchors], ["overview", "字下げ", "囲みの後"]);
+});
+
 test("validateGuide: 実在する節は通し、消えた節・ディレクトリへのアンカーを報告し、存在はアンカーを除いて調べる", (t) => {
   const root = temporaryDirectory(t);
   write(root, "docs/concepts.md", "# 概念\n\n## 用語\n");
@@ -110,10 +130,11 @@ function anchoredWorkspace(t: Parameters<typeof workspace>[0], withFile = true):
 test("context: アンカー付きのパスで候補を返し、ファイルがあれば未作成にしない", (t) => {
   const directory = anchoredWorkspace(t);
   const output = JSON.parse(succeeds(directory, "context", "architect", "--json")) as {
-    suggestions: { ref: string; path: string }[];
+    suggestions: { ref: string; path: string; file?: string }[];
     missingDocs: string[];
   };
   assert.equal(output.suggestions.find((s) => s.ref === "glossary")?.path, "docs/concepts.md#用語");
+  assert.equal(output.suggestions.find((s) => s.ref === "glossary")?.file, "docs/concepts.md");
   assert.ok(!output.missingDocs.includes("glossary"));
 });
 

@@ -166,24 +166,49 @@ export function githubAnchor(heading: string): string {
     .replace(/ /g, "-");
 }
 
-/** Markdown の見出しのアンカーの集合。コードブロックの中は除き、同じアンカーには `-1` `-2` を付ける（GitHub と同じ） */
+/**
+ * Markdown の見出しのアンカーの集合。ATX（`## 用語`。字下げ 3 つまで）と setext（下線の `===` / `---`）の
+ * 見出しを読む。コードブロックの中は除き、同じアンカーには `-1` `-2` を付ける（GitHub と同じ）
+ */
 export function markdownAnchors(source: string): Set<string> {
   const anchors = new Set<string>();
   const seen = new Map<string, number>();
-  let fenced = false;
-  for (const line of source.split("\n")) {
-    if (/^\s*(```|~~~)/.test(line)) {
-      fenced = !fenced;
-      continue;
-    }
-    if (fenced) continue;
-    const head = /^#{1,6}\s+(.*?)\s*#*\s*$/.exec(line);
-    if (!head) continue;
-    const text = (head[1] as string).replace(/`([^`]*)`/g, "$1").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+  const add = (raw: string): void => {
+    const text = raw.replace(/`([^`]*)`/g, "$1").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
     const base = githubAnchor(text);
     const count = seen.get(base) ?? 0;
     seen.set(base, count + 1);
     anchors.add(count === 0 ? base : `${base}-${count}`);
+  };
+  // 閉じるのは、開いたのと同じ文字で、同じ長さ以上の囲み（``` の中の ~~~ では閉じない）
+  let fence: { char: string; length: number } | undefined;
+  let previous: string | undefined;
+  for (const line of source.split("\n")) {
+    const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (fence !== undefined) {
+      if (marker && (marker[1] as string)[0] === fence.char && (marker[1] as string).length >= fence.length && (marker[2] as string).trim() === "") {
+        fence = undefined;
+      }
+      continue;
+    }
+    if (marker) {
+      fence = { char: (marker[1] as string)[0] as string, length: (marker[1] as string).length };
+      previous = undefined;
+      continue;
+    }
+    const atx = /^ {0,3}#{1,6}(?:\s+(.*?))?\s*$/.exec(line);
+    if (atx) {
+      add((atx[1] ?? "").replace(/\s+#+$/, ""));
+      previous = undefined;
+      continue;
+    }
+    // setext: 段落の1行の直後の下線。箇条書き・表・引用の行は見出しにしない
+    if (/^ {0,3}(=+|-+)\s*$/.test(line) && previous !== undefined && previous.trim() !== "" && !/^\s*([-*+>|]|\d+[.)])/.test(previous)) {
+      add(previous.trim());
+      previous = undefined;
+      continue;
+    }
+    previous = line;
   }
   return anchors;
 }

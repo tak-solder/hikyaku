@@ -89,7 +89,7 @@ function byStep<T extends { skill: string; step: string }>(a: T, b: T): number {
 /**
  * ファイルごとの記録の列から集計する。
  *
- * ゲートの記録（approved / rejected）は、同じファイルの直前の記録の at との差をかかった時間とする。
+ * ゲートの記録（approved / rejected）は、同じファイルの直前の記録の at との差をかかった時間とする（直前が別のスキルなら数えない）。
  * restart の直後のゲート、日時が読めない・差が負の組は数えない（別の回の記録と差を取らないため）。
  * round は集計の単位に含めない（回の種類で分けると、サイクルを特定しうる組み合わせが増える）
  */
@@ -99,6 +99,8 @@ export function summarizeProgress(files: FeedbackEvent[][]): Omit<FeedbackSummar
   const versions = new Set<string>();
 
   for (const events of files) {
+    // 直前の記録が別のスキルなら数えない。作業単位の progress.jsonl には内部スキル（build-manager・
+    // retrospective）の記録も混ざり、その作業の時間をゲートの待ちに数えてしまうため
     let previous: FeedbackEvent | undefined;
     for (const event of events) {
       if (event.hikyaku !== undefined) versions.add(event.hikyaku);
@@ -107,7 +109,7 @@ export function summarizeProgress(files: FeedbackEvent[][]): Omit<FeedbackSummar
         entry.count += 1;
         failed.set(key(event.skill, event.step), entry);
       }
-      if ((event.result === "approved" || event.result === "rejected") && previous !== undefined && previous.result !== RESTART) {
+      if ((event.result === "approved" || event.result === "rejected") && previous !== undefined && previous.result !== RESTART && previous.skill === event.skill) {
         const minutes = (Date.parse(event.at) - Date.parse(previous.at)) / 60_000;
         if (Number.isFinite(minutes) && minutes >= 0) {
           const entry = waits.get(key(event.skill, event.step)) ?? { skill: event.skill, step: event.step, minutes: [] };
@@ -154,6 +156,16 @@ export function feedbackDate(now: Date = new Date()): string {
 
 export function feedbackPath(hikyakuRoot: string, date: string): string {
   return join(hikyakuRoot, FEEDBACK_DIR, `${date}.md`);
+}
+
+/**
+ * まだ無い書き出し先。同じ日に既にあれば `{date}-2.md` `{date}-3.md` … にする。
+ * ユーザーが送る前に削った書き出しを、同じ日の再実行で黙って上書きして元に戻さないため
+ */
+export function freshFeedbackPath(hikyakuRoot: string, date: string): string {
+  let path = feedbackPath(hikyakuRoot, date);
+  for (let n = 2; existsSync(path); n += 1) path = join(hikyakuRoot, FEEDBACK_DIR, `${date}-${n}.md`);
+  return path;
 }
 
 /**

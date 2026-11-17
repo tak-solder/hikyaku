@@ -74,6 +74,16 @@ test("summarizeProgress: ゲートの時間は同じファイルの直前の記�
   ]);
 });
 
+test("summarizeProgress: 直前の記録が別のスキルなら数えない（内部スキルの作業をゲートの待ちに数えない）", () => {
+  const summary = summarizeProgress([[
+    event("2026-11-01T10:00:00Z", "builder", "test-spec-review", "done"),
+    event("2026-11-01T10:05:00Z", "build-manager", "update", "done"),
+    event("2026-11-01T10:45:00Z", "build-manager", "write", "done"),
+    event("2026-11-01T10:50:00Z", "builder", "G8", "approved"),
+  ]]);
+  assert.deepEqual(summary.gates, []);
+});
+
 test("summarizeProgress: 同じゲートは中央値でまとめる（偶数なら中央の2つの平均）", () => {
   const gate = (start: string, minutes: number): FeedbackEvent[] => [
     event(start, "builder", "plan", "done"),
@@ -216,6 +226,15 @@ test("feedback export: 中身を含まない書き出しを feedback/{YYYYMMDD}.
   assert.deepEqual(Object.keys(output).sort(), ["content", "dryRun", "file"]);
   // git status に現れない（追跡対象外）
   assert.equal(isIgnored(directory, path), true);
+});
+
+test("feedback export: 同じ日の書き出しがあれば上書きせず、別の名前で書き出す", (t) => {
+  const directory = sensitiveWorkspace(t);
+  const first = JSON.parse(succeeds(directory, "feedback", "export", "--json")).file as string;
+  write(directory, first, "# ユーザーが削った書き出し\n");
+  const second = JSON.parse(succeeds(directory, "feedback", "export", "--json")).file as string;
+  assert.equal(second, `${ROOT}/feedback/${feedbackDate()}-2.md`);
+  assert.equal(readFileSync(join(directory, first), "utf8"), "# ユーザーが削った書き出し\n");
 });
 
 test("feedback export --dry-run: 本文を表示して書かない", (t) => {

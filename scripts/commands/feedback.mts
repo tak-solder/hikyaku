@@ -5,7 +5,7 @@ import { dirname, relative } from "node:path";
 import { flagBoolean, flagString } from "../lib/args.mts";
 import { loadConfig } from "../lib/config.mts";
 import { HikyakuError } from "../lib/errors.mts";
-import { collectFeedback, FEEDBACK_DIR, feedbackDate, feedbackPath, isIgnored, renderFeedback } from "../lib/feedback.mts";
+import { collectFeedback, FEEDBACK_DIR, feedbackDate, freshFeedbackPath, isIgnored, renderFeedback } from "../lib/feedback.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 
@@ -15,7 +15,8 @@ register({
   usage: "hikyaku feedback export [--root <path>] [--dry-run] [--json]",
   writes: true,
   details: [
-    `{HIKYAKU_ROOT}/${FEEDBACK_DIR}/{YYYYMMDD}.md に書き出します。中身は次のとおりです。`,
+    `{HIKYAKU_ROOT}/${FEEDBACK_DIR}/{YYYYMMDD}.md に書き出します（同じ日に既にあれば {YYYYMMDD}-2.md など。`,
+    "送る前に削った書き出しを上書きしません）。中身は次のとおりです。",
     "",
     "  - 止まった手順: progress.jsonl の failed を、スキルとステップごとに数えたもの",
     "  - ゲートにかかった時間: ゲートの記録と直前の記録の日時の差の中央値（スキルとステップごと）",
@@ -37,7 +38,7 @@ register({
     const config = loadConfig({ root: flagString(args, "root") });
     const dryRun = flagBoolean(args, "dry-run");
     const date = feedbackDate();
-    const path = feedbackPath(config.hikyakuRoot, date);
+    const path = freshFeedbackPath(config.hikyakuRoot, date);
     const relPath = relative(config.repoRoot, path);
 
     if (!isIgnored(config.repoRoot, path)) {
