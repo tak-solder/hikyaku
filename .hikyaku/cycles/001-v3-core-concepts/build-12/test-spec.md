@@ -146,11 +146,35 @@
 - When: renderG4Brief(brief, undefined) を呼ぶ
 - Then: 外との境界の変更の節と、G3 の申告に無い重い領域 billing（src/billing/invoice.ts）の節が両方出る
 
+### renderG4Brief: 境界を照合できなかった（error）・unverified・裏取りできない旨を出す
+- 対応: US-12.1
+- Given: (a) boundaries が { error: "document-guide.md を読めません" } の G4Brief、(b) boundaries.unverified が true の G4Brief、(c) verified が false の G4Brief
+- When: それぞれ renderG4Brief(brief, undefined) を呼ぶ
+- Then: (a) は境界を照合できなかった旨とエラーの文、(b) は基準の境界を確かめられないので同意にした旨、(c) は G3 の申告を裏取りできなかった旨が出る
+
 ### renderG4Brief: --full では design-delta.md の全文を添える
 - 対応: US-12.4
 - Given: 任意の G4Brief と、design-delta.md の本文 "# 設計差分\n\n- `api/public/users.ts` を変える\n"
 - When: renderG4Brief(brief, 本文) を呼ぶ
 - Then: 出力に要約と、design-delta.md の本文がそのまま含まれる
+
+### renderG8Brief: 解釈のシナリオと未対応の基準だけを示す
+- 対応: US-12.2
+- Given: interpreted に「parse: 空行を区切りとみなす（解釈）」1件、uncovered に ["US-3.2"] を持つ G8Brief
+- When: renderG8Brief(brief, undefined) を呼ぶ
+- Then: 解釈のシナリオの見出しと本文、未対応の基準 US-3.2 が出る
+
+### renderG8Brief: 追跡できないときは受け入れ基準の節を出す
+- 対応: US-12.2
+- Given: testSpec が true、uncovered が undefined、criteriaSection が "- [ ] ログインできる" の G8Brief
+- When: renderG8Brief(brief, undefined) を呼ぶ
+- Then: 出力に "- [ ] ログインできる" が含まれ、番号で追跡できない旨が出る（空にしない）
+
+### renderG8Brief: test-spec が無ければ plan.md を提示する旨を出し、未対応の一覧は出さない
+- 対応: US-12.2
+- Given: testSpec が false、uncovered が undefined、criteriaSection がある G8Brief
+- When: renderG8Brief(brief, undefined) を呼ぶ
+- Then: test-spec.md が無いので plan.md を提示する旨が出て、「未対応」の節は出ない
 
 ## steps/architect.mts（G4）
 
@@ -176,7 +200,13 @@
 - 対応: US-12.1
 - Given: standard のサイクルで `[boundaries] internal = ["src/core/**"]` を宣言し、design-delta.md が `src/core/queue.ts` にだけ触れる
 - When: step next で G4 まで進める
-- Then: approval は "confirm"、args.boundaries.internal は [{ boundary: "src/core/**", touched: ["src/core/queue.ts"] }] で、express では G4 を通り過ぎて build-split に進む
+- Then: approval は "confirm"、args.boundaries.internal は [{ boundary: "src/core/**", touched: ["src/core/queue.ts"] }] になる
+
+### G4 consent: 内部の境界にだけ触れるなら express では省ける
+- 対応: US-12.1
+- Given: express のサイクルで `[boundaries] internal = ["src/core/**"]` を基準と作業ツリーに宣言し、design-delta.md が `src/core/queue.ts` にだけ触れる
+- When: step next で進める
+- Then: G4 を通り過ぎて build-split に進む
 
 ### G4 consent: 作業ツリーだけの宣言で基準を読めなければ同意に倒す
 - 対応: US-12.1
@@ -208,13 +238,19 @@
 - When: step next で G4 を評価する
 - Then: approval は "consent" で、notices に ADR を読めないため境界を照合できなかった旨が含まれる
 
+### G4 consent: 境界を宣言していなければ、ADR を読めなくても境界を理由に同意にしない
+- 対応: US-12.5
+- Given: standard のサイクルで `[app]`・`[boundaries]` とも無く、G4 の手前で document-guide.md を「壊れたガイド」に書き換える
+- When: step next で G4 を評価する
+- Then: approval は "confirm" で、approvalReason と notices に境界の照合の文言が現れない
+
 ## commands/gate.mts（CLI）
 
-### gate brief G4 --json: BoundaryChanges をそのまま出し、終了コードは 0
+### gate brief G4 --json: G4Brief（boundaries・undeclaredAreas・verified）を出し、終了コードは 0
 - 対応: US-12.3
 - Given: サイクル 001 で `[boundaries] external = ["api/public/**"]` を宣言し、design/design-delta.md が `api/public/users.ts` に触れる
 - When: `hikyaku gate brief G4 architect 001 --json` を実行する
-- Then: 終了コード 0 で、JSON の boundaries.external[0] は { boundary: "api/public/**", touched: ["api/public/users.ts"] } になる
+- Then: 終了コード 0 で、JSON の boundaries.external[0] は { boundary: "api/public/**", touched: ["api/public/users.ts"] }、undeclaredAreas は []、verified は true になる
 
 ### gate brief G8: 要約は解釈と未対応だけで、--full で plan.md と test-spec.md の全文が出る
 - 対応: US-12.4
@@ -233,3 +269,9 @@
 - Given: サイクル 001 の design/ に design-delta.md がまだ無い
 - When: `hikyaku gate brief G4 architect 001` を実行する
 - Then: 終了コード 0 で、design-delta.md が無い旨が出力に含まれる
+
+### gate brief G8: test-spec.md が未作成でも止めずに plan.md の提示に回す
+- 対応: US-12.4
+- Given: サイクル 001 の build-05 に plan.md はあるが test-spec.md が無い
+- When: `hikyaku gate brief G8 build-05 001` と `hikyaku gate brief G8 build-05 001 --full` を実行する
+- Then: どちらも終了コード 0 で、前者は test-spec.md が無いので plan.md を提示する旨を出し、後者は plan.md の本文を含み、test-spec.md が無い旨を出す

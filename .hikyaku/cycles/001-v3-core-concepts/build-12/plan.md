@@ -112,7 +112,7 @@ hikyaku gate brief G4|G8 <phase> [<cycle>] [--full] [--root <path>] [--json]
 
 - G4 は phase が `architect`、G8 は `build-NN` だけを受け付ける（ほかはエラー）
 - `scopeFor` でサイクルを解決し、G4 は `{cycle}/design/`、G8 は `{cycle}/build-NN/` を読む
-- `--json` は `BoundaryChanges` / `G8Brief` をそのまま出す。終了コードは 0（読み取り専用。ADR を読めないときは G4 の notices に出す）
+- `--json` は `G4Brief` / `G8Brief` をそのまま出す。終了コードは 0（読み取り専用。ADR を読めないときは G4 の notices に出す）
 - `scripts/hikyaku.mts` に import を足す
 
 ### 手順・テンプレート
