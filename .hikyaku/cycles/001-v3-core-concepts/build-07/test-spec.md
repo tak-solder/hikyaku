@@ -160,7 +160,7 @@
 - 対応: —
 - Given: 同じワークスペース
 - When: `conductor launch builder 001 1 --json` を実行する
-- Then: `command` に `HIKYAKU_ANSWER_FROM` が含まれない
+- Then: `command` に `HIKYAKU_ANSWER_` で始まる変数が1つも無い
 
 ### conductor launch: 初回の起動でも --from を添えれば --message を渡せる
 - 対応: —
@@ -312,7 +312,7 @@
 - 対応: US-21.4
 - Given: `[conductor] escalate = ["G8"]` の設定
 - When: `conductor launch builder 001 1 --resume s-1 --escalate --ask G8 --json` を実行する
-- Then: 成功し、`argv[2]` が `ledger open build-01 001 --type question --who user --when now --ask G8` の記録と、コミット・push と、本文に `waiting: <ID>` を置いた blocked で終えることを指示し、`command` に `HIKYAKU_ANSWER_FROM` が無い
+- Then: 成功し、`argv[2]` が `ledger open build-01 001 --type question --who user --when now --ask G8` の記録と、コミット・push と、本文に `waiting: <ID>` を置いた blocked で終えることを指示し、`command` に `HIKYAKU_ANSWER_` で始まる変数が1つも無い
 
 ### conductor launch: --escalate は作業単位を architect と close に読み替え、--message と --ask の欠落を拒む
 - 対応: —
@@ -435,8 +435,8 @@
 ### ledger answers: --format pr は監督が答えた問いを並べ、none を「リスクなしと申告」と示す
 - 対応: US-15.2
 - Given: build-01 に `by: supervisor`・`ask: "questions"`・`risk: { kind: "none" }` の決定、build-02 に `by: supervisor`・`ask: "review-findings"`・`risk: { kind: "declared", harm: "中", premises: ["app.exposure"] }` の決定、architect に `by: user` の決定がある
-- When: `ledger answers 001 --format pr` を実行する
-- Then: 「監督が答えた問い」の節に2行が並び、questions の行に「リスクなしと申告」、review-findings の行に害 `中` と前提 `app.exposure` が出る。`by: user` の決定は出ない。何もファイルを書かない
+- When: `ledger answers 001 --format pr` と `ledger answers 001 --json` を実行する
+- Then: `--format pr` は「監督が答えた問い」の節に2行が並び、questions の行に「リスクなしと申告」、review-findings の行に害 `中` と前提 `app.exposure` が出る。`--json` は2件の決定を出し、1件は `ask: "questions"`・`risk: { kind: "none" }`、もう1件は `ask: "review-findings"`・`risk: { kind: "declared", harm: "中", premises: ["app.exposure"] }` を持つ。どちらも `by: user` の決定は出さず、何もファイルを書かない
 
 ### ledger answers: risk の無い古い決定もそのまま出す
 - 対応: —

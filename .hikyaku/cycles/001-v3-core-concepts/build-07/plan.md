@@ -74,7 +74,7 @@ export function safeAnswerOf(id: string): SafeAnswer | undefined
 
 ```ts
 /** 子に渡された答え（環境変数を読む。conductor の子でなければ undefined） */
-export interface ChildAnswer { from: "user" | "supervisor" | undefined; items: string[]; ask?: string; risk?: RiskDeclaration; token?: string }
+export interface ChildAnswer { from: "user" | "supervisor" | undefined; items: string[]; ask?: string; choice?: string; risk?: RiskDeclaration; token?: string }
 export type RiskDeclaration = { kind: "none" } | { kind: "declared"; harm: Harm; premises: string[] }
 export function childAnswer(env?: NodeJS.ProcessEnv): ChildAnswer | undefined
 /** conductor の子で、この決定を書いてよいか。だめなら理由（US-19.7・G8 1回目のユーザーの判断） */
@@ -85,7 +85,7 @@ export function needsRiskDeclaration(ask: string | undefined, choice: string | u
 export function answerFields(by: Who, answer: ChildAnswer | undefined): Partial<DecideRecord>
 ```
 
-- 置き場は `scripts/lib/ledger.mts`（commands と tests から使う）。`DecideRecord` に任意欄 `from`（既存）・`ask`・`risk`・`token`・`answers`（下の object）を足す
+- 置き場は `scripts/lib/ledger.mts`（commands と tests から使う）。`DecideRecord` に任意欄 `from`（既存）・`ask`・`choice`・`risk`・`token`・`answers`（下の object）を足す
 - **conductor の子（`HIKYAKU_CONDUCTOR_CHILD=1`）の `--by user`**: `HIKYAKU_ANSWER_FROM=user` で、かつ決める事項の ID が `HIKYAKU_ANSWER_ITEMS` にあるときだけ書ける（`--dry-run` でも同じ検査）。ユーザーが答えていない事項に、同じ実行の中で書けない
 - **`ledger object` の決定つきの記録（`--defer` でない）**: 異議の事項はその場で作るので ID が前もって無い。conductor の子では `--answers <ID>`（ユーザーの答えで閉じる待ちの事項）を必須にし、その ID が `HIKYAKU_ANSWER_ITEMS` にあるときだけ書ける。決定のレコードに `answers` を残す。子でなければ `--answers` は任意で、検査しない
 - **conductor の子の `--by supervisor`**: `HIKYAKU_ANSWER_FROM=supervisor` が要る。決定のレコードに `from`・`ask`・`choice`・`risk`・`token` を環境変数から必ず書く（引数では渡せず、子が省けない）。`HIKYAKU_ANSWER_RISK` が無い起動で、`needsRiskDeclaration(ask, choice)` なら拒む（launch も同じ関数で申告を求める。review-findings の `fix`・`new-build` は申告なしで記録できる）
