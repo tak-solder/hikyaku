@@ -17,15 +17,17 @@
 - `CONSENT_TARGETS = ["decisions", "constraints"]`
 - `candidateApproval(candidate): "consent" | "confirm"` — 宛先が `decisions`・`constraints` なら同意
 - `isStatusOnlyChange(before: string, after: string): boolean` — frontmatter の `status: accepted` を `status: implemented` に変えただけ（それ以外の行が一致）か
+- `cycleAdrNames(cycleDirectory): Set<string>` — このサイクルの ADR。サイクルのディレクトリの `.md`（design/・tasklist.md・build-NN/issue.md など）にファイル名（`20261116-xxx.md` か拡張子なし）が現れる ADR。現れない ADR の書き換えは、状態だけでも同意にする（安全側）
 - `consentChanges(input: { candidates: Candidate[]; changes: DocChange[] }): ConsentChange[]` — **同意が要る変更の判定の唯一の関数**
   - `DocChange = { path: string; doc: "decisions" | "constraints"; status: "A" | "M" | "D"; before?: string; after?: string }`
   - `ConsentChange = { source: "candidate" | "diff"; doc; text: string }`
   - 候補: 宛先が `decisions`・`constraints` の候補はすべて同意（候補の時点では書き換えの中身が分からないので、同意の側に倒す）
-  - 差分: `M` で `isStatusOnlyChange` を満たすものだけを除き、追加・削除・本文の変更・`superseded` への書き換えは同意
+  - 差分: `decisions` の `M` で、このサイクルの ADR（`cycleAdrNames`）かつ `isStatusOnlyChange` を満たすものだけを除き、追加・削除・本文の変更・`superseded` への書き換えは同意
 - `docChanges(config, cycleDirectory): DocChange[] | string`（同期。`gitSync`）— 作業ツリーにある `decisions`・`constraints` の変更
   - 所在は `loadGuide` の `decisions`・`constraints` の `path`（`未作成`・`対象外` なら見ない。`constraints` が未作成でもファイルが作られれば、ガイドの更新前でも同意にするため、パスが未定の論理名は「document-guide.md の差分」にも当たれば同意: write は document-guide.md も直すので、そちらの差分で拾う）
   - 比べる基準: close-cycle の進捗（`cycles/{cycle}/progress.jsonl`）を最初に足したコミットの親。まだコミットされていなければ `HEAD`。close-cycle が書く前の状態と比べるので、スタック（conductor ブランチ）でも architect が足した ADR を「新しい ADR」と数えない
   - 追跡外の新しいファイル（`git ls-files --others --exclude-standard`）も追加として数える
+  - サイクルが closed になったあと（`cycle close` の後）は差分を見ない（候補だけで判定する）。close の PR のマージ後に後続のサイクルが `decisions` を変えても、閉じたサイクルの G10 が戻らないようにする
   - git が使えない・基準を決められないときは理由の文字列を返し、呼び出し側は同意に倒す
 - `consentState(ctx): { changes: ConsentChange[]; problem?: string }` は steps 側（下記）で組み立てる
 
@@ -39,7 +41,7 @@
   - 既存の記録（`approval` 欄の無い承認）は、このビルドの前は G10 が常に同意だったので、同意の承認として扱う
 - write
   - `accepts(ctx)`: 同意が要る差分があるのに、G10 の同意の承認（`approval` が `confirm` でない approved の記録）が今回の回に無ければ、理由と「`step next` で G10 へ戻る」を返す
-  - 戻すのは `args.reworkFrom` の名前の欄では作らない（AI の解釈。plan の「設計の解釈」）: 差分が出た時点で G10 の `consent` が `now` になり、エンジンが G10 を現在地として返す（G10 が `off` の回は on になり、確認の承認の回は `reopens` で pending になる）。write の directive の `args.reworkFrom` には `"G10"` を、G10 の承認が要る状態でだけ載せる（write が現在地のまま報告を拒まれた場合に、どこへ戻るかを示すため）
+  - G10 へ戻すのはエンジンの評価で行い、`args.reworkFrom` の欄は足さない（AI の解釈。plan の「設計の解釈」）: 差分が出た時点で G10 の `consent` が `now` になり、エンジンが G10 を現在地として返す（G10 が `off` の回は on になり、確認の承認の回は `reopens` で pending になる）。write の `accepts` は、その状態で write の done が報告された場合の守り
   - `args(ctx)`: `promotionGate: "approved" | "skipped"`（G10 を省いた回なら、write が G10.md の「整理」を自分で行い、PR の本文に書いたものを並べる）
 - followups
   - `args` に `ruleRemovals`（消す候補。`rules.mts` の `removalCandidates`）と `metricsComparison`（`quality-metrics.mts` の比較の結果）と `g10Input`（G10 の承認の答え。試しに消すものの範囲）を足す
@@ -68,9 +70,9 @@
   - 重い指摘: `collectReviewRecords` と `heavyCountByCycle`
 - `removalPoints(config, cycles): RemovalPoint[]`
   - closed のサイクルの直下の `progress.jsonl` で、close-cycle の `followups` の done に `pr` があるもの → `{ cycle, pr }`
-  - ベースブランチ（`defaultBaseOf`）の `git log` で、件名に PR 番号（`#N`）を含むコミット（マージ・スカッシュのどちらでも）の日時をマージの時点とし、そのコミットで消えた `.claude/rules/` のファイルを「消した基準」として並べる。見つからなければ「未マージ」
+  - ベースブランチ（`defaultBaseOf`）の `git log --first-parent` で、件名に PR 番号（`#N`。前後が数字でないもの。`#12` と `#123` を取り違えない）を含むコミット（マージ・スカッシュのどちらでも）の日時をマージの時点とする。そのコミットと第1親の差分（`<commit>^1..<commit>`）から、消えた `.claude/rules/` のファイルと、登録された文書（document-guide.md のパス）から消えた箇条書きの行を「消した基準」として並べる。見つからなければ「未マージ」
 - `compareMetrics(point, cycles, window): MetricsComparison`
-  - 前: マージの日付以前に完了（`finished`）した closed のサイクルの直近 `window` 件。後: マージの日付以後に開始（`started`）したサイクルの先頭 `window` 件（closed か、いま締めているサイクル）
+  - 前: マージの日付より前に完了（`finished` < マージの日）した closed のサイクルの直近 `window` 件。後: マージの日以後に開始（`started` ≥ マージの日）したサイクルの先頭 `window` 件（closed か、いま締めているサイクル）。`started ≤ finished` なので前と後は重ならない（マージの日に完了したサイクルはどちらにも入らない）
   - どちらかが `window` に満たなければ `{ comparable: false, reason }`（「比較できない」）
   - 揃えば前後の合計と、悪くなった指標（後 > 前）を返す。戻すかどうかは決めない
 - `metricsComparison(config, currentCycle): MetricsComparison[]`（同期。followups の args から呼ぶ。`positionOnly` なら呼ばない）
@@ -83,21 +85,24 @@
 - `skills/close-cycle/steps/followups.md`: 「基準を試しに消す（`ruleRemovals`）」の節（`{close のブランチ}-criteria` のブランチ、PR 本文に何を防ぐ基準だったか・指標の比較で戻せること、`--pr` で記録）と、「指標の比較（`metricsComparison`）」の節（完了の案内で示し、悪くなっていれば戻す判断の材料としてユーザーに伝える）
 - `skills/close-cycle/steps/hooks.md`: G10 を省いた回はフックを採らない（skipped）
 - `scripts/commands/promotions.mts`: 候補ごとに `approval` を JSON に足し、テキストでも印を付ける
-- `scripts/lib/conductor.mts`: `CONSENT_WHEN` に G10、ASKS の G10 を `confirm` に、`enabledWhen: gates.promotion`（step-consent のテストが一致を検査）
+- `scripts/lib/conductor.mts`: `CONSENT_WHEN` に G10、ASKS の G10 を `confirm` に、`enabledWhen: gates.promotion`（step-consent のテストが一致を検査）。G10 を `delegate` に書くのは受け付ける（同意の回は `childStep` の `approval` でユーザーに固定される）
+- 「G10 は常に同意」を前提にした記述と期待値: `scripts/commands/conductor.mts`・`scripts/commands/config.mts`（G10 の表示）、`skills/conductor/references/headless-protocol.md`・`skills/close-cycle/SKILL.md`・`skills/close-cycle/steps/pr.md`、`docs/workflow/conductor.md`、`tests/conductor.test.mts`・`tests/step-hook.test.mts`・`tests/step-consent.test.mts`
+- patch の P2 は同意のまま残す（サイクルに属さない patch の永続ドキュメントの更新で、P2 を区分する判定はこのビルドの範囲外。handoff の「残したこと」に書く）
 - `docs/workflow/close.md`・`docs/configuration/profiles.md`（`promotion_gate`、G10 の確認・同意）・`docs/configuration/config-file.md`（`promotion_gate`・`[metrics]`）・`docs/reference/cli.md`（`rules candidates` の消す候補）・CHANGELOG の `[3.0.0]`
 
 ## 設計の解釈（G8 で確かめたいこと）
 
-- `args.reworkFrom`: 戻す先はエンジンが評価で決める（同意が要る差分が出た時点で G10 が現在地になる）。write の directive に `reworkFrom: "G10"` を載せるのは、write が現在地のまま拒まれる場合の案内だけ。build-06 の退けの `reworkFrom` と同じ名前の欄にそろえる
-- 差分の基準を「close-cycle の進捗を最初に足したコミットの親」にした（ベースブランチとの merge-base だと、スタックで architect が足した ADR が新しい ADR に見え、`accepted → implemented` だけでも同意になる）
-- 「このサイクルの ADR」の限定はしない: `accepted → implemented` だけの書き換えはどの ADR でも確認にする（実装状態の記録で、判断の中身を変えないため）
-- 消す候補の「理由の欠けた基準」は rule（frontmatter）に限る。文書（AGENTS.md など）の行は理由の欄の導入前に書かれたものが大半で、全行が候補になり読めない量になる。文書の行は「役に立たなかった記述」に挙がったものだけを候補にする
-- 指標の比較の前後は、cycles.md の日付（`finished`・`started`）とマージの日付で分ける。同じ日に始まったサイクルは「後」に数える
+- `args.reworkFrom`（issue.md）の欄は足さない: 戻す先はエンジンが評価で決める（同意が要る差分が出た時点で G10 が現在地になる）ので、write の directive にこの欄が載る状態が起きない。build-06 の退けの `reworkFrom` とは build-06 の側でそろえる
+- 差分の基準を「close-cycle の進捗を最初に足したコミットの親」にした（ベースブランチとの merge-base だと、スタックで architect が足した ADR が新しい ADR に見え、`accepted → implemented` だけでも同意になる）。サイクルが closed になった後は差分を見ない
+- 「このサイクルの ADR」は、サイクルのディレクトリの文書にファイル名が現れる ADR とする。現れない ADR は状態の書き換えだけでも同意（安全側）
+- 消す候補の「理由の欠けた基準」は rule（frontmatter）に限る（**スコープを狭める解釈。G8 で判断を求める**）。文書（AGENTS.md など）の行は理由の欄の導入前に書かれたものが大半で、全行が候補になり読めない量になる。文書の行は「役に立たなかった記述」に挙がったものだけを候補にする。狭めたことは handoff の「残したこと」と PR 本文に残す
+- ADR approval-kind の再評価条件「G10 で確認の候補だけを省きたい要望が出たとき」は、`promotion_gate` で省ける（issue・design-delta）ことと食い違う。ずれは ADR の側にあるので、handoff の「永続化すること」に `decisions` 宛てで残し、close-cycle の G10 で同意を取る
+- 指標の比較の前後は、cycles.md の日付とマージの日付で分ける（前: 完了 < マージの日、後: 開始 ≥ マージの日）
 
 ## 非機能要件
 
 - **エラーハンドリング**: git が使えない・基準を決められないときは、G10 を同意に倒す（安全側）。指標の材料が読めなければ「比較できない」と理由を返し、followups を止めない
-- **パフォーマンス**: G10 の `consent` は `step next` のたびに `git diff --name-status`（decisions・constraints のパスだけ）と、変わった ADR ごとの `git show` を呼ぶ。`positionOnly` の経路（Stop フック・step where）では、git を読まずに同意に倒す。指標の比較は followups の args だけで、`git log` はベースブランチに1回
+- **パフォーマンス**: G10 の `consent` は評価のたびに（Stop フック・step where・conductor parse も含む）`git log`（基準のコミット）・`git diff --name-status`（decisions・constraints のパスだけ）・変わった ADR ごとの `git show` を呼ぶ。位置だけを読む経路で同意に倒すと、手順の位置が `step next` と食い違うので倒さない。サイクルが closed なら git を呼ばない。指標の比較は followups の args だけで、`git log` はベースブランチに1回
 - **マージ時点のデータ安全**: 該当なし（ワークスペースの記録は形を変えない。progress.jsonl の `approval` は任意欄の追加で、無い記録は従来どおり読める。既存の G10 の承認は同意として扱うので、進行中の close-cycle が巻き戻らない）
 
 ## 予測ピーク
@@ -105,7 +110,7 @@
 | 段階 | 予測ピーク |
 |------|------------|
 | architectフェーズ段階 | 340k |
-| builderフェーズ段階 | 375k |
+| builderフェーズ段階 | 400k |
 
 **読むファイル**
 
@@ -125,11 +130,11 @@
 | 成分 | 予測 | 根拠 |
 |------|------|------|
 | 固定費 | 90k | — |
-| 読み込み | 110k | close-cycle・engine・step report・promotions・rules・review-records は読み済み。config・progress・ledger・git・conductor・tokens-history の該当節、tests の promotions・rules・step-planner-close・step-consent・config・helpers、docs の close・profiles・config-file・cli |
-| 実装 | 80k | consentChanges と docChanges（git の基準コミットの導出）、G10 の consent/enabled/reopens/args、write の accepts、エンジンの reopens と recordsPr optional、承認の種類の記録、removalCandidates、quality-metrics.mts 新規、手順5本・docs4本・CHANGELOG |
-| テスト | 55k | G10 の同意の判定と write の拒否・戻り（一時リポジトリ）、消す候補の高の除外、指標の比較と比較できない（一時リポジトリのマージコミット）、config |
-| 未知の領域 | 40k | git の基準コミットと追跡外ファイルの扱い、マージコミットの日時と cycles.md の日付の突き合わせ、既存の step テストの期待値の修正ループ |
-| **予測ピーク** | **375k** | 狙いの帯（300k〜450k） |
+| 読み込み | 125k | close-cycle・engine・step report・promotions・rules・review-records・directive は読み済み。config・progress・ledger・git・conductor（lib・commands）・commands/config の該当節、tests の promotions・rules・step-planner-close・step-consent・conductor・step-hook・config・helpers、skills の conductor の headless-protocol・close-cycle の SKILL.md と pr.md、docs の close・profiles・config-file・cli・conductor |
+| 実装 | 90k | consentChanges と docChanges（基準コミット・closed 後の打ち切り）・cycleAdrNames、G10 の consent/enabled/reopens/args、write の accepts、エンジンの reopens と recordsPr optional、承認の種類の記録、ASKS の G10 と G10 前提の記述の修正、removalCandidates、quality-metrics.mts 新規（文書の削除行の導出を含む）、手順6本・docs5本・CHANGELOG |
+| テスト | 55k | G10 の同意の判定と write の拒否・戻り・closed 後に戻らない（一時リポジトリ）、消す候補の高の除外、指標の比較と比較できない（一時リポジトリのマージコミット）、config、conductor の期待値 |
+| 未知の領域 | 40k | git の基準コミットと追跡外ファイルの扱い、マージコミットの第1親との差分と cycles.md の日付の突き合わせ、既存の step・conductor テストの期待値の修正ループ |
+| **予測ピーク** | **400k** | 狙いの帯（300k〜450k） |
 | ガイド | 標準 v2 | 03897ac0 |
 
 ## 実装ステップ
