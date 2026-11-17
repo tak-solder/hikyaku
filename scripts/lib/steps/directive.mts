@@ -168,7 +168,9 @@ const OBJECTION_GUIDE = [
   "唱えるときは、根拠（どの宣言・記録か）と、その選択で失うものを示す",
   "害の重さは persistence.md の重要度で決める（高: 害が成果物に残る / 中: セッションのコスト）。中は指摘にとどめ、ユーザーがそのまま進めればそれで決まる",
   "高は、ユーザーが何を受け入れるかを自分の言葉で書くまで承認を報告しない（受け入れの言葉を AI が代わりに書かない）",
+  "害が中でも、AI に任せてよい上限（[app] の宣言）を超えると ledger object が判定した異議は、高と同じく受け入れの言葉（--accepts）と前提（--premises）が要る",
   "異を唱えたら、ユーザーの決定を聞いてから、承認を報告する前に下のコマンドで異議と決定を対で記録する",
+  "事後同意（[consent] deferred）が有効なサイクルで、ユーザーが上限を超える異議の同意をマージの前に回すと選んだら、--decision・--input の代わりに --defer で記録する（同意ゲートの一覧に載る）",
 ];
 
 /** 照合に使える宣言・記録。登録されていない文書は指さない */
@@ -196,7 +198,8 @@ function objectionGuide(opened: Opened, cycle: CycleContext): ObjectionGuide {
     pointers: objectionPointers(opened, cycle),
     command:
       `${CLI} ledger object ${opened.phase} ${cycle.name} --summary "<異議>" --basis "<食い違う宣言・記録>" --loses "<失うもの>" ` +
-      `--harm 高|中 --decision consented|decided --input "<ユーザーの答え>" [--accepts "<ユーザーが受け入れると書いた言葉>" --premises <前提の参照,...>]`,
+      `--harm 高|中 --decision consented|decided --input "<ユーザーの答え>" [--accepts "<ユーザーが受け入れると書いた言葉>" --premises <前提の参照,...>]` +
+      `（マージの前に回すなら --decision・--input・--accepts の代わりに --defer --premises <app.*|area:*,...>）`,
   };
 }
 
@@ -330,13 +333,15 @@ export function buildDirective(opened: Opened, evaluation: Evaluation, options: 
     read: instructionPath(skill.skill, definition.id),
     report: Object.fromEntries(allowedResults(definition).map((result) => [result, reportCommand(opened, definition.id, result)])),
   };
-  if (definition.args !== undefined) directive.args = definition.args(options.notices === false ? { ...ctx, positionOnly: true } : ctx);
+  // 手順の位置だけを読む側は、args と承認の種類を同じ positionOnly の ctx で評価する（directiveOf の評価とそろえる）
+  const viewCtx = options.notices === false ? { ...ctx, positionOnly: true } : ctx;
+  if (definition.args !== undefined) directive.args = definition.args(viewCtx);
   if (definition.notices !== undefined && options.notices !== false) directive.notices.push(...definition.notices(ctx));
   if (current.note !== undefined) directive.note = current.note;
   if (current.revise !== undefined) directive.revise = current.revise;
   if (definition.kind === "gate") {
     directive.ask = definition.ask ?? definition.id;
-    const consent = consentOf(definition, ctx);
+    const consent = consentOf(definition, viewCtx);
     const now = consent !== false && consent.timing === "now";
     directive.approval = now ? "consent" : "confirm";
     directive.approvalReason = now ? consent.reason : null;

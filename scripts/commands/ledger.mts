@@ -16,6 +16,7 @@ import {
   gateIds,
   HARMS,
   isConsentItem,
+  isHighObjection,
   itemJson,
   itemLine,
   ITEM_TYPES,
@@ -23,6 +24,7 @@ import {
   nextItemId,
   OBJECTION_DECISIONS,
   openItem,
+  parsePremise,
   parsePremises,
   parseWhen,
   parseWho,
@@ -46,7 +48,9 @@ import { register } from "../lib/registry.mts";
 import { open, type Opened } from "../lib/steps/directive.mts";
 import { evaluate } from "../lib/steps/engine.mts";
 import { directiveOf, type FoundUnit } from "../lib/steps/locate.mts";
-import type { Harm } from "../lib/risk.mts";
+import { consentGateSlot } from "../lib/steps/consent.mts";
+import { deferredConsent } from "../lib/deferred-consent.mts";
+import { effectiveDeclaration, exceedsCeilingFor, type Harm } from "../lib/risk.mts";
 import { openCycle, type CycleContext } from "../lib/workspace.mts";
 
 function required(args: ParsedArgs, name: string): string {
@@ -72,6 +76,8 @@ function openUnit(args: ParsedArgs, phase: string | undefined, cycle: string | u
  * step where と同じ directiveOf に任せる）。外れたゲート（off）も返す
  */
 function currentStep(args: ParsedArgs, opened: Opened & { cycle: CycleContext }): { step: string | undefined; off: Set<string> } {
+  // step next と同じ評価（positionOnly を付けない）。off と step を同じ評価から求め、位置だけの評価が安全側に入れた
+  // 同意ゲートを、事項を記録したステップとして残さない（コードレビュー1回目の指摘）
   const evaluation = evaluate(opened.skill, opened.ctx);
   const off = new Set(evaluation.steps.filter((step) => step.status === "off").map((step) => step.definition.id));
   const unit: FoundUnit = {
@@ -83,7 +89,7 @@ function currentStep(args: ParsedArgs, opened: Opened & { cycle: CycleContext })
     events: opened.ctx.events,
   };
   const root = flagString(args, "root");
-  const { directive } = directiveOf(unit, root === undefined ? {} : { root });
+  const { directive } = directiveOf(unit, { ...(root === undefined ? {} : { root }), positionOnly: false });
   return { step: directive.step, off };
 }
 
@@ -146,9 +152,23 @@ register({
     if (ask !== undefined && !ASK_IDS.includes(ask) && !gateIds().includes(ask)) {
       throw new HikyakuError(`--ask の値が不正です: ${ask}`, "conductor の問いの ID（hikyaku conductor asks）か、ゲートの ID を指定してください。");
     }
-    // 高の異議は受け入れるときに前提と結び付けて残す（US-1.5）。決定では前提を足せないので、記録するときに求める
-    if (type === "objection" && harm === "高" && (premisesRaw === undefined || premisesRaw.trim() === "")) {
-      throw new HikyakuError("害が高の異議には --premises に拠り所にした前提の参照を添えてください", "異議と決定を対で書くなら hikyaku ledger object を使います。");
+    const premises = premisesRaw === undefined || premisesRaw.trim() === "" ? [] : parsePremises(premisesRaw);
+    let exceedsCeiling = false;
+    if (type === "objection") {
+      // マージの前の同意へ回す異議は ledger object --defer だけが書く（事後同意が有効か・上限を超えるか・置き場があるかを
+      // 確かめずに同意ゲートへ積む経路、または同意ゲートに載らずにゲートの承認を素通りする経路を作らない）
+      if (when.kind === "merge") {
+        throw new HikyakuError("異議の「いつ」に merge は指定できません", "マージの前の同意へ回すなら hikyaku ledger object --defer を使います。");
+      }
+      exceedsCeiling = exceedsCeilingFor(effectiveDeclaration(opened.ctx.config), harm as Harm | undefined, premises);
+    }
+    // 高として扱う異議（害が高か、上限を超える）は受け入れるときに前提と結び付けて残す（US-1.5・US-13.3）。
+    // 決定では前提を足せないので、記録するときに求める
+    if (type === "objection" && (harm === "高" || exceedsCeiling) && premises.length === 0) {
+      throw new HikyakuError(
+        `${harm === "高" ? "害が高" : "上限を超える"}異議には --premises に拠り所にした前提の参照を添えてください`,
+        "異議と決定を対で書くなら hikyaku ledger object を使います。",
+      );
     }
     const loses = flagString(args, "loses");
 
@@ -164,13 +184,15 @@ register({
       summary,
       when: formatWhen(when),
       who,
-      ...(premisesRaw === undefined ? {} : { premises: parsePremises(premisesRaw) }),
+      ...(premises.length === 0 ? {} : { premises }),
       ...(loses === undefined ? {} : { loses }),
       ...(harm === undefined ? {} : { harm: harm as Harm }),
       ...(ask === undefined ? {} : { ask }),
+      ...(exceedsCeiling ? { exceedsCeiling: true as const } : {}),
       ...meta(),
     };
     const warnings: string[] = [];
+    if (exceedsCeiling) warnings.push("この異議は AI に任せてよい上限を超えます。受け入れるときは、ユーザーの言葉を ledger decide の --accepts に添えてください");
     if (when.kind === "gate" && when.unit === opened.phase && off.has(when.gate)) {
       warnings.push(`${when.gate} は今の設定では現れないので、後ろのステップに進むと期限を過ぎた事項になります`);
     }
@@ -257,7 +279,7 @@ register({
   name: "ledger object",
   summary: "ゲートや問いでの異議と、それへのユーザーの決定を対で記録する",
   usage:
-    "hikyaku ledger object <phase> [<cycle>] --summary <text> --basis <text> --loses <text> --harm 高|中 --decision consented|decided --input <ユーザーの答え> [--accepts <text>] [--premises <ref,...>] [--ask <id>] [--dry-run] [--json]",
+    "hikyaku ledger object <phase> [<cycle>] --summary <text> --basis <text> --loses <text> --harm 高|中 (--decision consented|decided --input <ユーザーの答え> [--accepts <text>] | --defer) [--premises <ref,...>] [--ask <id>] [--dry-run] [--json]",
   details: [
     "ユーザーの選択が、その人自身の宣言・記録・前提と食い違うときに唱えた異議（objection）と、ユーザーの決定を",
     "その作業単位の decisions.jsonl に対で書きます。好みの違いには異を唱えません。",
@@ -271,12 +293,21 @@ register({
     "  --premises  拠り所にした外の前提の参照（ledger open と同じ書式）",
     "  --ask       問いの ID（ゲートの ID か conductor の問いの ID）",
     "",
-    "害が高で consented なら --accepts と --premises が必須です。害が高の異議が片づいていない（決定が無い、",
-    "または受け入れの言葉の無い決定）ゲートは、step report で承認を受け付けません。中の異議は記録だけで進みます。",
+    "害が高で consented なら --accepts と --premises が必須です。害が中でも、AI に任せてよい上限（[app] の宣言）を",
+    "超える異議は高と同じに扱い、consented には --accepts と --premises が要ります（事後同意が有効かに関わらず）。",
+    "上限は宣言の軸と、--premises に挙げた area:<name> の重い領域で決まり、基準の宣言を読めない回は超えるとみなします。",
+    "高として扱う異議が片づいていない（決定が無い、または受け入れの言葉の無い決定）ゲートは、step report で承認を",
+    "受け付けません。中の異議は記録だけで進みます。",
+    "",
+    "  --defer     事後同意（[consent] deferred）が有効なサイクルで、上限を超える異議の同意をマージの前の同意ゲートへ回す。",
+    "              --decision・--input・--accepts は渡さず、決定なしで when=merge@<phase> の事項を記録します。",
+    "              --premises（app.* か area:* だけ）が必須。事後同意が無効、上限を超えない、今の回に同意ゲートが",
+    "              現れない（plan / close / create、差し戻しからの再設計の回、この回で PR を作るステップを終えた後）なら拒みます",
+    "",
     "記録したときのその作業単位の現在のステップを step に残すので、ゲートを提示している間に呼んでください。",
   ].join("\n"),
   writes: true,
-  options: ["summary", "basis", "loses", "harm", "decision", "input", "accepts", "premises", "ask"],
+  options: ["summary", "basis", "loses", "harm", "decision", "input", "accepts", "premises", "ask", "defer"],
   maxOperands: 2,
   run: ({ args, operands }) => {
     const opened = openUnit(args, operands[0], operands[1]);
@@ -285,27 +316,44 @@ register({
     const loses = required(args, "loses").trim();
     const harm = required(args, "harm") as Harm;
     if (!HARMS.includes(harm)) throw new HikyakuError(`--harm の値が不正です: ${harm}`, `使用できる値: ${HARMS.join(" / ")}`);
-    const decision = required(args, "decision") as Decision;
-    if (!OBJECTION_DECISIONS.includes(decision)) {
-      throw new HikyakuError(`--decision の値が不正です: ${decision}`, `使用できる値: ${OBJECTION_DECISIONS.join(" / ")}`);
-    }
-    const input = required(args, "input");
-    const accepts = flagString(args, "accepts");
+    const defer = args.flags.get("defer") === true;
     const premisesRaw = flagString(args, "premises");
-    if (harm === "高" && decision === "consented") {
-      if (accepts === undefined || accepts.trim() === "") {
-        throw new HikyakuError(
-          "害が高の異議を受け入れて進めるには、--accepts にユーザーが受け入れると書いた言葉を添えてください",
-          "ユーザーが何を受け入れるかを自分の言葉で書くまで、先へ進みません（AI が代わりに書かない）。",
-        );
-      }
-      if (premisesRaw === undefined || premisesRaw.trim() === "") {
-        throw new HikyakuError("害が高の異議を受け入れて進めるには、--premises に拠り所にした前提の参照を添えてください");
-      }
-    }
+    const premises = premisesRaw === undefined || premisesRaw.trim() === "" ? [] : parsePremises(premisesRaw);
     const ask = flagString(args, "ask");
     if (ask !== undefined && !ASK_IDS.includes(ask) && !gateIds().includes(ask)) {
       throw new HikyakuError(`--ask の値が不正です: ${ask}`, "conductor の問いの ID（hikyaku conductor asks）か、ゲートの ID を指定してください。");
+    }
+    const exceedsCeiling = exceedsCeilingFor(effectiveDeclaration(opened.ctx.config), harm, premises);
+
+    let decision: Decision | undefined;
+    let input: string | undefined;
+    let accepts: string | undefined;
+    if (defer) {
+      for (const name of ["decision", "input", "accepts"]) {
+        if (args.flags.has(name)) {
+          throw new HikyakuError(`--defer と --${name} は一緒に渡せません`, "--defer は決定なしで記録し、ユーザーの決定はマージの前の同意ゲートで記録します。");
+        }
+      }
+      assertDeferrable(opened, premises, exceedsCeiling);
+    } else {
+      decision = required(args, "decision") as Decision;
+      if (!OBJECTION_DECISIONS.includes(decision)) {
+        throw new HikyakuError(`--decision の値が不正です: ${decision}`, `使用できる値: ${OBJECTION_DECISIONS.join(" / ")}`);
+      }
+      input = required(args, "input");
+      accepts = flagString(args, "accepts");
+      if ((harm === "高" || exceedsCeiling) && decision === "consented") {
+        const what = harm === "高" ? "害が高" : "AI に任せてよい上限を超える";
+        if (accepts === undefined || accepts.trim() === "") {
+          throw new HikyakuError(
+            `${what}異議を受け入れて進めるには、--accepts にユーザーが受け入れると書いた言葉を添えてください`,
+            "ユーザーが何を受け入れるかを自分の言葉で書くまで、先へ進みません（AI が代わりに書かない）。",
+          );
+        }
+        if (premises.length === 0) {
+          throw new HikyakuError(`${what}異議を受け入れて進めるには、--premises に拠り所にした前提の参照を添えてください`);
+        }
+      }
     }
 
     const ledger = readLedger(opened.cycle.directory);
@@ -319,45 +367,88 @@ register({
       ...(step === undefined ? {} : { step }),
       type: "objection",
       summary,
-      when: "now",
+      when: defer ? `merge@${opened.phase}` : "now",
       who: "user",
-      ...(premisesRaw === undefined ? {} : { premises: parsePremises(premisesRaw) }),
+      ...(premises.length === 0 ? {} : { premises }),
       basis,
       loses,
       harm,
       ...(ask === undefined ? {} : { ask }),
+      ...(exceedsCeiling ? { exceedsCeiling: true as const } : {}),
       ...meta(),
     };
-    const decide: DecideRecord = {
+    const decide: DecideRecord | undefined = decision === undefined ? undefined : {
       record: "decide",
       at,
       id: open.id,
       unit: opened.phase,
       decision,
       by: "user",
-      input,
+      ...(input === undefined ? {} : { input }),
       ...(accepts === undefined ? {} : { accepts }),
       ...meta(),
     };
     const dryRun = args.flags.get("dry-run") === true;
     if (!dryRun) {
       openItem(opened.cycle.directory, open, ledger);
-      decideItem(opened.cycle.directory, decide, { items: [...ledger.items, { open, decisions: [], latest: undefined }], orphans: ledger.orphans });
+      if (decide !== undefined) {
+        decideItem(opened.cycle.directory, decide, { items: [...ledger.items, { open, decisions: [], latest: undefined }], orphans: ledger.orphans });
+      }
     }
     const path = relative(opened.ctx.config.repoRoot, ledgerPath(opened.cycle.directory, opened.phase));
-    emit({ record: open, decision: decide, path, dryRun }, () =>
+    emit({ record: open, decision: decide ?? null, path, dryRun }, () =>
       [
-        `${dryRun ? "記録します（--dry-run のため書き込みません）" : "記録しました"}: ${open.id}（異議・害 ${harm}）${decision}`,
+        `${dryRun ? "記録します（--dry-run のため書き込みません）" : "記録しました"}: ${open.id}（異議・害 ${harm}）${decision ?? `マージの前の同意へ回す（${open.when}）`}`,
         `  要約      ${summary}`,
         `  根拠      ${basis}`,
         `  失うもの  ${loses}`,
         ...(accepts === undefined ? [] : [`  受け入れ  ${accepts}`]),
+        ...(exceedsCeiling ? ["  上限      AI に任せてよい上限を超える（受け入れには言葉と前提が要る）"] : []),
         `  ステップ  ${step ?? "（なし）"}`,
         `  記録先    ${path}`,
       ].join("\n"),
     );
   },
 });
+
+/**
+ * ledger object --defer を受け付けるか。事後同意が有効で、前提が宣言（app.*・area:*）だけで、上限を超え、
+ * 今の回に同意ゲートの置き場があるときだけ。ADR deferred-consent: 上限を超える受け入れは、有効なときだけ積む
+ */
+function assertDeferrable(opened: Opened & { cycle: CycleContext }, premises: string[], exceedsCeiling: boolean): void {
+  const judged = deferredConsent(opened.ctx.config, opened.cycle.directory);
+  if (!judged.effective) {
+    throw new HikyakuError(
+      `事後同意が有効でないので、異議の同意をマージの前に回せません: ${judged.reason}`,
+      "その場でユーザーの決定を聞き、--decision と --input（受け入れるなら --accepts と --premises）で記録してください。",
+    );
+  }
+  if (premises.length === 0 || premises.some((premise) => !["app", "area"].includes(parsePremise(premise).kind))) {
+    throw new HikyakuError(
+      "--defer には、拠り所にした宣言の参照（app.* か area:*）だけを --premises に添えてください",
+      "マージの前の同意へ回せるのは、宣言で決まる上限を超える受け入れだけです（宣言が変われば見直せるように）。",
+    );
+  }
+  // 宣言に無い領域名を拠り所にすると、宣言を変える PR での見直し（premises）がその受け入れを拾えない
+  const declared = effectiveDeclaration(opened.ctx.config).declaration?.areas.map((area) => area.name) ?? [];
+  const unknown = premises.map(parsePremise).flatMap((premise) => (premise.kind === "area" && !declared.includes(premise.name) ? [premise.name] : []));
+  if (unknown.length > 0) {
+    throw new HikyakuError(
+      `--premises の重い領域が宣言にありません: ${unknown.join(", ")}`,
+      "[[app.areas]] に宣言した領域の名前を指定してください（hikyaku config で確かめられます）。",
+    );
+  }
+  if (!exceedsCeiling) {
+    throw new HikyakuError(
+      "この異議は AI に任せてよい上限を超えないので、マージの前に回しません",
+      "その場でユーザーの決定を聞き、--decision と --input で記録してください。",
+    );
+  }
+  const problem = consentGateSlot(opened.skill, opened.ctx);
+  if (problem !== undefined) {
+    throw new HikyakuError(`${problem}。積んでも同意を取る場面がないので、--defer を受け付けません`, "その場でユーザーの決定を聞き、--decision と --input で記録してください。");
+  }
+}
 
 function loadCycleLedger(args: ParsedArgs, key: string | undefined): { context: CycleContext; ledger: Ledger; timeline: CycleTimeline } {
   const opened = openCycle(args, key);
@@ -471,7 +562,7 @@ function consentState(item: LedgerItem): string {
   if (latest === undefined) return "決定なし";
   if (latest.by !== "user") return `ユーザーの決定なし（最新は ${whoLabel(latest.by)} の ${latest.decision}）`;
   if (latest.decision === "rejected") return "退け（rejected）";
-  if (!consentDecided(item)) return "受け入れの言葉なし（害が高の異議）";
+  if (!consentDecided(item)) return "受け入れの言葉なし（害が高か、上限を超える異議）";
   return `決定あり（${latest.decision}）`;
 }
 
@@ -495,6 +586,8 @@ function consentJson(item: LedgerItem): Record<string, unknown> {
     loses: o.loses ?? null,
     basis: o.basis ?? null,
     harm: o.harm ?? null,
+    exceedsCeiling: o.exceedsCeiling === true,
+    needsAccepts: isHighObjection(item),
     decided: consentDecided(item),
     state: consentState(item),
     decisions: item.decisions,
@@ -510,7 +603,7 @@ register({
     "1項目を「受け入れたリスク / 拠り所の前提 / 失うもの」の3行で示し、見出しに ID と決定の状態を出します。",
     "--full で、根拠・害・いつ・記録した単位と、決定の記録まで出します。書き込みはしません。",
     "決定として数えるのは、最新の決定がユーザーの consented / decided / resolved のときだけです（rejected は数えず、",
-    "害が高の異議は受け入れの言葉の無い consented を数えません）。",
+    "害が高か、上限を超える異議は受け入れの言葉の無い consented を数えません。そうした項目には、その旨の行を出します）。",
   ].join("\n"),
   options: ["full"],
   maxOperands: 2,
@@ -528,6 +621,8 @@ register({
         const o = item.open;
         lines.push("", `${o.id}（${o.type === "risk" ? "受け入れたリスク" : "異議"}）[${consentState(item)}]`);
         lines.push(`  受け入れたリスク: ${o.summary}`, `  拠り所の前提: ${premisesText(item)}`, `  失うもの: ${o.loses ?? "（なし）"}`);
+        // 同意に受け入れの言葉（--accepts）が要る項目は、--full でなくても示す（決定を記録し直させないため）
+        if (isHighObjection(item)) lines.push(`  同意には受け入れの言葉（--accepts）が要る（${o.harm === "高" ? "害が高" : "上限を超える"}異議）`);
         if (!full) continue;
         if (o.basis !== undefined) lines.push(`  根拠: ${o.basis}`);
         if (o.harm !== undefined) lines.push(`  害の重さ: ${o.harm}`);

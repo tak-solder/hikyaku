@@ -243,15 +243,31 @@ function runningInternal(unit: FoundUnit, events: ProgressEvent[]): SkillSteps |
  * 内部スキルの記録があるとき（run のステップの中から呼んだとき）。
  * 呼ばれた側が終わっていれば、呼び出し元が報告する番なので、呼び出し元の1手のまま
  */
-export function directiveOf(unit: FoundUnit, options: { root?: string } = {}): { opened: Opened; directive: Directive } {
+export function directiveOf(
+  unit: FoundUnit,
+  options: { root?: string; positionOnly?: boolean } = {},
+): { opened: Opened; directive: Directive } {
+  const view = options.positionOnly !== false;
   const opened = openUnit(unit, options);
-  const directive = buildDirective(opened, evaluate(opened.skill, opened.ctx), { measure: false, notices: false });
+  const directive = positioned(opened, view);
   if (directive.kind === "stop") return { opened, directive };
   const called = directive.kind === "call" && directive.call !== undefined ? stepsOf(directive.call) : undefined;
   const callee = called?.internal === true ? called : runningInternal(unit, opened.ctx.events);
   if (callee === undefined) return { opened, directive };
 
   const inner = openUnit(unit, { ...options, skill: callee });
-  const innerDirective = buildDirective(inner, evaluate(inner.skill, inner.ctx), { measure: false, notices: false });
+  const innerDirective = positioned(inner, view);
   return innerDirective.kind === "done" ? { opened, directive } : { opened: inner, directive: innerDirective };
+}
+
+/**
+ * 既定は手順の位置だけを読む評価（positionOnly）。評価と directive の組み立ての両方に同じ ctx を渡す。
+ * positionOnly で変わるのは同意ゲートの when（事後同意を選んだサイクルで記録を読まずに手順に入れる）と重い args だけで、
+ * G3・G4 の consent は見ない（位置をずらさない）。返す opened の ctx には付けない（呼び手は nextCommand に使う）。
+ * 記録を書くコマンド（ledger open / object の currentStep）は positionOnly を外し、step next と同じ現在地を記録する
+ * （位置だけの評価が安全側に入れた同意ゲートを、事項を記録したステップとして残さないため）
+ */
+function positioned(opened: Opened, positionOnly: boolean): Directive {
+  const view: Opened = positionOnly ? { ...opened, ctx: { ...opened.ctx, positionOnly: true } } : opened;
+  return buildDirective(view, evaluate(view.skill, view.ctx), { measure: false, notices: false });
 }

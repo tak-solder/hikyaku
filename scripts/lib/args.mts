@@ -25,6 +25,7 @@ const BOOLEAN_FLAGS = new Set([
   "repeated",
   "ref",
   "full",
+  "defer",
 ]);
 
 /** すべてのコマンドが受け付けるグローバルオプション */

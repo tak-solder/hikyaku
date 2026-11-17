@@ -11,7 +11,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger consent-list build-{NN} 
 ```
 
 - [ ] 項目ごとにユーザーの答えを記録する（`--input` にユーザーの答え）
-  - 同意する: `--decision consented`。害が高の異議は、ユーザーが受け入れると自分の言葉で書いたことを `--accepts` に添える（AI が代わりに書かない）
+  - 同意する: `--decision consented`。高として扱う異議（害が高か、上限を超える）は、ユーザーが受け入れると自分の言葉で書いたことを `--accepts` に添える（AI が代わりに書かない）
   - 選択を改める: `--decision decided`
   - 退ける: `--decision rejected`。下の「退けたとき」に従って作り直す
   - 前に退けた項目の作り直しが済んだとユーザーが認めた（ask: deferred-consent）: `--decision resolved`（PR 本文と `cycle status` の「未解決の退け」から消える）

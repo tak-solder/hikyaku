@@ -345,6 +345,23 @@ function isHikyakuBranch(config: ResolvedConfig, branch: string): boolean {
 
 const effectiveCache = new WeakMap<ResolvedConfig, EffectiveDeclaration>();
 
+/**
+ * 異議の害が上限を超えるか（US-13.3）。上限は宣言の軸に、前提に挙げた `area:<name>` の重い領域の軸を
+ * 軸ごとの最大で重ねて決める。重い領域に触れる受け入れは害の重さに関わらず超える（ADR risk-ceiling-table）ので、
+ * 宣言にある領域を前提に挙げれば超える。宣言に無い領域名は重ねない。
+ * 基準の宣言を読めない回（incomplete）は、G3・G4 と同じく超えるとみなす。宣言が無ければ上限を設けない。
+ * 害を書かなかった異議（ledger open）は中として比べる
+ */
+export function exceedsCeilingFor(effective: EffectiveDeclaration, harm: Harm | undefined, premises: string[]): boolean {
+  if (effective.incomplete) return true;
+  const declaration = effective.declaration;
+  if (declaration === undefined) return false;
+  // ledger.mts の parsePremise は使わない（ledger.mts は steps/ を経て risk.mts を読み込むので、循環 import になる）
+  const named = premises.filter((premise) => premise.startsWith("area:")).map((premise) => premise.slice("area:".length).trim());
+  if (declaration.areas.some((area) => named.includes(area.name))) return true;
+  return exceeds(harm ?? "中", ceilingOf(declaration.axes));
+}
+
 /** 上限の判定に使う宣言。作業ツリーと、読めた基準すべてのうち最も厳しいもの */
 export function effectiveDeclaration(config: ResolvedConfig): EffectiveDeclaration {
   const cached = effectiveCache.get(config);
