@@ -10,10 +10,13 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import type { ResolvedConfig } from "./config.mts";
 import { matchesPathPattern } from "./diff-stats.mts";
+import { loadGuide, type DocEntry } from "./docs.mts";
 import { lastTouched } from "./git.mts";
+import { collectPromotions, parseCriterionReasons } from "./promotions.mts";
 import type { RuleHit } from "./review-records.mts";
 
 export const RULES_DIR = ".claude/rules";
@@ -348,6 +351,111 @@ export function ruleCandidates(input: {
     candidates.push({ path, kind: "missing", hits: hit.count, heavy: hit.heavy, sources: hit.sources, lastTouchedDays: undefined, reasons: {} });
   }
   return candidates;
+}
+
+export interface RemovalCandidate {
+  /** rule のパス、または文書の所在（論理名・ファイルのパス） */
+  location: string;
+  /**
+   * stale: どのファイルにも一致しない rule。unreasoned: frontmatter の prevents か basis が欠けた rule。
+   * unhelpful: 「役に立たなかった記述」に挙がった記述（rule か文書の行）
+   */
+  kinds: ("stale" | "unreasoned" | "unhelpful")[];
+  /** 文書の行のときの引用（「役に立たなかった記述」の鉤括弧の中） */
+  quote?: string;
+  /** 文書の行のときの、引用を含む行 */
+  line?: string;
+  reasons: RuleReasons;
+  /** 「役に立たなかった記述」の出どころと理由 */
+  sources: string[];
+}
+
+/**
+ * 試しに消す候補（US-9.2・9.5）。一致しない rule、理由（prevents・basis）の欠けた rule、
+ * 「役に立たなかった記述」に挙がった記述を並べる。重要度が高の基準は、害が成果物に残るので返さない。
+ * 文書の行で理由の欄が欠けたものは候補にしない（理由の欄の導入前の行が大半で、全行が候補になるため。
+ * 文書の行は「役に立たなかった記述」に挙がったものだけ）。消すかどうかは決めない
+ */
+export function removalCandidates(input: {
+  measures: RuleMeasure[];
+  unhelpful: { location: string; quote: string; reason: string; source: string }[];
+  /** 文書の所在（論理名・パス）の本文。読めなければ undefined */
+  readDocument: (location: string) => string | undefined;
+}): RemovalCandidate[] {
+  const byLocation = new Map<string, RemovalCandidate>();
+  const add = (key: string, make: () => RemovalCandidate, kind: RemovalCandidate["kinds"][number], source?: string): void => {
+    const existing = byLocation.get(key) ?? make();
+    if (!existing.kinds.includes(kind)) existing.kinds.push(kind);
+    if (source !== undefined) existing.sources.push(source);
+    byLocation.set(key, existing);
+  };
+  const rules = new Map(input.measures.map((rule) => [rule.path, rule]));
+  const ruleEntry = (rule: RuleMeasure) => (): RemovalCandidate => ({ location: rule.path, kinds: [], reasons: rule.reasons ?? {}, sources: [] });
+
+  /** 重要度を確かめられない（高か読めない）基準は、高かもしれないので候補にしない（US-9.5） */
+  const mayBeHigh = (rule: RuleMeasure): boolean => rule.reasons?.importance === "高" || (rule.problems ?? []).length > 0;
+  for (const rule of input.measures) {
+    if (mayBeHigh(rule)) continue;
+    if (rule.stale) add(rule.path, ruleEntry(rule), "stale");
+    if (rule.reasons?.prevents === undefined || rule.reasons?.basis === undefined) add(rule.path, ruleEntry(rule), "unreasoned");
+  }
+  for (const item of input.unhelpful) {
+    const source = `${item.source}（${item.reason}）`;
+    if (item.location.startsWith("rule:")) {
+      const path = item.location.slice("rule:".length).trim().replace(/^\.\//, "");
+      const rule = rules.get(path);
+      if (rule === undefined || mayBeHigh(rule)) continue;
+      add(path, ruleEntry(rule), "unhelpful", source);
+      continue;
+    }
+    const text = input.readDocument(item.location);
+    if (text === undefined || item.quote === "") continue;
+    // 基準は箇条書きの1行。見出しや本文の行に同じ語があっても当てない（違う行を消し、重要度を違う行で判定するため）。
+    // 当たる行が無い（もう消えた・見出しを引用した）か、複数ある（どれか決められない）なら候補にしない
+    const lines = text.split("\n").filter((l) => /^\s*[-*]\s+\S/.test(l) && l.includes(item.quote));
+    if (lines.length !== 1) continue;
+    const line = lines[0] as string;
+    const parsed = parseCriterionReasons(line.replace(/^\s*[-*]\s+/, ""));
+    // 理由の欄が崩れている行は、重要度が高かもしれないので候補にしない（US-9.5）
+    if (typeof parsed === "string") continue;
+    const reasons: RuleReasons = parsed.reasons ?? {};
+    if (reasons.importance === "高") continue;
+    add(`${item.location}\u0000${line.trim()}`, () => ({ location: item.location, kinds: [], quote: item.quote, line: line.trim(), reasons, sources: [] }), "unhelpful", source);
+  }
+  return [...byLocation.values()];
+}
+
+/**
+ * リポジトリの rule とサイクルの「役に立たなかった記述」から、試しに消す候補を作る（rules candidates と
+ * close-cycle の followups が使う）。サイクルが無ければ rule だけから作る。追跡ファイルを読めなければ
+ * 一致しない rule は判定しない
+ */
+export function collectRemovalCandidates(
+  config: ResolvedConfig,
+  cycleDirectory: string | undefined,
+  /** 測り済みの rule（rules candidates が一致の判定を済ませていれば渡す。追跡ファイルを読み直さない） */
+  measured?: RuleMeasure[],
+): RemovalCandidate[] {
+  let measures = measured;
+  if (measures === undefined) {
+    const files = trackedFiles(config.repoRoot);
+    measures = measureRules(listRuleFiles(config.repoRoot), files ?? [], config.diff.exclude).measures;
+    if (files === undefined) for (const m of measures) m.stale = false;
+  }
+  const unhelpful = cycleDirectory === undefined ? [] : collectPromotions(cycleDirectory).unhelpful;
+  let guide: DocEntry[] = [];
+  try {
+    guide = loadGuide(config.hikyakuRoot);
+  } catch {
+    guide = [];
+  }
+  const readDocument = (location: string): string | undefined => {
+    const path = guide.find((entry) => entry.name === location)?.path ?? location;
+    const full = join(config.repoRoot, path);
+    if (!existsSync(full) || statSync(full).isDirectory()) return undefined;
+    return readFileSync(full, "utf8");
+  };
+  return removalCandidates({ measures, unhelpful, readDocument });
 }
 
 /**

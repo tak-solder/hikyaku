@@ -233,7 +233,10 @@ test("close-cycle: サイクル直下に記録し、収集 → G10 → 書き込
   assert.equal(report(directory, "close", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1").step, "publish");
   const followups = report(directory, "close", "publish", "--result", "done");
   assert.equal(followups.step, "followups");
-  assert.deepEqual(followups.args, { guideReview: false, guideReviewReason: "予測と実測の両方があるビルドがありません", hooks: false });
+  assert.deepEqual(followups.args, {
+    guideReview: false, guideReviewReason: "予測と実測の両方があるビルドがありません", hooks: false,
+    g10Input: "OK", ruleRemovals: [], metricsComparison: [],
+  });
   assert.equal(report(directory, "close", "followups", "--result", "done").kind, "done");
 
   assert.ok(existsSync(join(directory, CYCLE, "progress.jsonl")));

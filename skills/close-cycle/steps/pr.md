@@ -10,6 +10,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify close {cycle}
 - [ ] コミットして PR を Draft で作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title close {cycle}` で生成）
   - 本文には、追加・置き換え・削除を分けて書く。**削除と置き換えは、何を・なぜ消したか（根拠の出どころ）を
     必ず書く**。ユーザーが G10 のあとで削除を確かめ直せる場はこの PR になる
+  - G10 を省いた回（write の `promotionGate` が `skipped`）は、確認の変更をユーザーが初めて見る場がこの PR になる。
+    その旨を本文の先頭に書く
   - 手を入れなかったが気づいた点（このサイクルの記録に根拠の無い、古そうな記述）と、
     Hikyaku への報告（宛先 `upstream` の候補）と、G10 で示したリファクタの提案（宛先 `refactor`）があれば、本文に並べる
   - 値 `declarationChanged` が `false` でなければ、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger premises --format pr`

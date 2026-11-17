@@ -11,9 +11,12 @@
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { DOC_DEFINITIONS } from "./docs.mts";
+import { basename, dirname, join, relative } from "node:path";
+import type { ResolvedConfig } from "./config.mts";
+import { DOC_DEFINITIONS, loadGuide } from "./docs.mts";
+import { gitSync } from "./git.mts";
 import { listPatchUnits } from "./patch.mts";
+import { readProgress } from "./progress.mts";
 
 export const PROMOTE_HEADING = "永続化すること";
 /** handoff.md の、コードレビューの指摘がどの rule を引いたかの記録（読むのは review-records.mts） */
@@ -319,6 +322,239 @@ export function groupUnhelpful(items: Unhelpful[]): UnhelpfulGroup[] {
     groups.set(key, group);
   }
   return [...groups.values()].sort((a, b) => b.sources.length - a.sources.length);
+}
+
+// ---------------------------------------------------------------------------
+// G10 の同意が要る変更（ADR approval-kind-in-step-definitions）
+//
+// 判定はこの節の consentChanges だけに置く。G10 の consent と write の accepts が同じ関数を使い、
+// 提示（promotions --json の approval）も同じ宛先の表を使う。
+
+/** 変更に同意が要る論理名。外の前提と受け入れたリスクを持つ文書（原則11） */
+export const CONSENT_TARGETS = ["decisions", "constraints"] as const;
+export type ConsentTarget = (typeof CONSENT_TARGETS)[number];
+
+/** 候補の承認の種類。decisions・constraints 宛ては同意、それ以外は確認 */
+export function candidateApproval(candidate: Pick<Candidate, "target" | "kind">): "consent" | "confirm" {
+  return candidate.kind === "doc" && (CONSENT_TARGETS as readonly string[]).includes(candidate.target) ? "consent" : "confirm";
+}
+
+const STATUS_LINE = /^status\s*:\s*(\S+)\s*$/;
+
+/** frontmatter（先頭の --- から次の --- まで）の範囲。無ければ undefined */
+function frontmatterEnd(lines: string[]): number | undefined {
+  if (lines[0]?.trim() !== "---") return undefined;
+  const end = lines.findIndex((line, index) => index > 0 && line.trim() === "---");
+  return end === -1 ? undefined : end;
+}
+
+/**
+ * frontmatter の `status: accepted` を `status: implemented` に変えただけか（ほかの行はすべて同じ）。
+ * 実装状態の記録で、判断の中身を変えない書き換え（設計の質問 Q11）
+ */
+export function isStatusOnlyChange(before: string, after: string): boolean {
+  const a = before.replace(/\r\n/g, "\n").split("\n");
+  const b = after.replace(/\r\n/g, "\n").split("\n");
+  if (a.length !== b.length) return false;
+  const end = frontmatterEnd(a);
+  if (end === undefined || frontmatterEnd(b) !== end) return false;
+  let changed = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] === b[i]) continue;
+    if (i >= end) return false;
+    const from = STATUS_LINE.exec(a[i] as string)?.[1];
+    const to = STATUS_LINE.exec(b[i] as string)?.[1];
+    if (from !== "accepted" || to !== "implemented") return false;
+    changed += 1;
+  }
+  return changed === 1;
+}
+
+/** ADR のファイル名から拡張子を除いた名前（`20261116-xxx`） */
+export function adrName(path: string): string {
+  return basename(path).replace(/\.md$/, "");
+}
+
+/**
+ * このサイクルの ADR。サイクルのディレクトリの .md（design/・tasklist.md・build-NN/issue.md など）に
+ * 名前が現れる ADR だけを返す。現れない ADR は、このサイクルのものと確かめられないので含めない（同意の側に倒れる）
+ */
+export function cycleAdrNames(cycleDirectory: string, names: string[]): Set<string> {
+  const found = new Set<string>();
+  if (names.length === 0 || !existsSync(cycleDirectory)) return found;
+  const visit = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (entry.name.endsWith(".md")) {
+        const text = readFileSync(path, "utf8");
+        for (const name of names) if (text.includes(name)) found.add(name);
+      }
+    }
+  };
+  visit(cycleDirectory);
+  return found;
+}
+
+export interface DocChange {
+  /** リポジトリルートからの相対パス */
+  path: string;
+  doc: ConsentTarget;
+  status: "A" | "M" | "D";
+  before?: string;
+  after?: string;
+}
+
+export interface ConsentChange {
+  source: "candidate" | "diff";
+  doc: ConsentTarget;
+  text: string;
+}
+
+const STATUS_LABELS: Record<DocChange["status"], string> = { A: "追加", M: "変更", D: "削除" };
+
+/**
+ * 同意が要る変更（唯一の判定）。宛先が decisions・constraints の候補はすべて（候補の時点では書き換えの
+ * 中身が分からない）。差分は、このサイクルの ADR の accepted → implemented だけの書き換えを除いたすべて
+ */
+export function consentChanges(input: { candidates: Candidate[]; changes: DocChange[]; cycleAdrs: Set<string> }): ConsentChange[] {
+  const found: ConsentChange[] = [];
+  for (const candidate of input.candidates) {
+    if (candidateApproval(candidate) !== "consent") continue;
+    found.push({ source: "candidate", doc: candidate.target as ConsentTarget, text: `${candidate.text}（${candidate.source}）` });
+  }
+  for (const change of input.changes) {
+    const statusOnly =
+      change.doc === "decisions" &&
+      change.status === "M" &&
+      input.cycleAdrs.has(adrName(change.path)) &&
+      change.before !== undefined &&
+      change.after !== undefined &&
+      isStatusOnlyChange(change.before, change.after);
+    if (statusOnly) continue;
+    found.push({ source: "diff", doc: change.doc, text: `${change.path}（${STATUS_LABELS[change.status]}）` });
+  }
+  return found;
+}
+
+/** 空のツリー（親の無いコミットの手前と比べるとき） */
+const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+/**
+ * close-cycle が書く前の状態のコミット。close-cycle の最初の記録（サイクル直下の progress.jsonl の
+ * `"skill":"close-cycle"` の最初の行）の時刻より前の、HEAD から辿れる最後のコミット。記録が無ければ HEAD。
+ * 記録を含むコミットで区切ると、文書の変更を先に別のコミットにしたときに、その変更が基準に入って見えなくなる。
+ * サイクル直下には create-cycle の記録も入るので、ファイルの追加では区切らない
+ */
+function closeBaseline(repoRoot: string, progressPath: string): string | undefined {
+  if (gitSync(repoRoot, ["rev-parse", "--verify", "-q", "HEAD"]) === undefined) return undefined;
+  let first: string | undefined;
+  try {
+    first = readProgress(dirname(progressPath)).find((event) => event.skill === "close-cycle")?.at;
+  } catch {
+    return undefined;
+  }
+  if (first === undefined) return "HEAD";
+  // コミットの日時は秒単位。同じ秒のコミットを基準に入れないよう1秒前で区切る（入れないと、その秒に
+  // コミットした文書の変更が見えなくなる。外せば close-cycle の前の変更が同意の側に数えられるだけ）
+  const cutoff = new Date(new Date(first).getTime() - 1000).toISOString();
+  // first-parent で辿る（close のブランチにベースブランチを取り込んでも、取り込んだ側のコミットを基準にしない）
+  const before = gitSync(repoRoot, ["rev-list", "-1", "--first-parent", `--before=${cutoff}`, "HEAD"]);
+  if (before === undefined) return undefined;
+  return before.trim() === "" ? EMPTY_TREE : before.trim();
+}
+
+/**
+ * close-cycle の decisions・constraints の変更（close-cycle が書く前と作業ツリーの差分。追跡外のファイルも追加として数える）。
+ * 閉じたあとは、close-cycle の記録に未コミットの変更があるあいだ（close のセッションの途中）だけ見る。
+ * 所在は作業ツリーの document-guide.md から引く（未作成・対象外は見ない）。確かめられなければ理由を返す
+ */
+export function docChanges(config: ResolvedConfig, cycleDirectory: string, closed = false): DocChange[] | string {
+  const paths = new Map<string, ConsentTarget>();
+  let guide;
+  try {
+    guide = loadGuide(config.hikyakuRoot);
+  } catch (error) {
+    return `document-guide.md を読めません: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  for (const entry of guide) {
+    if ((CONSENT_TARGETS as readonly string[]).includes(entry.name) && entry.path !== undefined) {
+      paths.set(entry.path.replace(/^\.\//, ""), entry.name as ConsentTarget);
+    }
+  }
+  if (paths.size === 0) return [];
+  const docOf = (path: string): ConsentTarget | undefined => {
+    for (const [prefix, doc] of paths) {
+      const dir = prefix.endsWith("/") ? prefix : `${prefix}/`;
+      if (path === prefix || path.startsWith(dir)) return doc;
+    }
+    return undefined;
+  };
+
+  const root = config.repoRoot;
+  const progressPath = join(cycleDirectory, "progress.jsonl");
+  const progressRel = relative(root, progressPath);
+  if (closed) {
+    // 閉じて記録をコミットしたあとは見ない（マージ後のベースブランチで、ほかの PR の変更まで拾わないように）。
+    // 記録に未コミットの変更があれば close のセッションの途中なので、作業ツリーまで見る（手順の途中で close の
+    // ブランチにコミットした変更は、次の報告のときにここで拾う）
+    const pending = gitSync(root, ["status", "--porcelain", "--", progressRel]);
+    if (pending === undefined) return "git の状態を読めず、close-cycle の変更を確かめられません";
+    if (pending.trim() === "") return [];
+  }
+  const base = closeBaseline(root, progressPath);
+  if (base === undefined) return "git の履歴を読めず、close-cycle が書く前の状態と比べられません";
+  const pathspec = [...paths.keys()];
+  const diff = gitSync(root, ["diff", "--name-status", "--no-renames", "-z", base, "--", ...pathspec]);
+  const untracked = gitSync(root, ["ls-files", "--others", "--exclude-standard", "-z", "--", ...pathspec]);
+  if (diff === undefined || untracked === undefined) return "git の差分を読めず、decisions・constraints の変更を確かめられません";
+  const contentAfter = (path: string): string | undefined =>
+    existsSync(join(root, path)) ? readFileSync(join(root, path), "utf8") : undefined;
+
+  const changes: DocChange[] = [];
+  const fields = diff.split("\0");
+  for (let i = 0; i + 1 < fields.length; i += 2) {
+    const raw = (fields[i] as string).trim()[0];
+    const path = fields[i + 1] as string;
+    const doc = docOf(path);
+    if (doc === undefined) continue;
+    // 種類の変更（T）なども変更として数える（読み飛ばすと同意が要る変更を見落とす）
+    const code: DocChange["status"] = raw === "A" || raw === "D" ? raw : "M";
+    const change: DocChange = { path, doc, status: code };
+    if (code !== "A") change.before = gitSync(root, ["show", `${base}:${path}`]);
+    if (code !== "D") {
+      const after = contentAfter(path);
+      if (after !== undefined) change.after = after;
+    }
+    changes.push(change);
+  }
+  for (const path of untracked.split("\0").filter((p) => p !== "")) {
+    const doc = docOf(path);
+    if (doc === undefined) continue;
+    changes.push({ path, doc, status: "A", after: readFileSync(join(root, path), "utf8") });
+  }
+  return changes;
+}
+
+/** G10 の判定の材料。同意が要る変更と、差分を確かめられなかった理由 */
+export interface PromotionConsent {
+  changes: ConsentChange[];
+  /** 差分を確かめられなかった理由（同意の側に倒す） */
+  problem?: string;
+}
+
+/**
+ * G10・write が使う判定。サイクルが閉じて記録をコミットしたあとは差分を見ない（後続のサイクルやマージ後の
+ * ベースブランチの decisions の変更で、閉じたサイクルの G10 が戻らないように）。記録が未コミットのあいだは見る
+ */
+export function promotionConsent(config: ResolvedConfig, cycleDirectory: string, closed: boolean): PromotionConsent {
+  const candidates = collectPromotions(cycleDirectory).candidates;
+  const changes = docChanges(config, cycleDirectory, closed);
+  if (typeof changes === "string") {
+    return { changes: consentChanges({ candidates, changes: [], cycleAdrs: new Set() }), problem: changes };
+  }
+  const names = changes.filter((change) => change.doc === "decisions").map((change) => adrName(change.path));
+  return { changes: consentChanges({ candidates, changes, cycleAdrs: cycleAdrNames(cycleDirectory, names) }) };
 }
 
 /** 宛先ごとに候補を並べる（宛先の並びは、最初に現れた順） */
