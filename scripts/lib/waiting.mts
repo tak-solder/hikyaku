@@ -42,7 +42,7 @@ export interface Waiting {
 }
 
 /** すべてのビルドが待つ作業単位（ビルドの前のフェーズ） */
-const BEFORE_BUILDS = ["plan", "architect", "create"];
+const BEFORE_BUILDS = ["plan", "architect"];
 
 /** その事項の答えを待つビルド: 問いを出したビルドと、推移的に依存するビルド。ビルドの前のフェーズなら全ビルド */
 function waitingBuildsOf(unit: string, builds: BuildRecord[]): string[] {
@@ -89,9 +89,15 @@ export async function deriveWaiting(config: ResolvedConfig, cycle: CycleContext,
 
   // architect と各ビルドの origin のブランチにある、その作業単位の記録
   // 断面ごとの git の呼び出しは並べて走らせる（next が毎回呼ぶので、ビルドの数だけ直列に待たない）
-  const units: Phase[] = ["architect", ...builds.map((build) => buildPhase(build.id))];
-  const reads = await Promise.all(units.map(async (unit) => {
-    const ref = `origin/${branchName(config.branch, unit, cycle.name)}`;
+  // [ブランチの単位, 記録の単位]。差し戻しの再設計（architect {cycle} build-NN）はビルドのブランチで design/ に記録し、
+  // close-cycle の問いは close のブランチにある
+  const pairs: [Phase, Phase][] = [
+    ["architect", "architect"],
+    ["close", "close"],
+    ...builds.flatMap((build): [Phase, Phase][] => [[buildPhase(build.id), buildPhase(build.id)], [buildPhase(build.id), "architect"]]),
+  ];
+  const reads = await Promise.all(pairs.map(async ([branchUnit, unit]) => {
+    const ref = `origin/${branchName(config.branch, branchUnit, cycle.name)}`;
     const path = relative(config.repoRoot, ledgerPath(cycle.directory, unit)).split("\\").join("/");
     // origin に無いブランチは読まない（読めない断面として数えない）
     if ((await localSha(config.repoRoot, ref)) === undefined) return undefined;

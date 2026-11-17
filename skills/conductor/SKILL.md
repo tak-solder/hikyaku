@@ -115,7 +115,7 @@ PR を作って止まります。
 | `architecting` | Step 2 → Step 3（`architect`） |
 | `building` かつ `returned` あり | 差し戻されたビルドのブランチのまま Step 3（`architect {cycle} build-NN`） |
 | `building` | 下記で着手するビルドを決めて Step 2 → Step 3（`builder {cycle} {NN}`） |
-| `completed` | Step 2 → Step 3（`close-cycle`） |
+| `completed` | `conductor waiting` に `close` の問いがあれば「待っている問いを尋ねる」へ。無ければ Step 2 → Step 3（`close-cycle`） |
 | `closed` | Step 5 へ |
 
 状態は **conductor ブランチの上で**見る（途中のビルドを再開するときは、そのビルドのブランチの上）。
@@ -145,7 +145,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor waiting {cycle} --jso
 - [ ] `items` の問いを、`AskUserQuestion` でまとめて尋ねる。各問いの本文・選択肢・推奨は、問いを出した
   子の記録先（builder なら `build-NN/questions.md`、architect なら `design/design-questions.md`。`source` の
   ブランチの上にある）から読み、要約せずに示す
-- [ ] 答えごとに、待っている作業単位のブランチ（`build-NN`、ARCHITECT なら `architect`）へ conductor ブランチを
+- [ ] 答えごとに、待っている作業単位のブランチ（`source` の `origin/` を除いたもの。`build-NN`、ARCHITECT なら `architect`、
+  差し戻しの再設計ならそのビルドのブランチ、CLOSE なら `close`）へ conductor ブランチを
   取り込む（`git switch {ブランチ}`・`git merge {conductor}`・push）。取り込みで衝突したら、ユーザーに上げる
 - [ ] 答えをスクラッチパッドのファイルに `回答（ユーザーの判断）: …` の形で書き、`--from user --closes {待ちの ID}` で
   子を再開する。session-id が会話に無ければ（監督が落ちた後など）、`--resume` を外して新しく起動する

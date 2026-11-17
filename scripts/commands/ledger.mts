@@ -424,12 +424,26 @@ register({
       ...answerFields("user", answer),
       ...meta(),
     };
+    // --answers の待ちの事項も、ユーザーの答えで閉じる（異議の決定の欄に残すだけでは、待ちが消えない）
+    const closing: DecideRecord | undefined = decide === undefined || answersId === undefined || answersId.trim() === "" ? undefined : {
+      record: "decide",
+      at,
+      id: answersId.trim(),
+      unit: opened.phase,
+      decision: "decided",
+      by: "user",
+      ...(input === undefined ? {} : { input }),
+      ...answerFields("user", answer),
+      ...meta(),
+    };
+    if (closing !== undefined) assertDecider(findItem(ledger, closing.id).open, "user", input);
     const dryRun = args.flags.get("dry-run") === true;
     if (!dryRun) {
       openItem(opened.cycle.directory, open, ledger);
       if (decide !== undefined) {
         decideItem(opened.cycle.directory, decide, { items: [...ledger.items, { open, decisions: [], latest: undefined }], orphans: ledger.orphans });
       }
+      if (closing !== undefined) decideItem(opened.cycle.directory, closing, ledger);
     }
     const path = relative(opened.ctx.config.repoRoot, ledgerPath(opened.cycle.directory, opened.phase));
     emit({ record: open, decision: decide ?? null, path, dryRun }, () =>

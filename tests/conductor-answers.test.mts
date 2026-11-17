@@ -565,8 +565,10 @@ test("CLI: ledger object は子の決定つきの記録に --answers を求め�
   assert.equal(lines(directory).length, before);
   const written = cliWith(directory, env, ...OBJECTION, "--answers", q3);
   assert.equal(written.status, 0, written.stderr);
-  const decide = lines(directory).at(-1) ?? {};
+  const decide = lines(directory).at(-2) ?? {};
   assert.deepEqual([decide["answers"], decide["from"]], [q3, "user"]);
+  // 待ちの事項も閉じる
+  assert.deepEqual([lines(directory).at(-1)?.["id"], lines(directory).at(-1)?.["by"]], [q3, "user"]);
 
   // 子でないセッションは --answers を検査しない
   assert.equal(cli(directory, ...OBJECTION).status, 0);

@@ -237,6 +237,7 @@ register({
       if (given.length > 0) throw new HikyakuError(`${given.map((name) => `--${name}`).join(" / ")} は ${owner} と一緒にだけ指定できます`);
     };
     if (from !== "user") stray(["closes"], "--from user");
+    if (from === undefined && !escalate) stray(["ask"], "--from か --escalate");
     if (from !== "supervisor") stray(["choice", "harm", "premises", "no-risk"], "--from supervisor");
     if (ask !== undefined && !ASK_IDS.includes(ask)) {
       throw new HikyakuError(`--ask の値が不正です: ${ask}`, "conductor の問いの ID（hikyaku conductor asks）を指定してください。");
@@ -447,7 +448,9 @@ register({
     if (expectAnswer !== undefined && parsed.outcome !== "error" && parsed.outcome !== "violation") {
       const recorded = ledger !== undefined && [...ledger.items.flatMap((item) => item.decisions), ...ledger.orphans]
         .some((record) => record.by === "supervisor" && record.token === expectAnswer);
-      if (!recorded) {
+      if (ledger === undefined) {
+        step.problems.push("サイクルの未決事項の記録（decisions.jsonl）を読めないので、監督の答えが記録されたかを確かめられません（hikyaku ledger list で原因を確かめてください）");
+      } else if (!recorded) {
         step.problems.push(
           `監督の答え（answerToken ${expectAnswer}）を記録した決定（by: supervisor）が、作業ツリーのサイクルの記録にありません。子が監督の答えを記録せずに進めた可能性があります`,
         );
@@ -596,6 +599,10 @@ function checkSupervisorAnswer(
   if (position !== undefined) {
     const root = flagString(args, "root");
     const { directive } = asConductorChild(() => directiveOf(position.unit, root === undefined ? {} : { root }));
+    // 子がゲートで止まっているなら、答えられるのはそのゲートの問いだけ（別の ID を名乗って同意の回を確認として通さない）
+    if (directive.kind === "gate" && directive.ask !== undefined && directive.ask !== ask) {
+      throw new HikyakuError(`子はゲート ${directive.ask} で止まっています。--ask ${ask} の答えは受け付けません`, ESCALATE_HINT);
+    }
     if (directive.kind === "gate" && directive.ask === ask && directive.approval !== undefined) confirmed = directive.approval;
   }
   const approval = confirmed ?? (CONSENT_WHEN[ask] !== undefined ? "consent" : undefined);
