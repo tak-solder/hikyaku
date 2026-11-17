@@ -4,3 +4,10 @@
 {"at":"2026-11-17T04:17:39.990Z","skill":"build-manager","step":"scope","result":"done","context":243406,"session":"24a6ee83-9216-4e84-9f6b-12546422b1bf","hikyaku":"3.0.0"}
 {"at":"2026-11-17T04:18:18.524Z","skill":"build-manager","step":"estimate","result":"done","context":249447,"session":"24a6ee83-9216-4e84-9f6b-12546422b1bf","hikyaku":"3.0.0"}
 {"at":"2026-11-17T04:18:59.028Z","skill":"build-manager","step":"dry-run","result":"done","context":258820,"session":"24a6ee83-9216-4e84-9f6b-12546422b1bf","hikyaku":"3.0.0"}
+{"at":"2026-11-17T04:22:51.834Z","skill":"build-manager","step":"scope","result":"done","reason":"tasklist-review の指摘で、退けの経路を build-17 に切り出す","context":282472,"session":"24a6ee83-9216-4e84-9f6b-12546422b1bf","hikyaku":"3.0.0"}
+{"at":"2026-11-17T04:23:46.981Z","skill":"build-manager","step":"estimate","result":"done","context":292788,"session":"24a6ee83-9216-4e84-9f6b-12546422b1bf","hikyaku":"3.0.0"}
+{"at":"2026-11-17T04:23:51.521Z","skill":"build-manager","step":"dry-run","result":"done","context":293633,"session":"24a6ee83-9216-4e84-9f6b-12546422b1bf","hikyaku":"3.0.0"}
+{"at":"2026-11-17T04:25:55.433Z","skill":"build-manager","step":"scope","result":"done","context":300886,"session":"24a6ee83-9216-4e84-9f6b-12546422b1bf","hikyaku":"3.0.0"}
+{"at":"2026-11-17T04:26:00.053Z","skill":"build-manager","step":"estimate","result":"done","context":302403,"session":"24a6ee83-9216-4e84-9f6b-12546422b1bf","hikyaku":"3.0.0"}
+{"at":"2026-11-17T04:26:00.291Z","skill":"build-manager","step":"dry-run","result":"done","context":302403,"session":"24a6ee83-9216-4e84-9f6b-12546422b1bf","hikyaku":"3.0.0"}
+{"at":"2026-11-17T04:26:00.549Z","skill":"build-manager","step":"tasklist-review","result":"done","context":302403,"session":"24a6ee83-9216-4e84-9f6b-12546422b1bf","hikyaku":"3.0.0"}
