@@ -1,1 +1,4 @@
 {"at":"2026-11-17T02:20:47.407Z","skill":"builder","step":"plan","result":"done","peak":280000,"context":121241,"session":"b9286b9b-c623-46fe-a0fe-1826244e92bb","hikyaku":"3.0.0"}
+{"at":"2026-11-17T02:24:21.326Z","skill":"builder","step":"plan-review","result":"done","peak":320000,"context":145114,"session":"b9286b9b-c623-46fe-a0fe-1826244e92bb","hikyaku":"3.0.0"}
+{"at":"2026-11-17T02:26:27.941Z","skill":"builder","step":"test-spec","result":"done","context":156226,"session":"b9286b9b-c623-46fe-a0fe-1826244e92bb","hikyaku":"3.0.0"}
+{"at":"2026-11-17T02:27:55.863Z","skill":"builder","step":"test-spec-review","result":"done","context":162417,"session":"b9286b9b-c623-46fe-a0fe-1826244e92bb","hikyaku":"3.0.0"}
