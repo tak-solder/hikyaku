@@ -11,3 +11,5 @@
 {"at":"2026-11-17T04:26:00.053Z","skill":"build-manager","step":"estimate","result":"done","context":302403,"session":"24a6ee83-9216-4e84-9f6b-12546422b1bf","hikyaku":"3.0.0"}
 {"at":"2026-11-17T04:26:00.291Z","skill":"build-manager","step":"dry-run","result":"done","context":302403,"session":"24a6ee83-9216-4e84-9f6b-12546422b1bf","hikyaku":"3.0.0"}
 {"at":"2026-11-17T04:26:00.549Z","skill":"build-manager","step":"tasklist-review","result":"done","context":302403,"session":"24a6ee83-9216-4e84-9f6b-12546422b1bf","hikyaku":"3.0.0"}
+{"at":"2026-11-17T04:32:14.416Z","skill":"build-manager","step":"G6","result":"approved","input":"1. 承認する（委任された判断・監督）","context":307810,"session":"24a6ee83-9216-4e84-9f6b-12546422b1bf","hikyaku":"3.0.0"}
+{"at":"2026-11-17T04:32:50.156Z","skill":"build-manager","step":"write","result":"done","context":314833,"session":"24a6ee83-9216-4e84-9f6b-12546422b1bf","hikyaku":"3.0.0"}

@@ -8,7 +8,7 @@
 - 監督の答えの検査（安全側の既定）で、上限を超える受け入れになる答えは `risk.mts` の上限と比べて判定する（US-13.3）
 - `hikyaku conductor waiting <cycle>` と `next --json` の `waiting`: 作業ツリーと、tasklist の各ビルド・architect の origin のブランチの記録から、決定の無い `now` のユーザーの事項と、それを待つビルド（問いを出したビルドと推移的に依存するもの。ARCHITECT の問いは全ビルド）を導く。状態は保存しない
 - `skills/conductor/SKILL.md`: Step 1 で `available` が空になったら待っている問いをまとめて尋ねる。答えごとに conductor ブランチを待っているビルドのブランチへ取り込み、`--from user` で子を再開する（session-id は保存しない）。逐次実行は保つ
-- 事後同意（conductor の形）: 最後のビルドの子のときだけ同意ゲートを有効にし、サイクル全体の事項を対象にする（最後以外のビルドでは無効）。conductor の子での事後同意の有効化（build-06 で無効にしていたもの）。Step 4 で、ユーザーがレビューする最後の PR（conductor ブランチ→ベースブランチ）の本文に、`ledger pr-section` の全フェーズの一覧と同意・退けの決定と、宣言の変更（build-05 の `declarationChanged`。conductor ブランチとベースブランチの差分で導く）を載せる
+- 事後同意（conductor の形）: 最後のビルドの子のときだけ同意ゲートを有効にし、サイクル全体の事項を対象にする（最後以外のビルドでは無効）。conductor の子での事後同意の有効化（build-16 で無効にしていたもの）と、同意ゲートを手順に入れること（build-06 で外していたもの）。最後以外のビルドの子では、`pr` の `accepts` の対象を最後のビルドの同意ゲートへ回す（`merge@` の事項で止めない）。前のフェーズの退けは build-17 の return.md の経路で最後のビルドから差し戻す。Step 4 で、ユーザーがレビューする最後の PR（conductor ブランチ→ベースブランチ）の本文に、`ledger pr-section` の全フェーズの一覧と同意・退けの決定と、宣言の変更（build-05 の `declarationChanged`。conductor ブランチとベースブランチの差分で導く）を載せる
 - `conductor asks` の JSON に `deferredConsent` を足し、Step 0 の委任の範囲の確認に事後同意の有効・無効と、問いを積む方針の行を足す
 - `skills/conductor/references/headless-protocol.md`・`docs/workflow/conductor.md` を直す。CHANGELOG に追記する
 
@@ -43,15 +43,15 @@
 
 ## 予測ピーク
 
-読むファイル: `skills/conductor/SKILL.md`、`skills/conductor/references/headless-protocol.md`、`scripts/lib/conductor.mts`、`scripts/commands/conductor.mts`、`scripts/commands/next.mts`、`scripts/lib/tasklist.mts`、`scripts/lib/ledger.mts`・`scripts/commands/ledger.mts`、`scripts/lib/steps/consent.mts`・`directive.mts`・`build-manager.mts`・`builder.mts`（安全側の既定を出すステップ）、`scripts/lib/escalation.mts`、`scripts/lib/risk.mts`、`docs/workflow/conductor.md`
+読むファイル: `skills/conductor/SKILL.md`、`skills/conductor/references/headless-protocol.md`、`scripts/lib/conductor.mts`、`scripts/commands/conductor.mts`、`scripts/commands/next.mts`、`scripts/lib/tasklist.mts`、`scripts/lib/ledger.mts`・`scripts/commands/ledger.mts`、`scripts/lib/steps/consent.mts`・`directive.mts`・`build-manager.mts`・`builder.mts`（安全側の既定を出すステップ）、`scripts/lib/deferred-consent.mts`、`skills/builder/steps/consent.md`・`references/return.md`、build-06・build-16・build-17 の handoff、`scripts/lib/escalation.mts`、`scripts/lib/risk.mts`、`docs/workflow/conductor.md`
 作成・変更するファイル: 上記の lib・commands・手順・docs、`tests/conductor.test.mts`、`CHANGELOG.md`
 
 | 成分 | 予測 | 根拠 |
 |------|------|------|
 | 固定費 | 90k | 実測なし。標準ガイドの出発点 80k〜100k の中央 |
-| 読み込み | 135k | conductor SKILL.md（約450行）・headless-protocol.md・lib と commands の conductor.mts・commands/next.mts・tasklist.mts・ledger.mts と commands/ledger.mts・consent.mts・directive.mts と build-manager・builder の steps 定義（安全側の既定）・escalation.mts・risk.mts・docs/workflow/conductor.md・ADR conductor-runs-to-end と deferred-consent |
-| 実装 | 75k | 安全側の既定と launch --from/--choice の検査、HIKYAKU_ANSWER_FROM の設定と ledger の検査、待ちの blocked の除外、conductor waiting と next の waiting、Step 0・1・3・4 の手順の書き換え、最後のビルドでの同意と最後の PR の本文 |
-| テスト | 55k | 偽の gh と一時リポジトリでの waiting・launch の拒否・出どころの検査・待ちの blocked・asks の表示 |
+| 読み込み | 155k | conductor SKILL.md（約450行）・headless-protocol.md・lib と commands の conductor.mts・commands/next.mts・tasklist.mts・ledger.mts と commands/ledger.mts・consent.mts・deferred-consent.mts・directive.mts と build-manager・builder の steps 定義（安全側の既定）・builder の consent.md と references/return.md・escalation.mts・risk.mts・docs/workflow/conductor.md・ADR conductor-runs-to-end と deferred-consent・build-06・build-16・build-17 の handoff |
+| 実装 | 85k | 安全側の既定と launch --from/--choice の検査、HIKYAKU_ANSWER_FROM の設定と ledger の検査、待ちの blocked の除外、conductor waiting と next の waiting、Step 0・1・3・4 の手順の書き換え、最後のビルドでの同意（事後同意の有効化・同意ゲート・pr の accepts の対象をサイクル全体へ）と、前のフェーズの退けを最後のビルドから差し戻す経路、最後の PR の本文 |
+| テスト | 60k | 偽の gh と一時リポジトリでの waiting・launch の拒否・出どころの検査・待ちの blocked・asks の表示・最後以外の子が merge の事項で止まらないこと・最後のビルドの同意ゲート |
 | 未知の領域 | 40k | 子の再開と取り込みの手順、既存の conductor の結合テストの調整 |
-| **予測ピーク** | **395k** | 狙いの帯（300k〜450k） |
+| **予測ピーク** | **430k** | 狙いの帯（300k〜450k） |
 | ガイド | 標準 v2 | 03897ac0 |
