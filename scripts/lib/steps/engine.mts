@@ -126,8 +126,17 @@ export interface StepDefinition {
   recordsPr?: boolean | "optional";
   /** recordsPr が optional のとき、報告の案内に出す --pr の説明（どの PR を添えるか） */
   prHint?: string;
+  /**
+   * done の報告で害の重さとパスの申告（--harm / --paths）を受け付けるか（architect の options）。
+   * 欠けていても報告は受け付け、判定する側（G3・G4 の consent）が同意に倒す。gate は持てない
+   */
+  declaresRisk?: boolean;
   /** 設定から解決して指示に添える値 */
   args?: (ctx: StepContext) => Record<string, unknown>;
+  /**
+   * directive の notices に足す行（G3・G4 が基準の宣言を読めなかったこと）。手順の位置だけを読む経路では呼ばない
+   */
+  notices?: (ctx: StepContext) => string[];
 }
 
 export interface SkillSteps {
@@ -225,6 +234,10 @@ export function lintApproval(skill: Pick<SkillSteps, "skill" | "steps">): string
       // ゲートは failed を報告できないので、行き詰まりの報告の検査が働かない
       if (definition.escalates !== undefined) {
         problems.push(`${skill.skill}: ゲート ${definition.id} は escalates を持てません（failed を報告しないため）`);
+      }
+      // ゲートは done を報告しないので、申告を受け付けても記録されない
+      if (definition.declaresRisk !== undefined) {
+        problems.push(`${skill.skill}: ゲート ${definition.id} は declaresRisk を持てません（done を報告しないため）`);
       }
       continue;
     }

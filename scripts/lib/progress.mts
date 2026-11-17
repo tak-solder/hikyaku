@@ -45,6 +45,13 @@ export interface ProgressEvent {
   round?: string;
   /** 報告で添えた予測ピーク（トークン。plan / plan-review） */
   peak?: number;
+  /**
+   * 害の重さの申告（architect の options の done。G3 に提示するすべての案のうち最も重い害）。
+   * 読む側（steps/architect.mts）は、高・中以外の値を欠けとして扱う
+   */
+  harm?: "高" | "中";
+  /** 触れるパスの申告（options の done。全案が触れるパスの glob の和） */
+  paths?: string[];
   /** 報告で添えた PR（URL か番号。pr ステップ） */
   pr?: string;
   /** 報告した時点のメインセッションのコンテキスト（#68）。計測できなければ記録しない */

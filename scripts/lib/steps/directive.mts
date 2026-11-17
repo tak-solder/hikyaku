@@ -221,7 +221,9 @@ function reportCommand(opened: Opened, step: string, result: StepResult): string
       : result === "done" && definition?.recordsPr === "optional"
         ? ` [--pr <${definition.prHint ?? "作った PR の URL"}>]`
         : "";
-  return `${CLI} step report ${opened.phase} ${step}${cycleArg(opened.ctx)}${skillArg(opened)} --result ${result}${extra}${peak}${pr}`;
+  // 欠けていても受け付けるが、宣言のあるワークスペースでは G3 が同意になるので、必須の形で示す
+  const risk = result === "done" && definition?.declaresRisk === true ? " --harm 高|中 --paths <触れるパスの glob,...>" : "";
+  return `${CLI} step report ${opened.phase} ${step}${cycleArg(opened.ctx)}${skillArg(opened)} --result ${result}${extra}${peak}${risk}${pr}`;
 }
 
 function progressOf(evaluation: Evaluation): { complete: number; total: number } {
@@ -322,6 +324,7 @@ export function buildDirective(opened: Opened, evaluation: Evaluation, options: 
     report: Object.fromEntries(allowedResults(definition).map((result) => [result, reportCommand(opened, definition.id, result)])),
   };
   if (definition.args !== undefined) directive.args = definition.args(options.notices === false ? { ...ctx, positionOnly: true } : ctx);
+  if (definition.notices !== undefined && options.notices !== false) directive.notices.push(...definition.notices(ctx));
   if (current.note !== undefined) directive.note = current.note;
   if (current.revise !== undefined) directive.revise = current.revise;
   if (definition.kind === "gate") {
