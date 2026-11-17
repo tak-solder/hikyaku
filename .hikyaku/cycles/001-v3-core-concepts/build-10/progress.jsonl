@@ -5,3 +5,5 @@
 {"at":"2026-11-17T00:12:32.385Z","skill":"builder","step":"G8","result":"approved","input":"承認（監督の委任された判断）。受け入れ基準はすべて test-spec に対応し、plan はやることの範囲内。patch の handoff を集計に含めない判断と、休眠の基準を所在だけ書く判断を受け入れる（questions.md Q1）","context":245367,"session":"3ca4f49c-6511-4a30-83f6-631a760a6e02","hikyaku":"3.0.0"}
 {"at":"2026-11-17T00:23:37.894Z","skill":"builder","step":"implement","result":"done","context":323250,"session":"3ca4f49c-6511-4a30-83f6-631a760a6e02","hikyaku":"3.0.0"}
 {"at":"2026-11-17T00:28:50.207Z","skill":"builder","step":"verify","result":"done","context":327393,"session":"3ca4f49c-6511-4a30-83f6-631a760a6e02","hikyaku":"3.0.0"}
+{"at":"2026-11-17T00:46:10.251Z","skill":"builder","step":"review","result":"done","context":364900,"session":"3ca4f49c-6511-4a30-83f6-631a760a6e02","hikyaku":"3.0.0"}
+{"at":"2026-11-17T00:46:43.861Z","skill":"builder","step":"handoff","result":"done","context":370150,"session":"3ca4f49c-6511-4a30-83f6-631a760a6e02","hikyaku":"3.0.0"}
