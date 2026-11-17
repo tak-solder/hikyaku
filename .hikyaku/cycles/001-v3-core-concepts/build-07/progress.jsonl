@@ -13,3 +13,4 @@
 {"at":"2026-11-17T10:51:16.791Z","skill":"build-manager","step":"tasklist-review","result":"done","context":310446,"session":"351a4dcd-2eac-4b3b-9a63-44d8bdee00b7","hikyaku":"3.0.0"}
 {"at":"2026-11-17T10:54:05.317Z","skill":"build-manager","step":"G6","result":"approved","input":"回答（委任された判断）: 承認（この分割で tasklist と issue.md を書き込む）。根拠: 受け入れ基準がもれなく振り分けられ、スコープは広がっていない。予測ピークは 420k・380k で split_above 以下。安全でない分割は使っていない","context":315179,"session":"351a4dcd-2eac-4b3b-9a63-44d8bdee00b7","hikyaku":"3.0.0"}
 {"at":"2026-11-17T10:54:22.945Z","skill":"build-manager","step":"write","result":"done","context":323981,"session":"351a4dcd-2eac-4b3b-9a63-44d8bdee00b7","hikyaku":"3.0.0"}
+{"at":"2026-11-17T10:55:37.563Z","skill":"builder","step":"plan","result":"done","peak":420000,"context":344013,"session":"351a4dcd-2eac-4b3b-9a63-44d8bdee00b7","hikyaku":"3.0.0"}
