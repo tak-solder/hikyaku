@@ -29,6 +29,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr base build-{NN} {cycle}
     （差分の事実と、agreement.md の返した理由。手で書き直さない）
   - 値 `declarationChanged` が `false` でなければ、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger premises --format pr`
     の出力を本文にそのまま貼る（変わった宣言を拠り所にした受け入れを、ユーザーがマージの前に見直すため）
+  - `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger pr-section build-{NN} {cycle}` の出力を本文にそのまま貼る
+    （受け入れたリスク・未解決の退け・マージの前に決める事項・期限を過ぎた事項。空なら何も貼らない）
   - 「確度: 要確認」の懸念が残る場合は、未決事項の ID と要点を本文に入れる。懸念の本文は未決事項の記録
     （`hikyaku ledger show <ID>`）に置き、PR に重複して転記しない
   - PR 作成前の承認は取らない。PR はレビューのための提案であって不可逆ではなく、

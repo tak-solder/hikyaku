@@ -1,4 +1,4 @@
-/** ledger open / decide / object / list / show — 未決事項と決定の記録（decisions.jsonl） */
+/** ledger open / decide / object / list / show / consent-list / pr-section — 未決事項と決定の記録（decisions.jsonl） */
 
 import { flagString, type ParsedArgs } from "../lib/args.mts";
 import { ASK_IDS } from "../lib/conductor.mts";
@@ -6,6 +6,8 @@ import { HikyakuError } from "../lib/errors.mts";
 import { relative } from "node:path";
 import {
   assertDecider,
+  consentDecided,
+  consentItemsOf,
   cycleTimeline,
   decideItem,
   DECISIONS,
@@ -25,8 +27,10 @@ import {
   parseWho,
   readLedger,
   summarize,
+  undecidedConsentItems,
   whoLabel,
   type Decision,
+  type LedgerItem,
   type DecideRecord,
   type ItemType,
   type CycleTimeline,
@@ -454,6 +458,152 @@ register({
         return lines.join("\n");
       },
     );
+  },
+});
+
+// ---------------------------------------------------------------------------
+// 事後同意（build-06）
+
+/** 決定の状態の見出し */
+function consentState(item: LedgerItem): string {
+  const latest = item.latest;
+  if (latest === undefined) return "決定なし";
+  if (latest.by !== "user") return `ユーザーの決定なし（最新は ${whoLabel(latest.by)} の ${latest.decision}）`;
+  if (latest.decision === "rejected") return "退け（rejected）";
+  if (!consentDecided(item)) return "受け入れの言葉なし（害が高の異議）";
+  return `決定あり（${latest.decision}）`;
+}
+
+function premisesText(item: LedgerItem): string {
+  return item.open.premises === undefined || item.open.premises.length === 0 ? "（なし）" : item.open.premises.join(", ");
+}
+
+function decisionLine(d: DecideRecord): string {
+  const parts = [`${d.at} ${d.decision}（${whoLabel(d.by)}・${d.unit}）`];
+  if (d.input !== undefined) parts.push(`答え「${d.input}」`);
+  if (d.accepts !== undefined) parts.push(`受け入れ「${d.accepts}」`);
+  if (d.reason !== undefined) parts.push(`理由「${d.reason}」`);
+  return parts.join(" ");
+}
+
+function consentJson(item: LedgerItem): Record<string, unknown> {
+  const o = item.open;
+  return {
+    ...itemJson(item),
+    premises: o.premises ?? [],
+    loses: o.loses ?? null,
+    basis: o.basis ?? null,
+    harm: o.harm ?? null,
+    decided: consentDecided(item),
+    state: consentState(item),
+    decisions: item.decisions,
+  };
+}
+
+register({
+  name: "ledger consent-list",
+  summary: "PR を作る直前の同意ゲートで示す一覧（when=merge@<phase> の、ユーザーが決める risk・objection）を出す",
+  usage: "hikyaku ledger consent-list <phase> [<cycle>] [--full] [--json]",
+  details: [
+    "対象は type が risk か objection で、who=user・when=merge@<phase> の事項です（記録した作業単位は問いません）。",
+    "1項目を「受け入れたリスク / 拠り所の前提 / 失うもの」の3行で示し、見出しに ID と決定の状態を出します。",
+    "--full で、根拠・害・いつ・記録した単位と、決定の記録まで出します。書き込みはしません。",
+    "決定として数えるのは、最新の決定がユーザーの consented / decided / resolved のときだけです（rejected は数えず、",
+    "害が高の異議は受け入れの言葉の無い consented を数えません）。",
+  ].join("\n"),
+  options: ["full"],
+  maxOperands: 2,
+  run: ({ args, operands }) => {
+    const opened = openUnit(args, operands[0], operands[1]);
+    const items = consentItemsOf(readLedger(opened.cycle.directory), opened.phase);
+    const full = args.flags.get("full") === true;
+    const pending = undecidedConsentItems(items);
+    emit({ phase: opened.phase, cycle: opened.cycle.name, items: items.map(consentJson), undecided: pending.map((item) => item.open.id) }, () => {
+      if (items.length === 0) return `${opened.phase} に、マージの前にユーザーが同意する項目はありません。`;
+      const lines = [`${opened.phase} のマージの前にユーザーが同意する項目: ${items.length} 件（決定が足りない ${pending.length} 件）`];
+      for (const item of items) {
+        const o = item.open;
+        lines.push("", `${o.id}（${o.type === "risk" ? "受け入れたリスク" : "異議"}）[${consentState(item)}]`);
+        lines.push(`  受け入れたリスク: ${o.summary}`, `  拠り所の前提: ${premisesText(item)}`, `  失うもの: ${o.loses ?? "（なし）"}`);
+        if (!full) continue;
+        if (o.basis !== undefined) lines.push(`  根拠: ${o.basis}`);
+        if (o.harm !== undefined) lines.push(`  害の重さ: ${o.harm}`);
+        lines.push(`  いつ: ${o.when}`, `  記録した単位: ${o.unit}${o.step === undefined ? "" : `（${o.step}）`}`);
+        if (item.decisions.length === 0) lines.push("  決定: （まだ無い）");
+        for (const d of item.decisions) lines.push(`  決定: ${decisionLine(d)}`);
+      }
+      if (!full) lines.push("", "全文は --full で出します。");
+      return lines.join("\n");
+    });
+  },
+});
+
+/** PR 本文に貼る節。中身のある節だけを出し、どれも無ければ空 */
+function prSection(ledger: Ledger, timeline: CycleTimeline, unit: string) {
+  const consent = consentItemsOf(ledger, unit);
+  const accepted = consent.filter(consentDecided);
+  // 最新が rejected の項目は「未解決の退け」に出すので、ここでは重ねない
+  const undecided = undecidedConsentItems(consent).filter((item) => item.latest?.decision !== "rejected");
+  const rejected = ledger.items.filter((item) => item.latest?.decision === "rejected");
+  const beforeMerge = ledger.items.filter(
+    (item) => (item.open.type === "question" || item.open.type === "provisional") && item.open.when === `merge@${unit}` && item.latest === undefined,
+  );
+  const overdue = summarize(ledger, timeline).open.filter((item) => item.timing === "overdue");
+  const line = (item: LedgerItem): string => `- ${item.open.id}: ${item.open.summary}`;
+  const sections: string[] = [];
+  if (accepted.length > 0 || undecided.length > 0) {
+    const body: string[] = [];
+    for (const item of accepted) {
+      const latest = item.latest as DecideRecord;
+      body.push(
+        line(item),
+        `  - 拠り所の前提: ${premisesText(item)} / 失うもの: ${item.open.loses ?? "（なし）"}`,
+        `  - 決定: ${latest.decision}（${whoLabel(latest.by)}）${latest.accepts === undefined ? "" : ` 受け入れ「${latest.accepts}」`}`,
+      );
+    }
+    if (accepted.length === 0) body.push("（ユーザーの決定のある項目はありません）");
+    if (undecided.length > 0) {
+      body.push("", "**同意の決定が無い項目**（受け入れたものとして扱いません）:", ...undecided.map((item) => `${line(item)}（${consentState(item)}）`));
+    }
+    sections.push(["## 受け入れたリスク（事後同意）", "", ...body].join("\n"));
+  }
+  if (rejected.length > 0) {
+    sections.push(["## 未解決の退け", "", ...rejected.map((item) => `${line(item)}（${item.open.unit}。作り直したらユーザーが resolved を記録します）`)].join("\n"));
+  }
+  if (beforeMerge.length > 0) {
+    sections.push(["## マージの前に決める事項", "", ...beforeMerge.map((item) => `${line(item)}（決める人: ${whoLabel(item.open.who)}）`)].join("\n"));
+  }
+  if (overdue.length > 0) {
+    sections.push(["## 期限を過ぎた事項", "", ...overdue.map((item) => `${line(item)}（いつ: ${item.open.when}・決める人: ${whoLabel(item.open.who)}）`)].join("\n"));
+  }
+  return {
+    markdown: sections.join("\n\n"),
+    accepted: accepted.map((item) => item.open.id),
+    undecided: undecided.map((item) => item.open.id),
+    rejected: rejected.map((item) => item.open.id),
+    beforeMerge: beforeMerge.map((item) => item.open.id),
+    overdue: overdue.map((item) => item.open.id),
+  };
+}
+
+register({
+  name: "ledger pr-section",
+  summary: "PR 本文に貼る「受け入れたリスク（事後同意）」「未解決の退け」「マージの前に決める事項」「期限を過ぎた事項」の節を出す",
+  usage: "hikyaku ledger pr-section <phase> [<cycle>] [--json]",
+  details: [
+    "中身のある節だけを Markdown で出します。どれも無ければ空を出します。書き込みはしません。",
+    "  受け入れたリスク（事後同意）  when=merge@<phase> の、ユーザーが決める risk・objection と決定。",
+    "                                決定の無い項目は「同意の決定が無い項目」として分けて出します",
+    "  未解決の退け                  サイクル全体で、最新の決定が rejected の事項",
+    "  マージの前に決める事項        when=merge@<phase> の question・provisional で未決のもの",
+    "  期限を過ぎた事項              サイクル全体の未決で、期限を過ぎたもの",
+  ].join("\n"),
+  options: [],
+  maxOperands: 2,
+  run: ({ args, operands }) => {
+    const opened = openUnit(args, operands[0], operands[1]);
+    const section = prSection(readLedger(opened.cycle.directory), cycleTimeline(opened.ctx.config, opened.cycle), opened.phase);
+    emit({ phase: opened.phase, cycle: opened.cycle.name, section: section.markdown, ...section }, () => section.markdown);
   },
 });
 

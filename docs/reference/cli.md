@@ -156,6 +156,8 @@ build-manager や retrospective のような内部スキルは、`--skill` を�
 | `ledger decide <phase> <id> [<cycle>] --decision --by` | 未決事項への決定を残すとき。`<phase>` は決めた作業単位 |
 | `ledger object <phase> [<cycle>] --summary --basis --loses --harm --decision --input` | ゲートで、ユーザーの選択がその人自身の宣言・記録と食い違うと異を唱えたとき、異議とユーザーの決定を対で残す（ゲートの指示に呼び方が載る） |
 | `ledger list [<cycle>]` | 未決事項と、期限が来た・過ぎたもの、未解決の退けを見渡したいとき |
+| `ledger consent-list <phase> [<cycle>]` | PR を作る直前の同意ゲートで、マージの前にユーザーが同意する項目（`merge@<phase>` の受け入れたリスク・異議）を1項目3行で示すとき。全文は `--full` |
+| `ledger pr-section <phase> [<cycle>]` | PR 本文に、受け入れたリスク（事後同意）・未解決の退け・マージの前に決める事項・期限を過ぎた事項の節を貼るとき（各フェーズの PR の手順が呼ぶ。中身が無ければ空） |
 | `ledger show <id> [<cycle>]` | 1件の事項の前提・失うもの・決定の経緯を読みたいとき |
 | `ledger premises [--changed-from <ref>]` | アプリケーションの状況の宣言を変えたとき、それを拠り所にして受け入れたリスク（未決事項の記録と、ADR・`constraints` の「受け入れたこと」の行）を見直す対象として並べる。各フェーズの PR の手順が、宣言が変わっていれば `--format pr` の出力を PR 本文に貼る |
 

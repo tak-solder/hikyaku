@@ -7,6 +7,8 @@
     `hook` / `upstream` の候補。無ければ「なし」
   - 値 `declarationChanged` が `false` でなければ、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger premises --format pr`
     の出力を本文にそのまま貼る（変わった宣言を拠り所にした受け入れを、ユーザーがマージの前に見直すため）
+  - サイクルに属す patch なら、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger pr-section {phase} {cycle}` の出力を
+    本文にそのまま貼る（受け入れたリスク・未解決の退け・マージの前に決める事項・期限を過ぎた事項。空なら何も貼らない）
   - 合意した挙動は書き換えない。合意を取り直した場合だけ、取り直した内容に更新する
 - [ ] directive の `値` にある PR を公開し、レビュアーを依頼する
 

@@ -105,9 +105,9 @@ plan と分割の検討を行ったセッションは、plan-review の時点で
 
 ## 実装ステップ
 
-- [ ] Step 1: `lib/ledger.mts` の同意の対象の関数
-- [ ] Step 2: `steps/consent.mts` と architect・builder・patch への配置、pr / publish の accepts、step.mts の gate の approved で accepts
-- [ ] Step 3: `ledger consent-list`・`ledger pr-section`
-- [ ] Step 4: ASKS とタグ、consent.md 3つ、pr.md・publish.md
-- [ ] Step 5: docs と CHANGELOG
-- [ ] Step 6: テスト、`conductor lint`・`step lint`・`npx tsc --noEmit`・`npm test`
+- [x] Step 1: `lib/ledger.mts` の同意の対象の関数
+- [x] Step 2: `steps/consent.mts` と architect・builder・patch への配置、pr / publish の accepts、step.mts の gate の approved で accepts
+- [x] Step 3: `ledger consent-list`・`ledger pr-section`
+- [x] Step 4: ASKS とタグ、consent.md 3つ、pr.md・publish.md
+- [x] Step 5: docs と CHANGELOG
+- [x] Step 6: テスト、`conductor lint`・`step lint`・`npx tsc --noEmit`・`npm test`（lint は npm test の中のテストで確かめた。CLI の直接実行は権限で拒否された）

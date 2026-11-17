@@ -45,6 +45,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **`validate` の警告の段階**: 終了コードを変えない警告を JSON の `warnings` とテキストの `!` 行で返す。永続ドキュメント（glossary を除く）と進行中のサイクル（引数があればそのサイクル）の文書で、ポインタに添えた ID の範囲（`AD-1〜AD-5`・`US-15.1〜15.3` の形）と、`decisions`・`constraints` の「受け入れたこと」の節にあって読めない行（箇条書きでない、拠り所の書式が合わない）を示す。`--base <ref>` を付けると、宣言の変更と拠り所にした受け入れも示す（CI 向け。[CI](docs/operations/ci.md)）
 - **constraints のテンプレート**（`skills/close-cycle/references/constraints-template.md`）: 制約 / 外の前提（事実か仮定か・確かめた日）/ 受け入れたこと（拠り所）/ 再評価条件 / 領域（任意）。close-cycle の write が `hikyaku` 管理の `constraints` をこの形で書く
 - **`delegation` ゲート（`（ask: delegation）`）**: 委任の前提が崩れた出来事のあと、委任を続けるかをユーザーに尋ねる同意ゲート。architect では差し戻しからの再設計の回の先頭、builder では設計と要件の衝突（`ledger open --ask design-conflict`）を記録した直後に、どのステップの最中でも返る。conductor でもユーザーに固定で、`[conductor] delegate` に書けない。builder は、自分のビルドの `decisions.jsonl` を読めないと、このゲートを見落とさないよう手順に入らずに止まる。害が高の異議を `ledger open --type objection` で記録するときは `--premises` が必須
+- **事後同意の同意ゲート（`consent`、`（ask: deferred-consent）`）**: architect・builder は `pr` の直前、サイクルに属す patch は `publish` の直前に、`when=merge@<その作業単位>` の、ユーザーが決める `risk`・`objection` の事項（記録した作業単位は問わない）があるときだけ現れる同意ゲート。どのプロファイルでも省かず、conductor でもユーザーに固定。一覧の全項目にユーザーの決定（`consented` / `decided` / `resolved`。害が高の異議は受け入れの言葉つき）があるまで承認を受け付けず、最新が `rejected` の項目があっても受け付けない。承認のあとに決定の無い対象が足されると戻る。手順に入るかはその作業単位の `decisions.jsonl` 1つだけで判定し、読めなければ手順に入れる。conductor の子では手順に入れない（conductor での扱いは後続の変更）
+- planner・architect・builder・close-cycle の `pr` と patch の `publish` は、その作業単位の同意の対象に決定の無い項目があると `done` を受け付けない（サイクル全体の記録を読む。conductor の子でも外れない）。`step report` は gate の `approved` でもステップ定義の `accepts` を確かめる
+- **`hikyaku ledger consent-list <phase>`**: 同意ゲートの一覧を1項目3行（受け入れたリスク・拠り所の前提・失うもの）と決定の状態で出す。`--full` で根拠・害・いつ・決定の記録まで、`--json` で項目と決定
+- **`hikyaku ledger pr-section <phase>`**: PR 本文に貼る「受け入れたリスク（事後同意）」（決定の無い項目は分けて出す）「未解決の退け」「マージの前に決める事項」「期限を過ぎた事項」の節を、中身のあるものだけ出す。各フェーズの `pr`（patch は `publish`）の手順が本文に貼る
 - ステップの定義に `interrupt`（割り込みのゲート）を足した。きっかけの時刻を返す回だけ手順に入り、その後の承認が無ければ並びの位置に関わらず現在地になる。承認しても後ろのステップはやり直しにならない
 - planner: G1 の提示に、サイクルのプロファイルのままでよいかの確認を1行出す（directive の `args.profile`）
 - 各スキルの手順が未決事項を記録するようになった: planner（未回答の質問）、architect（暫定の設計判断）、build-manager（G6 で受け入れたリスク）、builder（handoff の「残したこと」は事項の ID だけを書く。「確度: 要確認」の懸念も事項にし、PR 本文には ID と要点）、サイクルに属す patch（persist）、close-cycle（期限の来た事項を G10 で示し、ユーザーの決定を記録）、conductor の子（監督の判断。記録先を questions.md・コミットメッセージから `decisions.jsonl` に改めた）
@@ -196,6 +200,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - サイクルを省略する設定参照では、active が1件だけという理由でサイクル設定を重ねない。既存サイクルの設定を使う場合は、サイクルを明示するか、ブランチ・`cycle use` で選択する
 - 自分で確認してから Ready にする場合は `[pr] auto_ready = false` にする。conductor が取り込むフェーズの PR は、監督が設定に関わらず Ready にする。公開は再実行でき、既に Ready の PR に重ねて切り替えない
 - 異議と `delegation` の導入に対応は不要。既存の `decisions.jsonl` と `progress.jsonl` はそのまま読める。design-conflict の事項が無いビルドと、差し戻しでない設計の回では `delegation` は手順に入らない。`[conductor] delegate` に `delegation` を書くとエラーになる
+- 事後同意の同意ゲートの導入に対応は不要。`when=merge@` の `risk`・`objection`（ユーザーが決める）の事項が無ければ、ゲートは現れず PR の作成も従来どおり完了する。ある場合は、PR を作る前にユーザーの決定を `hikyaku ledger decide` で記録する
 - 差し戻し中のブランチの `return.md` が旧テンプレート（「architect で決め直すこと」）のままだと、builder が止まり再設計の回を始められない。「試したこと」「問題を変える選択肢」（各項目に `失うもの:`）「推奨」を書き足す。conductor の監督が子に独自の blocked の書式を指示している場合も、この3つの節を含める（欠けると violation）
 - `pr request-reviewers` / `pr ready` の終了コード 1 で `gh` の失敗を判定していた独自のスクリプトは、出力の `applied: false` を読むよう直す
 

@@ -209,7 +209,9 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
   if (result === "rejected" && (input === undefined || input.trim() === "")) {
     throw new HikyakuError("rejected には --input でユーザーの答えを添えてください");
   }
-  const refused = result === "done" ? definition.accepts?.(opened.ctx) : undefined;
+  // gate の accepts は承認で確かめる（同意ゲートは一覧の全項目にユーザーの決定があるまで承認を受け付けない）
+  const completing = result === "done" || (definition.kind === "gate" && result === "approved");
+  const refused = completing ? definition.accepts?.(opened.ctx) : undefined;
   if (refused !== undefined) throw new HikyakuError(`${definition.id} の完了の条件を満たしていません: ${refused}`);
   if (definition.kind === "gate" && result === "approved") assertObjectionsSettled(opened, definition.id);
   if (result === "done" && !hasEvidence(definition, opened.ctx)) {

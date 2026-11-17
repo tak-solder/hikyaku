@@ -93,8 +93,9 @@ export interface StepDefinition {
    */
   requires?: (ctx: StepContext) => string | undefined;
   /**
-   * done を報告するときだけ確かめる条件。完了したあとは見直さない（後の作業で崩れてよい条件に使う。
-   * 追加設計で「未完了のビルドが足された」は、そのビルドが PR まで進めば崩れる）。満たさないなら理由を返す
+   * done（gate は approved）を報告するときだけ確かめる条件。完了したあとは見直さない（後の作業で崩れてよい
+   * 条件に使う。追加設計で「未完了のビルドが足された」は、そのビルドが PR まで進めば崩れる。承認のあとに
+   * 見直す条件は reopens に書く）。満たさないなら理由を返す
    */
   accepts?: (ctx: StepContext) => string | undefined;
   /**
