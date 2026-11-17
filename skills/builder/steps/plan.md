@@ -14,7 +14,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" areas dormant --paths <glob,...
 ```
 
   - 休眠した領域があれば、結び付いた基準（rule・ADR・constraints の項目）を読み、前提が今も成り立つかを確かめる。
-    plan.md には休眠の事実と基準の所在（rule のパス・ADR のファイル名・constraints のアンカー）だけを書く（本文は写さない）
+    plan.md には休眠の事実と基準の所在（`areas dormant` が返す rule のパス・ADR のファイル名・constraints のファイルと見出し）だけを書く（本文は写さない）
   - 前提が崩れていて設計が変わるなら、SKILL.md の「architect への差し戻し」に従う
 - [ ] 予測ピークを見積もり直す（`${CLAUDE_PLUGIN_ROOT}/skills/build-manager/references/estimate.md` の手順に従う）
   - architect 段階の予測は issue.md のスコープ記述からの見積もり。plan.md ではクラス設計と

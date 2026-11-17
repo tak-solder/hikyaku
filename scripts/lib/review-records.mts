@@ -53,7 +53,10 @@ export function parseReviewRecord(item: string): ReviewRecordLine | string {
   } else {
     return `宛先が不明です: ${target}（使えるのは rule:<パス> か -）`;
   }
-  return { weight: match[1] as ReviewWeight, rule, text: (match[3] as string).trim() };
+  const text = (match[3] as string).trim();
+  // テンプレートの例（`rule:.claude/rules/{名前}.md`: （指摘の要約））を残したままの行を、記録として数えない
+  if (/^（[^（）]*）$/.test(text) || rule?.includes("{名前}") === true) return "テンプレートの例のままです。指摘を書くか、行を消してください";
+  return { weight: match[1] as ReviewWeight, rule, text };
 }
 
 function isNone(item: string): boolean {

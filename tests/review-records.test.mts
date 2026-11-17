@@ -21,6 +21,8 @@ test("parseReviewRecord: 書式に合わない行は理由を返す", () => {
     "`rule:.claude/rules/api.md`: 指摘",
     "[重] `constraints`: 指摘",
     "[重] `rule:`: 指摘",
+    "[重] `rule:.claude/rules/{名前}.md`: （指摘の要約）",
+    "[軽] `-`: （指摘の要約）",
   ]) {
     assert.equal(typeof parseReviewRecord(line), "string", line);
   }

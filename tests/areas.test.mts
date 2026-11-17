@@ -103,7 +103,8 @@ function configOf(directory: string): ResolvedConfig {
 
 test("linkedCriteria: rule・ADR・constraints の項目を領域と結び付けて集め、superseded の ADR とコードブロックは読まない", (t) => {
   const directory = documented(t);
-  const criteria = linkedCriteria(configOf(directory));
+  const { criteria, problems } = linkedCriteria(configOf(directory));
+  assert.deepEqual(problems, []);
   assert.deepEqual(
     criteria.map((c) => [c.kind, c.source, c.title, c.globs]),
     [
@@ -135,6 +136,15 @@ test("dormantAreas: 期間を超えた領域は休眠で、重なる基準だけ
   assert.deepEqual([ui?.days, ui?.dormant, ui?.linked], [180, false, []]);
   assert.deepEqual([fresh?.lastTouched, fresh?.days, fresh?.dormant], [null, null, false]);
   assert.deepEqual(result.notices, []);
+});
+
+test("linkedCriteria: glob をバッククォートで囲んでいない「領域」行は、黙って落とさず problems に出す", (t) => {
+  const directory = documented(t);
+  write(directory, "docs/decisions/20260201-plain.md", "---\nstatus: accepted\n---\n\n# 囲み忘れ\n\n- **領域**: src/billing/**\n");
+  const { criteria, problems } = linkedCriteria(configOf(directory));
+  assert.equal(criteria.some((c) => c.source.endsWith("20260201-plain.md")), false);
+  assert.equal(problems.length, 1);
+  assert.match(problems[0] ?? "", /20260201-plain\.md/);
 });
 
 test("dormantAreas: git が使えなければ日数を不明にして notices に出す", async (t) => {

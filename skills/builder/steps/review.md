@@ -62,9 +62,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run security build-{NN} 
   - 2ラウンド目以降は、前のラウンドの出力（返ったパスと同じディレクトリの `round-{n-1}-*.md`）と比べる
 - [ ] 統合した指摘をコード・承認済み仕様・スコープに照らして判断する。不採用の指摘には理由を残す。
   前ラウンドの保留も確認し、未解決なら今回の指摘に含める
-- [ ] 採った指摘ごとに、重さ（直さないと成果物に害が残るなら重、それ以外は軽）と、引いた rule
-  （その rule があれば防げた・その rule に反していた。`.claude/rules/` のパス。無ければ `-`）を控える。
-  handoff の「レビューの記録」に書く
+- [ ] 採った指摘ごとに、重さと引いた rule（無ければ `-`）を控え、handoff の「レビューの記録」に書く
+  （重さと行の形は `${CLAUDE_PLUGIN_ROOT}/skills/close-cycle/references/persistence.md` の「レビューの記録」）
 - [ ] 有効な種類ごとに、対応と次のラウンドを解決する
 
 ```bash

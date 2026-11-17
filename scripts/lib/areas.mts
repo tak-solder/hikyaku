@@ -79,15 +79,19 @@ export function areaLines(markdown: string): { heading: string | undefined; leve
       }
       continue;
     }
+    // glob を読めない「領域」行も返す（globs が空）。呼び出し側が黙って落とさず知らせる
     const globs = parseAreaLine(raw);
-    if (globs !== undefined && globs.length > 0) found.push({ heading, level, globs });
+    if (globs !== undefined) found.push({ heading, level, globs });
   }
   return found;
 }
 
 /** 領域と結び付いた基準: rule の paths、ADR の「領域」行（1ファイル1行）、constraints の項目（`##`）ごとの「領域」行 */
-export function linkedCriteria(config: ResolvedConfig): LinkedCriterion[] {
+export function linkedCriteria(config: ResolvedConfig): { criteria: LinkedCriterion[]; problems: string[] } {
   const criteria: LinkedCriterion[] = [];
+  const problems: string[] = [];
+  const unreadable = (where: string): string =>
+    `${where}: 「領域」の行に glob がありません（\`<glob>\` をバッククォートで囲んで書きます）。この基準は領域と結び付きません`;
   for (const rule of listRuleFiles(config.repoRoot)) {
     if (rule.paths !== undefined) criteria.push({ kind: "rule", source: rule.path, title: rule.path, globs: rule.paths });
   }
@@ -96,17 +100,21 @@ export function linkedCriteria(config: ResolvedConfig): LinkedCriterion[] {
     if (isSuperseded(markdown)) continue;
     const source = relative(config.repoRoot, file);
     const title = /^#\s+(.+)$/m.exec(markdown)?.[1]?.trim() ?? source;
-    const globs = areaLines(markdown).flatMap((line) => line.globs);
+    const lines = areaLines(markdown);
+    if (lines.some((line) => line.globs.length === 0)) problems.push(unreadable(source));
+    const globs = lines.flatMap((line) => line.globs);
     if (globs.length > 0) criteria.push({ kind: "adr", source, title, globs });
   }
   for (const file of documentFiles(config, ["constraints"])) {
     const source = relative(config.repoRoot, file);
     for (const line of areaLines(readFileSync(file, "utf8"))) {
+      // source は見出しの文字列を添えた所在（GitHub のアンカーの形ではない）
       const title = line.heading ?? source;
-      criteria.push({ kind: "constraints", source: `${source}#${title}`, title, globs: line.globs });
+      if (line.globs.length === 0) problems.push(unreadable(`${source}「${title}」`));
+      else criteria.push({ kind: "constraints", source: `${source}#${title}`, title, globs: line.globs });
     }
   }
-  return criteria;
+  return { criteria, problems };
 }
 
 /**
@@ -118,7 +126,9 @@ export async function dormantAreas(config: ResolvedConfig, globs: string[], now 
   const notices: string[] = [];
   const files = trackedFiles(config.repoRoot);
   if (files === undefined) notices.push("git を使えないので、最終変更を判定できません（Git リポジトリの中で実行してください）");
-  const criteria = files === undefined ? [] : linkedCriteria(config);
+  const linked = files === undefined ? { criteria: [], problems: [] } : linkedCriteria(config);
+  const criteria = linked.criteria;
+  notices.push(...linked.problems);
   const areas: AreaStatus[] = [];
   for (const glob of globs) {
     // 生成物（[diff] exclude）は機械が頻繁に書き換えるので、領域の開発頻度に数えない

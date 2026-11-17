@@ -7,15 +7,18 @@ import { HikyakuError } from "../lib/errors.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { splitList } from "../lib/rules.mts";
+import { openCycleIfAny } from "../lib/workspace.mts";
 
 register({
   name: "areas dormant",
   summary: "変更するパスのうち長く触られていなかった領域と、結び付いた rule・ADR・constraints の項目を示す",
-  usage: "hikyaku areas dormant --paths <glob,...> [--root <path>] [--json]",
-  options: ["paths", "root"],
+  usage: "hikyaku areas dormant [<cycle>] --paths <glob,...> [--no-cycle] [--root <path>] [--json]",
+  options: ["paths", "root", "no-cycle"],
+  maxOperands: 1,
   details: [
     "--paths に渡した glob（rule の paths と同じ書き方）ごとに、当たる追跡ファイルの最終コミットからの日数を求め、",
     "[areas] dormant_days（既定 180）を超えていれば休眠とみなします。期間ちょうどは休眠ではありません。",
+    "サイクルを指定する（省略時は現在のブランチ・.hikyaku.local から選ぶ）と、そのサイクル設定の値を使います。",
     "当たる追跡ファイルが無い（新しいパス）ものは休眠とみなしません。",
     "",
     "休眠した領域には、重なる基準を並べます。",
@@ -26,14 +29,15 @@ register({
     "長く触られていなかったこと自体が、前提が変わったかもしれないという信号です。示された基準を、",
     "設計（architect の survey の後・builder の plan）の前に見直してください。読み取り専用で、終了コードは常に 0 です。",
   ].join("\n"),
-  run: async ({ args }) => {
+  run: async ({ args, operands }) => {
     // flagList は {a,b} の中のカンマでも切るので、rule の paths と同じ分け方をする
     const raw = flagString(args, "paths");
     const globs = raw === undefined ? undefined : splitList(raw).map((glob) => glob.trim()).filter((glob) => glob !== "");
     if (globs === undefined || globs.length === 0) {
       throw new HikyakuError("--paths が必要です", "変更するパスの glob をカンマ区切りで渡してください（例: --paths 'src/billing/**,db/migrations/**'）。");
     }
-    const config = loadConfig({ root: flagString(args, "root") });
+    // 作業中のサイクルがあれば、そのサイクル設定の [areas] dormant_days を使う
+    const config = openCycleIfAny(args, operands[0])?.config ?? loadConfig({ root: flagString(args, "root") });
     const result = await dormantAreas(config, globs);
     emit(result, () => {
       const lines: string[] = [];

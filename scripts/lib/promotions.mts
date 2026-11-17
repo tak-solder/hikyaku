@@ -143,13 +143,28 @@ const REASONS_OPEN = /[（(]\s*防ぐ\s*[:：]/g;
 /** 欄の区切り。次の欄の名前が続く `/` だけで切る（防ぐ・立つの文に `src/billing` のようなパスが入りうる） */
 const FIELD_SEPARATOR = /\s*\/\s*(?=(?:防ぐ|立つ|重要度)\s*[:：])/;
 
-/** 理由の欄の中身（行末の閉じ括弧まで）。中の入れ子の括弧（`移行（up/down）`）はそのまま含む */
-function reasonsTail(text: string): { start: number; inner: string } | undefined {
+/**
+ * 理由の欄の中身。最後の `（防ぐ:` から、対応する閉じ括弧まで。中の入れ子の括弧（`移行（up/down）`）はそのまま含む。
+ * 欄が無ければ undefined、欄が閉じていない・欄の後ろに文字が続くなら理由を返す（黙って理由なしとして読まない）
+ */
+function reasonsTail(text: string): { start: number; inner: string } | undefined | string {
   const opens = [...text.matchAll(REASONS_OPEN)];
   const last = opens[opens.length - 1];
-  if (last === undefined || !/[）)]$/.test(text)) return undefined;
+  if (last === undefined) return undefined;
   const start = last.index ?? 0;
-  return { start, inner: text.slice(start + last[0].length, -1) };
+  let depth = 0;
+  for (let i = start; i < text.length; i += 1) {
+    const ch = text[i] as string;
+    if (ch === "（" || ch === "(") depth += 1;
+    else if (ch === "）" || ch === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        if (i !== text.length - 1) return "理由の欄 `（防ぐ: … / 立つ: …）` は行末に置きます（後ろに文字が続いています）";
+        return { start, inner: text.slice(start + last[0].length, i) };
+      }
+    }
+  }
+  return "理由の欄 `（防ぐ: …` の括弧が閉じていません";
 }
 
 /**
@@ -161,6 +176,7 @@ export function parseCriterionReasons(text: string): { text: string; reasons: Cr
   const trimmed = text.trim();
   const tail = reasonsTail(trimmed);
   if (tail === undefined) return { text: trimmed, reasons: undefined };
+  if (typeof tail === "string") return tail;
   const fields = new Map<string, string>();
   for (const part of `防ぐ:${tail.inner}`.split(FIELD_SEPARATOR).map((p) => p.trim())) {
     const field = /^(防ぐ|立つ|重要度)\s*[:：]\s*(.*)$/.exec(part);

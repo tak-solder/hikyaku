@@ -18,6 +18,7 @@ import {
   trackedFiles,
   type RuleCandidate,
 } from "../lib/rules.mts";
+import { openCycleIfAny } from "../lib/workspace.mts";
 
 const KIND_LABELS: Record<RuleCandidate["kind"], string> = {
   move: "移す候補（閾値以上引かれた）",
@@ -28,11 +29,13 @@ const KIND_LABELS: Record<RuleCandidate["kind"], string> = {
 register({
   name: "rules candidates",
   summary: "レビューの記録で引かれた回数が閾値以上の rule と、一致しない rule を、最終変更からの日数とともに並べる",
-  usage: "hikyaku rules candidates [--root <path>] [--json]",
-  options: ["root"],
+  usage: "hikyaku rules candidates [<cycle>] [--no-cycle] [--root <path>] [--json]",
+  options: ["root", "no-cycle"],
+  maxOperands: 1,
   details: [
     `全サイクル（closed を含む）の build-NN/handoff.md の「${REVIEW_RECORD_HEADING}」から、rule が引かれた回数を数えます。`,
-    "回数はサイクルをまたいで数えるので、サイクルの引数は取りません。",
+    "回数はサイクルをまたいで数えます。サイクルを指定する（省略時は現在のブランチ・.hikyaku.local から選ぶ）と、",
+    "閾値だけそのサイクル設定の値を使います（数える記録は絞りません）。",
     "",
     "  移す候補           [rules] hit_threshold（既定 3）以上引かれた rule。機械の検査やリファクタへ移すきっかけ",
     "  一致しない         paths がどのファイルにも一致しない rule（rules check と同じ判定）",
@@ -43,8 +46,8 @@ register({
     "",
     "候補を並べるだけで、移すか消すかは決めません。判断は LLM とユーザーが行います。終了コードは常に 0 です。",
   ].join("\n"),
-  run: async ({ args }) => {
-    const config = loadConfig({ root: flagString(args, "root") });
+  run: async ({ args, operands }) => {
+    const config = openCycleIfAny(args, operands[0])?.config ?? loadConfig({ root: flagString(args, "root") });
     const files = trackedFiles(config.repoRoot);
     const notices: string[] = [];
     if (files === undefined) notices.push("追跡ファイルの一覧を取得できないので、一致の判定と日数を省きました（Git リポジトリの中で実行してください）");
@@ -148,6 +151,9 @@ register({
       }
       for (const m of stale) {
         lines.push(`✗ ${m.path}: paths がどのファイルにも一致しません。もう読み込まれていません`);
+      }
+      for (const m of measures) {
+        for (const problem of m.problems ?? []) lines.push(`? ${m.path}: ${problem}（理由の欄。persistence.md の「rule の書き方」）`);
       }
       return lines.join("\n");
     });

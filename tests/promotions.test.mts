@@ -165,6 +165,10 @@ test("parseCriterionReasons: 理由の欄が無ければ reasons は undefined�
   assert.deepEqual(parseCriterionReasons("新しい画面(ベータ版)"), { text: "新しい画面(ベータ版)", reasons: undefined });
   assert.match(parseCriterionReasons("X を使う（防ぐ: 二重送信 / 重要度: 中）") as string, /「立つ」がありません/);
   assert.match(parseCriterionReasons("X を使う（防ぐ: 二重送信 / 立つ: 冪等性 / 重要度: 低）") as string, /重要度が不正です: 低/);
+  // 欄が閉じていない・欄の後ろに文字が続くときは、理由なしとして黙って読まない
+  assert.match(parseCriterionReasons("X（防ぐ: a / 立つ: b") as string, /閉じていません/);
+  assert.match(parseCriterionReasons("X（防ぐ: a / 立つ: b）。") as string, /行末に置きます/);
+  assert.match(parseCriterionReasons("X（防ぐ: a / 立つ: b）（build-03 で確認）") as string, /行末に置きます/);
 });
 
 test("collectPromotions: 理由は Candidate.reasons に入り、重要度の食い違いは読めない行、理由の無い既存の行は今までどおり", (t) => {
@@ -201,7 +205,8 @@ test("見出しと宛先の語: テンプレートと persistence.md と promoti
     .filter((item) => !/（文面）|（一行の要約）/.test(item));
   assert.ok(promoted.some((item) => item.includes("防ぐ:")), "理由の欄の例がある");
   for (const item of promoted) assert.equal(typeof parseCandidate(item), "object", item);
-  const reviewed = [persistence, templates].flatMap((source) => examples(source, REVIEW_RECORD_HEADING));
+  // テンプレートの例（{名前}・（指摘の要約））は記録として数えないので、書式の確認は persistence.md の例で行う
+  const reviewed = examples(persistence, REVIEW_RECORD_HEADING);
   assert.ok(reviewed.length > 0);
   for (const item of reviewed) assert.equal(typeof parseReviewRecord(item), "object", item);
 
