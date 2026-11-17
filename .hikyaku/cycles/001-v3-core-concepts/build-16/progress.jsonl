@@ -1,2 +1,6 @@
 {"at":"2026-11-17T06:33:16.819Z","skill":"builder","step":"plan","result":"done","peak":445000,"context":223485,"session":"2699a422-6c09-4ad2-b7ef-22c08b5b7753","hikyaku":"3.0.0"}
 {"at":"2026-11-17T06:41:23.594Z","skill":"builder","step":"plan-review","result":"done","peak":510000,"context":273531,"session":"2699a422-6c09-4ad2-b7ef-22c08b5b7753","hikyaku":"3.0.0"}
+{"at":"2026-11-17T06:41:47.038Z","skill":"build-manager","step":"load","result":"done","context":286537,"session":"2699a422-6c09-4ad2-b7ef-22c08b5b7753","hikyaku":"3.0.0"}
+{"at":"2026-11-17T06:43:04.671Z","skill":"build-manager","step":"scope","result":"done","context":300021,"session":"2699a422-6c09-4ad2-b7ef-22c08b5b7753","hikyaku":"3.0.0"}
+{"at":"2026-11-17T06:43:32.622Z","skill":"build-manager","step":"estimate","result":"done","context":305188,"session":"2699a422-6c09-4ad2-b7ef-22c08b5b7753","hikyaku":"3.0.0"}
+{"at":"2026-11-17T06:43:54.069Z","skill":"build-manager","step":"dry-run","result":"done","context":311072,"session":"2699a422-6c09-4ad2-b7ef-22c08b5b7753","hikyaku":"3.0.0"}
