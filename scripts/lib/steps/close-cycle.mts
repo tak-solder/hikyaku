@@ -155,6 +155,8 @@ export const CLOSE_CYCLE_STEPS: SkillSteps = {
       title: "別の PR にするもの（見積もりのガイドの見直し・フックの提案・基準を試しに消す）",
       // 基準を消す PR を作ったら --pr に添える。後続のサイクルの指標の比較の起点になる
       recordsPr: "optional",
+      // ガイドの見直しやフックの PR は添えない（添えると、後続のサイクルが基準を消した PR として比べる）
+      prHint: "基準を試しに消した PR の URL。ほかの PR は添えない",
       args: (ctx) => {
         const review = ctx.cycle === undefined ? undefined : guideReview(collectPeakRecords(ctx.config.hikyakuRoot, [ctx.cycle.record]));
         const base = {

@@ -458,22 +458,15 @@ function closeBaseline(repoRoot: string, progressPath: string): string | undefin
   // コミットの日時は秒単位。同じ秒のコミットを基準に入れないよう1秒前で区切る（入れないと、その秒に
   // コミットした文書の変更が見えなくなる。外せば close-cycle の前の変更が同意の側に数えられるだけ）
   const cutoff = new Date(new Date(first).getTime() - 1000).toISOString();
-  const before = gitSync(repoRoot, ["rev-list", "-1", `--before=${cutoff}`, "HEAD"]);
+  // first-parent で辿る（close のブランチにベースブランチを取り込んでも、取り込んだ側のコミットを基準にしない）
+  const before = gitSync(repoRoot, ["rev-list", "-1", "--first-parent", `--before=${cutoff}`, "HEAD"]);
   if (before === undefined) return undefined;
   return before.trim() === "" ? EMPTY_TREE : before.trim();
 }
 
-/** close-cycle の記録（サイクル直下の progress.jsonl）を最後に変えたコミット。閉じたあとの差分の終点 */
-function lastCloseCommit(repoRoot: string, progressRel: string): string | undefined {
-  const found = gitSync(repoRoot, ["log", "-1", "--format=%H", "--", progressRel]);
-  return found === undefined || found.trim() === "" ? undefined : found.trim();
-}
-
 /**
- * close-cycle の decisions・constraints の変更（close-cycle が書く前との差分）。
- * 閉じる前と、閉じたあとでも close-cycle の記録に未コミットの変更があるあいだは、作業ツリーまで（追跡外のファイルも
- * 追加として数える）。閉じて記録をコミットしたあとは、close-cycle の記録を最後に変えたコミットまで（後続のサイクルの
- * 変更を数えず、close のブランチで記録と一緒にコミットした変更は数える）。
+ * close-cycle の decisions・constraints の変更（close-cycle が書く前と作業ツリーの差分。追跡外のファイルも追加として数える）。
+ * 閉じたあとは、close-cycle の記録に未コミットの変更があるあいだ（close のセッションの途中）だけ見る。
  * 所在は作業ツリーの document-guide.md から引く（未作成・対象外は見ない）。確かめられなければ理由を返す
  */
 export function docChanges(config: ResolvedConfig, cycleDirectory: string, closed = false): DocChange[] | string {
@@ -501,20 +494,22 @@ export function docChanges(config: ResolvedConfig, cycleDirectory: string, close
   const root = config.repoRoot;
   const progressPath = join(cycleDirectory, "progress.jsonl");
   const progressRel = relative(root, progressPath);
+  if (closed) {
+    // 閉じて記録をコミットしたあとは見ない（マージ後のベースブランチで、ほかの PR の変更まで拾わないように）。
+    // 記録に未コミットの変更があれば close のセッションの途中なので、作業ツリーまで見る（手順の途中で close の
+    // ブランチにコミットした変更は、次の報告のときにここで拾う）
+    const pending = gitSync(root, ["status", "--porcelain", "--", progressRel]);
+    if (pending === undefined) return "git の状態を読めず、close-cycle の変更を確かめられません";
+    if (pending.trim() === "") return [];
+  }
   const base = closeBaseline(root, progressPath);
   if (base === undefined) return "git の履歴を読めず、close-cycle が書く前の状態と比べられません";
-  // 閉じたあとでも、close-cycle の記録に未コミットの変更があれば close のセッションの途中なので作業ツリーまで見る
-  const pending = gitSync(root, ["status", "--porcelain", "--", progressRel]);
-  if (pending === undefined) return "git の状態を読めず、close-cycle の変更を確かめられません";
-  const end = closed && pending.trim() === "" ? lastCloseCommit(root, progressRel) : undefined;
-  if (closed && pending.trim() === "" && end === undefined) return "close-cycle の記録のコミットが見つからず、閉じたサイクルの変更を確かめられません";
   const pathspec = [...paths.keys()];
-  const range = end === undefined ? [base] : [base, end];
-  const diff = gitSync(root, ["diff", "--name-status", "--no-renames", "-z", ...range, "--", ...pathspec]);
-  const untracked = end !== undefined ? "" : gitSync(root, ["ls-files", "--others", "--exclude-standard", "-z", "--", ...pathspec]);
+  const diff = gitSync(root, ["diff", "--name-status", "--no-renames", "-z", base, "--", ...pathspec]);
+  const untracked = gitSync(root, ["ls-files", "--others", "--exclude-standard", "-z", "--", ...pathspec]);
   if (diff === undefined || untracked === undefined) return "git の差分を読めず、decisions・constraints の変更を確かめられません";
   const contentAfter = (path: string): string | undefined =>
-    end === undefined ? (existsSync(join(root, path)) ? readFileSync(join(root, path), "utf8") : undefined) : gitSync(root, ["show", `${end}:${path}`]);
+    existsSync(join(root, path)) ? readFileSync(join(root, path), "utf8") : undefined;
 
   const changes: DocChange[] = [];
   const fields = diff.split("\0");
@@ -549,9 +544,8 @@ export interface PromotionConsent {
 }
 
 /**
- * G10・write が使う判定。サイクルが閉じたあとは、close-cycle の記録を最後に変えたコミットまでの差分を見る
- * （後続のサイクルの decisions の変更で閉じたサイクルの G10 が戻らないように、かつ close の後に close の
- * ブランチでコミットした変更は見落とさないように）
+ * G10・write が使う判定。サイクルが閉じて記録をコミットしたあとは差分を見ない（後続のサイクルやマージ後の
+ * ベースブランチの decisions の変更で、閉じたサイクルの G10 が戻らないように）。記録が未コミットのあいだは見る
  */
 export function promotionConsent(config: ResolvedConfig, cycleDirectory: string, closed: boolean): PromotionConsent {
   const candidates = collectPromotions(cycleDirectory).candidates;

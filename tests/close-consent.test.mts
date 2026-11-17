@@ -231,7 +231,7 @@ test("G10: 文書の変更を progress.jsonl より先に別のコミットに�
   assert.deepEqual([next(directory).step, next(directory).approval], ["G10", "consent"]);
 });
 
-test("G10: 閉じたあとに close のブランチでコミットした decisions の変更は数え、記録の後のコミットは数えない", (t) => {
+test("G10: 閉じて記録をコミットしたあとは差分を見ず、記録が未コミットのあいだに変えた decisions は数える", (t) => {
   const directory = closeWorkspace(t, "express");
   report(directory, "collect", "--result", "done");
   report(directory, "write", "--result", "done");
@@ -239,15 +239,15 @@ test("G10: 閉じたあとに close のブランチでコミットした decisio
   report(directory, "close", "--result", "done");
   commit(directory, "close");
 
-  // 後続のサイクルの変更（close-cycle の記録の後のコミット）は数えない
+  // 記録をコミットしたあとの decisions の変更（後続のサイクル・マージ後のベースブランチ）は数えない
   write(directory, "docs/adr/20261201-later.md", ACCEPTED);
   commit(directory, "後続のサイクル");
   assert.equal(next(directory).step, "pr");
 
-  // pr のステップで ADR の本文を変え、close-cycle の記録と一緒にコミットしたら G10 に戻る
+  // pr のステップで ADR の本文を変えてコミットしても、報告で記録が未コミットになった時点で G10 に戻る
   write(directory, ADR, IMPLEMENTED.replace("本文", "pr で変えた"));
+  commit(directory, "pr の前に ADR を変える");
   report(directory, "pr", "--result", "done", "--pr", "1");
-  commit(directory, "pr");
   assert.deepEqual([next(directory).step, next(directory).approval], ["G10", "consent"]);
 });
 
@@ -280,6 +280,9 @@ test("followups: --pr は任意で受け付け、G10 の答えと消す候補を
   const followups = report(directory, "publish", "--result", "done");
   assert.equal(followups.step, "followups");
   assert.equal(followups.args?.["g10Input"], "legacy.md は試しに消す");
+  const text = succeeds(directory, "step", "next", "close", "001");
+  assert.match(text, /ruleRemovals=\[\{"location":"\.claude\/rules\/legacy\.md"/, "テキストでも配列の中身を JSON で出す");
+  assert.match(text, /--pr <基準を試しに消した PR の URL/);
   const removals = followups.args?.["ruleRemovals"] as { location: string; kinds: string[] }[];
   assert.deepEqual(removals.map((r) => [r.location, r.kinds]), [[".claude/rules/legacy.md", ["stale"]]], "重要度が高の rule は入らない");
   assert.deepEqual(followups.args?.["metricsComparison"], []);

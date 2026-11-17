@@ -106,4 +106,5 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify close {cycle}
 ```
 
 - [ ] `done` を報告し、close のブランチで `cycles/{cycle}/progress.jsonl` をコミット & push する。
-  基準を消す PR を作ったら `--pr` にその URL を添える（作らなかったら添えない）
+  基準を消す PR を作ったら `--pr` にその URL を添える（作らなかったら添えない。見積もりのガイドの見直しや
+  フックの PR は添えない。添えると後続のサイクルが基準を消した PR として指標を比べる）

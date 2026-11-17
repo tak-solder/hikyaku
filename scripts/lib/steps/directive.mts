@@ -219,7 +219,7 @@ function reportCommand(opened: Opened, step: string, result: StepResult): string
     result === "done" && definition?.recordsPr === true
       ? " --pr <PR の URL>"
       : result === "done" && definition?.recordsPr === "optional"
-        ? " [--pr <作った PR の URL>]"
+        ? ` [--pr <${definition.prHint ?? "作った PR の URL"}>]`
         : "";
   return `${CLI} step report ${opened.phase} ${step}${cycleArg(opened.ctx)}${skillArg(opened)} --result ${result}${extra}${peak}${pr}`;
 }
@@ -375,7 +375,9 @@ export function renderDirective(directive: Directive): string {
     if (directive.callNext !== undefined) lines.push(`呼ばれたスキルの手順: ${directive.callNext}`);
   }
   if (directive.args !== undefined) {
-    lines.push(`値: ${Object.entries(directive.args).map(([key, value]) => `${key}=${String(value)}`).join(" ")}`);
+    // 配列・オブジェクトは JSON で出す（String では [object Object] になり、LLM が中身を読めない）
+    const show = (value: unknown): string => (typeof value === "object" && value !== null ? JSON.stringify(value) : String(value));
+    lines.push(`値: ${Object.entries(directive.args).map(([key, value]) => `${key}=${show(value)}`).join(" ")}`);
   }
   if (directive.note !== undefined) lines.push(`注意: ${directive.note}`);
   if (directive.revise !== undefined) lines.push(`差し戻しの答え: ${directive.revise === "" ? "（記録なし）" : directive.revise}`);

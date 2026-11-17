@@ -37,6 +37,8 @@ test("removalCandidates: 一致しない rule・理由の欠けた rule・役に
     rule(".claude/rules/bare.md", "paths: src/**"),
     rule(".claude/rules/high.md", "paths: src/gone/**\nimportance: 高"),
     rule(".claude/rules/fine.md", "paths: src/**\nprevents: p\nbasis: b\nimportance: 中"),
+    // importance を読めない rule は、高かもしれないので候補にしない
+    rule(".claude/rules/unreadable.md", "paths: src/gone/**\nimportance: high"),
   ];
   const { measures } = measureRules(rules, ["src/a.ts"], []);
   const documents: Record<string, string> = {
@@ -45,6 +47,7 @@ test("removalCandidates: 一致しない rule・理由の欠けた rule・役に
       "- 関数は短く書く",
       "- テストは日本語で書く（防ぐ: 読めない / 立つ: 読み手 / 重要度: 中）",
       "- 移行は1ファイル（防ぐ: 壊れる / 立つ: DB / 重要度: 高）",
+      "- 鍵は回す（防ぐ: 漏れる / 重要度: 高）",
     ].join("\n"),
   };
   const unhelpful = [
@@ -53,6 +56,9 @@ test("removalCandidates: 一致しない rule・理由の欠けた rule・役に
     { location: "rule:.claude/rules/high.md", quote: "本文", reason: "自明", source: "build-02/retrospective.md" },
     { location: "conventions", quote: "テストは日本語", reason: "自明", source: "build-03/retrospective.md" },
     { location: "conventions", quote: "移行は1ファイル", reason: "自明", source: "build-03/retrospective.md" },
+    // 理由の欄が崩れた行（立つが無い）は、重要度を読めないので候補にしない
+    { location: "conventions", quote: "鍵は回す", reason: "自明", source: "build-03/retrospective.md" },
+    { location: "rule:.claude/rules/unreadable.md", quote: "本文", reason: "自明", source: "build-03/retrospective.md" },
     { location: "conventions", quote: "存在しない記述", reason: "古い", source: "build-03/retrospective.md" },
     // 見出しだけに当たる引用は、消す行が決まらないので候補にしない
     { location: "conventions", quote: "規約の見出し", reason: "無関係", source: "build-04/retrospective.md" },
@@ -99,6 +105,9 @@ test("prNumber と subjectMentionsPr: URL と番号を読み、#12 と #123 を�
   assert.equal(subjectMentionsPr("基準を消す (#12)", 12), true);
   assert.equal(subjectMentionsPr("Merge pull request #123 from x/y", 12), false);
   assert.equal(subjectMentionsPr("Merge pull request #112 from x/y", 12), false);
+  assert.equal(subjectMentionsPr("Prepare config for #12", 12), false, "PR 番号に触れただけのコミット");
+  assert.equal(subjectMentionsPr("follow-up to #12", 12), false);
+  assert.equal(subjectMentionsPr("基準を消す (#123)", 12), false);
 });
 
 function metrics(cycleName: string, values: [number, number, number, number]): CycleMetrics {
@@ -193,13 +202,14 @@ function metricsRepository(t: TestContext): { directory: string; config: Resolve
   write(directory, `${dir("003-r")}/design/decisions.jsonl`, rejectedLedger("architect"));
   write(directory, `${dir("004-s")}/build-01/handoff.md`, handoff(1, 1));
   write(directory, ".claude/rules/legacy.md", "---\npaths: src/legacy/**\n---\n\n古い\n");
-  write(directory, "AGENTS.md", "# 規約\n\n- 古い基準を守る\n- 残す基準\n");
+  write(directory, "AGENTS.md", "# 規約\n\n- 古い基準を守る\n\n本文\n\n- 残す基準\n");
   const guide = join(directory, ROOT, "document-guide.md");
   writeFileSync(guide, readFileSync(guide, "utf8").replace(/^\| *conventions *\|.*$/m, "| conventions | repo | AGENTS.md | 取り決め |"));
   commitAt(directory, "2026-09-01T00:00:00+00:00", "準備");
 
   rmSync(join(directory, ".claude/rules/legacy.md"));
-  write(directory, "AGENTS.md", "# 規約\n\n- 残す基準\n");
+  // 書き換えただけの箇条書き（残す基準）は、消した基準に数えない
+  write(directory, "AGENTS.md", "# 規約\n\n本文\n\n- 残す基準（直した）\n");
   // 正午（UTC）にしておけば、ローカルの日付に直しても多くのタイムゾーンで同じ日になる
   commitAt(directory, "2026-09-10T12:00:00+00:00", "Merge pull request #12 from x/q-close-criteria");
   commitAt(directory, "2026-09-11T12:00:00+00:00", "Merge pull request #123 from x/other");

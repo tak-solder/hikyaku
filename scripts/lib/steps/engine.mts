@@ -124,6 +124,8 @@ export interface StepDefinition {
    * optional は --pr を受け付けるが必須にしない（作ったときだけ記録する PR）
    */
   recordsPr?: boolean | "optional";
+  /** recordsPr が optional のとき、報告の案内に出す --pr の説明（どの PR を添えるか） */
+  prHint?: string;
   /** 設定から解決して指示に添える値 */
   args?: (ctx: StepContext) => Record<string, unknown>;
 }

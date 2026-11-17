@@ -3,8 +3,9 @@
 ## 後続ビルドが前提にすること
 
 - G10 の同意が要る変更の判定は `promotions.mts` の `consentChanges` が唯一の判定。G10 の `consent`・`reopens`、write の `accepts` は `promotionConsent` を通してこれを呼ぶ。提示の区分（`promotions --json` の `approval`）は同じ表 `CONSENT_TARGETS` を使う。判定を足すときはここだけを直す
-- 差分の基準は「サイクル直下の progress.jsonl の close-cycle の最初の記録の時刻の1秒前までの、HEAD から辿れる最後のコミット」（`git rev-list -1 --before`）。記録を含むコミットで区切ると、文書の変更を先に別のコミットにしたときに見落とす（コードレビューの指摘）。コミットの日時は秒単位なので1秒前で区切り、同じ秒のコミットは同意の側に倒す。テストで close-cycle の前のコミットを作るときは日時を過去にする（`tests/close-consent.test.mts` の `closeWorkspace`）
-- 差分の終点は、閉じる前と、close-cycle の記録に未コミットの変更があるあいだは作業ツリー。閉じて記録をコミットしたあとは、記録を最後に変えたコミット。後続のサイクルの decisions の変更で閉じたサイクルの G10 が戻らず、pr のステップで変えた ADR は見落とさない
+- 差分の基準は「サイクル直下の progress.jsonl の close-cycle の最初の記録の時刻の1秒前までの、HEAD から first-parent で辿った最後のコミット」（`git rev-list -1 --first-parent --before`）。記録を含むコミットで区切ると、文書の変更を先に別のコミットにしたときに見落とす（コードレビューの指摘）。コミットの日時は秒単位なので1秒前で区切り、同じ秒のコミットは同意の側に倒す。テストで close-cycle の前のコミットを作るときは日時を過去にする（`tests/close-consent.test.mts` の `closeWorkspace`）
+- 差分は作業ツリーまで。サイクルが閉じて close-cycle の記録をコミットしたあとは見ない（マージ後のベースブランチや後続のサイクルの変更で、閉じたサイクルの G10 が戻らないように）。記録が未コミットのあいだ（報告の直後）は見るので、手順の途中で close のブランチにコミットした変更は次の報告で拾う
+- 指標の比較のマージの判定は、件名が `Merge pull request #N ` か末尾が `(#N)` の、最も古いコミット（revert は除く）。`origin/<base>` を先に見る
 - ゲートの承認の記録に `approval`（`consent` / `confirm`）が入る。無い記録は種類が分からない。G10 の `reopens` は、無い記録をこのビルドより前の同意の承認として扱う。ほかのゲートで `reopens` を使うときも、無い記録の扱いを決める
 - `StepDefinition.reopens` はエンジンの汎用の欄（gate だけ。`step lint` が gate 以外を弾く）。承認があっても理由を返せば pending になり、後ろのステップはやり直しになる
 - `recordsPr: "optional"` は `--pr` を受け付けるが必須にしない。close-cycle の followups だけが使い、基準を消す PR の番号が `quality-metrics.mts` の比較の起点になる（followups の done に添えるのは、消す PR だけ。フックの PR は添えない）
@@ -17,6 +18,9 @@
 - 確度: 要確認 — 消す候補の「理由の欠けた基準」を rule（frontmatter）に限った。文書（AGENTS.md など）の行は、「役に立たなかった記述」に挙がったものだけを候補にする。US-9.2 の「理由が消えた基準」の範囲を狭める解釈で、理由の欄の導入前の行が大半のため全行が候補になるのを避けた（G8 で監督が承認。questions.md の Q1）。文書の行も候補にするなら、`rules.mts` の `removalCandidates` に、登録された文書の箇条書きを読む経路を足す。いつ: 最後の PR、誰が: ユーザー
 - patch の P2 は同意のまま残した（build-01 の handoff で「build-11 が決める」とされた件）。P2 はサイクルに属さない patch の永続ドキュメントの更新で、候補ごとの区分を足すにはサイクルの外の差分の基準が要る。いつ: 次に patch の承認を見直すとき、誰が: architect
 - `args.reworkFrom`（issue.md）は足していない（解釈2。questions.md の Q1）
+- コードレビュー（ラウンド 2）で「そのまま進める」とした指摘（監督の判断。questions.md の Q2）: G10 の consent は、位置だけを読む経路（Stop フック・step where）でも git を数回呼ぶ。1回の評価の中ではメモ化済み（`close-cycle.mts` の `consentCache`）。位置だけの経路で同意に倒すと、`step next` と現在地が食い違う（plan-review の指摘で決めたこと）。遅さが問題になったら、評価をまたいでキャッシュする手段を考える
+- `conductor lint`・`step lint` は、このセッションの権限ではリポジトリのスクリプトを実行できず、回していない（`（ask: …）` のタグは足していない）
+- security_review は起動しなかった（`recommended`。個人情報・認証認可・決済のどれにも当たらない）
 
 ## レビューの記録
 
@@ -29,6 +33,16 @@
 - [軽] `-`: 1回の評価で G10 の git の判定を何度も走らせる
 - [軽] `-`: rules candidates が追跡ファイルと rule の測定を2回行う
 - [軽] `-`: マージの日をコミットした人のタイムゾーンの日付で取り、cycles.md のローカルの日付とずれる
+- [重] `-`: テキストの directive が配列の args を `[object Object]` で出し、followups の消す候補と指標の比較が読めない
+- [重] `-`: 閉じたサイクルの差分が、マージ後のベースブランチで他の PR の decisions の変更まで拾う
+- [重] `-`: 差分の基準を日時だけで選び、ベースブランチを取り込んだ側のコミットを選ぶ
+- [重] `-`: followups の `--pr` に、ガイドの見直しやフックの PR も基準を消した PR として残りうる
+- [重] `-`: 理由の欄が崩れた基準と importance が不正な rule を、重要度不明のまま試しに消す候補にする
+- [軽] `-`: 書き換えただけの箇条書きを消した基準に数える
+- [軽] `-`: PR 番号に触れただけのコミットをマージとみなす
+- [軽] `-`: 指標の比較が、消した PR ごとにサイクルの指標を読み直す
+- [軽] `-`: CHANGELOG の差分の基準と閉じたあとの記述が実装と食い違う
+- [軽] `-`: 位置だけを読む経路でも G10 の consent が git を呼ぶ（そのまま進めた）
 
 ## 永続化すること
 

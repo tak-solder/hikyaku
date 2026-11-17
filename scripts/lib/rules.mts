@@ -392,8 +392,10 @@ export function removalCandidates(input: {
   const rules = new Map(input.measures.map((rule) => [rule.path, rule]));
   const ruleEntry = (rule: RuleMeasure) => (): RemovalCandidate => ({ location: rule.path, kinds: [], reasons: rule.reasons ?? {}, sources: [] });
 
+  /** 重要度を確かめられない（高か読めない）基準は、高かもしれないので候補にしない（US-9.5） */
+  const mayBeHigh = (rule: RuleMeasure): boolean => rule.reasons?.importance === "高" || (rule.problems ?? []).length > 0;
   for (const rule of input.measures) {
-    if (rule.reasons?.importance === "高") continue;
+    if (mayBeHigh(rule)) continue;
     if (rule.stale) add(rule.path, ruleEntry(rule), "stale");
     if (rule.reasons?.prevents === undefined || rule.reasons?.basis === undefined) add(rule.path, ruleEntry(rule), "unreasoned");
   }
@@ -402,7 +404,7 @@ export function removalCandidates(input: {
     if (item.location.startsWith("rule:")) {
       const path = item.location.slice("rule:".length).trim().replace(/^\.\//, "");
       const rule = rules.get(path);
-      if (rule === undefined || rule.reasons?.importance === "高") continue;
+      if (rule === undefined || mayBeHigh(rule)) continue;
       add(path, ruleEntry(rule), "unhelpful", source);
       continue;
     }
@@ -414,7 +416,9 @@ export function removalCandidates(input: {
     if (lines.length !== 1) continue;
     const line = lines[0] as string;
     const parsed = parseCriterionReasons(line.replace(/^\s*[-*]\s+/, ""));
-    const reasons: RuleReasons = typeof parsed === "string" || parsed.reasons === undefined ? {} : parsed.reasons;
+    // 理由の欄が崩れている行は、重要度が高かもしれないので候補にしない（US-9.5）
+    if (typeof parsed === "string") continue;
+    const reasons: RuleReasons = parsed.reasons ?? {};
     if (reasons.importance === "高") continue;
     add(`${item.location}\u0000${line.trim()}`, () => ({ location: item.location, kinds: [], quote: item.quote, line: line.trim(), reasons, sources: [] }), "unhelpful", source);
   }

@@ -63,9 +63,13 @@ export function prNumber(reference: string): number | undefined {
   return match === null ? undefined : Number(match[1]);
 }
 
-/** 件名に PR 番号が現れるか。前後が数字の `#12`（`#123` の一部）は当たらない */
+/**
+ * 件名がその PR のマージのコミットか。GitHub のマージ（`Merge pull request #N from …`）と、
+ * スカッシュ・リベース（件名の末尾の `(#N)`）だけに当てる。PR 番号に触れただけのコミットや、
+ * `#123` の一部の `#12` には当てない
+ */
 export function subjectMentionsPr(subject: string, pr: number): boolean {
-  return new RegExp(`(?<![0-9A-Za-z])#${pr}(?!\\d)`).test(subject);
+  return new RegExp(`^Merge pull request #${pr}(?!\\d)\\s`).test(subject) || new RegExp(`\\(#${pr}\\)\\s*$`).test(subject);
 }
 
 /** 基準を消した PR の記録（closed のサイクルの followups の done の pr） */
@@ -136,18 +140,36 @@ export function removedCriteria(config: ResolvedConfig, hash: string): string[] 
   }
   if (docs.length === 0) return removed;
   const patch = gitSync(root, ["diff", "--no-renames", "-U0", `${hash}^1`, hash, "--", ...docs]) ?? "";
+  // 削除だけの hunk の箇条書きを数える。-/+ が同じ hunk にある行は書き換えで、消した基準ではない
   let file: string | undefined;
+  let hunk: { minus: string[]; plus: boolean } | undefined;
+  const flush = (): void => {
+    if (hunk !== undefined && !hunk.plus && file !== undefined) {
+      for (const body of hunk.minus) if (/^\s*[-*]\s+\S/.test(body)) removed.push(`${file}: ${body.trim()}`);
+    }
+    hunk = undefined;
+  };
   for (const line of patch.split("\n")) {
     const header = /^--- (?:a\/(.*)|\/dev\/null)$/.exec(line);
     if (header) {
+      flush();
       file = header[1];
       continue;
     }
-    if (line.startsWith("-") && !line.startsWith("---") && file !== undefined) {
-      const body = line.slice(1);
-      if (/^\s*[-*]\s+\S/.test(body)) removed.push(`${file}: ${body.trim()}`);
+    if (line.startsWith("+++") || line.startsWith("diff ")) {
+      flush();
+      continue;
     }
+    if (line.startsWith("@@")) {
+      flush();
+      hunk = { minus: [], plus: false };
+      continue;
+    }
+    if (hunk === undefined) continue;
+    if (line.startsWith("-")) hunk.minus.push(line.slice(1));
+    else if (line.startsWith("+")) hunk.plus = true;
   }
+  flush();
   return removed;
 }
 
@@ -248,18 +270,28 @@ export function metricsComparison(config: ResolvedConfig): MetricsComparison[] {
   const records = removalRecords(config.hikyakuRoot, cycles);
   if (records.length === 0) return [];
   const history = baseHistory(config);
+  // 消した PR ごとに前後のサイクルが重なるので、サイクルの指標は1回の呼び出しで1度だけ読む
+  const metricsCache = new Map<string, CycleMetrics | string>();
   return records.map((record) => {
     const pr = prNumber(record.pr);
     if (typeof history === "string") return { ...record, removed: [], comparable: false, reason: history };
     if (pr === undefined) return { ...record, removed: [], comparable: false, reason: `PR 番号を読めません: ${record.pr}` };
     // 履歴は新しい順。PR を参照する後のコミット（revert など）ではなく、最も古いものをマージとみなす
     const merge = history.findLast((commit) => subjectMentionsPr(commit.subject, pr) && !/^Revert\b/.test(commit.subject));
+    const metricsOf = (c: CycleRecord): CycleMetrics | string => {
+      const key = cycleDirName(c);
+      const cached = metricsCache.get(key);
+      if (cached !== undefined) return cached;
+      const measured = cycleMetrics(config.hikyakuRoot, c);
+      metricsCache.set(key, measured);
+      return measured;
+    };
     if (merge === undefined) return { ...record, removed: [], comparable: false, reason: "未マージ（ベースブランチに PR のコミットがありません）" };
     const compared = compareAround({
       mergedDay: localDay(merge.date),
       cycles,
       window: config.metrics.window,
-      metricsOf: (c) => cycleMetrics(config.hikyakuRoot, c),
+      metricsOf,
     });
     return { ...record, mergedAt: merge.date, removed: removedCriteria(config, merge.hash), ...compared };
   });
