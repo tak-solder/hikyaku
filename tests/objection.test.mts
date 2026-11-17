@@ -472,7 +472,7 @@ test("delegation（architect）: 再設計の回の先頭にだけ出て、承�
 
 test("conductor: delegation はユーザーに固定され、delegate に書けず、CONSENT_WHEN には入らない", () => {
   const settings: AskSettings = {
-    gates: { codebaseSurvey: false, designChoice: true, architecture: true, plan: false },
+    gates: { codebaseSurvey: false, designChoice: true, architecture: true, plan: false, promotion: true },
     reviews: { userStories: true, architecture: true, tasklist: true, plan: true, testSpec: true, code: true, security: "recommended", retrospective: "auto", validate: "manual" },
   };
   for (const approval of [undefined, "consent" as const]) {

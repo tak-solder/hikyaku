@@ -116,6 +116,7 @@ security_review = "on"
 | `design_choice_gate` | bool | G3 設計案の選択 |
 | `architecture_gate` | bool | G4 設計ドキュメント承認 |
 | `plan_gate` | bool | G7 plan 単独の承認 |
+| `promotion_gate` | bool | G10 永続ドキュメント昇格の承認のうち、確認の回（decisions・constraints の変更を含まない回） |
 | `user_stories_review` | bool | doc-reviewer（user-stories） |
 | `architecture_review` | bool | doc-reviewer（architecture） |
 | `tasklist_review` | bool | doc-reviewer（tasklist） |
@@ -380,7 +381,16 @@ dormant_days = 180
 
 `dormant_days` は、最終変更から何日を超えた領域を休眠とみなすかです。`hikyaku areas dormant` が、休眠した領域と結び付いた rule・ADR・constraints の項目を示します。正の整数で書き、既定は 180 です。考え方は [知見の置き場](persistence.md#領域の開発頻度) にあります。
 
-`[rules]` と `[areas]` は、どちらもサイクル設定で上書きできます。
+## [metrics]
+
+```toml
+[metrics]
+window = 2
+```
+
+`window` は、close-cycle が基準を試しに消した PR の効果を確かめるときに、マージの前と後でそれぞれ何サイクルを比べるかです。差し戻し、退けた決定（`rejected`）、重要度が高の落とし穴、重い指摘の数を比べます。前後どちらかのサイクルが足りなければ「比較できない」と示されます。正の整数で書き、既定は 2 です。考え方は [知見の置き場](persistence.md#消すこと) にあります。
+
+`[rules]`・`[areas]`・`[metrics]` は、どれもサイクル設定で上書きできます。
 
 ## [conductor]
 

@@ -85,6 +85,11 @@ export interface Gates {
   architecture: boolean;
   /** G7 builder: plan 単独の承認（thorough のみ。他は G8 に統合） */
   plan: boolean;
+  /**
+   * G10 close-cycle: 永続ドキュメントへの昇格の承認のうち、確認の回（同意が要る変更が無い回）。
+   * express だけ off。decisions・constraints の変更を含む回は同意で、ここに関わらず手順に残る
+   */
+  promotion: boolean;
 }
 
 export interface Reviews {
@@ -197,6 +202,7 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
       designChoice: false,
       architecture: false,
       plan: false,
+      promotion: false,
     },
     reviews: {
       userStories: true,
@@ -220,6 +226,7 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
       designChoice: true,
       architecture: true,
       plan: false,
+      promotion: true,
     },
     reviews: {
       userStories: false,
@@ -241,6 +248,7 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
       designChoice: true,
       architecture: true,
       plan: false,
+      promotion: true,
     },
     reviews: {
       userStories: true,
@@ -264,6 +272,7 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
       designChoice: true,
       architecture: true,
       plan: true,
+      promotion: true,
     },
     reviews: {
       userStories: true,
@@ -361,6 +370,8 @@ export interface ResolvedConfig {
   rules: RulesConfig;
   /** [areas] — 領域が休眠しているとみなす期間 */
   areas: AreasConfig;
+  /** [metrics] — 基準を消した PR のマージ前後の指標の比較 */
+  metrics: MetricsConfig;
   /**
    * ルート設定の ask に並んでいて、まだ答えが記録されていないキー。
    * create-cycle が尋ねる対象。サイクルを重ねた結果ここに残っていれば、
@@ -403,6 +414,13 @@ export interface AreasConfig {
 
 export const DEFAULT_RULES: RulesConfig = { hitThreshold: 3 };
 export const DEFAULT_AREAS: AreasConfig = { dormantDays: 180 };
+
+export interface MetricsConfig {
+  /** 基準を消した PR のマージ前後で、それぞれ何サイクルを比べるか */
+  window: number;
+}
+
+export const DEFAULT_METRICS: MetricsConfig = { window: 2 };
 
 export interface DataIntegrityConfig {
   /**
@@ -524,6 +542,10 @@ function readRulesConfig(table: TomlTable | undefined): RulesConfig {
 
 function readAreasConfig(table: TomlTable | undefined): AreasConfig {
   return { dormantDays: readPositiveInteger(table, "dormant_days", "[areas]", DEFAULT_AREAS.dormantDays) };
+}
+
+function readMetricsConfig(table: TomlTable | undefined): MetricsConfig {
+  return { window: readPositiveInteger(table, "window", "[metrics]", DEFAULT_METRICS.window) };
 }
 
 function readNumber(table: TomlTable | undefined, key: string, where: string): number | undefined {
@@ -1404,6 +1426,7 @@ function finalize(
     designChoice: readBoolean(merged, "design_choice_gate", "config") ?? preset.gates.designChoice,
     architecture: readBoolean(merged, "architecture_gate", "config") ?? preset.gates.architecture,
     plan: readBoolean(merged, "plan_gate", "config") ?? preset.gates.plan,
+    promotion: readBoolean(merged, "promotion_gate", "config") ?? preset.gates.promotion,
   };
 
   const reviews: Reviews = {
@@ -1463,6 +1486,7 @@ function finalize(
     peakBands: readPeakBands(readTable(merged, "context")),
     rules: readRulesConfig(readTable(merged, "rules")),
     areas: readAreasConfig(readTable(merged, "areas")),
+    metrics: readMetricsConfig(readTable(merged, "metrics")),
     askAtCreate,
     sources,
     retired: [],

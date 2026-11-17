@@ -30,7 +30,7 @@ thorough は判定基準が厳しくなるわけではありません。standard
 | G6 | build-manager | tasklist / issue 変更承認 | 確認 | ✓ | ✓ | ✓ | ✓ |
 | G7 | builder | plan 単独の承認 | 確認 | ✗ | ✗ | ✗ | ✓ |
 | G8 | builder | plan + test-spec 承認 | 確認 | ✓ | ✓ | ✓ | ✓ |
-| G10 | close-cycle | 永続ドキュメント昇格の承認 | 同意 | ✓ | ✓ | ✓ | ✓ |
+| G10 | close-cycle | 永続ドキュメント昇格の承認 | 確認（decisions・constraints の変更を含む回は同意） | ✗ | ✓ | ✓ | ✓ |
 | P1 | patch | 対応方針の合意 | 同意 | ✓ | ✓ | ✓ | ✓ |
 | P2 | patch | 永続ドキュメントの更新の承認（サイクルに属さない patch で、残すものがあるときだけ） | 同意 | ✓ | ✓ | ✓ | ✓ |
 
@@ -39,6 +39,8 @@ thorough は判定基準が厳しくなるわけではありません。standard
 G1 は要件の合意なので、どの設定でも止まります。v2 までの `user_stories_gate` は廃止し、書かれているとエラーになります。
 
 G3 と G4 は、ふだんは確認でプロファイルに従います。ただし、ビルドから architect へ差し戻されたあとの再設計の回は、委任の前提が崩れたあとなので同意になり、express でも、`design_choice_gate` や `architecture_gate` を外していても止まります。
+
+G10 は、昇格する中身で種類が決まります。`decisions`（ADR）と `constraints` は外の前提と受け入れたリスクを持つ文書なので、その変更を含む回は同意になり、どのプロファイルでも、`promotion_gate` を外していても止まります。ただし、このサイクルの ADR を `accepted` から `implemented` にするだけの書き換えは実装状態の記録なので、同意に数えません。それ以外の昇格（`overview`・`conventions`・rule など）だけの回は確認で、express では省かれます。省いた回に書き込みの途中で `decisions` や `constraints` を変えると、G10 に戻ってユーザーの同意を求めます。
 
 express は「要件（G1）と実装直前（G8）だけユーザーが見て、その間は AI に任せる」という形です。G3 を外しても採用理由と退けた案は ADR に残り、PR 本文にも出るので、判断を後から追えなくなることはありません。
 

@@ -34,6 +34,7 @@ import { checkEscalation, describeEscalationProblems } from "../lib/escalation.m
 import { readReturn, RETURN_FILE } from "../lib/phase.mts";
 import {
   allowedResults,
+  consentOf,
   evaluate,
   hasEvidence,
   lintApproval,
@@ -218,6 +219,11 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
   const event: ProgressEvent = { at: new Date().toISOString(), skill: opened.skill.skill, step: definition.id, result };
   if (reason !== undefined) event.reason = reason;
   if (input !== undefined) event.input = input;
+  if (definition.kind === "gate" && result === "approved") {
+    // 承認したあとに同意が要る変更が出たとき、確認として受けた承認では足りないと分かるように残す（reopens）
+    const consent = consentOf(definition, opened.ctx);
+    event.approval = consent !== false && consent.timing === "now" ? "consent" : "confirm";
+  }
 
   if (args.flags.has("bp")) {
     throw new HikyakuError("--bp は廃止しました", "見積もり直した予測ピークを --peak <トークン数>（380k など）で添えてください。");
@@ -237,7 +243,7 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
 
   const prRaw = flagString(args, "pr");
   if (prRaw !== undefined) {
-    if (definition.recordsPr !== true) throw new HikyakuError(`${definition.id} には --pr を添えられません`);
+    if (definition.recordsPr === undefined || definition.recordsPr === false) throw new HikyakuError(`${definition.id} には --pr を添えられません`);
     if (!isPrReference(prRaw)) {
       throw new HikyakuError(`--pr は PR の URL か番号で指定してください（現在: ${prRaw}）`, "例: --pr https://github.com/owner/repo/pull/12 / --pr 12");
     }

@@ -36,6 +36,11 @@ export interface ProgressEvent {
   reason?: string;
   /** ゲートでのユーザーの答え */
   input?: string;
+  /**
+   * ゲートの承認の種類（その回の consent が now なら consent）。承認したあとに同意が要る変更が出たとき、
+   * 確認として受けた承認では足りないと分かるように残す（G10）。無い記録は種類が分からない
+   */
+  approval?: "consent" | "confirm";
   /** step restart で始めた回の種類（architect の return / add など）。スキルが定義で読む */
   round?: string;
   /** 報告で添えた予測ピーク（トークン。plan / plan-review） */

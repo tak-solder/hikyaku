@@ -21,11 +21,15 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" promotions {cycle}
 | 読めなかった行 | 書式が崩れていた行。捨てずに、内容を見て候補に含めるかを判断する |
 
 - [ ] rule の候補を集める。レビューの記録で閾値以上引かれた rule（移す候補）、どのファイルにも一致しない rule、
-  記録に挙がったが無い rule が、最終変更からの日数と理由とともに返る。rule の整理と「なくす」の提案の材料にする
+  記録に挙がったが無い rule が、最終変更からの日数と理由とともに返る。rule の整理と「なくす」の提案の材料にする。
+  試しに消す候補（一致しない rule・理由の欠けた rule・役に立たなかった記述。重要度が高は入らない）も返る
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" rules candidates
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" rules candidates {cycle}
 ```
+
+候補の `approval`（`promotions --json`）は、`decisions`・`constraints` 宛てなら `consent`（同意が要る変更）。
+G10 はこの区分で提示を分ける。
 
 - [ ] 未決事項を集める。期限が来た・過ぎた事項（とくに いつ が `close` のもの）と未解決の退けを、G10 で示す
 

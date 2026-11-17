@@ -97,6 +97,11 @@ export interface StepDefinition {
    * 追加設計で「未完了のビルドが足された」は、そのビルドが PR まで進めば崩れる）。満たさないなら理由を返す
    */
   accepts?: (ctx: StepContext) => string | undefined;
+  /**
+   * 承認の記録があっても、その承認では足りないときに理由を返す（gate だけ）。理由を返せば、承認は
+   * 無かったものとして現在地に戻る。G10 は、確認として受けた承認のあとに同意が要る変更が出たときに使う
+   */
+  reopens?: (ctx: StepContext, approval: ProgressEvent) => string | undefined;
   /** ゲートの問いの ID（conductor の ASKS） */
   ask?: string;
   /** call で呼ぶ内部スキル */
@@ -114,8 +119,11 @@ export interface StepDefinition {
   checkpoint?: keyof ContextBudget;
   /** 報告で予測ピークを添えるか。required なら done に --peak が必須、optional なら任意 */
   peak?: "required" | "optional";
-  /** done に --pr（作った PR の URL か番号）が必須か。記録に PR が無い done は完了とみなさない */
-  recordsPr?: boolean;
+  /**
+   * done に --pr（作った PR の URL か番号）が必須か。記録に PR が無い done は完了とみなさない。
+   * optional は --pr を受け付けるが必須にしない（作ったときだけ記録する PR）
+   */
+  recordsPr?: boolean | "optional";
   /** 設定から解決して指示に添える値 */
   args?: (ctx: StepContext) => Record<string, unknown>;
 }
@@ -218,7 +226,7 @@ export function lintApproval(skill: Pick<SkillSteps, "skill" | "steps">): string
       }
       continue;
     }
-    for (const key of ["consent", "enabled", "interrupt"] as const) {
+    for (const key of ["consent", "enabled", "interrupt", "reopens"] as const) {
       if (definition[key] !== undefined) {
         problems.push(`${skill.skill}: ${definition.id} は gate でないのに ${key} を持っています（条件は when に書きます）`);
       }
@@ -290,8 +298,13 @@ export function evaluate(skill: SkillSteps, ctx: StepContext): Evaluation {
           note: "差し戻されています。答えに沿って直してから、提示し直してください", revise: latest.event.input ?? "",
         };
       } else if (latest.event.result === "approved") {
-        evaluated = { definition, status: "complete", event: latest.event, note: undefined, revise: undefined };
-        floor = latest.index;
+        const reopened = definition.reopens?.(ctx, latest.event);
+        if (reopened !== undefined) {
+          evaluated = { definition, status: "pending", event: latest.event, note: reopened, revise: undefined };
+        } else {
+          evaluated = { definition, status: "complete", event: latest.event, note: undefined, revise: undefined };
+          floor = latest.index;
+        }
       } else {
         evaluated = { definition, status: "pending", event: latest.event, note: undefined, revise: undefined };
       }

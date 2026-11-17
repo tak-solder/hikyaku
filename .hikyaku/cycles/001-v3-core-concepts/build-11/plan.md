@@ -139,11 +139,11 @@
 
 ## 実装ステップ
 
-- [ ] Step 1: config に `promotion_gate`・`[metrics] window`、progress の `approval`、エンジンの `reopens` と `recordsPr: "optional"`、step report の承認の種類の記録
-- [ ] Step 2: promotions の `consentChanges`・`docChanges`・`isStatusOnlyChange`、`promotions --json` の `approval`
-- [ ] Step 3: close-cycle の G10（consent・enabled・reopens・args）・write（accepts・args）・followups（args・recordsPr）、conductor の ASKS と CONSENT_WHEN
-- [ ] Step 4: rules の `removalCandidates` と `rules candidates` の消す候補
-- [ ] Step 5: quality-metrics.mts（指標・消した点・比較）
-- [ ] Step 6: テスト（G10 の同意の判定と write の拒否・G10 への戻り、消す候補の高の除外、指標の比較と「比較できない」の一時リポジトリの結合テスト、config）
-- [ ] Step 7: 手順（G10・collect・write・followups・hooks）・docs・CHANGELOG
-- [ ] Step 8: ローカル検証（`npx tsc --noEmit`・`npm test`）
+- [x] Step 1: config に `promotion_gate`・`[metrics] window`、progress の `approval`、エンジンの `reopens` と `recordsPr: "optional"`、step report の承認の種類の記録
+- [x] Step 2: promotions の `consentChanges`・`docChanges`・`isStatusOnlyChange`、`promotions --json` の `approval`
+- [x] Step 3: close-cycle の G10（consent・enabled・reopens・args）・write（accepts・args）・followups（args・recordsPr）、conductor の ASKS と CONSENT_WHEN
+- [x] Step 4: rules の `removalCandidates` と `rules candidates` の消す候補
+- [x] Step 5: quality-metrics.mts（指標・消した点・比較）
+- [x] Step 6: テスト（G10 の同意の判定と write の拒否・G10 への戻り、消す候補の高の除外、指標の比較と「比較できない」の一時リポジトリの結合テスト、config）
+- [x] Step 7: 手順（G10・collect・write・followups・hooks）・docs・CHANGELOG
+- [x] Step 8: ローカル検証（`npx tsc --noEmit`・`npm test`）

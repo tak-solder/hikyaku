@@ -215,7 +215,12 @@ function reportCommand(opened: Opened, step: string, result: StepResult): string
       : definition.peak === "required"
         ? " --peak <見積もり直した予測ピーク>"
         : " [--peak <見積もり直した予測ピーク>]";
-  const pr = result === "done" && definition?.recordsPr === true ? " --pr <PR の URL>" : "";
+  const pr =
+    result === "done" && definition?.recordsPr === true
+      ? " --pr <PR の URL>"
+      : result === "done" && definition?.recordsPr === "optional"
+        ? " [--pr <作った PR の URL>]"
+        : "";
   return `${CLI} step report ${opened.phase} ${step}${cycleArg(opened.ctx)}${skillArg(opened)} --result ${result}${extra}${peak}${pr}`;
 }
 

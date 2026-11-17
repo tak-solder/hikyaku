@@ -83,7 +83,7 @@ export const ASKS: AskDefinition[] = [
   { id: "docs-link", category: "confirm", where: "close-cycle: AGENTS.md の索引の更新" },
   { id: "G6", category: "confirm", where: "build-manager: tasklist / issue の変更" },
   { id: "G8", category: "confirm", where: "builder: plan + test-spec の承認" },
-  { id: "G10", category: "consent", where: "close-cycle: 永続ドキュメントへの昇格" },
+  { id: "G10", category: "confirm", where: "close-cycle: 永続ドキュメントへの昇格", enabledWhen: (s) => s.gates.promotion },
   { id: "delegation", category: "consent", where: "architect / builder: 委任の前提が崩れたあと（差し戻し・設計と要件の衝突）、委任を続けるか" },
   { id: "questions", category: "spec", where: "architect / builder: 質問ループ" },
   { id: "adr-status", category: "spec", where: "architect / close-cycle: ADR に status 欄が無い" },
@@ -104,6 +104,7 @@ export const ASK_IDS: string[] = ASKS.map((ask) => ask.id);
 export const CONSENT_WHEN: Record<string, string> = {
   G3: "差し戻しからの再設計の回は同意（ユーザーに上げる）",
   G4: "差し戻しからの再設計の回は同意（ユーザーに上げる）",
+  G10: "decisions・constraints の変更を含む回は同意（ユーザーに上げる）",
 };
 
 /** 子として動くスキル。conductor lint はこれらの SKILL.md と references/・steps/ からタグを集める */

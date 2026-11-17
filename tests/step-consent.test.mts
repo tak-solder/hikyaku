@@ -35,7 +35,7 @@ function gate(overrides: Partial<StepDefinition>): StepDefinition {
 }
 
 const ASK_SETTINGS: AskSettings = {
-  gates: { codebaseSurvey: false, designChoice: true, architecture: true, plan: false },
+  gates: { codebaseSurvey: false, designChoice: true, architecture: true, plan: false, promotion: true },
   reviews: {
     userStories: true, architecture: true, tasklist: true, plan: true, testSpec: true, code: true,
     security: "recommended", retrospective: "auto", validate: "manual",
@@ -251,7 +251,7 @@ test("設定: サイクル設定の user_stories_gate は step で止まる", (t
 test("設定: 解決した gates に userStories は無く、表示は G1 を常に有効（同意）と示す", (t) => {
   const directory = workspaceWith(t, "economy");
   const config = JSON.parse(succeeds(directory, "config", "001", "--json"));
-  assert.deepEqual(Object.keys(config.gates).sort(), ["architecture", "codebaseSurvey", "designChoice", "plan"]);
+  assert.deepEqual(Object.keys(config.gates).sort(), ["architecture", "codebaseSurvey", "designChoice", "plan", "promotion"]);
   assert.match(succeeds(directory, "config", "001"), /G1 user-stories\s+常に有効（同意）/);
 });
 
@@ -367,7 +367,7 @@ test("builder: G7 は plan_gate で確認として外せる", (t) => {
   }
 });
 
-test("build-manager と close-cycle: express でも G6 は確認、G10 は同意として返る", (t) => {
+test("build-manager と close-cycle: express でも G6 は確認、G10 は同意が要る変更が無ければ省かれる", (t) => {
   const directory = workspaceWith(t, "express");
   for (const id of ["load", "scope", "estimate"]) {
     step(t, directory, "report", "architect", id, "001", "--skill", "build-manager", "--result", "done");
@@ -378,8 +378,9 @@ test("build-manager と close-cycle: express でも G6 は確認、G10 は同意
     : g6;
   assert.deepEqual([gateG6.step, gateG6.approval, gateG6.approvalReason], ["G6", "confirm", null]);
 
-  const g10 = step(t, directory, "report", "close", "collect", "001", "--result", "done");
-  assert.deepEqual([g10.step, g10.approval], ["G10", "consent"]);
+  // 同意が要る変更（decisions・constraints）が無ければ確認で、express では promotion_gate が off
+  const afterCollect = step(t, directory, "report", "close", "collect", "001", "--result", "done");
+  assert.equal(afterCollect.step, "write");
 });
 
 // ---------------------------------------------------------------------------
@@ -437,7 +438,8 @@ test("conductor asks: G3・G4 が再設計の回に同意になることを示�
   assert.equal(typeof json.consentWhen.G3, "string");
   assert.equal(typeof json.consentWhen.G4, "string");
   const text = succeeds(directory, "conductor", "asks", "001");
-  assert.match(text, /ユーザーに上げる同意ゲート: G10/);
+  assert.match(text, /ユーザーに上げる同意ゲート: delegation/);
+  assert.match(text, /G10（decisions・constraints の変更を含む回は同意/);
   assert.match(text, /この profile では出ない問い: .*G3（差し戻しからの再設計の回は同意/);
   assert.doesNotMatch(text, /人間/);
 });

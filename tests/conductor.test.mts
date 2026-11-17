@@ -25,7 +25,7 @@ import { planReviewers, planWithoutPr, skipTargetOf, type ReviewerInput } from "
 import { cli, ESCALATION_BODY, snapshot, succeeds, testEnvironment, withoutGh, workspace, write } from "./helpers.mts";
 
 const settings: AskSettings = {
-  gates: { codebaseSurvey: false, designChoice: true, architecture: true, plan: false },
+  gates: { codebaseSurvey: false, designChoice: true, architecture: true, plan: false, promotion: true },
   reviews: {
     userStories: true, architecture: true, tasklist: true, plan: true, testSpec: true, code: true,
     security: "recommended", retrospective: "auto", validate: "manual",
@@ -59,16 +59,20 @@ function result(text: string, extra: Record<string, unknown> = {}): string {
 test("conductor: 既定では確認ゲートを監督に、同意・障害・中止・分類できない問いをユーザーに振り分ける", () => {
   const asks = resolveAllAsks(conductor(), settings);
   const handlers = Object.fromEntries(asks.map((ask) => [ask.id, ask.handler]));
-  for (const id of ["cycle", "branch", "G3", "G6", "G8", "questions", "review-findings", "docs-link"]) {
+  for (const id of ["cycle", "branch", "G3", "G6", "G8", "G10", "questions", "review-findings", "docs-link"]) {
     assert.equal(handlers[id], "supervisor", id);
   }
-  for (const id of ["G10", "retry-limit", "abandon", "other"]) assert.equal(handlers[id], "user", id);
+  for (const id of ["delegation", "retry-limit", "abandon", "other"]) assert.equal(handlers[id], "user", id);
   assert.ok(asks.every((ask) => ask.handler === "supervisor" || ask.handler === "user"));
 });
 
-test("conductor: G10 は同意でユーザーに固定し、G6・G8 は確認で既定では監督が答える", () => {
-  const g10 = resolveAsk("G10", conductor(), settings);
+test("conductor: G10 は同意の回（decisions・constraints の変更を含む）だけユーザーに固定し、G6・G8 は確認で既定では監督が答える", () => {
+  const g10 = resolveAsk("G10", conductor({ delegate: ["G10"] }), settings, "consent");
   assert.deepEqual([g10.category, g10.handler, g10.source], ["consent", "user", "fixed"]);
+  const confirm = resolveAsk("G10", conductor(), settings, "confirm");
+  assert.deepEqual([confirm.category, confirm.handler, confirm.source], ["confirm", "supervisor", "default"]);
+  const express = { ...settings, gates: { ...settings.gates, promotion: false } };
+  assert.equal(resolveAsk("G10", conductor(), express).enabled, false, "promotion_gate が off なら確認の回は出ない");
   for (const id of ["G6", "G8"]) {
     const ask = resolveAsk(id, conductor(), settings);
     assert.deepEqual([ask.category, ask.handler, ask.source], ["confirm", "supervisor", "default"], id);
@@ -135,7 +139,7 @@ for (const [name, config, pattern] of [
   ["delegate の abandon", conductor({ delegate: ["abandon"] }), /指定できません/],
   ["delegate の other", conductor({ delegate: ["other"] }), /指定できません/],
   ["両方に同じ ID", conductor({ escalate: ["G8"], delegate: ["G8"] }), /両方/],
-  ["delegate の同意ゲート G10", conductor({ delegate: ["G10"] }), /指定できません/],
+  ["delegate の同意ゲート delegation", conductor({ delegate: ["delegation"] }), /指定できません/],
   ["escalate の abandon", conductor({ escalate: ["abandon"] }), /指定できません/],
 ] as const) {
   test(`conductor: 設定の検査で${name}を拒否する`, () => {
@@ -145,13 +149,16 @@ for (const [name, config, pattern] of [
 
 test("conductor: 同意ゲートを delegate に書いたエラーは、ユーザーが判断することを示す", () => {
   assert.throws(
-    () => checkConductorAsks(conductor({ delegate: ["G10"] }), "[conductor]"),
+    () => checkConductorAsks(conductor({ delegate: ["delegation"] }), "[conductor]"),
     (error: Error & { hint?: string }) => /ユーザー/.test(`${error.message}\n${error.hint ?? ""}`) && !/人間/.test(`${error.message}\n${error.hint ?? ""}`),
   );
   assert.doesNotThrow(() => checkConductorAsks(conductor({ delegate: ["G8"] }), "[conductor]"));
   // すでにユーザーに上がる同意ゲートを escalate に書くのは害が無いので受け付ける
-  assert.doesNotThrow(() => checkConductorAsks(conductor({ escalate: ["G10"] }), "[conductor]"));
-  assert.equal(resolveAsk("G10", conductor({ escalate: ["G10"] }), settings).source, "fixed");
+  assert.doesNotThrow(() => checkConductorAsks(conductor({ escalate: ["delegation"] }), "[conductor]"));
+  assert.equal(resolveAsk("delegation", conductor({ escalate: ["delegation"] }), settings).source, "fixed");
+  // G10 は回によって同意になる確認のゲート。delegate に書けるが、同意の回はユーザーに固定される
+  assert.doesNotThrow(() => checkConductorAsks(conductor({ delegate: ["G10"] }), "[conductor]"));
+  assert.equal(resolveAsk("G10", conductor({ escalate: ["G10"] }), settings).source, "escalate");
 });
 
 test("conductor: 最終出力の末尾にある gate / done / blocked を取り出す", () => {

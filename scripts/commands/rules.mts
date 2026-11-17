@@ -11,14 +11,22 @@ import { collectReviewRecords, ruleHits } from "../lib/review-records.mts";
 import {
   RULES_DIR,
   RULE_LOAD_WARNING,
+  collectRemovalCandidates,
   listRuleFiles,
   measureRules,
   ruleCandidates,
   rulesLastTouched,
   trackedFiles,
+  type RemovalCandidate,
   type RuleCandidate,
 } from "../lib/rules.mts";
 import { openCycleIfAny } from "../lib/workspace.mts";
+
+const REMOVAL_LABELS: Record<RemovalCandidate["kinds"][number], string> = {
+  stale: "一致しない",
+  unreasoned: "理由（prevents・basis）が無い",
+  unhelpful: "役に立たなかった記述に挙がった",
+};
 
 const KIND_LABELS: Record<RuleCandidate["kind"], string> = {
   move: "移す候補（閾値以上引かれた）",
@@ -44,10 +52,15 @@ register({
     "各行に、最終変更からの日数（paths に当たる追跡ファイルの最終コミット。paths が無い・一致しない rule は",
     "rule ファイル自身）と、frontmatter の理由（prevents / basis / importance）を添えます。",
     "",
+    "試しに消す候補（JSON は removals）も並べます。一致しない rule、frontmatter の理由（prevents・basis）が",
+    "欠けた rule、サイクルの「役に立たなかった記述」に挙がった記述（rule か文書の行）です。重要度が高の基準は",
+    "含めません。文書の行で理由の欄が欠けたものは、役に立たなかった記述に挙がらない限り候補にしません。",
+    "",
     "候補を並べるだけで、移すか消すかは決めません。判断は LLM とユーザーが行います。終了コードは常に 0 です。",
   ].join("\n"),
   run: async ({ args, operands }) => {
-    const config = openCycleIfAny(args, operands[0])?.config ?? loadConfig({ root: flagString(args, "root") });
+    const opened = openCycleIfAny(args, operands[0]);
+    const config = opened?.config ?? loadConfig({ root: flagString(args, "root") });
     const files = trackedFiles(config.repoRoot);
     const notices: string[] = [];
     if (files === undefined) notices.push("追跡ファイルの一覧を取得できないので、一致の判定と日数を省きました（Git リポジトリの中で実行してください）");
@@ -65,9 +78,24 @@ register({
         : await rulesLastTouched(config.repoRoot, rules.filter((rule) => selected.has(rule.path)), files, config.diff.exclude);
     const candidates = ruleCandidates({ ...input, lastTouched: touched });
     const problems = rules.flatMap((rule) => (rule.problems ?? []).map((problem) => `${rule.path}: ${problem}`));
+    const removals = collectRemovalCandidates(config, opened?.context.directory);
 
-    emit({ threshold: config.rules.hitThreshold, records: records.length, candidates, unparsed, problems, notices }, () => {
+    emit({ threshold: config.rules.hitThreshold, records: records.length, candidates, removals, unparsed, problems, notices }, () => {
       const lines: string[] = [];
+      if (removals.length > 0) {
+        lines.push(
+          "試しに消す候補（重要度が高の基準は含めない。消すなら close-cycle の followups で別の PR にする）",
+          table(
+            removals.map((r) => [
+              r.line === undefined ? r.location : `${r.location}「${r.quote ?? ""}」`,
+              r.kinds.map((k) => REMOVAL_LABELS[k]).join("・"),
+              r.sources.join(", "),
+            ]),
+            ["基準", "理由", "出どころ"],
+          ),
+          "",
+        );
+      }
       if (candidates.length === 0) {
         lines.push(`候補はありません（閾値 ${config.rules.hitThreshold}、レビューの記録 ${records.length} 件）。`);
       } else {
