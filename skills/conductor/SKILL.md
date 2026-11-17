@@ -151,10 +151,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor waiting {cycle} --jso
     **項目ごとに**ユーザーの決定（同意 / 退ける など）を受け取る。高として扱う異議には、ユーザーが受け入れると書いた言葉も受け取る
 
 ```bash
-HIKYAKU_CONDUCTOR_CHILD=1 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger consent-list build-NN {cycle} --full
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger consent-list build-NN {cycle} --all --full
 ```
 
-  （環境変数は、子と同じくサイクル全体の項目を並べるため。最後のビルドの子の同意ゲートの対象はサイクル全体）
+  （`--all` は、最後のビルドの子の同意ゲートと同じくサイクル全体の項目を並べるため）
 - [ ] 答えごとに、待っている作業単位のブランチ（`source` の `origin/` を除いたもの。`build-NN`、ARCHITECT なら `architect`、
   差し戻しの再設計ならそのビルドのブランチ、CLOSE なら `close`）へ conductor ブランチを
   取り込む（`git switch {ブランチ}`・`git merge {conductor}`・push）。取り込みで衝突したら、ユーザーに上げる

@@ -53,6 +53,7 @@ import {
   isWaitingItem,
   parsePremises,
   readLedger,
+  undecidedConsentItems,
   type Ledger,
   type RiskDeclaration,
 } from "../lib/ledger.mts";
@@ -323,9 +324,10 @@ register({
         );
       }
       const ledger = readLedger(context.directory);
-      // 再開する子の同意ゲートの項目（子として評価する。最後のビルドの子ならサイクル全体）。項目ごとの決定を子が記録する
+      // 再開する子の同意ゲートの、決定の足りない項目（子として評価する。最後のビルドの子ならサイクル全体）。項目ごとの決定を
+      // 子が記録する。決定済みの項目は渡さない（同じ答えで決め直させて、受け入れの言葉つきの決定を弱めないため）
       const consentIds = new Set(
-        asConductorChild(() => consentTargets(ledger, phase, { config, cycle: context, unit })).map((item) => item.open.id),
+        undecidedConsentItems(asConductorChild(() => consentTargets(ledger, phase, { config, cycle: context, unit }))).map((item) => item.open.id),
       );
       const waiting: string[] = [];
       const consenting: typeof ledger.items = [];

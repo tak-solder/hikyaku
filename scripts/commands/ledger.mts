@@ -693,21 +693,23 @@ function consentJson(item: LedgerItem): Record<string, unknown> {
 register({
   name: "ledger consent-list",
   summary: "PR を作る直前の同意ゲートで示す一覧（when=merge@<phase> の、ユーザーが決める risk・objection）を出す",
-  usage: "hikyaku ledger consent-list <phase> [<cycle>] [--full] [--json]",
+  usage: "hikyaku ledger consent-list <phase> [<cycle>] [--all] [--full] [--json]",
   details: [
     "対象は type が risk か objection で、who=user・when=merge@<phase> の事項です（記録した作業単位は問いません）。",
-    "事後同意が有効なサイクルの conductor の最後のビルドの子（HIKYAKU_CONDUCTOR_CHILD=1）では、対象はサイクル全体の",
-    "when=merge@<どこでも> の事項です（architect・ほかのビルドの子が最後のビルドの同意ゲートへ回した受け入れ）。",
+    "事後同意が有効なサイクルの conductor の最後のビルドの子（HIKYAKU_CONDUCTOR_CHILD=1）と --all では、対象はサイクル全体の",
+    "when=merge@architect / merge@build-NN の事項です（architect・ほかのビルドの子が最後のビルドの同意ゲートへ回した受け入れ）。",
+    "監督が最後のビルドの同意ゲートの一覧をユーザーに示すときは --all を使います。",
     "1項目を「受け入れたリスク / 拠り所の前提 / 失うもの」の3行で示し、見出しに ID と決定の状態を出します。",
     "--full で、根拠・害・いつ・記録した単位と、決定の記録まで出します。書き込みはしません。",
     "決定として数えるのは、最新の決定がユーザーの consented / decided / resolved のときだけです（rejected は数えず、",
     "害が高か、上限を超える異議は受け入れの言葉の無い consented を数えません。そうした項目には、その旨の行を出します）。",
   ].join("\n"),
-  options: ["full"],
+  options: ["full", "all"],
   maxOperands: 2,
   run: ({ args, operands }) => {
     const opened = openUnit(args, operands[0], operands[1]);
-    const items = consentTargets(readLedger(opened.cycle.directory), opened.skill.skill, opened.ctx);
+    const ledger = readLedger(opened.cycle.directory);
+    const items = args.flags.get("all") === true ? cycleConsentItems(ledger) : consentTargets(ledger, opened.skill.skill, opened.ctx);
     const full = args.flags.get("full") === true;
     const pending = undecidedConsentItems(items);
     const whole = items.some((item) => item.open.when !== `merge@${opened.phase}`);
@@ -750,7 +752,7 @@ function prSection(ledger: Ledger, timeline: CycleTimeline, unit: string, consen
   const beforeMerge = ledger.items.filter(
     (item) =>
       (item.open.type === "question" || item.open.type === "provisional") && item.latest === undefined &&
-      (all ? item.open.when.startsWith("merge@") : item.open.when === `merge@${unit}`),
+      (all ? /^merge@(architect|build-\d+)$/.test(item.open.when) : item.open.when === `merge@${unit}`),
   );
   const overdue = summarize(ledger, timeline).open.filter((item) => item.timing === "overdue");
   const line = (item: LedgerItem): string => `- ${item.open.id}: ${item.open.summary}`;
@@ -804,7 +806,7 @@ register({
     "  期限を過ぎた事項              サイクル全体の未決で、期限を過ぎたもの",
     "",
     "--all は conductor の最後の PR（conductor ブランチ→ベースブランチ）の本文に使います。受け入れたリスクと",
-    "マージの前に決める事項を、サイクル全体（when=merge@<どこでも>）から出します。",
+    "マージの前に決める事項を、サイクル全体（when=merge@architect / merge@build-NN）から出します。",
     "--all なしでも、事後同意が有効なサイクルの conductor の最後のビルドの子では、受け入れたリスクがサイクル全体になります",
     "（マージの前に決める事項は <phase> のものだけ）。",
   ].join("\n"),

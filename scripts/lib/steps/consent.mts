@@ -28,7 +28,7 @@ import {
   type Ledger,
   type LedgerItem,
 } from "../ledger.mts";
-import { isComplete, loadTasklist, normalizeBuildId } from "../tasklist.mts";
+import { isComplete, loadTasklist, normalizeBuildId, type BuildRecord } from "../tasklist.mts";
 import { currentEvents, isOn, type SkillSteps, type StepContext, type StepDefinition } from "./engine.mts";
 import { stepsOf } from "./index.mts";
 
@@ -192,20 +192,38 @@ export function asConductorChild<T>(run: () => T): T {
 /** 同意ゲートを手順に置くスキル。それ以外（planner・close-cycle）は pr の accepts だけを持つ */
 const GATED = new Set(["architect", "builder", "patch"]);
 
+/** 作業ツリーの tasklist の PR 列から見た、その作業単位の位置。読めなければ undefined */
+interface TasklistState {
+  /** その作業単位のビルドの行（build-NN でない・行が無ければ undefined） */
+  own: BuildRecord | undefined;
+  /** ビルドの行が1つ以上ある */
+  hasBuilds: boolean;
+  /** その作業単位以外の全ビルドの PR 列が埋まっている */
+  othersComplete: boolean;
+}
+
+function tasklistState(cycleDirectory: string, unit: string): TasklistState | undefined {
+  const id = /^build-\d+$/.test(unit) ? normalizeBuildId(unit) : undefined;
+  try {
+    const builds = loadTasklist(cycleDirectory);
+    return {
+      own: builds.find((build) => build.id === id),
+      hasBuilds: builds.length > 0,
+      othersComplete: builds.every((build) => build.id === id || isComplete(build)),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * 作業ツリーの tasklist で、このビルド以外の全ビルドの PR 列が埋まっているか（conductor の最後のビルド）。
  * build-NN でなければ false。tasklist を読めない・そのビルドの行が無ければ true（同意ゲートを置いて止める向き）
  */
 export function isLastBuild(cycleDirectory: string, unit: string): boolean {
   if (!/^build-\d+$/.test(unit)) return false;
-  const id = normalizeBuildId(unit);
-  try {
-    const builds = loadTasklist(cycleDirectory);
-    if (!builds.some((build) => build.id === id)) return true;
-    return builds.every((build) => build.id === id || isComplete(build));
-  } catch {
-    return true;
-  }
+  const state = tasklistState(cycleDirectory, unit);
+  return state === undefined || state.own === undefined || state.othersComplete;
 }
 
 /**
@@ -213,8 +231,10 @@ export function isLastBuild(cycleDirectory: string, unit: string): boolean {
  *
  *   last      最後のビルドの子。同意ゲートを手順に入れ、対象はサイクル全体
  *   deferred  architect の子と、最後以外のビルドの子。同意ゲートを手順に入れず、pr の accepts も決定の無い項目で
- *             止めない（最後のビルドの同意ゲートへ回す）。ledger object --defer は置き場を問わず受け付ける
- *   none      子でない、architect・ビルド以外の子（close-cycle・patch）、または事後同意が有効でないサイクルの子。従来どおり
+ *             止めない（最後のビルドの同意ゲートへ回す）。ledger object --defer は PR を作る前なら受け付ける
+ *   none      子でない、architect・ビルド以外の子（close-cycle・patch）、または事後同意が有効でないサイクルの子。従来どおり。
+ *             全ビルドの PR 列が埋まった後（最後のビルドの同意ゲートを過ぎた後）の architect の子（指摘からの追加設計など）と、
+ *             tasklist を読めない architect の子も none（後ろに拾う同意ゲートが無いので、その場で止める。コードレビューの指摘）
  *
  * last と deferred は、事後同意が有効なサイクルの子だけ（選んでいない・有効でないサイクルで同意を後ろへ回さない。原則11）。
  * 子と監督（asConductorChild）は ctx と環境変数から同じ評価をする
@@ -227,8 +247,9 @@ export function conductorConsentMode(skill: string, ctx: Pick<StepContext, "conf
   // config が無い単体テストの ctx でも読めるよう、?. で読む（requested でなければ git を読まない）
   if (ctx.config?.consent?.deferred !== true) return "none";
   if (!deferredConsent(ctx.config, ctx.cycle.directory).effective) return "none";
-  if (skill === "architect") return "deferred";
-  return isLastBuild(ctx.cycle.directory, ctx.unit) ? "last" : "deferred";
+  const state = tasklistState(ctx.cycle.directory, ctx.unit);
+  if (skill === "architect") return state === undefined || (state.hasBuilds && state.othersComplete) ? "none" : "deferred";
+  return state === undefined || state.own === undefined || state.othersComplete ? "last" : "deferred";
 }
 
 /**
@@ -346,13 +367,8 @@ interface ConsentStepDefinition extends StepDefinition {
 
 /** そのビルドの PR 列が作業ツリーの tasklist で埋まっているか（読めなければ true＝置き場が無い向き） */
 function buildCompleted(cycleDirectory: string, unit: string): boolean {
-  if (!/^build-\d+$/.test(unit)) return false;
-  try {
-    const own = loadTasklist(cycleDirectory).find((build) => build.id === normalizeBuildId(unit));
-    return own !== undefined && isComplete(own);
-  } catch {
-    return true;
-  }
+  const state = tasklistState(cycleDirectory, unit);
+  return state === undefined || (state.own !== undefined && isComplete(state.own));
 }
 
 /**

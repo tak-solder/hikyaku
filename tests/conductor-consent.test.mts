@@ -299,9 +299,16 @@ test("conductorConsentMode: 事後同意が有効なサイクルの子だけ、a
   assert.deepEqual(ids(withEnv(CHILD, () => consentTargets(ledger, "builder", ctx))), ["architect.1-aaaa", "build-01.1-bbbb", "build-03.1-eeee"]);
   assert.deepEqual(ids(consentTargets(ledger, "builder", ctx)), ["build-03.1-eeee"]);
 
-  // tasklist を読めないビルドの子は last（止める向き）
+  // 全ビルドの PR 列が埋まった後の architect の子（指摘からの追加設計）は none（後ろに拾う同意ゲートが無い）
+  prDone(directory, 3);
+  withEnv(CHILD, () => assert.equal(mode("architect", "architect"), "none"));
+
+  // tasklist を読めないビルドの子は last、architect の子は none（止める向き）
   writeFileSync(join(directory, CYCLE, "tasklist.md"), "壊れた tasklist\n");
-  withEnv(CHILD, () => assert.equal(mode("builder", "build-02"), "last"));
+  withEnv(CHILD, () => {
+    assert.equal(mode("builder", "build-02"), "last");
+    assert.equal(mode("architect", "architect"), "none");
+  });
 });
 
 test("conductorConsentMode: 選んでいない・選んでいても有効でない（merge_gate が無い）サイクルの子は none", (t) => {
@@ -545,6 +552,9 @@ test("CLI: consent-list と return-draft は、最後のビルドの子ではサ
   };
   assert.deepEqual(list(CHILD), ["architect.1-aaaa", "build-01.1-bbbb", "build-03.1-eeee"]);
   assert.deepEqual(list({}), ["build-03.1-eeee"]);
+  // 監督は子を装わずに --all でサイクル全体を並べる
+  const all = JSON.parse(succeeds(directory, "ledger", "consent-list", "build-03", "001", "--all", "--json")) as { items: { id: string }[] };
+  assert.deepEqual(all.items.map((entry) => entry.id), ["architect.1-aaaa", "build-01.1-bbbb", "build-03.1-eeee"]);
   assert.match(cliWith(directory, CHILD, "ledger", "consent-list", "build-03", "001").stdout, /（サイクル全体）/);
 
   record(directory, "build-03", decide("architect.1-aaaa", "build-03", { decision: "rejected" }));
@@ -749,6 +759,8 @@ test("CLI: launch --from user --closes は、最後のビルドの子ならサ�
   assert.ok(ledgerOf(directory, "build-03").every((entry) => entry["from"] === "user"));
   record(directory, "build-02", open("build-02.1-zzzz", "build-02"));
   assert.equal(cliWith(directory, env, "ledger", "decide", "build-03", "build-02.1-zzzz", "001", "--decision", "consented", "--by", "user", "--input", "x").status, 1);
+  // 決定済みの項目（architect.1-aaaa は consented）は --closes に渡せない（決め直させない）
+  assert.equal(launch(directory, "builder", "3", "--resume", "s-03", "--message", "answer.txt", "--from", "user", "--closes", "architect.1-aaaa").status, 1);
 });
 
 // ---------------------------------------------------------------------------
