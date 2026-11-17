@@ -23,22 +23,19 @@
 import { publicationStep } from "./publication.mts";
 import { consentProblem, consentStep } from "./consent.mts";
 import { declarationArgs } from "../premises.mts";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { loadCycles } from "../cycles.mts";
 import {
   ceilingOf,
-  cycleAdrs,
-  effectiveBoundaries,
   effectiveDeclaration,
   exceeds,
   heavyAreasHit,
   overlaps,
   repositoryFiles,
-  touchedPaths,
   type Harm,
 } from "../risk.mts";
-import { boundaryChanges, DESIGN_DELTA, type BoundaryChanges } from "../gate-brief.mts";
+import { boundaryChanges, DESIGN_DELTA, designTouchedPaths, UNVERIFIED_NOTICE, type BoundaryChanges } from "../gate-brief.mts";
 import { pluginRoot } from "../paths.mts";
 import { describeEscalationProblems } from "../escalation.mts";
 import { readReturn, RETURN_FILE } from "../phase.mts";
@@ -207,25 +204,10 @@ function passedOver(ctx: StepContext, before: string, after: string): boolean {
 function computeUndeclaredAreas(ctx: StepContext): UndeclaredArea[] | Error {
   const declaration = effectiveDeclaration(ctx.config).declaration;
   if (declaration === undefined) return [];
-  let adrs: string[];
-  try {
-    adrs = cycleAdrs(ctx.config);
-  } catch (error) {
-    return error instanceof Error ? error : new Error(String(error));
-  }
+  const read = designTouchedPaths(ctx.config, ctx.unitDirectory);
+  if (read instanceof Error) return read;
+  const touched = read.touched;
   const files = repositoryFiles(ctx.config);
-  const documents = [join(ctx.unitDirectory, "design-delta.md"), ...adrs.map((path) => join(ctx.config.repoRoot, path))];
-  const touched: string[] = [];
-  for (const path of documents) {
-    if (!existsSync(path)) continue;
-    let text: string;
-    try {
-      text = readFileSync(path, "utf8");
-    } catch (error) {
-      return new Error(`${path} を読めません: ${error instanceof Error ? error.message : String(error)}`);
-    }
-    for (const entry of touchedPaths(text)) if (!touched.includes(entry)) touched.push(entry);
-  }
   const covered = new Set(heavyAreasHit(declaration, declaredPaths(ctx), files).map((area) => area.name));
   return declaration.areas
     .filter((area) => !covered.has(area.name))
@@ -247,30 +229,20 @@ function declaredPaths(ctx: StepContext): string[] {
   return [...own, ...earlier];
 }
 
-/** G4 の境界の照合。1回の評価で consent・args・notices から呼ばれるので、undeclaredAreas と同じく events を鍵に持つ */
+/** G4 の境界の照合（boundaryChanges が config ごとに持つので、consent・args・notices から呼び直してよい） */
 function boundaries(ctx: StepContext): BoundaryChanges | Error {
-  const cached = boundariesCache.get(ctx.events);
-  if (cached !== undefined) return cached;
-  const result = boundaryChanges(ctx.config, ctx.unitDirectory);
-  boundariesCache.set(ctx.events, result);
-  return result;
+  return boundaryChanges(ctx.config, ctx.unitDirectory);
 }
-
-const boundariesCache = new WeakMap<StepContext["events"], BoundaryChanges | Error>();
 
 /**
  * 外との境界による同意。外との境界はユーザーが同意するもので、事後同意（deferred）には回さない。
- * [app] の宣言の有無に関わらず判定する（[boundaries] だけを宣言したワークスペースでも効かせる）
+ * [app] の宣言の有無に関わらず判定する（[boundaries] だけを宣言したワークスペースでも効かせる）。
+ * Error は境界を宣言しているときだけ返る（宣言が無ければ ADR を読まない）
  */
 function boundaryConsent(ctx: StepContext): ConsentJudgement {
   const changes = boundaries(ctx);
-  if (changes instanceof Error) {
-    // 境界を宣言しているかは、ADR を読む前に分かる。宣言していなければ境界を理由に同意にしない
-    const declared = effectiveBoundaries(ctx.config);
-    if (declared.external.length === 0 && declared.internal.length === 0) return false;
-    return { timing: "now", reason: "外との境界を照合できない（このサイクルの ADR を読めない）" };
-  }
-  if (changes.unverified) return { timing: "now", reason: "基準の [boundaries] を読めず、作業ツリーの境界が狭められていないかを確かめられない" };
+  if (changes instanceof Error) return { timing: "now", reason: "外との境界を照合できない（このサイクルの ADR を読めない）" };
+  if (changes.unverified) return { timing: "now", reason: "基準の [boundaries] を確かめられず、作業ツリーの境界が狭められていないかが分からない" };
   if (changes.external.length > 0) {
     return { timing: "now", reason: `設計が外との境界（${changes.external.map((hit) => hit.boundary).join(", ")}）に触れている` };
   }
@@ -454,9 +426,12 @@ export const ARCHITECT_STEPS: SkillSteps = {
       },
       notices: (ctx) => {
         const changes = boundaries(ctx);
+        // 境界を理由に同意にした回だけ、その旨を出す（差し戻しの回・design-delta の前は境界で判定していない）
+        const judgement = g4Consent(ctx);
+        const byBoundary = judgement !== false && judgement.reason === (boundaryConsent(ctx) || undefined)?.reason;
         const boundaryNotices = changes instanceof Error
-          ? (boundaryConsent(ctx) === false ? [] : [`外との境界を照合できないので、G4 を同意にしています: ${changes.message}`])
-          : changes.notices.filter((notice) => !notice.startsWith(DESIGN_DELTA));
+          ? (byBoundary ? [`外との境界を照合できないので、G4 を同意にしています: ${changes.message}`] : [])
+          : changes.notices.filter((notice) => !notice.startsWith(DESIGN_DELTA) && (byBoundary || !notice.startsWith(UNVERIFIED_NOTICE)));
         const notices = [...declarationNotices(ctx), ...boundaryNotices];
         if (undeclared(ctx)) return notices;
         const areas = undeclaredAreas(ctx);

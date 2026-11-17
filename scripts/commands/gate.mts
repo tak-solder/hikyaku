@@ -1,19 +1,14 @@
 /** gate brief — G4・G8 で示す中身を組み立てる（読み取り専用。US-12） */
 
-import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { flagBoolean } from "../lib/args.mts";
 import { HikyakuError } from "../lib/errors.mts";
-import { boundaryChanges, DESIGN_DELTA, g8Brief, renderG4Brief, renderG8Brief, type G4Brief } from "../lib/gate-brief.mts";
+import { boundaryChanges, DESIGN_DELTA, g8Brief, readIfExists, renderG4Brief, renderG8Brief, type G4Brief } from "../lib/gate-brief.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { open } from "../lib/steps/directive.mts";
 
 const GATES = ["G4", "G8"] as const;
-
-function readIfExists(path: string): string | undefined {
-  return existsSync(path) ? readFileSync(path, "utf8") : undefined;
-}
 
 register({
   name: "gate brief",

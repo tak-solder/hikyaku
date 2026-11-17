@@ -487,7 +487,20 @@ test("G4: 作業ツリーだけの境界の宣言で基準を読めなければ�
   const directory = workspace(t, { noOrigin: true, working: boundaries([], ["src/auth/**"]) });
   const g4 = driveTo(directory, ["G4", "build-split"], { options: [], delta: "# 設計差分\n\n- `src/billing/invoice.ts`\n" });
   assert.deepEqual([g4.step, g4.approval], ["G4", "consent"]);
-  assert.match(g4.approvalReason ?? "", /基準の \[boundaries\] を読めず/);
+  assert.match(g4.approvalReason ?? "", /基準の \[boundaries\] を確かめられず/);
+  assert.ok(g4.notices?.some((notice) => notice.includes("G4 を同意にしています")), JSON.stringify(g4.notices));
+});
+
+test("G4: 基準の [boundaries] だけが壊れていれば、[app] の上限は読めたまま G4 を同意にする", (t) => {
+  const directory = workspace(t, {
+    committed: `${declaration(HIGH)}\n[boundaries]\nexternal = ["src/api/**"]\nunknown = ["x"]\n`,
+    working: declaration(HIGH),
+  });
+  const g3 = toG3(directory, ["--harm", "中", "--paths", "src/api/**"]);
+  assert.equal(g3.step, "adr", "[app] は読めるので、G3 は上限以内で省ける（incomplete にしない）");
+  const g4 = driveTo(directory, ["G4", "build-split"], { delta: "# 設計差分\n" });
+  assert.deepEqual([g4.step, g4.approval], ["G4", "consent"]);
+  assert.ok(g4.notices?.some((notice) => notice.includes("[boundaries] を読めません")), JSON.stringify(g4.notices));
 });
 
 test("G4: 外との境界と重い領域の裏取りが両方あれば、args に両方が並ぶ", (t) => {

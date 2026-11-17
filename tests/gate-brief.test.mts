@@ -8,7 +8,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { g8Brief, renderG4Brief, renderG8Brief, type G4Brief, type G8Brief } from "../scripts/lib/gate-brief.mts";
-import { INTERPRETED_MARK, testSpecScenarios } from "../scripts/lib/traceability.mts";
+import { INTERPRETED_MARK, markdownSection, testSpecScenarios } from "../scripts/lib/traceability.mts";
 import { cli, succeeds, temporaryDirectory, workspace, write } from "./helpers.mts";
 
 const FENCE = "```";
@@ -42,6 +42,20 @@ test("testSpecScenarios: 見出しの末尾の「（解釈）」で interpreted 
   const scenarios = testSpecScenarios("### render: 迷う形は外に倒す（解釈）\n- 対応: —\n\n### render: 要約を出す\n- 対応: —\n");
   assert.deepEqual(scenarios.map((scenario) => scenario.interpreted), [true, false]);
   assert.equal(INTERPRETED_MARK, "（解釈）");
+});
+
+test("testSpecScenarios: 半角の括弧の印も拾い、シナリオの中の小見出し（####）の後ろの対応も落とさない", () => {
+  const scenarios = testSpecScenarios("### parse: x (解釈)\n#### 補足\n- 対応: US-1.2\n- 解釈: y\n");
+  assert.equal(scenarios.length, 1);
+  assert.equal(scenarios[0]?.interpreted, true);
+  assert.deepEqual(scenarios[0]?.criteria, ["US-1.2"]);
+  assert.match(scenarios[0]?.body ?? "", /#### 補足/);
+});
+
+test("markdownSection: コードブロックの中の # の行で節を切らない", () => {
+  const issue = ["## 受け入れ基準", "", "- [ ] a", FENCE + "bash", "# setup", FENCE, "- [ ] b", "", "## 次", "x"].join("\n");
+  assert.equal(markdownSection(issue, "受け入れ基準"), ["- [ ] a", FENCE + "bash", "# setup", FENCE, "- [ ] b"].join("\n"));
+  assert.equal(markdownSection(`${FENCE}\n## 受け入れ基準\n${FENCE}\n`, "受け入れ基準"), undefined);
 });
 
 test("testSpecScenarios: 印の無い既存の test-spec.md は解釈 0 件として読め、「- 対応: —」は番号を持たない", () => {

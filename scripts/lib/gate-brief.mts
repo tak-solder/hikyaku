@@ -48,26 +48,65 @@ export const DESIGN_DELTA = "design-delta.md";
  * 宣言が無ければ declared: false で、ADR も読まない。ADR の一覧・文書を読めなければ Error
  */
 export function boundaryChanges(config: ResolvedConfig, designDirectory: string): BoundaryChanges | Error {
+  // G4 の consent・args・notices と gate brief から同じ1回の実行で何度も呼ばれる（git と ADR を読み直さない）
+  let byDirectory = boundaryCache.get(config);
+  if (byDirectory === undefined) {
+    byDirectory = new Map();
+    boundaryCache.set(config, byDirectory);
+  }
+  const cached = byDirectory.get(designDirectory);
+  if (cached !== undefined) return cached;
+  const result = computeBoundaryChanges(config, designDirectory);
+  byDirectory.set(designDirectory, result);
+  return result;
+}
+
+const boundaryCache = new WeakMap<ResolvedConfig, Map<string, BoundaryChanges | Error>>();
+
+/** 基準の境界を確かめられないときの notices の先頭（G4 の notices が同意の理由として使う） */
+export const UNVERIFIED_NOTICE = "基準の [boundaries] を確かめられないので、G4 を同意にしています";
+
+function computeBoundaryChanges(config: ResolvedConfig, designDirectory: string): BoundaryChanges | Error {
   const boundaries = effectiveBoundaries(config);
-  const declared = boundaries.external.length > 0 || boundaries.internal.length > 0;
+  const declared = boundaries.external.length > 0 || boundaries.internal.length > 0 || boundaries.unverified;
   if (!declared) return { declared, external: [], internal: [], unverified: false, documents: [], notices: [] };
 
+  const read = designTouchedPaths(config, designDirectory);
+  if (read instanceof Error) return read;
+  const notices: string[] = [];
+  const delta = join(designDirectory, DESIGN_DELTA);
+  if (!existsSync(delta)) notices.push(`${DESIGN_DELTA} がまだありません（${relative(config.repoRoot, delta)}）`);
+  if (boundaries.unverified) notices.push(`${UNVERIFIED_NOTICE}: ${boundaries.reasons.join(" / ")}`);
+
+  const files = repositoryFiles(config);
+  const hits = (paths: string[]): BoundaryHit[] =>
+    paths
+      .map((boundary) => ({ boundary, touched: read.touched.filter((path) => overlaps(boundary, path, files)) }))
+      .filter((hit) => hit.touched.length > 0);
+  return {
+    declared,
+    external: hits(boundaries.external),
+    internal: hits(boundaries.internal),
+    unverified: boundaries.unverified,
+    documents: read.documents.map((path) => relative(config.repoRoot, path)),
+    notices,
+  };
+}
+
+/**
+ * design-delta.md とこのサイクルの ADR が触れるパス（touchedPaths）。G4 の境界の照合と、G3 の申告の裏取り
+ * （steps/architect.mts）が同じ文書の集合で判定するよう、ここだけで集める。ADR の一覧・文書を読めなければ Error
+ */
+export function designTouchedPaths(config: ResolvedConfig, designDirectory: string): { documents: string[]; touched: string[] } | Error {
   let adrs: string[];
   try {
     adrs = cycleAdrs(config);
   } catch (error) {
     return error instanceof Error ? error : new Error(String(error));
   }
-  const notices: string[] = [];
-  const delta = join(designDirectory, DESIGN_DELTA);
-  if (!existsSync(delta)) notices.push(`${DESIGN_DELTA} がまだありません（${relative(config.repoRoot, delta)}）`);
-  if (boundaries.unverified) {
-    notices.push("基準のブランチの [boundaries] を1つも読めないので、作業ツリーの境界が狭められていないかを確かめられません。G4 を同意にしています");
-  }
-
   const documents: string[] = [];
   const touched: string[] = [];
-  for (const path of [delta, ...adrs.map((adr) => join(config.repoRoot, adr))]) {
+  for (const path of [join(designDirectory, DESIGN_DELTA), ...adrs.map((adr) => join(config.repoRoot, adr))]) {
     if (!existsSync(path)) continue;
     let text: string;
     try {
@@ -75,15 +114,10 @@ export function boundaryChanges(config: ResolvedConfig, designDirectory: string)
     } catch (error) {
       return new Error(`${path} を読めません: ${error instanceof Error ? error.message : String(error)}`);
     }
-    documents.push(relative(config.repoRoot, path));
+    documents.push(path);
     for (const entry of touchedPaths(text)) if (!touched.includes(entry)) touched.push(entry);
   }
-  const files = repositoryFiles(config);
-  const hits = (paths: string[]): BoundaryHit[] =>
-    paths
-      .map((boundary) => ({ boundary, touched: touched.filter((path) => overlaps(boundary, path, files)) }))
-      .filter((hit) => hit.touched.length > 0);
-  return { declared, external: hits(boundaries.external), internal: hits(boundaries.internal), unverified: boundaries.unverified, documents, notices };
+  return { documents, touched };
 }
 
 /** G4 の提示。境界の変更と、G3 の申告の裏取り（G4 の args の undeclaredAreas / verified） */
@@ -138,7 +172,7 @@ export interface G8Brief {
   criteriaSection: string | undefined;
 }
 
-function readIfExists(path: string): string | undefined {
+export function readIfExists(path: string): string | undefined {
   return existsSync(path) ? readFileSync(path, "utf8") : undefined;
 }
 

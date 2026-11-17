@@ -68,6 +68,8 @@ export function referencedCriteria(issue: string): string[] | undefined {
  * シナリオの見出し（###）の末尾に付ける。G8 の提示（gate brief G8）がこの印のシナリオだけを示す
  */
 export const INTERPRETED_MARK = "（解釈）";
+/** 印の読み取り。半角の括弧で書かれた印も拾う（見落とすと、解釈した振る舞いが G8 で示されない） */
+const INTERPRETED = /[（(]\s*解釈\s*[）)]\s*$/;
 
 /** test-spec.md のシナリオ（### 見出しの単位） */
 export interface TestScenario {
@@ -91,12 +93,13 @@ export function testSpecScenarios(testSpec: string): TestScenario[] {
     for (const line of current.lines) {
       if (/^\s*[-*]\s+対応\s*[:：]/.test(line)) criteria.push(...(line.match(CRITERION) ?? []));
     }
-    scenarios.push({ heading: current.heading, body, interpreted: current.heading.endsWith(INTERPRETED_MARK), criteria });
+    scenarios.push({ heading: current.heading, body, interpreted: INTERPRETED.test(current.heading), criteria });
     current = undefined;
   };
   for (const line of proseLines(testSpec)) {
     const heading = /^(#{1,6})\s+(.*?)\s*$/.exec(line);
-    if (heading) {
+    // シナリオの中の小見出し（####）は本文として持つ（後ろの「- 対応:」を落とさないため）
+    if (heading && (heading[1]?.length ?? 0) <= 3) {
       flush();
       if (heading[1] === "###") current = { heading: heading[2] ?? "", lines: [] };
       continue;
@@ -110,22 +113,34 @@ export function testSpecScenarios(testSpec: string): TestScenario[] {
 /** issue.md の見出しの節（見出しの次の行から、同じかより上の階層の次の見出しの手前まで）。無ければ undefined */
 export function markdownSection(source: string, title: string): string | undefined {
   const lines = source.split("\n");
-  const start = lines.findIndex((line) => new RegExp(`^#{1,6}\\s+${escapeRegExp(title)}\\s*$`).test(line));
+  // コードブロックの中の `#` の行（シェルのコメントなど）は見出しとして読まない
+  const inFence: boolean[] = [];
+  let fence: number | undefined;
+  for (const line of lines) {
+    const marker = /^\s*(`{3,})/.exec(line);
+    if (fence === undefined && marker) {
+      fence = marker[1]?.length;
+      inFence.push(true);
+    } else if (fence !== undefined) {
+      if (new RegExp(`^\\s*\`{${fence},}\\s*$`).test(line)) fence = undefined;
+      inFence.push(true);
+    } else {
+      inFence.push(false);
+    }
+  }
+  const headingOf = (index: number) => (inFence[index] === true ? null : /^(#{1,6})\s+(.*?)\s*$/.exec(lines[index] ?? ""));
+  const start = lines.findIndex((_, index) => headingOf(index)?.[2] === title);
   if (start === -1) return undefined;
-  const level = /^(#+)/.exec(lines[start] ?? "")?.[1]?.length ?? 2;
+  const level = headingOf(start)?.[1]?.length ?? 2;
   let end = lines.length;
   for (let i = start + 1; i < lines.length; i += 1) {
-    const match = /^(#{1,6})\s/.exec(lines[i] ?? "");
+    const match = headingOf(i);
     if (match && (match[1]?.length ?? 0) <= level) {
       end = i;
       break;
     }
   }
   return lines.slice(start + 1, end).join("\n").trim();
-}
-
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 export interface TraceabilityIssue {
