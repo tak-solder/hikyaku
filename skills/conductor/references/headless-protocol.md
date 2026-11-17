@@ -131,7 +131,7 @@ waiting: build-03.2-a3f9
 
 事後同意が有効なサイクル（`hikyaku config` の `deferredConsent.effective`）では、マージの前の同意は最後のビルドの
 同意ゲート（ask: deferred-consent）でまとめて取ります。architect と最後以外のビルドでは同意ゲートが手順に現れず、
-`when=merge@…` の項目があっても PR を作れます。上限を超える異議の `ledger object --defer` も受け付けます。
+`when=merge@…` の項目があっても PR を作れます。上限を超える異議の `ledger object --defer` も、PR を作る前なら受け付けます。
 最後のビルドの同意ゲートには、サイクル全体の項目が並びます。同意ゲートは同意なので、止まってユーザーに上げます。
 
 監督の答えの先頭に「最後のビルドの同意ゲート（事後同意）へ回します」とあれば、その答えを

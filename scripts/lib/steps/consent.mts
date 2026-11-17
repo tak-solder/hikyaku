@@ -28,7 +28,7 @@ import {
   type Ledger,
   type LedgerItem,
 } from "../ledger.mts";
-import { loadTasklist, normalizeBuildId } from "../tasklist.mts";
+import { isComplete, loadTasklist, normalizeBuildId } from "../tasklist.mts";
 import { currentEvents, isOn, type SkillSteps, type StepContext, type StepDefinition } from "./engine.mts";
 import { stepsOf } from "./index.mts";
 
@@ -202,7 +202,7 @@ export function isLastBuild(cycleDirectory: string, unit: string): boolean {
   try {
     const builds = loadTasklist(cycleDirectory);
     if (!builds.some((build) => build.id === id)) return true;
-    return builds.every((build) => build.id === id || build.pr !== "");
+    return builds.every((build) => build.id === id || isComplete(build));
   } catch {
     return true;
   }
@@ -340,6 +340,19 @@ function hasConsentItems(skill: string, ctx: StepContext): boolean {
 /** 置き場（slot）を持つ同意ゲートの定義。ledger object --defer が、今の回に置き場があるかを確かめるのに使う */
 interface ConsentStepDefinition extends StepDefinition {
   slot: (ctx: StepContext) => boolean;
+  /** 構造の条件（差し戻しの回でない）・サイクルがある・この回で PR を作るステップを終えていない（子かどうかは見ない） */
+  open: (ctx: StepContext) => boolean;
+}
+
+/** そのビルドの PR 列が作業ツリーの tasklist で埋まっているか（読めなければ true＝置き場が無い向き） */
+function buildCompleted(cycleDirectory: string, unit: string): boolean {
+  if (!/^build-\d+$/.test(unit)) return false;
+  try {
+    const own = loadTasklist(cycleDirectory).find((build) => build.id === normalizeBuildId(unit));
+    return own !== undefined && isComplete(own);
+  } catch {
+    return true;
+  }
 }
 
 /**
@@ -347,13 +360,19 @@ interface ConsentStepDefinition extends StepDefinition {
  * conductor launch の監督の上限を超える答えの検査が使う）。
  * 同意ゲートを持たないスキル（planner・close-cycle・create-cycle）、architect の差し戻しの回、
  * この回で PR を作るステップを done にした後は、置き場が無い（積んでもこの回のゲートに載らない）。
- * conductor の最後以外の子（deferred）は置き場を問わない（記録は when=merge@<その単位> のまま、最後のビルドの
- * 同意ゲートがサイクル全体から拾う）
+ * conductor の最後以外の子（deferred）は、自分の同意ゲートは無いが、最後のビルドの同意ゲートが拾うので置き場とみなす
+ * （記録は when=merge@<その単位> のまま）。ただし差し戻しの回・この回で PR を作った後・自分の PR 列が埋まった後は
+ * 置き場が無い（PR 列が埋まると、ほかのビルドが最後になって同意ゲートを過ぎているかもしれない。コードレビューの指摘）
  */
 export function consentGateSlot(skill: SkillSteps, ctx: StepContext): string | undefined {
   const definition = skill.steps.find((step) => step.id === "consent") as ConsentStepDefinition | undefined;
   if (definition === undefined) return `${ctx.unit} の手順には同意ゲートがありません（同意ゲートは architect・ビルド・サイクルに属す patch の PR の前に置かれます）`;
-  if (conductorConsentMode(skill.skill, ctx) === "deferred") return undefined;
+  if (conductorConsentMode(skill.skill, ctx) === "deferred") {
+    if (!definition.open(ctx) || (ctx.cycle !== undefined && buildCompleted(ctx.cycle.directory, ctx.unit))) {
+      return `${ctx.unit} の今の回からは、最後のビルドの同意ゲートへ回せません（差し戻しからの再設計の回か、この回で PR を作るステップをもう終えた、または PR 列が埋まった）`;
+    }
+    return undefined;
+  }
   if (!definition.slot(ctx)) {
     return `${ctx.unit} の今の回には同意ゲートが現れません（差し戻しからの再設計の回か、この回で PR を作るステップをもう終えた、または conductor の子）`;
   }
@@ -364,11 +383,11 @@ export function consentGateSlot(skill: SkillSteps, ctx: StepContext): string | u
 export function consentStep(skill: string, when?: (ctx: StepContext) => boolean): StepDefinition {
   // 置き場: 構造の条件・サイクルがある・conductor の子でないか最後のビルドの子（last）・この回で PR を作るステップを
   // 終えていない。モジュールの const の表に持たない（循環 import で、このファイルの本体より先に consentStep が呼ばれるため）
-  const slot = (ctx: StepContext): boolean =>
-    (when === undefined || when(ctx)) && ctx.cycle !== undefined &&
-    (!isConductorChild() || conductorConsentMode(skill, ctx) === "last") && !anchorDone(skill, ctx);
+  const open = (ctx: StepContext): boolean => (when === undefined || when(ctx)) && ctx.cycle !== undefined && !anchorDone(skill, ctx);
+  const slot = (ctx: StepContext): boolean => open(ctx) && (!isConductorChild() || conductorConsentMode(skill, ctx) === "last");
   const definition: ConsentStepDefinition = {
     slot,
+    open,
     // CONSENT_STEP と同じ値。steps/<skill>.mts の評価中に呼ばれ、循環 import（consent → ledger・index →
     // architect / builder / patch → consent）でこのファイルを先に読み始めたときは const がまだ初期化されていないので、
     // リテラルで書く
@@ -388,8 +407,10 @@ export function consentStep(skill: string, when?: (ctx: StepContext) => boolean)
       if (ctx.cycle === undefined) return undefined;
       let added: LedgerItem[] | undefined;
       if (conductorConsentMode(skill, ctx) === "last") {
+        // 記録した時刻では比べない（承認のあとに取り込んだブランチの、承認より前に記録した項目も拾う。コードレビューの指摘）。
+        // 退けた項目は作り直しの検査（accepts）が扱うので、決定の無い項目だけで取り直す
         try {
-          added = undecidedConsentItems(cycleConsentItems(readLedger(ctx.cycle.directory))).filter((item) => item.open.at > approval.at);
+          added = undecidedConsentItems(cycleConsentItems(readLedger(ctx.cycle.directory))).filter((item) => item.latest?.decision !== "rejected");
         } catch {
           added = undefined;
         }

@@ -23,7 +23,7 @@ import {
 } from "../scripts/lib/ledger.mts";
 import "../scripts/lib/steps/index.mts";
 import { ARCHITECT_STEPS } from "../scripts/lib/steps/architect.mts";
-import { conductorConsentMode, consentProblem, consentTargets, isLastBuild } from "../scripts/lib/steps/consent.mts";
+import { conductorConsentMode, consentGateSlot, consentProblem, consentTargets, isLastBuild } from "../scripts/lib/steps/consent.mts";
 import type { StepContext } from "../scripts/lib/steps/engine.mts";
 import { cli, cliWith, repository, snapshot, succeeds, temporaryDirectory, testEnvironment, write } from "./helpers.mts";
 
@@ -220,6 +220,8 @@ test("cycleConsentItems: 作業単位を問わず who=user・when=merge@ の ris
       item(open("q", "build-01", { type: "question" })),
       item(open("ai", "build-01", { who: "ai:build-01" })),
       item(open("now", "build-01", { when: "now" })),
+      item(open("close", "build-03", { when: "merge@close" })),
+      item(open("patch", "patch-202611-fix", { when: "merge@patch-202611-fix" })),
     ],
     orphans: [],
   };
@@ -404,7 +406,7 @@ test("CLI: 最後のビルドの子で記録を読めなければ同意ゲート
 // ---------------------------------------------------------------------------
 // CLI: architect・最後以外のビルドの子
 
-test("CLI: 事後同意が有効なサイクルの最後以外のビルドの子は、merge@ の項目で止まらず pr を完了でき、--defer も PR の後で受け付ける", (t) => {
+test("CLI: 事後同意が有効なサイクルの最後以外のビルドの子は、merge@ の項目で止まらず pr を完了でき、--defer は PR の前だけ受け付ける", (t) => {
   const directory = cycleWorkspace(t);
   const env = childEnv(t);
   upTo(directory, env, "build-02");
@@ -415,14 +417,18 @@ test("CLI: 事後同意が有効なサイクルの最後以外のビルドの子
   write(directory, "r.json", JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "<hikyaku-done next=\"\">\n済み\n</hikyaku-done>", session_id: SESSION, total_cost_usd: 1 }));
   assert.equal(JSON.parse(succeeds(directory, "conductor", "parse", "r.json", "001", "--expect-digest", digest, "--json")).step.step, "pr");
 
-  prDone(directory, 2);
-  reported(directory, env, "build-02", "pr", "--result", "done", "--pr", PR(12));
-
   const object = ["ledger", "object", "build-02", "001", "--summary", "公開 API の入力検証を後に回す", "--basis", '[app] exposure = "internal"', "--loses", "不正な入力を最初から弾けない", "--harm", "高", "--defer", "--premises", "app.exposure", "--json"];
   const deferred = cliWith(directory, CHILD, ...object);
   assert.equal(deferred.status, 0, deferred.stderr);
   const item = (JSON.parse(deferred.stdout) as { record: OpenRecord }).record;
   assert.deepEqual([item.who, item.when], ["user", "merge@build-02"]);
+
+  prDone(directory, 2);
+  reported(directory, env, "build-02", "pr", "--result", "done", "--pr", PR(12));
+  // PR を作った後（PR 列が埋まった後）は、ほかのビルドが最後になって同意ゲートを過ぎているかもしれないので拒む
+  const before = ledgerOf(directory, "build-02").length;
+  assert.equal(cliWith(directory, CHILD, ...object).status, 1);
+  assert.equal(ledgerOf(directory, "build-02").length, before);
 
   // 最後のビルド（build-03）の子の同意ゲートに載る
   prDone(directory, 1);
@@ -463,6 +469,10 @@ test("事後同意が有効なサイクルの architect の子は、merge@archit
   });
   const object = cliWith(directory, CHILD, "ledger", "object", "architect", "001", "--summary", "s", "--basis", "b", "--loses", "l", "--harm", "高", "--defer", "--premises", "app.exposure");
   assert.equal(object.status, 0, object.stderr);
+  // 差し戻しからの再設計の回は、子でも最後のビルドへ回さない（その場の同意のまま）
+  const restart = { at: "2026-11-17T00:00:00.000Z", skill: "architect", step: "*", result: "restart" as const, round: "return" };
+  assert.equal(typeof withEnv(CHILD, () => consentGateSlot(ARCHITECT_STEPS, { ...ctx, events: [restart] })), "string");
+  assert.equal(withEnv(CHILD, () => consentGateSlot(ARCHITECT_STEPS, ctx)), undefined);
 });
 
 test("CLI: 事後同意が無効なサイクルの子は、従来どおり同意ゲートを手順に入れず、決定の無い項目で pr が blocked を案内し、--defer を拒む", (t) => {
@@ -620,6 +630,11 @@ test("CLI: DEFER の監督の答えは --loses を求め、決定と risk の事
   assert.equal(risk["source"], "supervisor-answer");
   assert.equal(risk["token"], "t-001");
   assert.equal(risk["summary"], "監督の答え（questions）で受け入れたリスク: ログの保持期間");
+  // 同じ起動の答えで2つ目の事項を閉じても、risk の事項は重ねない（--loses も求めない）
+  const second = JSON.parse(succeeds(directory, "ledger", "open", "build-02", "001", "--type", "question", "--who", "supervisor", "--when", "now", "--ask", "questions", "--summary", "ログの保存先", "--json")).record.id as string;
+  const again = cliWith(directory, supervisorEnv(true), "ledger", "decide", "build-02", second, "001", "--decision", "decided", "--by", "supervisor", "--input", "同じ答え");
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(ledgerOf(directory, "build-02").filter((entry) => entry["type"] === "risk").length, 1);
 
   // 最後のビルドの子の consent-list に、決定の無い状態で載る
   prDone(directory, 1, 2);

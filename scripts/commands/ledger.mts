@@ -266,8 +266,12 @@ register({
     const problem = answerProblem(by, id, answer, itemAsk);
     if (problem !== undefined) throw new HikyakuError(problem);
     const loses = flagString(args, "loses");
-    const deferring = by === "supervisor" && answer?.defer === true;
-    if (loses !== undefined && !deferring) {
+    // 同じ起動（token）の監督の答えで risk の事項を書き済みなら、もう書かない（1つの答えで複数の事項を閉じる、
+    // 失敗のあとの記録し直し。受け入れは1つなので、同意の項目を重ねない。コードレビューの指摘）
+    const alreadyDeferred = answer?.token !== undefined &&
+      ledger.items.some((item) => item.open.source === "supervisor-answer" && item.open.token === answer.token);
+    const deferring = by === "supervisor" && answer?.defer === true && !alreadyDeferred;
+    if (loses !== undefined && !deferring && !(alreadyDeferred && by === "supervisor")) {
       throw new HikyakuError("--loses は、事後同意へ回す監督の答え（HIKYAKU_ANSWER_DEFER=1）を --by supervisor で記録するときだけ渡せます");
     }
     if (deferring && (loses === undefined || loses.trim() === "")) {
@@ -320,8 +324,11 @@ register({
       // 書き込まずに decideItem と同じ検査を行う
       assertDecider(findItem(ledger, id).open, record.by, record.input);
     } else {
-      decideItem(opened.cycle.directory, record, ledger);
+      // risk の事項を先に書く。決定のあとで書き損じると、受け入れの同意を取る項目が無いまま監督の決定だけが残るので、
+      // 失敗するなら同意の項目が余る向きに倒す（決定の検査は先に済ませる）
+      assertDecider(findItem(ledger, id).open, record.by, record.input);
       if (deferred !== undefined) openItem(opened.cycle.directory, deferred, ledger);
+      decideItem(opened.cycle.directory, record, ledger);
     }
     const path = relative(opened.ctx.config.repoRoot, ledgerPath(opened.cycle.directory, opened.phase));
     emit({ record, deferred: deferred ?? null, path, dryRun }, () =>
@@ -366,7 +373,8 @@ register({
     "              --decision・--input・--accepts は渡さず、決定なしで when=merge@<phase> の事項を記録します。",
     "              --premises（app.* か area:* だけ）が必須。事後同意が無効、上限を超えない、今の回に同意ゲートが",
     "              現れない（plan / close / create、差し戻しからの再設計の回、この回で PR を作るステップを終えた後）なら拒みます。",
-    "              conductor の architect・最後以外のビルドの子では置き場を問わず受け付け、最後のビルドの同意ゲートが拾います",
+    "              conductor の architect・最後以外のビルドの子では、自分の同意ゲートが無くても PR を作る前（PR 列も空）なら",
+    "              受け付け、最後のビルドの同意ゲートが拾います",
     "",
     "記録したときのその作業単位の現在のステップを step に残すので、ゲートを提示している間に呼んでください。",
   ].join("\n"),

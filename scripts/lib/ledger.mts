@@ -734,12 +734,13 @@ export function consentItemsOf(ledger: Ledger, unit: string): LedgerItem[] {
 }
 
 /**
- * サイクル全体の同意の対象（type が risk か objection・who=user・when=merge@<どこでも>）。記録順（同時刻は読み順）。
- * conductor の最後のビルドの子の同意ゲートと、最後の PR の本文（ledger pr-section --all）が使う（build-19）
+ * サイクル全体の同意の対象（type が risk か objection・who=user・when=merge@architect か merge@build-NN）。記録順（同時刻は読み順）。
+ * conductor の最後のビルドの子の同意ゲートと、最後の PR の本文（ledger pr-section --all）が使う（build-19）。
+ * merge@close・サイクルに属す patch の項目は、それぞれの単位の pr / 同意ゲートが扱うので含めない（コードレビューの指摘）
  */
 export function cycleConsentItems(ledger: Ledger): LedgerItem[] {
   return ledger.items
-    .filter(({ open }) => (open.type === "risk" || open.type === "objection") && open.who === "user" && open.when.startsWith("merge@"))
+    .filter(({ open }) => (open.type === "risk" || open.type === "objection") && open.who === "user" && /^merge@(architect|build-\d+)$/.test(open.when))
     .sort((a, b) => (a.open.at < b.open.at ? -1 : a.open.at > b.open.at ? 1 : 0));
 }
 
