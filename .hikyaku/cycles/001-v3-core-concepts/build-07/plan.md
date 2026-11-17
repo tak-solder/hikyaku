@@ -31,8 +31,10 @@ export function safeAnswerOf(id: string): SafeAnswer | undefined
 - retrospective: `run` / `skip`。safe は `run`
 - design-conflict: `return`（architect に差し戻す）/ `conform`（設計に合わせて要件を改める）/ `adjust`（ビルドの中で設計を改める）。safe は `return`
 - unsafe-split: `merge`（上限を超えたまま1ビルドにまとめる）/ `redesign`（設計に戻る）/ `unsafe`（安全でない分割）。safe は `merge`
-- 表に無い問い（questions・review-findings・route の問いなど、自由文で答えるもの）は `--choice` を求めない
-- `ResolvedAsk` に `safe: SafeAnswer | null` を足す（`resolveAsk` が埋める）。`conductor parse` と `conductor asks` の JSON に出る
+- review-findings: `fix`（今修正する）/ `new-build`（新ビルド化）/ `proceed`（そのまま進める）。safe は3つとも。ただし `proceed` はリスクの申告（下の `--harm` か `--no-risk`）が必須
+- 表に無い問い（questions・route の問いなど、自由文で答えるもの）は `--choice` を求めない。questions はリスクの申告（`--harm` か `--no-risk`）が必須
+- `ResolvedAsk` に `safe: SafeAnswer | null` と `declaresRisk: boolean`（リスクの申告が要る問い）を足す（`resolveAsk` が埋める）。`conductor parse` と `conductor asks` の JSON に出る
+- **（解釈）** 受け入れ基準1・design-delta 1節の「安全側の既定以外の答えを拒否」は、「`safe` の集合に無い答えを拒否」と読む。確認ゲートの承認（`approved`）は確認として監督に委ねた範囲で、差し戻し（`rejected`）は受け入れを増やさない側なので、どちらも安全側に入れる。既定（`default`）は、監督が判断に迷ったときに選ぶ値として示すだけ。test-spec で「（解釈）」の印を付け、G8 で示す
 
 ### 答えの出どころと launch の検査（`scripts/commands/conductor.mts`）
 
@@ -41,14 +43,16 @@ export function safeAnswerOf(id: string): SafeAnswer | undefined
 - `--from user|supervisor` — 回答を渡す再開（`--message`）に必須。子のコマンドの前に `HIKYAKU_ANSWER_FROM=<値>` を置く。回答の無い起動（初回・`--escalate`）は `HIKYAKU_ANSWER_FROM` を置かない
 - `--ask <id>` — `--from supervisor` と `--escalate` に必須（`--from user` では任意）
 - `--choice <値>` — `--from supervisor` で、`--ask` の問いに `SAFE_ANSWERS` があれば必須
-- `--harm 高|中` と `--premises <ref,...>` — `--from supervisor` の答えがリスクを受け入れるとき（任意）
+- `--harm 高|中` と `--premises <ref,...>` / `--no-risk` — `--from supervisor` の答えが受け入れるリスクの申告。`declaresRisk` の問い（questions・review-findings の `proceed`）では、どちらかが無ければ拒む（付け忘れで上げる向きと逆に倒れないため）。ほかの問いでは任意
 - `--escalate` — ユーザーに上げる問いを記録させる固定文で子を再開する（`--message` を取らない）
+- `--closes <ID,...>` — `--from user` で、ユーザーの答えで閉じる待ちの事項。子への回答の先頭に、その ID に `ledger decide <unit> <ID> --decision decided --by user --input "<ユーザーの答え>"` を記録する固定文を足す（新しく起動して子が ID を知らないときも閉じられる）
 
 `--from supervisor` の検査（`checkSupervisorAnswer`。拒むときは `HikyakuError` で、ユーザーに上げる案内を添える）:
 
 1. `resolveAsk(id, …, approval)` の handler が user なら拒む。approval は、`--resume` の session-id から `locateSession` で子の手順の位置を引き（`childStep` と同じく `asConductorChild` で評価）、gate がその問いで止まっていればその回の approval。回によって同意になるゲート（`CONSENT_WHEN`）で位置を確かめられなければ consent に倒す（parse と同じ）
 2. `SAFE_ANSWERS` があり、`--choice` が無い・choices に無い・safe に無い なら拒む
-3. `--harm` があれば `exceedsCeilingFor(effectiveDeclaration(config), harm, premises)`（build-18）で上限と比べる。超えるとき、`deferredConsent(config, cycleDirectory).effective`（監督のプロセスで評価する。子として評価すると build-16 の判定が有効にならないので、子の環境に合わせない）なら受け付け、子への回答の先頭に固定文（`risk` の事項を `--who user --when merge --premises … --loses …` で積んでから進む）を足す。有効でなければ拒む（US-15.2・US-15.4）
+3. `declaresRisk` の問いで `--harm` も `--no-risk` も無ければ拒む
+4. `--harm` があれば `exceedsCeilingFor(effectiveDeclaration(config), harm, premises)`（build-18）で上限と比べる。超えるとき、`deferredConsent(config, cycleDirectory).effective`（監督のプロセスで評価する。子として評価すると build-16 の判定が有効にならないので、子の環境に合わせない）なら受け付け、子への回答の先頭に固定文（`risk` の事項を `--who user --when merge --premises … --loses …` で積んでから進む）を足す。有効でなければ拒む（US-15.2・US-15.4）
 
 `--escalate` の固定文（`escalateMessage(unit, cycle, ask)`）: 問いを `ledger open {unit} {cycle} --type question --who user --when now --ask <id> --summary "<問いの本文>"` で記録し、コミット・push して、本文に `waiting: <記録した ID>` の行を置いた blocked で終える。`{unit}` は builder なら `build-NN`、architect なら `architect`、close-cycle なら `close`。
 
@@ -80,6 +84,7 @@ export function parseResultJson(raw: string, options?: ParseOptions): ParsedResu
 
 - `ParsedResult.waiting?: string[]`。blocked の本文の行頭 `waiting: <id>` を集め、`isWaitingItem` がすべて true なら行き詰まりの報告の検査（`checkEscalation`）を外し、outcome は `blocked` のまま `waiting` を返す。1つでも指す先が無ければ従来どおり検査する（欠ければ violation）
 - `conductor parse` は `isWaitingItem` に「サイクルの記録（作業ツリー）に、その ID の `question`・`who=user`・`when=now` の事項があり、決定が無い」を渡す
+- ADR escalation-report-check は「conductor の blocked はすべて検査する」と決めており、build-09 の handoff も同じ前提。答えを待つ blocked は、問いを ID で記録に裏取りできる（行き詰まりではなく、ユーザーの答えを待つだけ）ので外す。issue.md・design-delta 4節・ADR conductor-runs-to-end が定めた変更で、ADR escalation-report-check の再評価条件（検査する経路が増減したとき）に当たる。ADR の補足を handoff の「永続化すること」に残す（close-cycle が反映）
 
 ### 待っている問いとビルド（`scripts/lib/waiting.mts`・新規）
 
@@ -107,7 +112,10 @@ export function cycleConsentItems(ledger: Ledger): LedgerItem[]
 // consent.mts
 /** 作業ツリーの tasklist で、このビルド以外の全ビルドの PR 列が埋まっているか */
 export function isLastBuild(ctx: Pick<StepContext, "cycle" | "unit">): boolean
-/** conductor の子の同意の扱い: "last"（最後のビルド。サイクル全体）| "deferred"（最後のビルドへ回す）| "none"（子でない） */
+/**
+ * conductor の子の同意の扱い: "last"（最後のビルドの子。サイクル全体）| "deferred"（architect・最後以外のビルドの子。最後のビルドへ回す）
+ * | "none"（子でない、または close-cycle など architect・ビルド以外の子。従来どおり pr の accepts で止める）
+ */
 export function conductorConsentMode(ctx): "last" | "deferred" | "none"
 /** 同意ゲート・pr の accepts・consent-list・pr-section が使う対象（"last" ならサイクル全体） */
 export function consentTargets(ledger: Ledger, ctx): LedgerItem[]
@@ -117,8 +125,12 @@ export function consentTargets(ledger: Ledger, ctx): LedgerItem[]
 - `hasConsentItems`: "last" なら `cycleConsentItems(readLedger(cycle))` が空でないか（positionOnly なら true。読めなければ true）
 - `consentProblem`: "deferred" なら決定の無い項目では止めない（最後のビルドの同意ゲートへ回す）。退けの作り直しの検査はそのまま。"last" なら対象をサイクル全体にする。案内の文面の「conductor の子では同意ゲートが手順に入りません」を消し、ゲートの手順へ案内する
 - `consentStep` の args・reopens も `consentTargets` を使う（"last" の reopens はサイクル全体を読む。読めなければ取り直す）
-- 前のフェーズの退けは `consentRejections` の `returns`（記録した単位が別）になり、build-17 の return.md の経路で最後のビルドから差し戻す。コードは変えない。最後のビルドの子は差し戻しを blocked（return.md）で終える
-- `consentGateSlot`（`ledger object --defer` の拒否）: conductor の子なら置き場を問わない（最後のビルドの同意ゲートへ回る）
+- close-cycle の子は "none"。最後のビルドの同意ゲートを過ぎたあとなので、遅らせる先が無い。pr の `accepts` は従来どおり決定の無い項目で止め、案内は「PR を完了にせず、blocked でユーザーに上げる」のまま（テストで確かめる）
+- 退けた項目の扱い（build-17 の handoff の問い。最後のビルドの子）:
+  - 同じ作業単位の作り直し（`args.reworkFrom`）は子の中で完結する（戻り先を作り直して done で報告し直す。ユーザーへの問いは要らない）
+  - 前のフェーズの項目（`returns`）は build-17 の return.md の経路で最後のビルドから差し戻し、差し戻しの blocked で終える。コードは変えない
+  - 差し戻しの再設計を経て再開した項目（`resumed`）は、作り直しが済んだかをユーザーに尋ねる問いになるので、ユーザーに上げる問いと同じく `deferred-consent` の問いとして gate を出す（監督が `--escalate` で積む）。consent.md に、conductor の子では resolved の問いも gate で止まることを書く
+- `consentGateSlot`（`ledger object --defer` の拒否）: "deferred" の子なら置き場を問わない（最後のビルドの同意ゲートへ回る）。"none" の子（close-cycle）は従来どおり拒む
 - `childStep`（監督の評価）は `asConductorChild` のまま。条件は ctx から決まるので、子と監督で同じ評価になる（build-06 の handoff の2か所をそろえる）
 - `deferred-consent.mts`: conductor の子で無効にしていた行を消す（有効の判定は子でない場合と同じ）
 
@@ -135,9 +147,10 @@ export function consentTargets(ledger: Ledger, ctx): LedgerItem[]
 
 - `skills/conductor/SKILL.md`:
   - Step 0: 確認文に事後同意の行と、問いを積む方針の行を足す。「同意ゲートは監督に委任しない」の文面は残し、同意ゲートの答えも問いを積む経路に乗ることを書く
-  - Step 1: `available` が空になったら `conductor waiting` を実行し、待っている問いがあれば `AskUserQuestion` でまとめて尋ねる。答えごとに、待っているビルドのブランチ（ARCHITECT なら architect のブランチ）へ conductor ブランチを取り込んでから（`git merge`・push）、`--from user` で子を再開する（session-id が会話に無ければ新しく起動して `--message` で渡す）。逐次実行は保つ
-  - Step 3 gate: `handler: user` は `AskUserQuestion` を出さず、`conductor launch --resume … --escalate --ask <id>` で子に記録させる。`supervisor` は `ask.safe` の既定から選び、`--from supervisor --ask <id> --choice <値>` で再開する。launch が拒んだらユーザーに上げる側（`--escalate`）へ
-  - Step 3 blocked: `waiting` があれば待ちとして Step 1 へ（ユーザーに上げない）
+  - Step 1: 状態は conductor ブランチの上で見る。`resumeAt` が待っているビルド（`conductor waiting` の `builds`）を指していれば、再開に選ばない。`available` が空になったら `conductor waiting` を実行し、待っている問いがあれば `AskUserQuestion` でまとめて尋ねる。`deferred-consent` の待ち（最後のビルドの同意ゲート）は、そのビルドのブランチで `ledger consent-list <build> {cycle} --full` の出力を要約せずに示し、項目ごとの同意・退け（高として扱う異議は受け入れの言葉）を受け取る。答えごとに、待っているビルドのブランチ（ARCHITECT なら architect のブランチ）へ conductor ブランチを取り込んでから（`git merge`・push）、`--from user --closes <待ちの ID>` で子を再開する（session-id が会話に無ければ新しく起動して `--message` で渡す）。逐次実行は保つ
+  - Step 3 gate: `handler: user` は `AskUserQuestion` を出さず、`conductor launch --resume … --escalate --ask <id>` で子に記録させる。`supervisor` は `ask.safe` から選び、`--from supervisor --ask <id> --choice <値>`（`declaresRisk` なら `--harm … --premises …` か `--no-risk`）で再開する。launch が拒んだらユーザーに上げる側（`--escalate`）へ
+  - Step 3 blocked: `waiting` があれば待ちとして、conductor ブランチに切り替えてから Step 1 へ（ユーザーに上げない）
+  - 「人間に上げるとき」: ユーザーが「監督に任せる」と答えたら監督が判断する経路を消す。handler が user の問いを監督が答える経路は launch が拒むので（US-15.3・US-21.4）、ユーザーに答えを求める
   - error・2回目の violation・check-pr の不合格は従来どおりその場でユーザーに上げる
   - Step 4: 本文に `ledger pr-section <最後のビルド> {cycle} --all` の出力（全フェーズの受け入れと同意・退けの決定、答えの出どころ）と、`ledger premises --changed-from <ベースブランチ> --format pr`（conductor ブランチとベースブランチの差分）を貼る
   - 「問いへの答え方」の表に `--choice` の値を添える
@@ -160,18 +173,21 @@ export function consentTargets(ledger: Ledger, ctx): LedgerItem[]
 - **安全側**: 監督が答えてよい範囲は狭める方向にだけ変える（handler が user の問いと safe に無い値は拒む）。位置を確かめられない回は同意に倒す（parse と同じ）
 - **状態を保存しない**: 待ちは作業ツリーと origin のブランチから毎回導く。session-id は保存しない
 - **互換**: `conductor launch` の `--resume --message` は `--from` が必須になる（監督の手順と同じ PR で直す）
+- **受け入れたこと（G8 で示す）**: `HIKYAKU_ANSWER_FROM=user` は、ユーザーの答えで再開した子のプロセス全体に効く。その実行の中で、ユーザーが答えていない事項にも `--by user` を書ける。検査は取り違え（監督の答えをユーザーの答えとして記録する）を防ぐもので、子の振る舞いの偽装は防がない（ADR pending-items-ledger）。答えた事項に限るには、launch が `--closes` の ID を環境変数で渡し `ledger decide` が照合する形があるが、同意ゲートでは一覧の項目ごとに決定を書くので ID の列挙が増える。このビルドでは足さず、G8 で監督に判断を求める
 
 ## 予測ピーク
 
-読むファイル: `skills/conductor/SKILL.md`・`references/headless-protocol.md`、`scripts/lib/conductor.mts`・`scripts/commands/conductor.mts`、`scripts/commands/next.mts`、`scripts/lib/ledger.mts`（一部）・`scripts/commands/ledger.mts`（一部）、`scripts/lib/steps/consent.mts`・`directive.mts`・`builder.mts`、`scripts/lib/deferred-consent.mts`（一部）、`scripts/lib/git.mts`（一部）、build-06・09・16・17・18 の handoff、ADR conductor-runs-to-end、`docs/workflow/conductor.md`、`tests/conductor.test.mts`（一部）・`tests/step-consent.test.mts`（一部）
+読むファイル: `skills/conductor/SKILL.md`・`references/headless-protocol.md`、`scripts/lib/conductor.mts`・`scripts/commands/conductor.mts`、`scripts/commands/next.mts`、`scripts/lib/ledger.mts`（一部）・`scripts/commands/ledger.mts`（一部）、`scripts/lib/steps/consent.mts`・`directive.mts`・`builder.mts`、`scripts/lib/deferred-consent.mts`（一部）、`scripts/lib/git.mts`（一部）、`scripts/lib/tasklist.mts`・`risk.mts`・`escalation.mts`・`branch.mts`・`steps/locate.mts`・`steps/engine.mts`（該当部分）、`skills/builder/references/return.md`・`steps/consent.md`、build-06・09・16・17・18 の handoff、ADR conductor-runs-to-end、`docs/workflow/conductor.md`・`docs/reference/cli.md`、`tests/conductor.test.mts`・`tests/ledger.test.mts`・`tests/step-consent.test.mts`（該当部分）
 作成・変更するファイル: 上記の lib・commands・手順・docs、`scripts/lib/waiting.mts`（新規）、`tests/conductor.test.mts`・`tests/ledger.test.mts`・`tests/step-consent.test.mts`、`CHANGELOG.md`
 
 | 成分 | 予測 | 根拠 |
 |------|------|------|
 | 固定費 | 90k | — |
-| 読み込み | 150k | conductor の lib・commands・SKILL.md・headless-protocol、next、ledger と consent・directive・builder の steps、deferred-consent・git の一部、依存ビルドの handoff 5件と ADR（ここまでで約 100k 読んだ）。残りは docs/workflow/conductor.md と既存テストの該当部分 |
-| 実装 | 95k | SAFE_ANSWERS と launch の検査、answer-from の検査と記録、waiting の blocked、waiting.mts と conductor waiting・next の waiting、最後のビルドの同意ゲート（consent.mts・deferred-consent）、pr-section の --all、asks の deferredConsent、SKILL.md と headless-protocol と docs の書き換え |
-| テスト | 55k | 一時リポジトリでの launch の拒否・出どころの検査・待ちの blocked・waiting の導出・最後以外の子が止まらないこと・最後のビルドの同意ゲート・asks の表示 |
-| 未知の領域 | 40k | 既存の conductor・consent の結合テストの調整と、循環 import の初期化順 |
-| **予測ピーク** | **430k** | 狙いの帯（300k〜450k） |
+| 読み込み | 175k | 読んだもの（約 110k）: conductor の lib（696行）・commands（640行）・SKILL.md（449行）・headless-protocol（109行）、next（249行）、ledger と commands/ledger の該当部分、consent（346行）・directive（420行）・builder steps（173行）、deferred-consent・git の一部、handoff 5件と ADR。残り（約 65k）: tasklist（325行）・risk（487行）・escalation（154行）・locate（273行）・engine（466行）・branch（203行）の該当部分、builder の return.md・consent.md、docs/workflow/conductor.md（148行）・docs/reference/cli.md（266行）、tests/conductor（1278行）・ledger（491行）・step-consent（470行）の該当部分 |
+| 実装 | 100k | lib/conductor.mts（SAFE_ANSWERS・waiting の解析 約120行）、commands/conductor.mts（launch の検査・--escalate/--closes・waiting コマンド・asks 約200行）、waiting.mts 新規（約150行）、ledger の検査・cycleConsentItems・pr-section --all（約80行）、consent.mts・deferred-consent（約80行）、next（約30行）、SKILL.md・headless-protocol・consent.md・docs・CHANGELOG の書き換え（約200行） |
+| テスト | 65k | conductor.test.mts（launch の拒否・--escalate・waiting の blocked・waiting の導出・asks）、ledger.test.mts（出どころの検査と from・pr-section --all）、step-consent.test.mts（最後以外の子が止まらない・最後のビルドのゲート・close-cycle の子は止まる） |
+| 未知の領域 | 50k | 子の再開と取り込みの手順、既存の conductor・consent の結合テストの調整（--from 必須化の影響）、循環 import の初期化順、origin のブランチを使う waiting の結合テストの準備 |
+| **予測ピーク** | **480k** | 分割を検討（450k 超。原則として分割する） |
 | ガイド | 標準 v2 | 03897ac0 |
+
+plan-review の指摘（読むファイルの列挙漏れ・テストと未知の領域の過小）を反映して見積もり直した。分割の候補は、待ちの導出（`waiting.mts`・`conductor waiting`・`next --json` の `waiting`）と、最後のビルドの同意ゲート（consent.mts・pr-section の `--all`）。
