@@ -8,6 +8,12 @@
 - When: `reworkStepOf(ARCHITECT_STEPS, "G3", ctx)`・`reworkStepOf(ARCHITECT_STEPS, "G4", ctx)`・`reworkStepOf(BUILDER_STEPS, "G7", ctx)`・`reworkStepOf(BUILDER_STEPS, "G8", ctx)`・`reworkStepOf(PATCH_STEPS, "P1", ctx)` を呼ぶ
 - Then: それぞれ `"options"`・`"design-delta"`・`"plan"`・`"plan"`・`"scope"` を返す
 
+### reworkStepOf: GATE_REWORK の対応先が手順から外れていれば、ゲートより前で最も近い手順に入っている run へ戻す
+- 対応: US-20.11
+- Given: architect の手順で設計変更なし（designChanges が false）の ctx。options・questions の `when` が false で、survey は手順に入っている
+- When: `reworkStepOf(ARCHITECT_STEPS, "G3", ctx)` を呼ぶ
+- Then: `"options"` ではなく `"survey"` を返す
+
 ### reworkStepOf: GATE_REWORK に無いゲートは、それより前で最も近い手順に入っている run ステップへ戻す
 - 対応: US-20.11
 - Given: architect の手順で survey が手順に入っていて、G2 は `GATE_REWORK` に無い
@@ -20,6 +26,12 @@
 - When: `reworkStepOf(BUILDER_STEPS, "implement", ctx)` を呼ぶ
 - Then: `"implement"` を返す
 
+### reworkStepOf: 手順に入っている call ステップはそのステップを返す
+- 対応: US-20.11
+- Given: architect の手順で `build-split`（call: build-manager）が手順に入っている
+- When: `reworkStepOf(ARCHITECT_STEPS, "build-split", ctx)` を呼ぶ
+- Then: `"build-split"` を返す
+
 ### reworkStepOf: 手順に入っていない run ステップは、それより前で最も近い run ステップへ戻す
 - 対応: US-20.11
 - Given: architect の手順で `questions` の `when`（designChanges）が false になる ctx（設計変更なし）で、その前の survey は手順に入っている
@@ -31,6 +43,18 @@
 - Given: build-manager の G6 で記録した事項（`step: "G6"`）。architect の手順で `build-split`（call: build-manager）が手順に入っている
 - When: `reworkStepOf(ARCHITECT_STEPS, "G6", ctx)` を呼ぶ
 - Then: `"build-split"` を返し、G2〜G4 や options には戻さない
+
+### reworkStepOf: builder の G6 は、split が手順に入っていれば split を返す
+- 対応: US-20.11
+- Given: builder の ctx で、plan の done で報告した予測ピークが 500k、`peakBands.splitAbove` が 450k（split の `when` が true）
+- When: `reworkStepOf(BUILDER_STEPS, "G6", ctx)` を呼ぶ
+- Then: `"split"` を返す
+
+### reworkStepOf: retrospective の内部ステップは builder の retrospective を返す
+- 対応: US-20.11
+- Given: builder の ctx で `reviews.retrospective` が `"skip"` でなく、`retrospective`（call: retrospective）が手順に入っている。事項の step は retrospective スキルのステップ ID `"analyze"`（builder の手順には無い）
+- When: `reworkStepOf(BUILDER_STEPS, "analyze", ctx)` を呼ぶ
+- Then: `"retrospective"` を返す
 
 ### reworkStepOf: 内部スキルの call が手順に入っていなければ、その前の run ステップへ戻す
 - 対応: US-20.11
@@ -62,6 +86,12 @@
 - When: `consentRejections("builder", items, ctx)` を呼ぶ
 - Then: `rework` が `[{ id: "b.1", step: "plan" }]`、`reworked` が `[]`
 
+### consentRejections: 戻り先の done と退けの決定が同じ時刻なら作り直していない扱い（境界値）
+- 対応: US-20.11
+- Given: 事項 `b.1`（unit build-01・step plan、最新 rejected at 2026-11-16T02:00:00.000Z）。events に plan の done at 2026-11-16T02:00:00.000Z だけがある
+- When: `consentRejections("builder", items, ctx)` を呼ぶ
+- Then: `rework` が `[{ id: "b.1", step: "plan" }]`、`reworked` が `[]`
+
 ### consentStep(args): 作り直しが要る退けがあるときだけ reworkFrom と rework を足す
 - 対応: US-20.11
 - Given: build-01 の記録に、退けた `b.1`（step implement）と `b.2`（step G7、戻り先 plan）があり、どちらも作り直していない
@@ -70,15 +100,21 @@
 
 ### consentStep(args): 前のフェーズの退けだけなら returns だけを足し、退けが無ければ items だけ
 - 対応: US-20.11
-- Given: (1) build-01 の ctx で、architect で記録した `a.1`（when merge@build-01）が最新 rejected。(2) 退けの無い記録
+- Given: (1) build-01 の ctx で、architect で記録した `a.1`（when merge@build-01）が最新 rejected。(2) build-01 の ctx で、対象は `b.3`（最新 consented）だけで退けが無い
 - When: それぞれ同意ゲートの `args(ctx)` を評価する
-- Then: (1) は `{ items: ["a.1"], returns: ["a.1"] }` で `reworkFrom` を持たない。(2) は `{ items: [...] }` のまま
+- Then: (1) は `{ items: ["a.1"], returns: ["a.1"] }` で `reworkFrom` を持たない。(2) は `{ items: ["b.3"] }` で、`reworkFrom`・`rework`・`returns` を持たない
 
 ### consentProblem: 作り直していない退けと前のフェーズの退けは、それぞれの案内で受け付けない
 - 対応: US-20.11
-- Given: build-01 の ctx で、作り直していない同じ単位の退け `b.1` と、前のフェーズの退け `a.1` がある
+- Given: build-01 の ctx で、作り直していない同じ単位の退け `b.1`（step G7）と、前のフェーズの退け `a.1` がある
 - When: `consentProblem("builder")(ctx)` を呼ぶ
-- Then: 理由に `b.1` と戻り先を done で報告し直す案内、`a.1` と `references/return.md` の退けからの差し戻しの案内が含まれ、`undefined` ではない
+- Then: 理由に `b.1` と戻り先 `"plan"` を done で報告し直す案内、`a.1` と `references/return.md` の退けからの差し戻しの案内が含まれ、`undefined` ではない
+
+### consentProblem: builder 以外（patch）の前のフェーズの退けは、記録したフェーズで作り直す案内を出す
+- 対応: US-20.11
+- Given: patch の作業単位の ctx で、別の作業単位（architect）で記録した `a.2`（when merge@<patch の単位>）が最新 rejected
+- When: `consentProblem("patch")(ctx)` を呼ぶ
+- Then: 理由に `a.2` と「記録したフェーズで作り直す」案内、ユーザーが `resolved` を記録するまで受け付けないことが含まれ、`return.md` は含まれない
 
 ### consentProblem: 作り直した同じ単位の退けは、resolved の前でも受け付ける
 - 対応: US-20.11
@@ -132,7 +168,7 @@
 - 対応: US-20.11
 - Given: build-01 で、architect で記録した `a.1`（summary「キャッシュの無効化を遅らせる」・loses「古いデータを返さない」）を退け、ユーザーの答え「受け入れない」を記録した
 - When: `ledger return-draft build-01 --items a.1` を実行する
-- Then: 終了コード 0。出力に `# 差し戻し: build-01`、「退けた項目」に `a.1` と要約・記録した単位 `architect`、「試したこと」に退けられた受け入れ・失うもの・ユーザーの答え、「問題を変える選択肢」「推奨」の置き場所、作り直しが要るものに handoff.md が出る。実行の前後でリポジトリのファイルが変わらない
+- Then: 終了コード 0。出力に `# 差し戻し: build-01` と「何が崩れたか」の見出し、「退けた項目」に `a.1` と要約・記録した単位 `architect`、「試したこと」に退けられた受け入れ・拠り所（premises の `app.data`）・失うもの・ユーザーの答え「受け入れない」、「問題を変える選択肢」「推奨」の置き場所、「このビルドの状態」の見出し、「作り直しが要るもの」に `handoff.md` が出る。実行の前後でリポジトリのファイルが変わらない
 
 ### return-draft: --json で同じ内容を構造で返す
 - 対応: —
