@@ -2,3 +2,4 @@
 {"at":"2026-11-17T08:16:16.093Z","skill":"builder","step":"plan-review","result":"done","peak":345000,"context":192575,"session":"31d65ef1-f840-4ed8-a10e-937b2a99131d","hikyaku":"3.0.0"}
 {"at":"2026-11-17T08:17:29.407Z","skill":"builder","step":"test-spec","result":"done","context":195704,"session":"31d65ef1-f840-4ed8-a10e-937b2a99131d","hikyaku":"3.0.0"}
 {"at":"2026-11-17T08:19:09.457Z","skill":"builder","step":"test-spec-review","result":"done","context":204000,"session":"31d65ef1-f840-4ed8-a10e-937b2a99131d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T08:20:05.311Z","skill":"builder","step":"G8","result":"approved","input":"監督（委任された判断）: 承認（実装に進む）。受け入れ基準 US-20.11 は test-spec に対応し、設計どおり","context":207156,"session":"31d65ef1-f840-4ed8-a10e-937b2a99131d","hikyaku":"3.0.0"}
