@@ -2,3 +2,4 @@
 {"at":"2026-11-17T03:15:46.830Z","skill":"builder","step":"plan-review","result":"done","peak":360000,"context":169047,"session":"7ec5ef71-a134-4b24-b96e-f543aaa4c003","hikyaku":"3.0.0"}
 {"at":"2026-11-17T03:17:12.782Z","skill":"builder","step":"test-spec","result":"done","context":173253,"session":"7ec5ef71-a134-4b24-b96e-f543aaa4c003","hikyaku":"3.0.0"}
 {"at":"2026-11-17T03:18:09.351Z","skill":"builder","step":"test-spec-review","result":"done","context":179839,"session":"7ec5ef71-a134-4b24-b96e-f543aaa4c003","hikyaku":"3.0.0"}
+{"at":"2026-11-17T03:18:56.694Z","skill":"builder","step":"G8","result":"approved","input":"承認（実装に進む）。委任された判断（conductor の監督）。根拠は questions.md","context":183829,"session":"7ec5ef71-a134-4b24-b96e-f543aaa4c003","hikyaku":"3.0.0"}
