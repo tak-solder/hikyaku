@@ -12,3 +12,4 @@
 {"at":"2026-11-17T06:53:03.422Z","skill":"build-manager","step":"write","result":"done","context":349951,"session":"2699a422-6c09-4ad2-b7ef-22c08b5b7753","hikyaku":"3.0.0"}
 {"at":"2026-11-17T06:54:03.725Z","skill":"builder","step":"plan","result":"done","peak":435000,"context":362782,"session":"2699a422-6c09-4ad2-b7ef-22c08b5b7753","hikyaku":"3.0.0"}
 {"at":"2026-11-17T06:58:47.781Z","skill":"builder","step":"plan-review","result":"done","peak":390000,"context":369842,"session":"2699a422-6c09-4ad2-b7ef-22c08b5b7753","hikyaku":"3.0.0"}
+{"at":"2026-11-17T07:02:35.516Z","skill":"builder","step":"test-spec","result":"done","context":160638,"session":"cf2e5eed-acde-486a-bbf0-735204b5e144","hikyaku":"3.0.0"}
