@@ -14,3 +14,4 @@
 {"at":"2026-11-17T04:32:14.416Z","skill":"build-manager","step":"G6","result":"approved","input":"1. 承認する（委任された判断・監督）","context":307810,"session":"24a6ee83-9216-4e84-9f6b-12546422b1bf","hikyaku":"3.0.0"}
 {"at":"2026-11-17T04:32:50.156Z","skill":"build-manager","step":"write","result":"done","context":314833,"session":"24a6ee83-9216-4e84-9f6b-12546422b1bf","hikyaku":"3.0.0"}
 {"at":"2026-11-17T04:33:27.928Z","skill":"builder","step":"plan","result":"done","peak":435000,"context":319816,"session":"24a6ee83-9216-4e84-9f6b-12546422b1bf","hikyaku":"3.0.0"}
+{"at":"2026-11-17T04:37:29.213Z","skill":"builder","step":"plan-review","result":"done","peak":390000,"context":333239,"session":"24a6ee83-9216-4e84-9f6b-12546422b1bf","hikyaku":"3.0.0"}
