@@ -1,2 +1,5 @@
 # 最後に作業したサイクルを記録するローカル専用ファイル
 .hikyaku.local
+
+# hikyaku feedback export の書き出し（送るかはユーザーが決める。コミットしない）
+feedback/

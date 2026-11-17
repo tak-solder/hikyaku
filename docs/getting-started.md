@@ -47,7 +47,7 @@ CLI を自分のシェルからも叩きたい場合は、[実行方法](referen
 リポジトリルート/.hikyaku.config   設定のベース。hikyaku_root の唯一の宣言先
 {HIKYAKU_ROOT}/cycles.md           サイクル索引
 {HIKYAKU_ROOT}/document-guide.md   ドキュメントガイド
-{HIKYAKU_ROOT}/.gitignore          .hikyaku.local の1行だけ
+{HIKYAKU_ROOT}/.gitignore          .hikyaku.local と feedback/ の2行だけ
 ```
 
 雛形を生成したあとの手順は、`hikyaku step next init` が1手ずつ決めます。進み具合は `{HIKYAKU_ROOT}/progress.jsonl` に記録されるので、途中で止まっても、もう一度 `/hikyaku:init` を実行すれば続きから再開できます。この記録も PR に含まれます。

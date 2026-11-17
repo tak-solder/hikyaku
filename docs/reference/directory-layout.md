@@ -19,7 +19,8 @@
     │   ├── guide.md           #   ガイド。先頭に版とハッシュ
     │   └── progress.jsonl     #   token-guide の手順の進捗
     ├── .hikyaku.local         # 最後に作業したサイクル（git 管理対象外）
-    ├── .gitignore             # .hikyaku.local の1行だけ
+    ├── .gitignore             # .hikyaku.local と feedback/ の2行だけ
+    ├── feedback/              # feedback export の書き出し（git 管理対象外）
     ├── progress.jsonl         # init の手順の進捗
     ├── patches/               # サイクルに属さない patch の記録（patch prune で古い月を消せる）
     │   └── {YYYYMM}/{slug}/
@@ -46,7 +47,8 @@
 | `instructions.md` | このリポジトリで Hikyaku を回すときの手順・前提（任意） | close-cycle |
 | `token-guide/guide.md` | 予測ピークの見積もりのガイド。標準のガイドを置き換える（任意。無ければ標準） | token-guide |
 | `.hikyaku.local` | このチェックアウトで最後に作業したサイクル | `cycle use` |
-| `.gitignore` | `.hikyaku.local` の1行だけ | init |
+| `feedback/{YYYYMMDD}.md` | Hikyaku へのフィードバックの書き出し。中身を含まない記録の集計と起票の下書き。送るかはユーザーが決める | `feedback export` |
+| `.gitignore` | `.hikyaku.local` と `feedback/` の2行だけ | init |
 | `progress.jsonl` | init の手順の進捗。`token-guide/progress.jsonl` は token-guide の手順の進捗 | `hikyaku step report` |
 
 `.gitignore` に包括パターンを書かないでください。close-cycle は別セッションで `handoff.md` と `retrospective.md` から候補を集めるため、まとめて除外すると読めなくなります。
