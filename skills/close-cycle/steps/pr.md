@@ -11,7 +11,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify close {cycle}
   - 本文には、追加・置き換え・削除を分けて書く。**削除と置き換えは、何を・なぜ消したか（根拠の出どころ）を
     必ず書く**。ユーザーが G10 のあとで削除を確かめ直せる場はこの PR になる
   - 手を入れなかったが気づいた点（このサイクルの記録に根拠の無い、古そうな記述）と、
-    Hikyaku への報告（宛先 `upstream` の候補）があれば、本文に並べる
+    Hikyaku への報告（宛先 `upstream` の候補）と、G10 で示したリファクタの提案（宛先 `refactor`）があれば、本文に並べる
   - 値 `declarationChanged` が `false` でなければ、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger premises --format pr`
     の出力を本文にそのまま貼る（変わった宣言を拠り所にした受け入れを、ユーザーがマージの前に見直すため）
   - `external ref` が返した行（`Closes #12` など）を本文の末尾に入れる。

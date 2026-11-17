@@ -16,6 +16,8 @@ import { DOC_DEFINITIONS } from "./docs.mts";
 import { listPatchUnits } from "./patch.mts";
 
 export const PROMOTE_HEADING = "永続化すること";
+/** handoff.md の、コードレビューの指摘がどの rule を引いたかの記録（読むのは review-records.mts） */
+export const REVIEW_RECORD_HEADING = "レビューの記録";
 export const UNHELPFUL_HEADING = "役に立たなかった記述";
 /** design-delta.md の予定。close-cycle は実装の結果と照らして昇格させる */
 export const PLANNED_HEADING = "永続ドキュメントの更新予定";
@@ -24,16 +26,21 @@ export type Importance = "高" | "中";
 export const UNHELPFUL_REASONS = ["古い", "自明", "無関係"] as const;
 export type UnhelpfulReason = (typeof UNHELPFUL_REASONS)[number];
 
-/** 論理名以外の宛先。`skill:` `rule:` は後ろに名前・パスが続く */
-const PLAIN_TARGETS = ["workflow", "hook", "upstream"];
+/**
+ * 論理名以外の宛先。`skill:` `rule:` は後ろに名前・パスが続く。
+ * `refactor` は「なくす」: リファクタで知見そのものを不要にできるもの（置き場の順の先頭。persistence.md）
+ */
+const PLAIN_TARGETS = ["refactor", "workflow", "hook", "upstream"];
 const PREFIXED_TARGETS = ["skill", "rule"];
 
 export interface Candidate {
   /** 宛先（`constraints` / `rule:.claude/rules/x.md` など） */
   target: string;
   /** 宛先の種類。論理名は doc */
-  kind: "doc" | "workflow" | "skill" | "rule" | "hook" | "upstream";
+  kind: "doc" | "refactor" | "workflow" | "skill" | "rule" | "hook" | "upstream";
   importance: Importance | undefined;
+  /** 行末の `（防ぐ: … / 立つ: … / 重要度: …）`。書かれていなければ持たない */
+  reasons?: CriterionReasons;
   /** そのビルドの PR で既に書いたもの */
   written: boolean;
   text: string;
@@ -124,6 +131,41 @@ function splitPrefix(target: string): [string, string] {
   return at === -1 ? [target, ""] : [target.slice(0, at), target.slice(at + 1).trim()];
 }
 
+/** 基準の理由。何を防ぐためのものか・何に立っているか・害が成果物に残るか */
+export interface CriterionReasons {
+  prevents: string;
+  basis: string;
+  importance: Importance | undefined;
+}
+
+const REASONS_TAIL = /[（(]\s*防ぐ\s*[:：]([^（）()]*)[）)]\s*$/;
+
+/**
+ * 基準の行末の理由 `（防ぐ: … / 立つ: … / 重要度: 高|中）` を読む。「永続化すること」の行と、
+ * 文書に書かれた基準の行（conventions など）が同じ書式を使う。重要度は省ける（「永続化すること」の行は [高|中] を持つ）。
+ * 理由の欄が無ければ reasons は undefined（エラーにしない）。「（防ぐ:」で始まる括弧が崩れていれば理由を返す
+ */
+export function parseCriterionReasons(text: string): { text: string; reasons: CriterionReasons | undefined } | string {
+  const trimmed = text.trim();
+  const match = REASONS_TAIL.exec(trimmed);
+  if (!match) return { text: trimmed, reasons: undefined };
+  const fields = new Map<string, string>();
+  for (const part of `防ぐ:${match[1] as string}`.split("/").map((p) => p.trim())) {
+    const field = /^(防ぐ|立つ|重要度)\s*[:：]\s*(.*)$/.exec(part);
+    if (!field) return `理由の欄を読めません: 「${part}」（「防ぐ: … / 立つ: … / 重要度: 高|中」の形で書きます）`;
+    fields.set(field[1] as string, (field[2] as string).trim());
+  }
+  const prevents = fields.get("防ぐ") ?? "";
+  const basis = fields.get("立つ") ?? "";
+  if (prevents === "") return "理由の欄の「防ぐ」が空です（何を防ぐ基準かを書きます）";
+  if (basis === "") return "理由の欄に「立つ」がありません（何に立っている基準かを書きます）";
+  const importance = fields.get("重要度");
+  if (importance !== undefined && importance !== "高" && importance !== "中") {
+    return `理由の欄の重要度が不正です: ${importance}（高 か 中）`;
+  }
+  return { text: trimmed.slice(0, match.index).trim(), reasons: { prevents, basis, importance: importance as Importance | undefined } };
+}
+
 /** `- \`宛先\` [高] 済: 本文` の1行を読む。読めなければ理由を返す */
 export function parseCandidate(item: string): Omit<Candidate, "source"> | string {
   const match = /^`([^`]+)`\s*(?:\[(高|中|低)\])?\s*(済)?\s*[:：]\s*(.+)$/.exec(item);
@@ -136,7 +178,16 @@ export function parseCandidate(item: string): Omit<Candidate, "source"> | string
   if (match[2] === "低") return "重要度が低の知見は書きません（persistence.md）";
   const importance = match[2] as Importance | undefined;
   if (importance === undefined && kind !== "upstream") return "重要度（[高] か [中]）がありません";
-  return { target, kind, importance, written: match[3] !== undefined, text: (match[4] as string).trim() };
+  const body = parseCriterionReasons(match[4] as string);
+  if (typeof body === "string") return body;
+  const candidate: Omit<Candidate, "source"> = { target, kind, importance, written: match[3] !== undefined, text: body.text };
+  if (body.reasons !== undefined) {
+    if (body.reasons.importance !== undefined && body.reasons.importance !== importance) {
+      return `行の重要度（[${importance ?? "なし"}]）と理由の欄の重要度（${body.reasons.importance}）が食い違っています`;
+    }
+    candidate.reasons = body.reasons;
+  }
+  return candidate;
 }
 
 /** `- \`場所\`「引用」: 理由（補足）` の1行を読む */

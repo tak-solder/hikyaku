@@ -2,10 +2,98 @@
 
 import { flagString } from "../lib/args.mts";
 import { loadConfig } from "../lib/config.mts";
+import { loadCycles } from "../lib/cycles.mts";
 import { HikyakuError, ValidationError } from "../lib/errors.mts";
 import { emit, table } from "../lib/output.mts";
+import { REVIEW_RECORD_HEADING } from "../lib/promotions.mts";
 import { register } from "../lib/registry.mts";
-import { RULES_DIR, RULE_LOAD_WARNING, listRuleFiles, measureRules, trackedFiles } from "../lib/rules.mts";
+import { collectReviewRecords, ruleHits } from "../lib/review-records.mts";
+import {
+  RULES_DIR,
+  RULE_LOAD_WARNING,
+  listRuleFiles,
+  measureRules,
+  ruleCandidates,
+  rulesLastTouched,
+  trackedFiles,
+  type RuleCandidate,
+} from "../lib/rules.mts";
+
+const KIND_LABELS: Record<RuleCandidate["kind"], string> = {
+  move: "移す候補（閾値以上引かれた）",
+  stale: "一致しない",
+  missing: "記録にあるが無い",
+};
+
+register({
+  name: "rules candidates",
+  summary: "レビューの記録で引かれた回数が閾値以上の rule と、一致しない rule を、最終変更からの日数とともに並べる",
+  usage: "hikyaku rules candidates [--root <path>] [--json]",
+  options: ["root"],
+  details: [
+    `全サイクル（closed を含む）の build-NN/handoff.md の「${REVIEW_RECORD_HEADING}」から、rule が引かれた回数を数えます。`,
+    "回数はサイクルをまたいで数えるので、サイクルの引数は取りません。",
+    "",
+    "  移す候補           [rules] hit_threshold（既定 3）以上引かれた rule。機械の検査やリファクタへ移すきっかけ",
+    "  一致しない         paths がどのファイルにも一致しない rule（rules check と同じ判定）",
+    "  記録にあるが無い   レビューの記録に挙がったが .claude/rules/ に無い rule（パスの書き間違いか、消された rule）",
+    "",
+    "各行に、最終変更からの日数（paths に当たる追跡ファイルの最終コミット。paths が無い・一致しない rule は",
+    "rule ファイル自身）と、frontmatter の理由（prevents / basis / importance）を添えます。",
+    "",
+    "候補を並べるだけで、移すか消すかは決めません。判断は LLM とユーザーが行います。終了コードは常に 0 です。",
+  ].join("\n"),
+  run: async ({ args }) => {
+    const config = loadConfig({ root: flagString(args, "root") });
+    const files = trackedFiles(config.repoRoot);
+    const notices: string[] = [];
+    if (files === undefined) notices.push("追跡ファイルの一覧を取得できないので、一致の判定と日数を省きました（Git リポジトリの中で実行してください）");
+    const rules = listRuleFiles(config.repoRoot);
+    const { measures } = measureRules(rules, files ?? [], config.diff.exclude);
+    // 一覧を取れないときは、一致しない rule と誤って並べない
+    if (files === undefined) for (const m of measures) m.stale = false;
+    const { records, unparsed } = collectReviewRecords(config.hikyakuRoot, loadCycles(config.hikyakuRoot));
+    const touched = files === undefined ? new Map() : await rulesLastTouched(config.repoRoot, rules, files);
+    const candidates = ruleCandidates({
+      measures,
+      hits: ruleHits(records),
+      threshold: config.rules.hitThreshold,
+      lastTouched: touched,
+      now: new Date(),
+    });
+    const problems = rules.flatMap((rule) => (rule.problems ?? []).map((problem) => `${rule.path}: ${problem}`));
+
+    emit({ threshold: config.rules.hitThreshold, records: records.length, candidates, unparsed, problems, notices }, () => {
+      const lines: string[] = [];
+      if (candidates.length === 0) {
+        lines.push(`候補はありません（閾値 ${config.rules.hitThreshold}、レビューの記録 ${records.length} 件）。`);
+      } else {
+        lines.push(
+          table(
+            candidates.map((c) => [
+              c.path,
+              KIND_LABELS[c.kind],
+              c.hits === undefined ? "" : `${c.hits}（重 ${c.heavy ?? 0}）`,
+              c.lastTouchedDays === undefined ? "不明" : `${c.lastTouchedDays} 日`,
+              [
+                c.reasons.prevents === undefined ? undefined : `防ぐ: ${c.reasons.prevents}`,
+                c.reasons.basis === undefined ? undefined : `立つ: ${c.reasons.basis}`,
+                c.reasons.importance === undefined ? undefined : `重要度: ${c.reasons.importance}`,
+              ].filter((v) => v !== undefined).join(" / ") || "（理由なし）",
+            ]),
+            ["rule", "分類", "引かれた回数", "最終変更から", "理由"],
+          ),
+          "",
+          `閾値: ${config.rules.hitThreshold}（[rules] hit_threshold）。レビューの記録 ${records.length} 件から数えました。`,
+        );
+      }
+      for (const item of unparsed) lines.push(`? ${item.source}「${item.heading}」: ${item.line}  → ${item.problem}`);
+      for (const problem of problems) lines.push(`? ${problem}`);
+      for (const notice of notices) lines.push(`! ${notice}`);
+      return lines.join("\n");
+    });
+  },
+});
 
 register({
   name: "rules check",

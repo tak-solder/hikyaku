@@ -3,7 +3,7 @@
 承認された内容だけを書く。
 
 - [ ] 移す項目を、承認された置き場へ書く
-  - rule は glob ごとにファイルを分け、frontmatter には `paths` だけを書く。1件を2〜3文
+  - rule は glob ごとにファイルを分け、frontmatter には `paths` と理由（`prevents` / `basis` / `importance`）を書く。1件を2〜3文
     （再現条件 → 起きること → 回避策）に縮める。既存の広い rule には追記しない
     （書き方は `${CLAUDE_PLUGIN_ROOT}/skills/close-cycle/references/persistence.md` の「rule の書き方」）
   - 永続ドキュメント（`constraints` / `conventions` / `overview`）へは、既存の形式に合わせて書く

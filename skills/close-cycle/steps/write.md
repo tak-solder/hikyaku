@@ -15,8 +15,10 @@ G10 で承認された内容だけを書く。承認されていない候補を�
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" rules check
 ```
 
-  - rule は glob ごとにファイルを分け、frontmatter には `paths` だけを書く
+  - rule は glob ごとにファイルを分け、frontmatter には `paths` と理由（`prevents` / `basis` / `importance`）を書く
     （書き方は `${CLAUDE_PLUGIN_ROOT}/skills/close-cycle/references/persistence.md` の「rule の書き方」）
+- [ ] 文書に書く基準（`conventions`・`workflow`・`constraints` など）は、行末の理由 `（防ぐ: … / 立つ: … / 重要度: 高|中）` を
+  残して書く（persistence.md の「記録の書式」）。候補に理由が無ければ、根拠の出どころから書けるものだけを書き、推測で埋めない
 - [ ] スキルが承認されていれば `.claude/skills/{名前}/SKILL.md` を作る
   - frontmatter に `name` と `description` を書く。`description` には、何をするスキルかと、いつ使うかを書く
     （常時読み込まれるのは `description` だけなので、ここで起動が決まる）

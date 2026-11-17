@@ -146,10 +146,10 @@
 
 ## 実装ステップ
 
-- [ ] Step 1: config に `[rules]`・`[areas]`、git に `lastTouched`
-- [ ] Step 2: promotions の `refactor` と理由の欄、review-records.mts
-- [ ] Step 3: rules.mts の frontmatter の理由と `ruleCandidates`、`rules candidates` コマンド
-- [ ] Step 4: areas.mts と `areas dormant` コマンド
-- [ ] Step 5: テスト（promotions・review-records のサイクルをまたいだ結合・rules candidates・areas dormant の一時リポジトリのコミット日時・config）
-- [ ] Step 6: persistence.md・doc-triager・テンプレート・手順・docs・CHANGELOG
+- [x] Step 1: config に `[rules]`・`[areas]`、git に `lastTouched`
+- [x] Step 2: promotions の `refactor` と理由の欄、review-records.mts
+- [x] Step 3: rules.mts の frontmatter の理由と `ruleCandidates`、`rules candidates` コマンド
+- [x] Step 4: areas.mts と `areas dormant` コマンド
+- [x] Step 5: テスト（promotions・review-records のサイクルをまたいだ結合・rules candidates・areas dormant の一時リポジトリのコミット日時・config）
+- [x] Step 6: persistence.md・doc-triager・テンプレート・手順・docs・CHANGELOG
 - [ ] Step 7: ローカル検証（`npx tsc --noEmit`・`npm test`・`conductor lint`・`step lint`）

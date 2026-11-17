@@ -357,6 +357,10 @@ export interface ResolvedConfig {
   context: ContextBudget;
   /** [context] merge_below / split_above — 予測ピークの判定の帯 */
   peakBands: PeakBands;
+  /** [rules] — rule を機械の検査やリファクタへ移す候補を出す感度 */
+  rules: RulesConfig;
+  /** [areas] — 領域が休眠しているとみなす期間 */
+  areas: AreasConfig;
   /**
    * ルート設定の ask に並んでいて、まだ答えが記録されていないキー。
    * create-cycle が尋ねる対象。サイクルを重ねた結果ここに残っていれば、
@@ -386,6 +390,19 @@ export interface ContextBudget {
 }
 
 export const DEFAULT_CONTEXT_BUDGET: ContextBudget = { approval: 250_000, implement: 300_000, review: 400_000 };
+
+export interface RulesConfig {
+  /** レビューの記録で、同じ rule がこの回数以上引かれたら移す候補にする（サイクルをまたいで数える） */
+  hitThreshold: number;
+}
+
+export interface AreasConfig {
+  /** 最終変更からこの日数を超えた領域を休眠とみなす */
+  dormantDays: number;
+}
+
+export const DEFAULT_RULES: RulesConfig = { hitThreshold: 3 };
+export const DEFAULT_AREAS: AreasConfig = { dormantDays: 180 };
 
 export interface DataIntegrityConfig {
   /**
@@ -492,6 +509,21 @@ function readInteger(table: TomlTable | undefined, key: string, where: string): 
     throw new HikyakuError(`${where}.${key} は整数で指定してください`);
   }
   return value;
+}
+
+function readPositiveInteger(table: TomlTable | undefined, key: string, where: string, fallback: number): number {
+  const value = readInteger(table, key, where);
+  if (value === undefined) return fallback;
+  if (value <= 0) throw new HikyakuError(`${where}.${key} は正の整数で指定してください（現在: ${value}）`);
+  return value;
+}
+
+function readRulesConfig(table: TomlTable | undefined): RulesConfig {
+  return { hitThreshold: readPositiveInteger(table, "hit_threshold", "[rules]", DEFAULT_RULES.hitThreshold) };
+}
+
+function readAreasConfig(table: TomlTable | undefined): AreasConfig {
+  return { dormantDays: readPositiveInteger(table, "dormant_days", "[areas]", DEFAULT_AREAS.dormantDays) };
 }
 
 function readNumber(table: TomlTable | undefined, key: string, where: string): number | undefined {
@@ -1429,6 +1461,8 @@ function finalize(
     diff: readDiffPatterns(readTable(merged, "diff")),
     context: readContextBudget(readTable(merged, "context")),
     peakBands: readPeakBands(readTable(merged, "context")),
+    rules: readRulesConfig(readTable(merged, "rules")),
+    areas: readAreasConfig(readTable(merged, "areas")),
     askAtCreate,
     sources,
     retired: [],

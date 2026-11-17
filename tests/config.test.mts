@@ -179,6 +179,27 @@ test("CLI: validate は許されていない安全でない分割と、解消す
   assert.match(missing.stderr, /build-07 は tasklist.md にありません/);
 });
 
+test("設定: [rules] hit_threshold と [areas] dormant_days は既定 3 と 180、サイクル設定で上書きでき、正の整数でなければエラー", (t) => {
+  const directory = workspace(t, true);
+  const defaults = JSON.parse(succeeds(directory, "config", "--json"));
+  assert.deepEqual([defaults.rules, defaults.areas], [{ hitThreshold: 3 }, { dormantDays: 180 }]);
+
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[rules]\nhit_threshold = 3\n[areas]\ndormant_days = 90\n');
+  assert.equal(JSON.parse(succeeds(directory, "config", "--json")).areas.dormantDays, 90);
+  write(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config", "[rules]\nhit_threshold = 5\n[areas]\ndormant_days = 30\n");
+  const cycle = JSON.parse(succeeds(directory, "config", "001", "--json"));
+  assert.deepEqual([cycle.rules.hitThreshold, cycle.areas.dormantDays], [5, 30]);
+  write(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config", "");
+
+  const invalid: [string, string, string][] = [["rules", "hit_threshold", "0"], ["areas", "dormant_days", '"180"'], ["areas", "dormant_days", "-1"], ["areas", "dormant_days", "1.5"]];
+  for (const [table, key, value] of invalid) {
+    write(directory, ".hikyaku.config", `hikyaku_root = "docs/hikyaku"\n[${table}]\n${key} = ${value}\n`);
+    const result = cli(directory, "config", "--json");
+    assert.notEqual(result.status, 0, `${key} = ${value}`);
+    assert.match(result.stderr, new RegExp(key));
+  }
+});
+
 test("設定: [context] の目安は整数か、k / m の単位を付けた文字列で書ける", (t) => {
   const directory = workspace(t, true);
   write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[context]\napproval = "250k"\nimplement = 320000\nreview = "0.4m"\n');

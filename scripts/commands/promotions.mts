@@ -70,7 +70,8 @@ register({
           lines.push(`${group.target}${mark}`);
           for (const item of group.items) {
             const tags = [item.importance, item.written ? "済" : undefined].filter((t) => t !== undefined).join("・");
-            lines.push(`  ${tags === "" ? "" : `[${tags}] `}${item.text}  ← ${item.source}`);
+            const reasons = item.reasons === undefined ? "" : `（防ぐ: ${item.reasons.prevents} / 立つ: ${item.reasons.basis}）`;
+            lines.push(`  ${tags === "" ? "" : `[${tags}] `}${item.text}${reasons}  ← ${item.source}`);
           }
           lines.push("");
         }

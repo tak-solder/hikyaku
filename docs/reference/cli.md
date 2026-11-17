@@ -68,6 +68,8 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | `validate [<cycle>]` | ファイルの整合性を確認したいとき。[CI](../operations/ci.md) から呼ぶと効く。`token-guide/guide.md` の版の宣言と本文の食い違い、受け入れ基準の割り当て漏れ、「マージ時点で残る危険」の記録の不備も見る。ポインタに添えた ID の範囲と、「受け入れたこと」の読めない行は警告（終了コードは 0 のまま）。`--base <ref>` で宣言の変更も警告する |
 | `docs validate` | ドキュメントガイドのパスだけを確認したいとき |
 | `rules check` | パス指定の rule（`.claude/rules/`）を足したり直したりしたあと。glob が広すぎて本文が長い rule と、どのファイルにも一致しなくなった rule を見つける |
+| `rules candidates` | 知見の置き場を決めるときと、rule を整理するとき（builder の handoff、close-cycle の collect）。レビューの記録で何度も引かれた rule（機械の検査やリファクタへ移す候補）と、一致しない rule を、最終変更からの日数と理由とともに並べる。移すか消すかは決めない |
+| `areas dormant --paths <glob,...>` | 設計の前（architect の survey の後、builder の plan）。変えるパスのうち長く触られていなかった領域と、結び付いた rule・ADR・constraints の項目を示す |
 
 ## ドキュメント
 

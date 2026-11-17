@@ -30,6 +30,7 @@ import "./commands/next.mts";
 import "./commands/context.mts";
 import "./commands/promotions.mts";
 import "./commands/rules.mts";
+import "./commands/areas.mts";
 import "./commands/validate.mts";
 import "./commands/external.mts";
 import "./commands/naming.mts";
