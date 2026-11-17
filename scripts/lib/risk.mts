@@ -356,6 +356,7 @@ export function exceedsCeilingFor(effective: EffectiveDeclaration, harm: Harm | 
   if (effective.incomplete) return true;
   const declaration = effective.declaration;
   if (declaration === undefined) return false;
+  // ledger.mts の parsePremise は使わない（ledger.mts は steps/ を経て risk.mts を読み込むので、循環 import になる）
   const named = premises.filter((premise) => premise.startsWith("area:")).map((premise) => premise.slice("area:".length).trim());
   if (declaration.areas.some((area) => named.includes(area.name))) return true;
   return exceeds(harm ?? "中", ceilingOf(declaration.axes));
