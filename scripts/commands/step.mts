@@ -281,17 +281,31 @@ function readRiskDeclaration(definition: EvaluatedStep["definition"], result: St
     event.harm = harm;
   }
   if (paths !== undefined) {
-    // 波括弧の外のカンマで区切る（`src/{a,b}/**` を1つの glob として読む）。空の要素は書き損じなので受け付けない
+    // 波括弧の外のカンマで区切る（`src/{a,b}/**` を1つの glob として読む）。波括弧の外の空の要素は書き損じなので
+    // 受け付けない（波括弧の中の空の選択肢 `src/foo{,.test}.ts` は glob として正しい）
     const list = splitList(paths).map((path) => path.trim());
-    if (list.length === 0 || list.includes("") || /^\s*,|,\s*,|,\s*$/.test(paths)) {
+    if (list.length === 0 || topLevelParts(paths).some((part) => part.trim() === "")) {
       throw new HikyakuError(`--paths は触れるパスの glob をカンマで区切って指定してください（現在: ${paths}）`, "例: --paths \"src/api/**,src/{auth,billing}/**\"");
     }
     event.paths = list;
   }
 }
 
+/** 波括弧の外のカンマで分けた要素。splitList と違って空の要素を残す（書き損じを見つけるため） */
+function topLevelParts(value: string): string[] {
+  const parts = [""];
+  let depth = 0;
+  for (const ch of value) {
+    if (ch === "{") depth += 1;
+    if (ch === "}") depth -= 1;
+    if (ch === "," && depth === 0) parts.push("");
+    else parts[parts.length - 1] += ch;
+  }
+  return parts;
+}
+
 /**
- * すべてのゲートの承認の条件:そのステップで唱えた害が高の異議が片づいていること（US-1.4）。
+ * すべてのゲートの承認の条件: そのステップで唱えた害が高の異議が片づいていること（US-1.4）。
  * ほかの作業単位の記録が壊れていれば、この単位の記録だけで確かめる（ほかの単位の決定が見えない分は
  * 片づいていない側に倒れる）。この単位の記録を読めなければ、確かめられないので受け付けない
  */

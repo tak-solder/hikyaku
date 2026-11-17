@@ -138,7 +138,7 @@ const INCOMPLETE = { timing: "now", reason: "基準の宣言を読めず、AI �
  */
 function g3Consent(ctx: StepContext, withDeclaration: boolean): ConsentJudgement {
   if (roundOf(ctx) === "return") return ON_RETURN;
-  if (!withDeclaration) return false;
+  if (!withDeclaration || passedOver(ctx, "options", "adr")) return false;
   const effective = effectiveDeclaration(ctx.config);
   if (effective.incomplete) return INCOMPLETE;
   const declaration = effective.declaration;
@@ -171,6 +171,30 @@ interface UndeclaredArea {
  * options をスキップした回・--paths が無い回は、申告を空とみなす。ADR の一覧を読めなければ Error を返す
  */
 function undeclaredAreas(ctx: StepContext): UndeclaredArea[] | Error {
+  // 1回の評価で consent・args・notices から何度も呼ばれる（git と ADR の読み込みを繰り返さない）
+  const cached = areasCache.get(ctx.events);
+  if (cached !== undefined) return cached;
+  const result = computeUndeclaredAreas(ctx);
+  areasCache.set(ctx.events, result);
+  return result;
+}
+
+const areasCache = new WeakMap<StepContext["events"], UndeclaredArea[] | Error>();
+
+/**
+ * その回で、ゲートの前のステップ（before）の最後の done より後に、ゲートの後のステップ（after）の記録があるか。
+ * あれば、ゲートはその時点の判定で通り過ぎている。宣言による同意は、通り過ぎたあとに宣言や設計の文書が
+ * 変わっても付け直さない（付け直すと、承認の記録の無いゲートが現在地に戻り、後ろの作業がやり直しになる）。
+ * 前のステップを報告し直せば、また判定する
+ */
+function passedOver(ctx: StepContext, before: string, after: string): boolean {
+  const events = currentEvents(ARCHITECT_STEPS, ctx.events);
+  const last = events.findLastIndex((event) => event.skill === "architect" && event.step === before && event.result === "done");
+  if (last === -1) return false;
+  return events.slice(last + 1).some((event) => event.skill === "architect" && event.step === after);
+}
+
+function computeUndeclaredAreas(ctx: StepContext): UndeclaredArea[] | Error {
   const declaration = effectiveDeclaration(ctx.config).declaration;
   if (declaration === undefined) return [];
   let adrs: string[];
@@ -201,6 +225,7 @@ function undeclaredAreas(ctx: StepContext): UndeclaredArea[] | Error {
 
 function g4Consent(ctx: StepContext): ConsentJudgement {
   if (roundOf(ctx) === "return") return ON_RETURN;
+  if (passedOver(ctx, "design-delta", "build-split")) return false;
   if (effectiveDeclaration(ctx.config).incomplete) return INCOMPLETE;
   if (undeclared(ctx)) return false;
   const areas = undeclaredAreas(ctx);
@@ -237,7 +262,8 @@ const G3: StepDefinition = {
  * 推奨案を黙って採ったわけではないため）
  */
 const designChoiceGate = (ctx: StepContext) => {
-  const consent = g3Consent(ctx, riskDeclaration(ctx) !== undefined);
+  // 手順の位置だけを読む経路は値を使わないので、git を読む宣言の判定を省く
+  const consent = g3Consent(ctx, ctx.positionOnly !== true && riskDeclaration(ctx) !== undefined);
   return { designChoiceGate: (consent !== false && consent.timing === "now") || G3.enabled?.(ctx) !== false };
 };
 
@@ -359,7 +385,8 @@ export const ARCHITECT_STEPS: SkillSteps = {
       args: (ctx) => {
         if (ctx.positionOnly === true || undeclared(ctx)) return { undeclaredAreas: [] };
         const areas = undeclaredAreas(ctx);
-        return { undeclaredAreas: areas instanceof Error ? [] : areas };
+        // 裏取りできなかった回は、領域が空でも同意になる。提示で取り違えないよう、そのことを値でも示す
+        return areas instanceof Error ? { undeclaredAreas: [], verified: false } : { undeclaredAreas: areas };
       },
       notices: (ctx) => {
         const notices = declarationNotices(ctx);

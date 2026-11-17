@@ -204,6 +204,14 @@ test("step report: --harm に高・中以外、--paths に空の要素はエラ�
   }
 });
 
+test("step report: 波括弧の中の空の選択肢は glob として受け付ける", (t) => {
+  const directory = workspace(t, {});
+  driveTo(directory, ["options"]);
+  report(directory, "options", "--result", "done", "--harm", "中", "--paths", "src/foo{,.test}.ts,src/{a,,b}/**");
+  const events = readFileSync(join(directory, DESIGN, "progress.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  assert.deepEqual(events.find((event) => event.step === "options").paths, ["src/foo{,.test}.ts", "src/{a,,b}/**"]);
+});
+
 test("step report: options 以外のステップや、options の skipped には申告を添えられない", (t) => {
   const directory = workspace(t, {});
   write(directory, `${DESIGN}/codebase-survey.md`);
@@ -308,6 +316,21 @@ test("G3: 作業ツリーで宣言を緩めても、基準の厳しい宣言で�
   assert.equal(toG3(directory, ["--harm", "高", "--paths", "src/api/**"]).approval, "consent");
 });
 
+test("G3・G4: 通り過ぎたあとに宣言を足しても、承認の記録の無いゲートを現在地に戻さない", (t) => {
+  const directory = workspace(t, {});
+  const split = driveTo(directory, ["build-split"], { options: [], delta: "# 設計差分\n\n- `src/auth/session.ts`\n" });
+  assert.equal(split.step, "build-split");
+  // build-split まで進んだ記録（成果物を作らずに残せる failed で記録する）
+  report(directory, "build-split", "--result", "failed", "--reason", "中断");
+  // 通り過ぎたあとで、main に宣言（上限なし・重い領域）がマージされた
+  const config = join(directory, ".hikyaku.config");
+  writeFileSync(config, `${readFileSync(config, "utf8")}${declaration(NONE, [AUTH])}`);
+  commit(directory, "宣言を足す");
+  const after = statuses(directory);
+  assert.ok(after.includes("G3:off") && after.includes("G4:off"), after.join(", "));
+  assert.notEqual(next(directory).step, "G3");
+});
+
 // ---------------------------------------------------------------------------
 // designChoiceGate
 
@@ -400,5 +423,6 @@ test("G4: ADR の一覧を読めなければ同意に倒し、理由を notices 
   const g4 = g4Before.step === "architecture-review" ? report(directory, "architecture-review", "--result", "done") : next(directory);
   assert.deepEqual([g4.step, g4.approval], ["G4", "consent"]);
   assert.match(g4.approvalReason ?? "", /裏取りできない/);
+  assert.equal(g4.args?.["verified"], false);
   assert.ok(g4.notices?.some((notice) => notice.includes("G3 の申告を裏取りできない")), JSON.stringify(g4.notices));
 });
