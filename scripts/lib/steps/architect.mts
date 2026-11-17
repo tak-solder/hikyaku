@@ -216,9 +216,15 @@ function timingOf(ctx: StepContext, gate: string, step: string, exceeded: Exceed
   const covered = items.some(
     ({ open }) =>
       open.source === "step-report" && open.type === "risk" && open.ask === gate && open.at >= since &&
-      exceeded.premises.every((premise) => open.premises?.includes(premise) === true),
+      exceeded.premises.every((premise) => open.premises?.includes(premise) === true) &&
+      // ユーザーが退けた事項は、もう同意を遅らせる根拠にならない（その場の同意に戻す）
+      latestDecision(items, open.id) !== "rejected",
   );
   return covered ? { timing: "deferred", reason: `${exceeded.reason}（事後同意: マージの前の同意ゲートで同意を取る）` } : now;
+}
+
+function latestDecision(items: { open: { id: string }; latest?: { decision: string } | undefined }[], id: string): string | undefined {
+  return items.find((item) => item.open.id === id)?.latest?.decision;
 }
 
 function g3Consent(ctx: StepContext, withDeclaration: boolean): ConsentJudgement {

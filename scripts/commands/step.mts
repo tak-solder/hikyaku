@@ -241,13 +241,16 @@ function deferredRiskRecord(
 function recordG1Consent(opened: Opened, evaluation: Evaluation, evaluated: EvaluatedStep, event: ProgressEvent, notes: string[]): void {
   const cycle = opened.ctx.cycle;
   if (opened.skill.skill !== "planner" || evaluated.definition.id !== "G1" || event.result !== "approved" || cycle === undefined) return;
-  // 提示の時機: G1 の直前に完了したステップの記録と、その後に差し戻しがあったか（あれば提示し直した回）
+  // 最後の提示の起点: G1 の直前に完了したステップの記録か、その後の G1 の差し戻しのうち最後のもの
   const index = evaluation.steps.indexOf(evaluated);
   const prior = evaluation.steps.slice(0, index).reverse().find((step) => (step.status === "complete" || step.status === "skipped") && step.event !== undefined);
-  const after = prior?.event?.at;
-  const revised = after !== undefined &&
-    opened.ctx.events.some((recorded) => recorded.skill === "planner" && recorded.step === "G1" && recorded.result === "rejected" && recorded.at > after);
-  const recorded = g1ConsentRecord(opened.ctx.config, cycle.directory, { after, revised });
+  let after = prior?.event?.at;
+  if (after !== undefined) {
+    for (const recorded of opened.ctx.events) {
+      if (recorded.skill === "planner" && recorded.step === "G1" && recorded.result === "rejected" && recorded.at > after) after = recorded.at;
+    }
+  }
+  const recorded = g1ConsentRecord(opened.ctx.config, cycle.directory, after);
   event.deferredConsent = recorded.value;
   if (recorded.note !== undefined) notes.push(recorded.note);
 }

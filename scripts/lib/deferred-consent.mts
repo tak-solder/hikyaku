@@ -137,30 +137,20 @@ export function deferredConsentNotice(config: ResolvedConfig, cycleDirectory: st
   return `事後同意（[consent] deferred）は有効になっていません: ${judged.reason}。上限を超える受け入れは、その場でユーザーの同意を取ります`;
 }
 
-/** G1 の提示の時機 */
-export interface G1Presentation {
-  /** G1 の直前に完了したステップの記録の時刻（最初の提示はこれより後） */
-  after: string | undefined;
-  /**
-   * その後に G1 の差し戻し（rejected）がある。ユーザーの答えを反映して提示し直す回なので、設定を直して
-   * コミットしてから提示し直す（G1.md）。提示し直した時刻は記録に無いので、コミットの時刻とは比べない
-   */
-  revised: boolean;
-}
-
 /**
  * G1 の承認で記録する値。requested でなければ false。提示したあとに書き換えた値を承認として残さないよう、
- * サイクル設定に未コミットの変更がある・git を読めない・（差し戻しの無い回で）最後のコミットが最初の提示より後、
- * のどれかなら false と、その理由を返す
+ * サイクル設定に未コミットの変更がある・git を読めない・最後のコミットが最後の提示の起点（presentedAfter:
+ * G1 の直前に完了したステップか、その後の G1 の差し戻しのうち最後の記録の時刻）より後、のどれかなら false と、
+ * その理由を返す。提示した時刻そのものは記録に無いので、起点より後の提示はすべてその後に行われたとみなす。
+ * 値を変えるときは、設定を直してコミットしてから差し戻しを報告し、提示し直す（G1.md）
  */
 export function g1ConsentRecord(
   config: ResolvedConfig,
   cycleDirectory: string,
-  presentation: G1Presentation,
+  presentedAfter: string | undefined,
 ): { value: boolean; note?: string } {
   if (config.consent.deferred !== true) return { value: false };
   const refuse = (note: string) => ({ value: false, note: `事後同意の値を false で記録しました: ${note}` });
-  const presentedAfter = presentation.after;
   if (presentedAfter === undefined) return refuse("G1 の前に完了したステップの記録が無く、提示の時刻が分かりません");
   const path = join(cycleDirectory, CONFIG_FILE);
   const status = gitSync(config.repoRoot, ["status", "--porcelain", "--", path]);
@@ -171,7 +161,6 @@ export function g1ConsentRecord(
   const committedAt = new Date(committed).getTime();
   const presentedAt = new Date(presentedAfter).getTime();
   if (Number.isNaN(committedAt) || Number.isNaN(presentedAt)) return refuse("サイクル設定のコミットの時刻を読めません");
-  if (presentation.revised) return { value: true };
   // コミットの時刻は秒の精度なので、提示と同じ秒のコミットは提示より後とみなす（安全側）
   if (committedAt >= Math.floor(presentedAt / 1000) * 1000) return refuse("サイクル設定の最後のコミットが G1 の提示より後です（提示したあとに書き換えた値は記録しません）");
   return { value: true };

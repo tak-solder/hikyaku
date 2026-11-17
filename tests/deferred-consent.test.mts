@@ -354,16 +354,28 @@ test("G1: 選んでいなければ false を記録し、G1 の後に足しても
   assert.equal(judged(directory).effective, false);
 });
 
-test("G1: 差し戻しを報告してから設定を直してコミットし、提示し直して承認すれば true を記録する", (t) => {
+test("G1: 設定を直してコミットしてから差し戻しを報告し、提示し直して承認すれば true を記録する", (t) => {
   const directory = workspace(t);
   git(directory, "checkout", "-q", "-b", "hikyaku/001-test/plan");
   plannerToG1(directory);
-  report(directory, "plan", "G1", "--result", "rejected", "--input", "事後同意を選ぶ");
   addConsent(directory);
-  commit(directory, "consent を選ぶ");
+  commitEarlier(directory, "consent を選ぶ");
+  report(directory, "plan", "G1", "--result", "rejected", "--input", "事後同意を選ぶ");
   report(directory, "plan", "G1", "--result", "approved", "--input", "OK");
   assert.equal(events(directory, PLANNING).filter((event) => event["step"] === "G1").pop()?.["deferredConsent"], true);
   assert.equal(judged(directory).effective, true);
+});
+
+test("G1: 差し戻しのあとにコミットした値は、提示し直したあとの書き換えとして false で記録する", (t) => {
+  const directory = workspace(t);
+  git(directory, "checkout", "-q", "-b", "hikyaku/001-test/plan");
+  plannerToG1(directory);
+  report(directory, "plan", "G1", "--result", "rejected", "--input", "文言を直す");
+  addConsent(directory);
+  commit(directory, "提示し直したあとに consent を足す");
+  const result = succeeds(directory, "step", "report", "plan", "G1", "001", "--result", "approved", "--input", "OK");
+  assert.match(result, /false で記録しました/);
+  assert.equal(events(directory, PLANNING).filter((event) => event["step"] === "G1").pop()?.["deferredConsent"], false);
 });
 
 test("G1: 承認のあとに差し戻した・planner を回し直したら、前の承認の値は数えない", (t) => {
@@ -451,6 +463,17 @@ test("G3: 手書きの事項しか無ければ（自動で積んだ事項が消�
   const record = JSON.parse(readFileSync(path, "utf8").trim()) as Record<string, unknown>;
   delete record["source"];
   writeFileSync(path, `${JSON.stringify(record)}\n`);
+  const directive = next(directory);
+  assert.equal(directive.step, "G3");
+  assert.equal(directive.approval, "consent");
+});
+
+test("G3: ユーザーが積んだ事項を退けたら、G3 はその場の同意に戻る", (t) => {
+  const directory = deferredWorkspace(t);
+  driveTo(directory, ["options"]);
+  report(directory, "architect", "options", "--result", "done", "--harm", "高", "--paths", "src/api/**", "--loses", "x");
+  const id = ledger(directory)[0]?.["id"] as string;
+  succeeds(directory, "ledger", "decide", "architect", id, "001", "--decision", "rejected", "--by", "user", "--input", "受け入れない");
   const directive = next(directory);
   assert.equal(directive.step, "G3");
   assert.equal(directive.approval, "consent");

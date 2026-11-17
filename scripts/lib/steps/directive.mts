@@ -309,8 +309,9 @@ export function buildDirective(opened: Opened, evaluation: Evaluation, options: 
 
   if (options.notices !== false) {
     base.notices.push(...ledgerNotices(opened, evaluation));
-    // 事後同意を選んだのに有効でない理由は、有効になるまで出し続ける（手順の位置だけを読む経路では git を読まない）
-    const deferred = deferredConsentNotice(ctx.config, ctx.cycle?.directory);
+    // 事後同意を選んだのに有効でない理由は、有効になるまで出し続ける（手順の位置だけを読む経路では git を読まない）。
+    // planner は G1 で値を提示して合意する場なので出さない（G1 の承認の前は、必ず「記録が無い」で有効でないため）
+    const deferred = skill.skill === "planner" ? undefined : deferredConsentNotice(ctx.config, ctx.cycle?.directory);
     if (deferred !== undefined) base.notices.push(deferred);
   }
 
