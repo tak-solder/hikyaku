@@ -73,10 +73,45 @@ test("reworkStepOf: 対応先が手順から外れていれば、ゲートより
     steps: [
       { id: "questions", kind: "run", title: "t" },
       { id: "options", kind: "run", title: "t", when: () => false },
-      { id: "G3", kind: "gate", title: "t", consent: false },
+      { id: "G3", kind: "gate", title: "t", consent: false, reworks: "options" },
     ],
   };
   assert.equal(reworkStepOf(skill, "G3", {} as StepContext), "questions");
+});
+
+test("reworkStepOf: 同意ゲートより後ろ（pr）で記録した事項は、ゲートより前で最も近い run へ戻す", (t) => {
+  const ctx = builderContext(t);
+  assert.equal(reworkStepOf(BUILDER_STEPS, "pr", ctx), "handoff");
+  assert.equal(reworkStepOf(BUILDER_STEPS, "publish", ctx), "handoff");
+  assert.equal(reworkStepOf(PATCH_STEPS, "publish", ctx), "persist", "サイクルに属す patch では write が外れる");
+});
+
+test("reworkStepOf: 同じ ID を持つ内部スキル（write）は、記録の時刻までに最後に記録を残した内部スキルで見分ける", (t) => {
+  const over = { at: at(1), skill: "builder", step: "plan", result: "done" as const, peak: 500_000 };
+  const retro = { at: at(5), skill: "retrospective", step: "analyze", result: "done" as const };
+  const manager = { at: at(3), skill: "build-manager", step: "load", result: "done" as const };
+  assert.equal(reworkStepOf(BUILDER_STEPS, "write", builderContext(t, { events: [over, manager, retro] }), at(6)), "retrospective");
+  assert.equal(reworkStepOf(BUILDER_STEPS, "write", builderContext(t, { events: [over, manager, retro] }), at(4)), "split");
+  assert.equal(reworkStepOf(BUILDER_STEPS, "write", builderContext(t, { events: [over] }), at(4)), "split", "見分けられなければ手順で前の call");
+});
+
+test("lintApproval: ゲートの reworks は、それより前の run ステップでなければならない", async () => {
+  const { lintApproval } = await import("../scripts/lib/steps/engine.mts");
+  const bad: SkillSteps = {
+    skill: "synthetic",
+    steps: [
+      { id: "a", kind: "run", title: "t" },
+      { id: "G", kind: "gate", title: "t", consent: false, reworks: "b" },
+      { id: "b", kind: "run", title: "t" },
+      { id: "H", kind: "gate", title: "t", consent: false, reworks: "missing" },
+      { id: "c", kind: "run", title: "t", reworks: "a" },
+    ],
+  };
+  const problems = lintApproval(bad);
+  assert.ok(problems.some((problem) => problem.includes("G の reworks")));
+  assert.ok(problems.some((problem) => problem.includes("H の reworks")));
+  assert.ok(problems.some((problem) => problem.includes("c は gate でないのに reworks")));
+  for (const skill of [ARCHITECT_STEPS, BUILDER_STEPS, PATCH_STEPS]) assert.deepEqual(lintApproval(skill), [], skill.skill);
 });
 
 test("reworkStepOf: 表に無いゲートは、それより前で最も近い手順に入っている run へ戻す", (t) => {
@@ -125,6 +160,10 @@ test("consentRejections: 同じ単位は戻り先を退けより後に done で�
   assert.deepEqual(equal.reworked, [], "同じ時刻は作り直していない扱い");
   const after = consentRejections("builder", [same], builderContext(t, { events: [done("plan", 11)] }));
   assert.deepEqual(after, { rework: [], reworked: [same.open.id], returns: [] });
+  // step restart の区切りより前の報告し直しは数えない
+  const restart = { at: at(12), skill: "builder", step: "*", result: "restart" as const };
+  const restarted = consentRejections("builder", [same], builderContext(t, { events: [done("plan", 11), restart] }));
+  assert.deepEqual(restarted.reworked, []);
 });
 
 test("consentStep(args): 退けがあるときだけ reworkFrom・rework・returns を足す", (t) => {
@@ -313,6 +352,11 @@ test("ledger return-draft: 前のフェーズの退けから下書きを出し�
   };
   assert.match(fails("build-01", "001", "--items", own), /reworkFrom/, "同じ単位");
   assert.match(fails("build-01", "001", "--items", pending), /rejected ではありません/);
+  const question = (JSON.parse(succeeds(
+    directory, "ledger", "open", "architect", "001", "--type", "question", "--when", "merge@build-01", "--who", "user", "--summary", "文言", "--json",
+  )) as { record: OpenRecord }).record.id;
+  decideByUser(directory, question, "rejected");
+  assert.match(fails("build-01", "001", "--items", question), /同意ゲートの項目ではありません/);
   assert.match(fails("build-01", "001", "--items", "architect.99-ffff"), /ありません/);
   assert.match(fails("architect", "001", "--items", other), /builder/);
   fails("build-01", "001");

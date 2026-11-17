@@ -15,6 +15,7 @@ import {
   formatWhen,
   gateIds,
   HARMS,
+  isConsentItem,
   itemJson,
   itemLine,
   ITEM_TYPES,
@@ -657,7 +658,8 @@ register({
   usage: "hikyaku ledger return-draft <phase> [<cycle>] --items <id,...> [--json]",
   details: [
     "<phase> は build-NN だけです（return.md は builder が書きます）。",
-    "--items の事項は、最新の決定が rejected で、記録した作業単位が <phase> と別（前のフェーズ）のものだけを受け付けます。",
+    "--items の事項は、<phase> の同意ゲートの項目（when=merge@<phase>・who=user の risk / objection）で、最新の決定が",
+    "rejected で、記録した作業単位が <phase> と別（前のフェーズ）のものだけを受け付けます。",
     "同じ作業単位の事項は差し戻さず、同意ゲートの args.reworkFrom のステップを作り直します。",
     "下書きは「退けた項目」「試したこと」（退けた受け入れ・拠り所・失うもの・ユーザーの答え）をそろえ、",
     "「問題を変える選択肢」「推奨」は置き場所のままにします。下書きのままでは行き詰まりの報告の検査を通りません。",
@@ -674,6 +676,12 @@ register({
     const ledger = readLedger(opened.cycle.directory);
     const items = ids.map((id) => {
       const item = findItem(ledger, id);
+      if (!isConsentItem(item, opened.phase)) {
+        throw new HikyakuError(
+          `${id} は ${opened.phase} の同意ゲートの項目ではありません`,
+          `差し戻すのは、${opened.phase} の同意ゲートで退けた項目（when=merge@${opened.phase}・who=user の risk / objection）だけです。`,
+        );
+      }
       if (item.latest?.decision !== "rejected") {
         throw new HikyakuError(`${id} の最新の決定が rejected ではありません`, "差し戻すのは、同意ゲートで退けた項目だけです。");
       }

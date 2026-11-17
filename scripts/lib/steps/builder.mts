@@ -107,6 +107,7 @@ export const BUILDER_STEPS: SkillSteps = {
       title: "plan.md 単独の承認",
       enabled: (ctx) => ctx.config.gates.plan,
       consent: false,
+      reworks: "plan",
       ask: "G7",
     },
     {
@@ -127,6 +128,7 @@ export const BUILDER_STEPS: SkillSteps = {
       kind: "gate",
       title: "plan.md と test-spec.md の承認",
       consent: false,
+      reworks: "plan",
       ask: "G8",
       checkpoint: "approval",
     },
