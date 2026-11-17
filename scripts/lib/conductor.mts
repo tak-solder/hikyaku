@@ -306,6 +306,8 @@ export const ANSWER_ENV = {
   choice: "HIKYAKU_ANSWER_CHOICE",
   risk: "HIKYAKU_ANSWER_RISK",
   token: "HIKYAKU_ANSWER_TOKEN",
+  /** 監督の上限を超える受け入れを事後同意へ回す（1 のときだけ。checkSupervisorAnswer が受け付けたとき） */
+  defer: "HIKYAKU_ANSWER_DEFER",
 } as const;
 
 /** ユーザーに上げる問いを記録させる固定文の作業単位（builder は build-NN、architect は architect、close-cycle は close） */
@@ -333,17 +335,51 @@ export function escalateMessage(unit: string, cycle: string, ask: string): strin
   ].join("\n");
 }
 
-/** --closes の事項をユーザーの答えで閉じる固定文。子が ID を知らない新しい起動でも閉じられるよう、回答の先頭に置く */
-export function closesMessage(unit: string, cycle: string, items: string[], answer: string): string {
+/**
+ * --closes の事項をユーザーの答えで閉じる固定文。子が ID を知らない新しい起動でも閉じられるよう、回答の先頭に置く。
+ * items は答えを待つ事項（decided で閉じる）、consentItems は同意ゲートの項目（事後同意。項目ごとに決定を選ぶ）
+ */
+export function closesMessage(
+  unit: string,
+  cycle: string,
+  items: string[],
+  answer: string,
+  consentItems: { open: { id: string } }[] = [],
+): string {
   // 答えは単一引用符でくくる（$ やバッククォートを子のシェルに展開させない）。`--input=` の形にするのは、
   // 答えが - で始まってもフラグと読まれないため（args.mts は次のトークンが - で始まると値にしない）
   const input = `'${answer.replace(/'/g, `'\\''`)}'`;
+  const lines: string[] = [];
+  if (items.length > 0) {
+    lines.push(
+      "次の事項はユーザーの答えで閉じます。続きに進む前に、それぞれを記録してください（答えは書き換えずにそのまま渡す）。",
+      ...items.map((id) => `- hikyaku ledger decide ${unit} ${id} ${cycle} --decision decided --by user --input=${input}`),
+      "",
+    );
+  }
+  if (consentItems.length > 0) {
+    lines.push(
+      "次の項目は、マージの前にユーザーが同意する項目（事後同意）です。ユーザーの答えに従って項目ごとに consented / decided / rejected / resolved を選び、" +
+        "高として扱う異議（害が高か、上限を超える）はユーザーが受け入れると書いた言葉を --accepts に添えて記録してください" +
+        "（答えから決められない項目は記録せず、gate でもう一度尋ねる）。",
+      ...consentItems.map(
+        ({ open }) => `- hikyaku ledger decide ${unit} ${open.id} ${cycle} --decision <consented|decided|rejected|resolved> --by user --input=${input} [--accepts=<ユーザーの言葉>]`,
+      ),
+      "",
+    );
+  }
+  return [...lines, "ユーザーの答え:", answer].join("\n");
+}
+
+/**
+ * 監督の上限を超える受け入れを事後同意へ回すときに、子への回答の先頭に置く固定文（HIKYAKU_ANSWER_DEFER=1）。
+ * risk の事項は ledger decide --by supervisor が決定と同時に書くので、子に求めるのは --loses だけ
+ */
+export function deferNotice(unit: string, cycle: string): string {
   return [
-    "次の事項はユーザーの答えで閉じます。続きに進む前に、それぞれを記録してください（答えは書き換えずにそのまま渡す）。",
-    ...items.map((id) => `- hikyaku ledger decide ${unit} ${id} ${cycle} --decision decided --by user --input=${input}`),
-    "",
-    "ユーザーの答え:",
-    answer,
+    "この監督の答えは、AI に任せてよい上限を超える受け入れを、最後のビルドの同意ゲート（事後同意）へ回します。",
+    `答えを hikyaku ledger decide ${unit} <ID> ${cycle} --by supervisor で記録するときは、--loses に退けた安全側の案で失う利点を添えてください。`,
+    "決定と同時に、受け入れたリスクが risk の事項（ユーザーがマージの前に決める）として記録されます。",
   ].join("\n");
 }
 

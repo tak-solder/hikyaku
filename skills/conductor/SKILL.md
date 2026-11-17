@@ -96,6 +96,8 @@ planning/user-stories.md を承認済みの要件として扱います。
 フェーズの PR のレビュアーと、待つ上限: {asks の出力の review}
 最後の PR のレビュアー: {asks の出力の review.finalReviewers}
 問いの扱い: {asks の出力の queueing}
+事後同意: {asks の出力の deferredConsent。有効 / 無効（reason） / 選んでいない}
+  （有効なら: 上限を超える受け入れは各フェーズで止めず、最後のビルドの同意ゲートで一覧にしてユーザーに尋ねます）
 各フェーズの PR は conductor ブランチ（{conductor}）に向け、監督が取り込みます。
 デフォルトブランチにはマージしません。最後のビルドが終わったら、{conductor} → デフォルトブランチの
 PR を作って止まります。
@@ -145,6 +147,14 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor waiting {cycle} --jso
 - [ ] `items` の問いを、`AskUserQuestion` でまとめて尋ねる。各問いの本文・選択肢・推奨は、問いを出した
   子の記録先（builder なら `build-NN/questions.md`、architect なら `design/design-questions.md`。`source` の
   ブランチの上にある）から読み、要約せずに示す
+  - `ask` が `deferred-consent` の待ち（最後のビルドの同意ゲート）は、そのビルドのブランチで次の出力を要約せずに示し、
+    **項目ごとに**ユーザーの決定（同意 / 退ける など）を受け取る。高として扱う異議には、ユーザーが受け入れると書いた言葉も受け取る
+
+```bash
+HIKYAKU_CONDUCTOR_CHILD=1 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger consent-list build-NN {cycle} --full
+```
+
+  （環境変数は、子と同じくサイクル全体の項目を並べるため。最後のビルドの子の同意ゲートの対象はサイクル全体）
 - [ ] 答えごとに、待っている作業単位のブランチ（`source` の `origin/` を除いたもの。`build-NN`、ARCHITECT なら `architect`、
   差し戻しの再設計ならそのビルドのブランチ、CLOSE なら `close`）へ conductor ブランチを
   取り込む（`git switch {ブランチ}`・`git merge {conductor}`・push）。取り込みで衝突したら、ユーザーに上げる
@@ -158,7 +168,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {phase} {cycle
 ```
 
   - 1件ずつ再開し、結果を Step 3 の解析から処理する（逐次実行は保つ）。`--closes` に渡せるのは、作業ツリーの
-    記録にある未決の待ちの事項だけ（取り込み前のブランチで再開すると拒まれる）
+    記録にある未決の待ちの事項と、再開する子の同意ゲートの項目だけ（取り込み前のブランチで再開すると拒まれる）
+  - `deferred-consent` の待ちは、`--closes` に待ちの ID と同意の項目の ID をすべて渡す。回答ファイルには項目ごとの
+    ユーザーの決定を、ID を添えて書く（子が項目ごとに `ledger decide --by user` で記録する）
   - 答えを渡し終えたら Step 1 へ
 
 ### Step 2: ブランチを用意する
@@ -253,6 +265,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {phase} {cycle
 
 launch が `--from supervisor` を拒んだら（ユーザーが答える問い、安全側でない値、申告の無い受け入れ、上限を
 超える申告）、答えを変えて通そうとせず、`--escalate` でユーザーに上げる。
+
+上限を超える申告でも、事後同意が有効で、子に同意ゲートの置き場があり（architect・最後以外のビルドの子と、同意
+ゲートの手前の最後のビルドの子）、前提が宣言の参照だけなら、launch は受け付ける。子は答えを記録するときに、その
+受け入れを risk の事項として積み（スクリプトが書く）、最後のビルドの同意ゲートでユーザーが決める。監督が答えを
+軽くして通すための経路ではないので、上限を超えるかどうかで答えを変えない。
 
 回答ファイルの書式（監督が判断した場合）:
 
@@ -396,8 +413,13 @@ gh pr list --head {conductor ブランチ} --base {baseBranch} --state open --js
     （ユーザーがレビューで確認するため）
   - `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger answers {cycle} --format pr` の出力（「監督が答えた問い」の節）を、
     本文にそのまま貼る。`--no-risk` で答えた問いの「リスクなしと申告」も、スクリプトが決定の記録から示す。監督は書き写さない
-  - `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger premises --format pr` の出力が空でなければ、本文にそのまま貼る
-    （サイクルで宣言を変えたなら、それを拠り所にした受け入れをユーザーが見直すのはこの PR。フェーズの PR は監督が取り込む）
+  - `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger pr-section <最後のビルド> {cycle} --all` の出力（全フェーズで
+    受け入れたリスクと、同意・退けの決定と答えの出どころ）が空でなければ、本文にそのまま貼る。監督は書き写さない。
+    ただし PR を作る前に `--json` の `undecided` を見て、空でなければ PR を作らずに、その ID を示してユーザーに上げる
+    （最後のビルドの同意ゲートを通らなかった項目の安全網）
+  - `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger premises --changed-from {baseBranch} --format pr` の出力が空でなければ、
+    本文にそのまま貼る（conductor ブランチとベースブランチの差分で、サイクルで変えた宣言と、それを拠り所にした全フェーズの
+    受け入れが出る。ユーザーが見直すのはこの PR。フェーズの PR は監督が取り込む）
   - 外部連携が有効なら、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref conductor {cycle}` の行
     （サイクルの issue への `Refs #12`）を本文の末尾に入れる。issue は CLOSE の PR で閉じる
 - [ ] 設定に従って公開する（失敗したら、再実行のコマンドと Draft のままであることを案内する。出力の

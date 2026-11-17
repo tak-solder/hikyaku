@@ -143,10 +143,10 @@ export function cycleConsentItems(ledger: Ledger): LedgerItem[]
 
 ## 実装ステップ
 
-- [ ] Step 1: `ledger.mts` に `cycleConsentItems`、`consent.mts` に `isLastBuild`・`conductorConsentMode`・`consentTargets` を足し、`consentStep` の slot・when・accepts・reopens・args と `consentGateSlot` を切り替える
-- [ ] Step 2: `deferred-consent.mts` の子の無効化を消す
-- [ ] Step 3: `ledger consent-list`・`pr-section`（`--all`・出どころ）・`return-draft` を `consentTargets` に寄せる
-- [ ] Step 4: `conductor asks` の `deferredConsent`、`conductor launch` の `--closes` の同意の項目と `checkSupervisorAnswer` の事後同意の分岐（`deferredRiskMessage`）
-- [ ] Step 5: テスト（step-consent・ledger・conductor）
-- [ ] Step 6: SKILL.md・headless-protocol・consent.md・docs・CHANGELOG
+- [x] Step 1: `ledger.mts` に `cycleConsentItems`、`consent.mts` に `isLastBuild`・`conductorConsentMode`・`consentTargets` を足し、`consentStep` の slot・when・accepts・reopens・args と `consentGateSlot` を切り替える
+- [x] Step 2: `deferred-consent.mts` の子の無効化を消す
+- [x] Step 3: `ledger consent-list`・`pr-section`（`--all`・出どころ）・`return-draft` を `consentTargets` に寄せる
+- [x] Step 4: `conductor asks` の `deferredConsent`、`conductor launch` の `--closes` の同意の項目と `checkSupervisorAnswer` の事後同意の分岐（`deferredRiskMessage`）
+- [x] Step 5: テスト（step-consent・ledger・conductor）
+- [x] Step 6: SKILL.md・headless-protocol・consent.md・docs・CHANGELOG
 - [ ] Step 7: ローカル検証（`npx tsc --noEmit`・`npm test`。`conductor lint`・`step lint` は npm test の結合テストで確かめる）

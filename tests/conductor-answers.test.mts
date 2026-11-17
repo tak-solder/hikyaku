@@ -173,10 +173,13 @@ test("childAnswer: 子の環境変数から答えを読み、子でなければ 
     HIKYAKU_ANSWER_CHOICE: "proceed", HIKYAKU_ANSWER_RISK: "中:app.exposure,area:billing", HIKYAKU_ANSWER_TOKEN: "t-1",
   };
   assert.deepEqual(childAnswer(env), {
-    from: "supervisor", items: [], ask: "review-findings", choice: "proceed",
+    from: "supervisor", items: [], defer: false, ask: "review-findings", choice: "proceed",
     risk: { kind: "declared", harm: "中", premises: ["app.exposure", "area:billing"] }, token: "t-1",
   });
   assert.deepEqual(childAnswer({ ...env, HIKYAKU_ANSWER_RISK: "none" })?.risk, { kind: "none" });
+  // HIKYAKU_ANSWER_DEFER=1 のときだけ defer（build-19）
+  assert.equal(childAnswer({ ...env, HIKYAKU_ANSWER_DEFER: "1" })?.defer, true);
+  assert.equal(childAnswer({ ...env, HIKYAKU_ANSWER_DEFER: "0" })?.defer, false);
   const { HIKYAKU_CONDUCTOR_CHILD: _child, ...notChild } = env;
   assert.equal(childAnswer(notChild), undefined);
 });
@@ -212,8 +215,13 @@ test("CLI: conductor parse は gate の ask に safe と declaresRisk を出し�
   assert.equal(find("design-conflict").declaresRisk, false);
   assert.equal(typeof asks.queueing, "string");
   assert.notEqual(asks.queueing, "");
-  assert.equal(asks.deferredConsent, undefined);
-  assert.match(succeeds(directory, "conductor", "asks", "001"), /ユーザーに上げる問いは記録に積み、依存しないビルドを先に進める/);
+  // 事後同意を選んでいない（build-19）
+  assert.equal(asks.deferredConsent.requested, false);
+  assert.equal(asks.deferredConsent.effective, false);
+  assert.equal(typeof asks.deferredConsent.reason, "string");
+  const text = succeeds(directory, "conductor", "asks", "001");
+  assert.match(text, /ユーザーに上げる問いは記録に積み、依存しないビルドを先に進める/);
+  assert.match(text, /^事後同意: 選んでいない/m);
 });
 
 test("CLI: conductor parse は記録にある未決の who=user・when=now の question を指す waiting だけ検査を外す", (t) => {
@@ -368,7 +376,7 @@ function declared(t: TestContext, app: string): string {
 
 const MEDIUM = '\n[app]\nexposure = "internal"\ndata = "none"\nimpact = "low"\n';
 
-test("CLI: conductor launch は上限以内の申告を受け付け、上限を超える申告は事後同意が有効でも拒む", (t) => {
+test("CLI: conductor launch は上限以内の申告を受け付け、上限を超える申告は事後同意が有効でなければ（選んだだけでマージされていなければ）拒む", (t) => {
   const directory = declared(t, MEDIUM);
   const within = launched(directory, ...RESUME, "--from", "supervisor", "--ask", "review-findings", "--choice", "proceed", "--harm", "中", "--premises", "app.exposure");
   assert.ok(within.command.includes("HIKYAKU_ANSWER_CHOICE=proceed"));

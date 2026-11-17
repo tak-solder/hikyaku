@@ -10,15 +10,15 @@ import {
   assertDecider,
   childAnswer,
   consentDecided,
-  consentItemsOf,
+  cycleConsentItems,
   cycleTimeline,
+  deferrablePremisesProblem,
   decideItem,
   DECISIONS,
   findItem,
   formatWhen,
   gateIds,
   HARMS,
-  isConsentItem,
   isHighObjection,
   itemJson,
   itemLine,
@@ -27,7 +27,6 @@ import {
   nextItemId,
   OBJECTION_DECISIONS,
   openItem,
-  parsePremise,
   parsePremises,
   parseWhen,
   parseWho,
@@ -51,7 +50,7 @@ import { register } from "../lib/registry.mts";
 import { open, type Opened } from "../lib/steps/directive.mts";
 import { evaluate } from "../lib/steps/engine.mts";
 import { directiveOf, type FoundUnit } from "../lib/steps/locate.mts";
-import { consentGateSlot } from "../lib/steps/consent.mts";
+import { consentGateSlot, consentTargets } from "../lib/steps/consent.mts";
 import { deferredConsent } from "../lib/deferred-consent.mts";
 import { effectiveDeclaration, exceedsCeilingFor, type Harm } from "../lib/risk.mts";
 import { openCycle, type CycleContext } from "../lib/workspace.mts";
@@ -236,9 +235,14 @@ register({
     "                    リスクの申告・起動の印（ask・choice・risk・token）を環境変数から決定に必ず残します。",
     "                    リスクの申告が要る答え（questions、review-findings の proceed）で申告が無ければ拒みます",
     "答えの出どころ（from）も決定に残します。子でないセッションは検査せず、欄も足しません。",
+    "",
+    "事後同意が有効なサイクルで、監督が上限を超える受け入れを答えた子（launch が HIKYAKU_ANSWER_DEFER=1 を置いた）では、",
+    "--by supervisor に --loses（退けた安全側の案で失う利点）が要ります。決定と同時に、その受け入れを risk の事項",
+    "（who=user・when=merge@<phase>・害と前提は HIKYAKU_ANSWER_RISK から）として同じ記録に書きます。",
+    "この事項は最後のビルドの同意ゲートでユーザーが決めます。",
   ].join("\n"),
   writes: true,
-  options: ["decision", "by", "input", "accepts", "reason"],
+  options: ["decision", "by", "input", "accepts", "reason", "loses"],
   maxOperands: 3,
   run: ({ args, operands }) => {
     const id = operands[1];
@@ -261,6 +265,20 @@ register({
     const itemAsk = ledger.items.find((item) => item.open.id === id)?.open.ask;
     const problem = answerProblem(by, id, answer, itemAsk);
     if (problem !== undefined) throw new HikyakuError(problem);
+    const loses = flagString(args, "loses");
+    const deferring = by === "supervisor" && answer?.defer === true;
+    if (loses !== undefined && !deferring) {
+      throw new HikyakuError("--loses は、事後同意へ回す監督の答え（HIKYAKU_ANSWER_DEFER=1）を --by supervisor で記録するときだけ渡せます");
+    }
+    if (deferring && (loses === undefined || loses.trim() === "")) {
+      throw new HikyakuError(
+        "この監督の答えは上限を超える受け入れを事後同意へ回すので、--loses に退けた安全側の案で失う利点を添えてください",
+        "決定と同時に、その受け入れを risk の事項として記録します。最後のビルドの同意ゲートでユーザーが決めます。",
+      );
+    }
+    if (deferring && answer?.risk?.kind !== "declared") {
+      throw new HikyakuError("事後同意へ回す監督の答えに、リスクの申告（HIKYAKU_ANSWER_RISK）がありません", "監督に申告つきで再開してもらってください。");
+    }
     const record: DecideRecord = {
       record: "decide",
       at: new Date().toISOString(),
@@ -274,18 +292,43 @@ register({
       ...answerFields(by, answer),
       ...meta(),
     };
+    // 事後同意へ回す監督の答え: 受け入れたリスクを、決定と同時にスクリプトが risk の事項として書く（LLM に開かせない）
+    const deferred: OpenRecord | undefined = !deferring || answer?.risk?.kind !== "declared" ? undefined : (() => {
+      const asked = [answer.ask, answer.choice].filter((part) => part !== undefined).join(" / ");
+      const { step } = currentStep(args, opened);
+      return {
+        record: "open",
+        at: record.at,
+        id: nextItemId(ledger, opened.phase),
+        unit: opened.phase,
+        ...(step === undefined ? {} : { step }),
+        type: "risk",
+        summary: `監督の答え（${asked === "" ? "問い不明" : asked}）で受け入れたリスク: ${findItem(ledger, id).open.summary}`,
+        when: `merge@${opened.phase}`,
+        who: "user",
+        premises: answer.risk.premises,
+        loses: (loses as string).trim(),
+        harm: answer.risk.harm,
+        ...(answer.ask === undefined ? {} : { ask: answer.ask }),
+        source: "supervisor-answer",
+        ...(answer.token === undefined ? {} : { token: answer.token }),
+        ...meta(),
+      } satisfies OpenRecord;
+    })();
     const dryRun = args.flags.get("dry-run") === true;
     if (dryRun) {
       // 書き込まずに decideItem と同じ検査を行う
       assertDecider(findItem(ledger, id).open, record.by, record.input);
     } else {
       decideItem(opened.cycle.directory, record, ledger);
+      if (deferred !== undefined) openItem(opened.cycle.directory, deferred, ledger);
     }
     const path = relative(opened.ctx.config.repoRoot, ledgerPath(opened.cycle.directory, opened.phase));
-    emit({ record, path, dryRun }, () =>
+    emit({ record, deferred: deferred ?? null, path, dryRun }, () =>
       [
         `${dryRun ? "記録します（--dry-run のため書き込みません）" : "記録しました"}: ${id} ${decision}`,
         `  決めた人  ${whoLabel(by)}`,
+        ...(deferred === undefined ? [] : [`  事後同意  ${deferred.id}（受け入れたリスク。最後のビルドの同意ゲートでユーザーが決める）`]),
         `  記録先    ${path}`,
       ].join("\n"),
     );
@@ -322,7 +365,8 @@ register({
     "  --defer     事後同意（[consent] deferred）が有効なサイクルで、上限を超える異議の同意をマージの前の同意ゲートへ回す。",
     "              --decision・--input・--accepts は渡さず、決定なしで when=merge@<phase> の事項を記録します。",
     "              --premises（app.* か area:* だけ）が必須。事後同意が無効、上限を超えない、今の回に同意ゲートが",
-    "              現れない（plan / close / create、差し戻しからの再設計の回、この回で PR を作るステップを終えた後）なら拒みます",
+    "              現れない（plan / close / create、差し戻しからの再設計の回、この回で PR を作るステップを終えた後）なら拒みます。",
+    "              conductor の architect・最後以外のビルドの子では置き場を問わず受け付け、最後のビルドの同意ゲートが拾います",
     "",
     "記録したときのその作業単位の現在のステップを step に残すので、ゲートを提示している間に呼んでください。",
   ].join("\n"),
@@ -473,20 +517,9 @@ function assertDeferrable(opened: Opened & { cycle: CycleContext }, premises: st
       "その場でユーザーの決定を聞き、--decision と --input（受け入れるなら --accepts と --premises）で記録してください。",
     );
   }
-  if (premises.length === 0 || premises.some((premise) => !["app", "area"].includes(parsePremise(premise).kind))) {
-    throw new HikyakuError(
-      "--defer には、拠り所にした宣言の参照（app.* か area:*）だけを --premises に添えてください",
-      "マージの前の同意へ回せるのは、宣言で決まる上限を超える受け入れだけです（宣言が変われば見直せるように）。",
-    );
-  }
-  // 宣言に無い領域名を拠り所にすると、宣言を変える PR での見直し（premises）がその受け入れを拾えない
-  const declared = effectiveDeclaration(opened.ctx.config).declaration?.areas.map((area) => area.name) ?? [];
-  const unknown = premises.map(parsePremise).flatMap((premise) => (premise.kind === "area" && !declared.includes(premise.name) ? [premise.name] : []));
-  if (unknown.length > 0) {
-    throw new HikyakuError(
-      `--premises の重い領域が宣言にありません: ${unknown.join(", ")}`,
-      "[[app.areas]] に宣言した領域の名前を指定してください（hikyaku config で確かめられます）。",
-    );
+  const premisesProblem = deferrablePremisesProblem(opened.ctx.config, premises);
+  if (premisesProblem !== undefined) {
+    throw new HikyakuError(`--defer の --premises を受け付けません: ${premisesProblem}`);
   }
   if (!exceedsCeiling) {
     throw new HikyakuError(
@@ -620,8 +653,13 @@ function premisesText(item: LedgerItem): string {
   return item.open.premises === undefined || item.open.premises.length === 0 ? "（なし）" : item.open.premises.join(", ");
 }
 
+/** 決定した人と、答えの出どころ（conductor の子が記録した決定だけ。from の無い決定は従来どおり） */
+function deciderText(d: DecideRecord): string {
+  return d.from === undefined ? whoLabel(d.by) : `${whoLabel(d.by)}・出どころ: ${d.from}`;
+}
+
 function decisionLine(d: DecideRecord): string {
-  const parts = [`${d.at} ${d.decision}（${whoLabel(d.by)}・${d.unit}）`];
+  const parts = [`${d.at} ${d.decision}（${deciderText(d)}・${d.unit}）`];
   if (d.input !== undefined) parts.push(`答え「${d.input}」`);
   if (d.accepts !== undefined) parts.push(`受け入れ「${d.accepts}」`);
   if (d.reason !== undefined) parts.push(`理由「${d.reason}」`);
@@ -650,6 +688,8 @@ register({
   usage: "hikyaku ledger consent-list <phase> [<cycle>] [--full] [--json]",
   details: [
     "対象は type が risk か objection で、who=user・when=merge@<phase> の事項です（記録した作業単位は問いません）。",
+    "事後同意が有効なサイクルの conductor の最後のビルドの子（HIKYAKU_CONDUCTOR_CHILD=1）では、対象はサイクル全体の",
+    "when=merge@<どこでも> の事項です（architect・ほかのビルドの子が最後のビルドの同意ゲートへ回した受け入れ）。",
     "1項目を「受け入れたリスク / 拠り所の前提 / 失うもの」の3行で示し、見出しに ID と決定の状態を出します。",
     "--full で、根拠・害・いつ・記録した単位と、決定の記録まで出します。書き込みはしません。",
     "決定として数えるのは、最新の決定がユーザーの consented / decided / resolved のときだけです（rejected は数えず、",
@@ -659,14 +699,17 @@ register({
   maxOperands: 2,
   run: ({ args, operands }) => {
     const opened = openUnit(args, operands[0], operands[1]);
-    const items = consentItemsOf(readLedger(opened.cycle.directory), opened.phase);
+    const items = consentTargets(readLedger(opened.cycle.directory), opened.skill.skill, opened.ctx);
     const full = args.flags.get("full") === true;
     const pending = undecidedConsentItems(items);
+    const whole = items.some((item) => item.open.when !== `merge@${opened.phase}`);
     emit({ phase: opened.phase, cycle: opened.cycle.name, items: items.map(consentJson), undecided: pending.map((item) => item.open.id) }, () => {
       // 「決定が足りない項目」の行は必ず出す（PR を作る前の確認が、件数を比べずにこの行を読む）
       const pendingLine = `決定が足りない項目: ${pending.length === 0 ? "なし" : pending.map((item) => item.open.id).join(", ")}`;
       if (items.length === 0) return `${opened.phase} に、マージの前にユーザーが同意する項目はありません。\n${pendingLine}`;
-      const lines = [`${opened.phase} のマージの前にユーザーが同意する項目: ${items.length} 件（決定が足りない ${pending.length} 件）`];
+      const lines = [
+        `${opened.phase} のマージの前にユーザーが同意する項目${whole ? "（サイクル全体）" : ""}: ${items.length} 件（決定が足りない ${pending.length} 件）`,
+      ];
       for (const item of items) {
         const o = item.open;
         lines.push("", `${o.id}（${o.type === "risk" ? "受け入れたリスク" : "異議"}）[${consentState(item)}]`);
@@ -687,15 +730,19 @@ register({
   },
 });
 
-/** PR 本文に貼る節。中身のある節だけを出し、どれも無ければ空 */
-function prSection(ledger: Ledger, timeline: CycleTimeline, unit: string) {
-  const consent = consentItemsOf(ledger, unit);
+/**
+ * PR 本文に貼る節。中身のある節だけを出し、どれも無ければ空。consent は同意の対象（consentTargets か、--all なら
+ * サイクル全体）。all なら、マージの前に決める事項も全作業単位の merge@ から拾う（conductor の最後の PR）
+ */
+function prSection(ledger: Ledger, timeline: CycleTimeline, unit: string, consent: LedgerItem[], all: boolean) {
   const accepted = consent.filter(consentDecided);
   // 最新が rejected の項目は「未解決の退け」に出すので、ここでは重ねない
   const undecided = undecidedConsentItems(consent).filter((item) => item.latest?.decision !== "rejected");
   const rejected = ledger.items.filter((item) => item.latest?.decision === "rejected");
   const beforeMerge = ledger.items.filter(
-    (item) => (item.open.type === "question" || item.open.type === "provisional") && item.open.when === `merge@${unit}` && item.latest === undefined,
+    (item) =>
+      (item.open.type === "question" || item.open.type === "provisional") && item.latest === undefined &&
+      (all ? item.open.when.startsWith("merge@") : item.open.when === `merge@${unit}`),
   );
   const overdue = summarize(ledger, timeline).open.filter((item) => item.timing === "overdue");
   const line = (item: LedgerItem): string => `- ${item.open.id}: ${item.open.summary}`;
@@ -707,7 +754,7 @@ function prSection(ledger: Ledger, timeline: CycleTimeline, unit: string) {
       body.push(
         line(item),
         `  - 拠り所の前提: ${premisesText(item)} / 失うもの: ${item.open.loses ?? "（なし）"}`,
-        `  - 決定: ${latest.decision}（${whoLabel(latest.by)}）${latest.accepts === undefined ? "" : ` 受け入れ「${latest.accepts}」`}`,
+        `  - 決定: ${latest.decision}（${deciderText(latest)}）${latest.accepts === undefined ? "" : ` 受け入れ「${latest.accepts}」`}`,
       );
     }
     if (accepted.length === 0) body.push("（ユーザーの決定のある項目はありません）");
@@ -738,20 +785,29 @@ function prSection(ledger: Ledger, timeline: CycleTimeline, unit: string) {
 register({
   name: "ledger pr-section",
   summary: "PR 本文に貼る「受け入れたリスク（事後同意）」「未解決の退け」「マージの前に決める事項」「期限を過ぎた事項」の節を出す",
-  usage: "hikyaku ledger pr-section <phase> [<cycle>] [--json]",
+  usage: "hikyaku ledger pr-section <phase> [<cycle>] [--all] [--json]",
   details: [
     "中身のある節だけを Markdown で出します。どれも無ければ空を出します。書き込みはしません。",
     "  受け入れたリスク（事後同意）  when=merge@<phase> の、ユーザーが決める risk・objection と決定。",
-    "                                決定の無い項目は「同意の決定が無い項目」として分けて出します",
+    "                                決定の無い項目は「同意の決定が無い項目」として分けて出します。",
+    "                                conductor の子が記録した決定には、答えの出どころ（user / supervisor）を添えます",
     "  未解決の退け                  サイクル全体で、最新の決定が rejected の事項",
     "  マージの前に決める事項        when=merge@<phase> の question・provisional で未決のもの",
     "  期限を過ぎた事項              サイクル全体の未決で、期限を過ぎたもの",
+    "",
+    "--all は conductor の最後の PR（conductor ブランチ→ベースブランチ）の本文に使います。受け入れたリスクと",
+    "マージの前に決める事項を、サイクル全体（when=merge@<どこでも>）から出します。",
+    "--all なしでも、事後同意が有効なサイクルの conductor の最後のビルドの子では、受け入れたリスクがサイクル全体になります",
+    "（マージの前に決める事項は <phase> のものだけ）。",
   ].join("\n"),
-  options: [],
+  options: ["all"],
   maxOperands: 2,
   run: ({ args, operands }) => {
     const opened = openUnit(args, operands[0], operands[1]);
-    const section = prSection(readLedger(opened.cycle.directory), cycleTimeline(opened.ctx.config, opened.cycle), opened.phase);
+    const all = args.flags.get("all") === true;
+    const ledger = readLedger(opened.cycle.directory);
+    const consent = all ? cycleConsentItems(ledger) : consentTargets(ledger, opened.skill.skill, opened.ctx);
+    const section = prSection(ledger, cycleTimeline(opened.ctx.config, opened.cycle), opened.phase, consent, all);
     const { markdown, ...ids } = section;
     emit({ phase: opened.phase, cycle: opened.cycle.name, section: markdown, ...ids }, () => markdown);
   },
@@ -883,9 +939,11 @@ register({
     const ids = [...new Set(required(args, "items").split(",").map((id) => id.trim()).filter((id) => id !== ""))];
     if (ids.length === 0) throw new HikyakuError("--items に事項の ID を指定してください");
     const ledger = readLedger(opened.cycle.directory);
+    // 同意ゲートの項目（最後のビルドの子は、サイクル全体の項目がゲートに載る）
+    const targets = new Set(consentTargets(ledger, opened.skill.skill, opened.ctx).map((item) => item.open.id));
     const items = ids.map((id) => {
       const item = findItem(ledger, id);
-      if (!isConsentItem(item, opened.phase)) {
+      if (!targets.has(item.open.id)) {
         throw new HikyakuError(
           `${id} は ${opened.phase} の同意ゲートの項目ではありません`,
           `差し戻すのは、${opened.phase} の同意ゲートで退けた項目（when=merge@${opened.phase}・who=user の risk / objection）だけです。`,

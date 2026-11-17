@@ -27,7 +27,7 @@ import { HikyakuError } from "./errors.mts";
 import { appendJsonl, parseJsonl, readJsonl, type JsonlLabels } from "./jsonl.mts";
 import { listPatchUnits, patchPhaseOf, patchUnitDirectory } from "./patch.mts";
 import { readProgress, RESTART, type ProgressEvent } from "./progress.mts";
-import type { Harm } from "./risk.mts";
+import { effectiveDeclaration, type Harm } from "./risk.mts";
 import type { ResolvedConfig } from "./config.mts";
 import { currentEvents, evaluate, type SkillSteps } from "./steps/engine.mts";
 import type { CycleContext } from "./workspace.mts";
@@ -77,14 +77,17 @@ export interface OpenRecord {
   ask?: string;
   /**
    * step report が自動で書いた事項（G3・G4 の事後同意の risk）。ledger open には欄の指定が無いので、手書きの事項には
-   * 付かない。G3・G4 を deferred にする条件（steps/architect.mts）は、この欄のある事項だけを数える
+   * 付かない。G3・G4 を deferred にする条件（steps/architect.mts）は、この値が step-report の事項だけを数える。
+   * supervisor-answer は、事後同意で監督が上限を超える受け入れを答えたとき、子の ledger decide が決定と同時に書いた事項（build-19）
    */
-  source?: "step-report";
+  source?: "step-report" | "supervisor-answer";
   /**
    * 異議の害が上限を超えると ledger object / ledger open が判定した（US-13.3）。害が中でも高と同じに扱い、
    * 受け入れには言葉と前提が要る（isHighObjection）
    */
   exceedsCeiling?: true;
+  /** source が supervisor-answer の事項の、監督の答えを渡した起動の印（同時に書いた決定と同じ値） */
+  token?: string;
   session?: string;
   hikyaku?: string;
 }
@@ -203,6 +206,11 @@ export interface ChildAnswer {
   choice?: string;
   risk?: RiskDeclaration;
   token?: string;
+  /**
+   * 監督の上限を超える受け入れを、事後同意で最後のビルドの同意ゲートへ回す（HIKYAKU_ANSWER_DEFER=1。build-19）。
+   * true なら ledger decide --by supervisor は --loses を求め、決定と同時に risk の事項を書く
+   */
+  defer?: boolean;
 }
 
 /** HIKYAKU_ANSWER_RISK の値を読む（none か <害>:<前提,...>）。読めなければ undefined（申告なしとして扱う） */
@@ -238,6 +246,7 @@ export function childAnswer(env: NodeJS.ProcessEnv = process.env): ChildAnswer |
   return {
     from: fromRaw === "user" || fromRaw === "supervisor" ? fromRaw : undefined,
     items: (text(ANSWER_ENV.items) ?? "").split(",").map((id) => id.trim()).filter((id) => id !== ""),
+    defer: text(ANSWER_ENV.defer) === "1",
     ...(ask === undefined ? {} : { ask }),
     ...(choice === undefined ? {} : { choice }),
     ...(risk === undefined ? {} : { risk }),
@@ -332,6 +341,33 @@ export function parsePremise(raw: string): Premise {
   const assumption = rest("assumption:");
   if (assumption !== undefined && assumption !== "") return { kind: "assumption", text: assumption };
   throw new HikyakuError(`前提の参照の書式が不正です: ${raw}`, PREMISE_HINT);
+}
+
+/**
+ * 上限を超える受け入れをマージの前の同意へ回せる前提か。だめなら理由（ledger object --defer と、conductor launch の
+ * 監督の上限を超える答えが同じ判定を使う）。宣言の参照（app.*・宣言にある area:<name>）だけを受け付ける。
+ * 宣言を変える PR の ledger premises で見直せるようにするため
+ */
+export function deferrablePremisesProblem(config: ResolvedConfig, premises: string[]): string | undefined {
+  const parsed: Premise[] = [];
+  for (const premise of premises) {
+    try {
+      parsed.push(parsePremise(premise));
+    } catch {
+      parsed.length = 0;
+      break;
+    }
+  }
+  if (premises.length === 0 || parsed.length !== premises.length || parsed.some((premise) => premise.kind !== "app" && premise.kind !== "area")) {
+    return "マージの前の同意へ回せるのは、拠り所にした宣言の参照（app.* か area:*）だけを前提に挙げた受け入れです（宣言が変われば見直せるように）";
+  }
+  // 宣言に無い領域名を拠り所にすると、宣言を変える PR での見直し（premises）がその受け入れを拾えない
+  const declared = effectiveDeclaration(config).declaration?.areas.map((area) => area.name) ?? [];
+  const unknown = parsed.flatMap((premise) => (premise.kind === "area" && !declared.includes(premise.name) ? [premise.name] : []));
+  if (unknown.length > 0) {
+    return `前提の重い領域が宣言にありません: ${unknown.join(", ")}（[[app.areas]] に宣言した領域の名前を指定してください。hikyaku config で確かめられます）`;
+  }
+  return undefined;
 }
 
 /** カンマ区切りの前提の参照。区切りにカンマを使うので、assumption の文中にカンマは書けない */
@@ -695,6 +731,16 @@ export function isConsentItem(item: LedgerItem, unit: string): boolean {
 /** その作業単位の同意ゲートの一覧（サイクル全体の記録から、記録順） */
 export function consentItemsOf(ledger: Ledger, unit: string): LedgerItem[] {
   return ledger.items.filter((item) => isConsentItem(item, unit));
+}
+
+/**
+ * サイクル全体の同意の対象（type が risk か objection・who=user・when=merge@<どこでも>）。記録順（同時刻は読み順）。
+ * conductor の最後のビルドの子の同意ゲートと、最後の PR の本文（ledger pr-section --all）が使う（build-19）
+ */
+export function cycleConsentItems(ledger: Ledger): LedgerItem[] {
+  return ledger.items
+    .filter(({ open }) => (open.type === "risk" || open.type === "objection") && open.who === "user" && open.when.startsWith("merge@"))
+    .sort((a, b) => (a.open.at < b.open.at ? -1 : a.open.at > b.open.at ? 1 : 0));
 }
 
 /**
