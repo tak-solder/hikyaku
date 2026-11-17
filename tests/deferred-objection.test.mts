@@ -304,6 +304,7 @@ test("ledger object --defer: 前提が無い・宣言以外を含む・上限を
   };
   refuse(/app\.\* か area:\*/);
   refuse(/app\.\* か area:\*/, "--premises", "app.exposure,assumption:社内だけ");
+  refuse(/重い領域が宣言にありません: typo/, "--premises", "area:typo");
   refuse(/一緒に渡せません/, "--premises", "app.exposure", "--decision", "consented");
   refuse(/一緒に渡せません/, "--premises", "app.exposure", "--input", "進める");
   refuse(/一緒に渡せません/, "--premises", "app.exposure", "--accepts", "受け入れる");
@@ -343,6 +344,7 @@ test("ledger object --defer: 積んだ異議は同意ゲートに載り、決定
   report(directory, "review", "--result", "done");
   write(directory, `${BUILD}/handoff.md`);
   assert.equal(report(directory, "handoff", "--result", "done").step, "consent");
+  assert.match(succeeds(directory, "ledger", "consent-list", "build-01", "001"), /受け入れの言葉（--accepts）が要る（上限を超える異議）/);
   assert.equal(cli(directory, "step", "report", "build-01", "consent", "001", "--result", "approved", "--input", "OK").status, 1);
   succeeds(directory, "ledger", "decide", "build-01", recorded.record.id, "001", "--decision", "consented", "--by", "user", "--input", "同意する");
   assert.equal(cli(directory, "step", "report", "build-01", "consent", "001", "--result", "approved", "--input", "OK").status, 1, "受け入れの言葉が無い");

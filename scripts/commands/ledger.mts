@@ -16,6 +16,7 @@ import {
   gateIds,
   HARMS,
   isConsentItem,
+  isHighObjection,
   itemJson,
   itemLine,
   ITEM_TYPES,
@@ -428,6 +429,15 @@ function assertDeferrable(opened: Opened & { cycle: CycleContext }, premises: st
       "マージの前の同意へ回せるのは、宣言で決まる上限を超える受け入れだけです（宣言が変われば見直せるように）。",
     );
   }
+  // 宣言に無い領域名を拠り所にすると、宣言を変える PR での見直し（premises）がその受け入れを拾えない
+  const declared = effectiveDeclaration(opened.ctx.config).declaration?.areas.map((area) => area.name) ?? [];
+  const unknown = premises.map(parsePremise).flatMap((premise) => (premise.kind === "area" && !declared.includes(premise.name) ? [premise.name] : []));
+  if (unknown.length > 0) {
+    throw new HikyakuError(
+      `--premises の重い領域が宣言にありません: ${unknown.join(", ")}`,
+      "[[app.areas]] に宣言した領域の名前を指定してください（hikyaku config で確かめられます）。",
+    );
+  }
   if (!exceedsCeiling) {
     throw new HikyakuError(
       "この異議は AI に任せてよい上限を超えないので、マージの前に回しません",
@@ -576,6 +586,8 @@ function consentJson(item: LedgerItem): Record<string, unknown> {
     loses: o.loses ?? null,
     basis: o.basis ?? null,
     harm: o.harm ?? null,
+    exceedsCeiling: o.exceedsCeiling === true,
+    needsAccepts: isHighObjection(item),
     decided: consentDecided(item),
     state: consentState(item),
     decisions: item.decisions,
@@ -591,7 +603,7 @@ register({
     "1項目を「受け入れたリスク / 拠り所の前提 / 失うもの」の3行で示し、見出しに ID と決定の状態を出します。",
     "--full で、根拠・害・いつ・記録した単位と、決定の記録まで出します。書き込みはしません。",
     "決定として数えるのは、最新の決定がユーザーの consented / decided / resolved のときだけです（rejected は数えず、",
-    "害が高の異議は受け入れの言葉の無い consented を数えません）。",
+    "害が高か、上限を超える異議は受け入れの言葉の無い consented を数えません。そうした項目には、その旨の行を出します）。",
   ].join("\n"),
   options: ["full"],
   maxOperands: 2,
@@ -609,6 +621,8 @@ register({
         const o = item.open;
         lines.push("", `${o.id}（${o.type === "risk" ? "受け入れたリスク" : "異議"}）[${consentState(item)}]`);
         lines.push(`  受け入れたリスク: ${o.summary}`, `  拠り所の前提: ${premisesText(item)}`, `  失うもの: ${o.loses ?? "（なし）"}`);
+        // 同意に受け入れの言葉（--accepts）が要る項目は、--full でなくても示す（決定を記録し直させないため）
+        if (isHighObjection(item)) lines.push(`  同意には受け入れの言葉（--accepts）が要る（${o.harm === "高" ? "害が高" : "上限を超える"}異議）`);
         if (!full) continue;
         if (o.basis !== undefined) lines.push(`  根拠: ${o.basis}`);
         if (o.harm !== undefined) lines.push(`  害の重さ: ${o.harm}`);
