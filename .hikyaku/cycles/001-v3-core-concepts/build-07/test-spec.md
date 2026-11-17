@@ -40,6 +40,20 @@
 - When: `resolveAsk("G3", …)`・`resolveAsk("questions", …)`・`resolveAsk("review-findings", …)`・`resolveAsk("G8", …)` を呼ぶ
 - Then: G3 の `safe` は `safeAnswerOf("G3")` と同じ値で `declaresRisk` は false、questions の `safe` は null で `declaresRisk` は true、review-findings の `declaresRisk` は true、G8 の `declaresRisk` は false になる
 
+## CLI: conductor parse・conductor asks（safe と declaresRisk）
+
+### conductor parse: gate の ask に safe と declaresRisk を出す
+- 対応: US-15.1
+- Given: 結果ファイル `r.json` の本文が `<hikyaku-gate id="G3">` のゲート
+- When: `conductor parse r.json 001 --expect-digest <digest> --json` を実行する
+- Then: `ask.safe.safe` が `["recommended", "rejected"]`、`ask.safe.default` が `"recommended"`、`ask.declaresRisk` が false になる
+
+### conductor asks: 各問いに safe と declaresRisk を出す
+- 対応: —
+- Given: 既定の conductor 設定のワークスペース
+- When: `conductor asks 001 --json` を実行する
+- Then: `questions` の問いは `safe` が null で `declaresRisk` が true、`design-conflict` の問いは `safe.safe` が `["return"]` で `declaresRisk` が false になる
+
 ## lib/conductor.mts（parseFinalText・parseResultJson の waiting）
 
 ### parseFinalText: 実在する未決の事項を指す waiting は検査を外す
@@ -188,9 +202,27 @@
 
 ### conductor launch: G3 で推奨以外の案を選ぶ答えを拒む
 - 対応: US-15.2
-- Given: 既定の conductor 設定（G3 は監督が答える）
-- When: `--from supervisor --ask G3 --choice other` で launch する
-- Then: 終了コード 1 で拒否される。`--choice recommended` なら成功する
+- Given: 既定の conductor 設定で、session-id `s-1` の architect の子が、再設計でなく上限以内の options の報告をした G3 の確認の回で止まっているワークスペースと、回答ファイル `answer.md`
+- When: `conductor launch architect 001 --resume s-1 --message answer.md --from supervisor --ask G3 --choice other` を実行する
+- Then: 終了コード 1 で、ユーザーに上げる案内が出る
+
+### conductor launch: G3 の確認の回で推奨案を選ぶ答えは受け付ける
+- 対応: US-15.1
+- Given: 上と同じ、G3 の確認の回で止まっている session-id `s-1` の architect の子と `answer.md`
+- When: `conductor launch architect 001 --resume s-1 --message answer.md --from supervisor --ask G3 --choice recommended --json` を実行する
+- Then: 成功し、`command` が `HIKYAKU_ANSWER_FROM=supervisor` を含む
+
+### conductor launch: G3 で子の位置を確かめられなければ推奨案でも同意に倒して拒む
+- 対応: US-15.3
+- Given: 既定の conductor 設定で、記録の無い session-id `s-unknown` と `answer.md`
+- When: `conductor launch architect 001 --resume s-unknown --message answer.md --from supervisor --ask G3 --choice recommended` を実行する
+- Then: 終了コード 1 で拒否される
+
+### conductor launch: G10 の確認の回では監督の承認を受け付ける
+- 対応: US-15.1
+- Given: session-id `s-2` の close-cycle の子が、decisions・constraints の変更を含まない G10 の確認の回で止まっているワークスペースと `answer.md`
+- When: `conductor launch close-cycle 001 --resume s-2 --message answer.md --from supervisor --ask G10 --choice approved --json` を実行する
+- Then: 成功し、`command` が `HIKYAKU_ANSWER_FROM=supervisor` を含む
 
 ### conductor launch: 確認ゲートの承認は監督の答えとして受け付ける（解釈）
 - 対応: US-15.1
@@ -236,7 +268,7 @@
 
 ### conductor launch: 宣言の重い領域を前提に挙げた申告は害が中でも拒む
 - 対応: US-13.3
-- Given: `[app]` が最下段の3軸（上限は高まで）で、`[[app.areas]]` に `name = "billing"` を宣言したワークスペース
+- Given: `[app]` が `exposure = "personal"`・`data = "none"`・`impact = "low"`（上限は高まで）で、`[[app.areas]]` に `name = "billing"`・`paths = ["src/billing/**"]`・`exposure = "public"`・`data = "personal-or-secret"`・`impact = "high"`（重い領域）を宣言したワークスペース
 - When: `--from supervisor --ask questions --harm 中 --premises area:billing` で launch する
 - Then: 終了コード 1 で拒否される
 
@@ -312,6 +344,18 @@
 - When: `deriveWaiting` を呼ぶ
 - Then: `items` に `Q-A`・`Q-C` の両方があり、`builds` は build-01・build-02 がそれぞれ `waitingFor: ["Q-A"]` だけを持つ
 
+### deriveWaiting: origin の architect のブランチにだけある待ちでも全ビルドが待つ
+- 対応: US-21.3
+- Given: 一時 Git リポジトリで build-01・build-02 があり、作業ツリーには記録が無く、origin の architect のブランチ（`branchName` の規則）の architect の `decisions.jsonl` にだけ未決の待ち `Q-A` がある
+- When: `deriveWaiting` を呼ぶ
+- Then: `items` の `Q-A` の `source` が `origin/<architect のブランチ>` で、build-01・build-02 がどちらも `waitingFor: ["Q-A"]` を持つ
+
+### deriveWaiting: plan の単位の待ちでも全ビルドが待つ
+- 対応: US-21.3
+- Given: build-01・build-02 があり、作業ツリーの `plan` の単位の記録に未決の `question`・`who=user`・`when=now` の事項 `Q-P` がある
+- When: `deriveWaiting` を呼ぶ
+- Then: build-01・build-02 がどちらも `waitingFor: ["Q-P"]` を持つ
+
 ### deriveWaiting: origin のブランチにだけある記録を読み、同じ ID は1つに重ねる
 - 対応: US-21.3
 - Given: 一時 Git リポジトリで、build-01 のブランチ（`branchName` の規則）を origin に push し、その上の build-01 の `decisions.jsonl` にだけ未決の待ち `Q-1` があり、作業ツリーにも同じ `Q-1` の open がある
@@ -335,8 +379,8 @@
 ### next --json: 依存しないビルドが available に残り、waiting に待つビルドと事項が出る
 - 対応: US-21.2
 - Given: build-01・build-02（build-01 に依存）・build-03 があり、build-01 のブランチが origin にあって未決の待ち `Q-1`（summary「既存の API を残すか」）がある一時 Git リポジトリ
-- When: `next 001 --json` を実行する
-- Then: `available` に build-03 があり、`waiting.items` に `Q-1`、`waiting.builds` に build-01・build-02 が `waitingFor: ["Q-1"]` で出る。何もファイルを書かない
+- When: `next 001 --json` と `next 001` を実行する
+- Then: JSON は `available` に build-03 があり、`waiting.items` に `Q-1`、`waiting.builds` に build-01・build-02 が `waitingFor: ["Q-1"]` で出る。テキストは「答えを待っているビルド」の節に build-02 と `Q-1` が出る。どちらも何もファイルを書かない
 
 ### conductor waiting: 何の答えを待っているかをテキストと JSON で示す
 - 対応: US-21.3
