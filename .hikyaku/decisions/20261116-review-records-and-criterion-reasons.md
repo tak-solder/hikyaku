@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: implemented
 ---
 
 # レビューで引いた rule は handoff の1つの見出しに、基準の理由は rule の frontmatter に残す

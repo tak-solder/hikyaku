@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: implemented
 ---
 
 # conductor は、ユーザーに上げる問いを記録に積み、依存しないビルドを先に進める
@@ -23,3 +23,6 @@ status: accepted
 - **再評価条件**: `AskUserQuestion` がセッションを止めずに答えを受けられるようになったとき。待ちとそれ以外のブランチの取り違えが起きたとき
 - **退けた推奨で失う利点**: なし（推奨どおり採用）
 - **影響範囲**: `scripts/commands/next.mts`、`scripts/commands/conductor.mts`・`scripts/lib/conductor.mts`、`scripts/lib/ledger.mts`、`skills/conductor/SKILL.md`・`references/headless-protocol.md`、`docs/workflow/conductor.md`
+- **実装で確定したこと（001-v3-core-concepts）**:
+  - 最後の PR の本文の「監督が答えた問い」は `ledger answers --format pr` の出力を貼る。リスクなしと申告した答え（`--no-risk`）もスクリプトが記録から示し、監督は書き写さない（build-07）
+  - 監督の上限を超える答えは、事後同意が有効で、子に同意ゲートの置き場があり、前提が宣言の参照だけのときだけ受け付ける。その受け入れは、子の `ledger decide --by supervisor` が `risk` の事項（`who=user`・`when=merge@<unit>`）としてスクリプトで書く。最後の PR の本文には `ledger pr-section --all` と `ledger premises --changed-from <ベースブランチ>` の出力も貼る（build-19）

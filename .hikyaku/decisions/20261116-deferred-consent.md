@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: implemented
 ---
 
 # 事後同意は PR を作る直前の同意ゲートで取り、conductor では最後のビルドの子が取る
@@ -23,3 +23,10 @@ status: accepted
 - **再評価条件**: マージがユーザーの関門という前提が、GitHub の設定などから機械で確かめられるようになったとき。退けた項目の作り直しで差し戻しが頻発したとき
 - **退けた推奨で失う利点**: なし（推奨どおり採用。最後の PR の本文に全フェーズの一覧と決定を載せることは、ユーザーの追加の指示）
 - **影響範囲**: `scripts/lib/config.mts`（サイクル設定でだけ書けるキーの新設）、`scripts/lib/steps/consent.mts`（新規）、architect・builder・patch の手順、`scripts/lib/conductor.mts`、`scripts/commands/ledger.mts`、各 `skills/*/steps/pr.md`、`skills/conductor/SKILL.md`、`docs/configuration/config-file.md`・`profiles.md`
+- **実装で確定したこと（001-v3-core-concepts）**:
+  - 決定の「異議も `risk` の事項」は、実装で変わった。上限を超える異議の受け入れは、`objection` の事項（`who=user`・`when=merge@<記録した単位>`・`exceedsCeiling: true`、basis・harm・loses つき）として `ledger object --defer` だけが積む。根拠と害を同意ゲートの一覧に残すため。積めるのは、事後同意が有効で、前提が宣言（`app.*`・宣言済みの `area:*`）だけで、上限を超え、今の回に同意ゲートの置き場があるときだけ（build-18）
+  - 同意ゲートの対象として数える決定は、ユーザーの `consented` / `decided` / `resolved`（`rejected` は数えない。高の異議は受け入れの言葉つき）。事後同意を選んだサイクルでは、対象をサイクル全体の事項から探す（build-06・18）
+  - G1 の承認の記録に値を残すのは、サイクル設定の最後のコミットが、最後の提示の起点（G1 の直前に完了したステップか、G1 の差し戻しのうち最後の記録）より前のときだけ。値を変えるときは、設定をコミットしてから差し戻しを報告して提示し直す（提示の時刻が記録に無いため）。merge-base の値で有効にするのは、デフォルトブランチと `defaultBase` の読めたすべての ref の merge-base に値があるときだけ（build-16）
+  - G3・G4 の `deferred` は、`step report` が事項を自動で積む。ユーザーが退けていない事項の前提が判定の前提を覆うときだけ `deferred` のままで、覆わなければ `now` に戻る（build-16）
+  - 退けの作り直し: 同じ作業単位の事項は、`args.reworkFrom`（ゲートの戻り先はステップ定義の `reworks`、内部スキルのステップは呼ぶ call、同意ゲートより後ろはゲートの前の run）を報告し直せば、`resolved` の前でも承認と PR を受け付ける。前のフェーズの事項は `resolved` まで受け付けない（builder は `ledger return-draft` の下書きで architect へ差し戻し、再開後は `args.resumed` で resolved を尋ねる）。どちらも `resolved` まで「未解決の退け」に出続ける（build-17）
+  - conductor では、事後同意が有効なサイクルの最後のビルド（作業ツリーの tasklist で、ほかの全ビルドの PR 列が埋まっている）の子だけが同意ゲートを持ち、対象はサイクル全体（`merge@architect`・`merge@build-NN`）。architect と最後以外のビルドの子は同意ゲートを持たず、PR を作る前なら上限を超える受け入れを最後のビルドの同意ゲートへ回せる。後ろに同意ゲートが無い子（全ビルドの PR 列が埋まった後の architect・close-cycle）と、事後同意が有効でないサイクルの子は、その場で止める（build-19。build-06・16 の時点の「子では同意ゲートを置かない」は、ここで置き換わった）
