@@ -6,7 +6,12 @@
   - 1ラウンドの質問数に上限はない。聞くべきことは1回でまとめて聞く
   - 確認観点: 目的, 対象ユーザー, コア機能, スコープ境界, 優先度, 制約条件
   - 質問が発生した場合のみ `cycles/{cycle}/planning/questions.md` に記録する
-  - 未回答の質問を放置しない。未回答なら明示的にそう記す
+  - 未回答の質問を放置しない。未回答なら明示的にそう記し、未決事項として記録する（いつ: `gate:G1` か
+    `phase:architect`）。出力の ID を questions.md の質問に添える
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger open plan {cycle} --type question --who user --when gate:G1 --summary "<未回答の質問>"
+```
 - [ ] `cycles/{cycle}/planning/user-stories.md` を作成する
   - フォーマットは `${CLAUDE_PLUGIN_ROOT}/skills/planner/references/templates.md`（[templates.md](../references/templates.md)）を参照
   - scope で合わせた4項目を冒頭の「概要」セクションに反映する

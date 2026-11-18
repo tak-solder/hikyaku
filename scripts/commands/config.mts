@@ -1,7 +1,9 @@
 /** config — 解決済みの設定を出力する */
 
 import { flagBoolean, flagString } from "../lib/args.mts";
-import { describeProvider, loadConfig } from "../lib/config.mts";
+import { describeProvider, loadConfig, type AppDeclaration, type ResolvedConfig } from "../lib/config.mts";
+import { ceilingOf, effectiveDeclaration } from "../lib/risk.mts";
+import { deferredConsent } from "../lib/deferred-consent.mts";
 import { DEFAULT_BRANCH_MARK, resolveUnsafeSplit } from "../lib/integrity.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { emit, warn } from "../lib/output.mts";
@@ -17,8 +19,8 @@ register({
     "  1. リポジトリルート/.hikyaku.config（必須）",
     "  2. {HIKYAKU_ROOT}/cycles/{NNN}-{slug}/.hikyaku.config（任意）",
     "",
-    "サイクル側で上書きできないのは hikyaku_root と profile だけです",
-    "（前者はワークスペースの所在そのもの、後者は cycles.md が唯一の正）。",
+    "サイクル側で上書きできないのは hikyaku_root・profile・data_integrity.release_branches・[app]・[boundaries] です",
+    "（理由は docs/configuration/config-file.md の「サイクル側で上書きできないキー」）。",
     "",
     "サイクルを省略した場合は、現在のブランチ → .hikyaku.local の順で選択済みのサイクルを使い、",
     "未選択ならリポジトリルートの設定を返します。進行中サイクルの件数からは選びません。",
@@ -40,6 +42,11 @@ register({
     "[data_integrity] allow_unsafe_split が true で、base_branch がリリースされるブランチ",
     "（release_branches とデフォルトブランチ）に一致しないときだけ allowed: true になります。",
     "デフォルトブランチ（origin/HEAD）が分からなければ allowed: false に倒します。",
+    "",
+    "[app]・[[app.areas]]・[boundaries] はアプリケーションの状況と境界の宣言で、ルート設定でのみ書けます。",
+    "上限は、作業ツリーの宣言からのものと、base_branch・デフォルトブランチとの merge-base にある宣言",
+    "（ユーザーがマージした宣言）と比べた最も厳しいものを並べます。この版では宣言は検査と表示だけで、",
+    "ゲートの判定にはまだ使いません。",
   ].join("\n"),
   run: ({ args, operands }) => {
     if (flagBoolean(args, "require-cycle") && flagBoolean(args, "no-cycle")) {
@@ -56,11 +63,13 @@ register({
         });
 
     const unsafeSplit = resolveUnsafeSplit(config);
+    // 事後同意の有効の判定（git を読むので loadConfig では計算しない）。サイクルが決まらなければ有効にならない
+    const deferred = deferredConsent(config, opened?.context.directory);
 
     const retired = config.retired.map((error) => error.message);
     for (const error of config.retired) warn(`${error.message}（v3 の作業では止まります）`);
 
-    emit({ ...config, retired, cycle: opened?.context.name, cycleSource: opened?.context.source, unsafeSplit }, () => {
+    emit({ ...config, retired, cycle: opened?.context.name, cycleSource: opened?.context.source, unsafeSplit, deferredConsent: deferred }, () => {
       const lines: string[] = [];
       if (opened) {
         lines.push(
@@ -74,13 +83,13 @@ register({
         `baseBranch   ${config.baseBranch ?? "(自動検出)"}`,
         "",
         "承認ゲート（profile 管轄）:",
-        `  G1 user-stories      ${onOff(config.gates.userStories)}`,
+        "  G1 user-stories      常に有効（同意）",
         `  G2 codebase-survey   ${onOff(config.gates.codebaseSurvey)}`,
-        `  G3 設計案の選択      ${onOff(config.gates.designChoice)}`,
-        `  G4 architecture      ${onOff(config.gates.architecture)}`,
+        `  G3 設計案の選択      ${onOff(config.gates.designChoice)}（差し戻しからの再設計の回と、options の申告が上限を超える・重い領域に当たる・欠けている回は同意で常に有効）`,
+        `  G4 architecture      ${onOff(config.gates.architecture)}（差し戻しからの再設計の回と、設計が G3 の申告に無い重い領域・外との境界に触れる回は同意で常に有効）`,
         `  G7 plan（単独）      ${onOff(config.gates.plan)}`,
-        "  ※ G6 tasklist・issue 変更 / G8 plan+test-spec /",
-        "     G10 永続ドキュメント昇格 は profile の管轄外で常に有効",
+        `  G10 昇格             ${onOff(config.gates.promotion)}（decisions・constraints の変更を含む回は同意で常に有効）`,
+        "  ※ G6 tasklist・issue 変更 / G8 plan+test-spec は profile の管轄外で常に有効",
         "",
         "レビュー:",
         `  user_stories_review  ${onOff(config.reviews.userStories)}`,
@@ -117,6 +126,10 @@ register({
         `  allow_unsafe_split  ${config.dataIntegrity.allowUnsafeSplit}`,
         `  安全でない分割      ${unsafeSplit.allowed ? "許す" : "許さない"}（${unsafeSplit.message}）`,
         "",
+        `[consent] deferred    ${deferred.requested ? (deferred.effective ? "有効" : "選んでいるが有効でない") : "選んでいない"}（${deferred.reason}）`,
+        "",
+        ...describeDeclaration(config),
+        "",
         "[diff]（tokens history build-NN の差分の集計）:",
         `  exclude  ${config.diff.exclude.join(", ")}`,
         `  tests    ${config.diff.tests.join(", ")}`,
@@ -152,4 +165,43 @@ register({
 
 function onOff(value: boolean): string {
   return value ? "on" : "off";
+}
+
+function describeCeiling(declaration: AppDeclaration | undefined): string {
+  if (declaration === undefined) return "上限を設けない（宣言なし）";
+  const ceiling = ceilingOf(declaration.axes);
+  return ceiling === "なし" ? "なし（何も任せない）" : `害「${ceiling}」まで`;
+}
+
+/**
+ * [app]・[[app.areas]]・[boundaries] の表示。宣言は作業ツリーのもの。上限は、作業ツリーの宣言からのものと、
+ * 基準（ユーザーがマージした宣言）と比べた最も厳しい宣言からのものを並べる
+ */
+function describeDeclaration(config: ResolvedConfig): string[] {
+  const { app, boundaries } = config;
+  const effective = effectiveDeclaration(config);
+  const lines = ["[app]（アプリケーションの状況。この版では検査と表示だけで、ゲートの判定にはまだ使わない）:"];
+  if (app === undefined) {
+    lines.push(effective.declaration === undefined ? "  宣言なし（上限を設けない）" : "  作業ツリーには宣言なし（基準の宣言で上限が決まる）");
+  } else {
+    lines.push(
+      `  exposure / data / impact  ${app.axes.exposure} / ${app.axes.data} / ${app.axes.impact}`,
+      `  merge_gate                ${app.mergeGate ?? "(未宣言)"}`,
+      `  上限（作業ツリーの宣言）  ${describeCeiling(app)}`,
+    );
+    for (const area of app.areas) {
+      const axes = (["exposure", "data", "impact"] as const).flatMap((axis) => (area[axis] === undefined ? [] : [`${axis}=${area[axis]}`]));
+      lines.push(`  重い領域 ${area.name}  ${area.paths.join(", ")}${axes.length > 0 ? `（${axes.join(" ")}）` : ""}`);
+    }
+  }
+  if (app !== undefined || effective.declaration !== undefined) {
+    lines.push(`  上限（基準と比べた最も厳しい宣言）  ${describeCeiling(effective.declaration)}${effective.incomplete ? "（読めない基準があるので、判定では同意に倒す）" : ""}`);
+  }
+  for (const notice of effective.notices) lines.push(`  注意: ${notice}`);
+  lines.push(
+    "[boundaries]:",
+    `  external  ${boundaries.external.length === 0 ? "(なし)" : boundaries.external.join(", ")}`,
+    `  internal  ${boundaries.internal.length === 0 ? "(なし)" : boundaries.internal.join(", ")}`,
+  );
+  return lines;
 }

@@ -1,0 +1,32 @@
+---
+status: implemented
+---
+
+# 事後同意は PR を作る直前の同意ゲートで取り、conductor では最後のビルドの子が取る
+
+- **決定**: サイクルの `.hikyaku.config` にだけ `[consent] deferred = true` を書ける（ルートに書いたらエラー）。有効にするのは、G1 の承認の記録に残した値（G1 の提示に出し、`step report` が記録する）と現在の値が同じときか、ベースブランチ（`resolvePrBase` の `defaultBase`）との merge-base のサイクル設定に同じ値があるときだけ（G1 の後に作業中のブランチで足しても効かない。PR のマージ先は、スタックや conductor ではユーザーのマージを経ていないブランチになるので使わない）。アプリケーションの状況の宣言に、マージがユーザーの関門である前提（`[app] merge_gate = "user"`）が書かれていなければ有効にせず、理由を `config`・各 directive の `notices`・`conductor asks` に示し続ける。有効なとき、上限を超えるリスクの受け入れ（G3・異議・監督の答え）は止まらずに `risk` の事項（`who=user`、`when=merge`）として記録に積む。`consentStep(skill)` が PR を作る直前に同意ゲート（ask: `deferred-consent`、ユーザーに固定）を置き、`ledger consent-list` が組み立てた一覧で項目ごとに同意か退けを記録してから PR を作る。PR 本文の節は `ledger pr-section` が組み立てる。同じ作業単位の判断を退けたらそのステップへ戻り、前のフェーズの判断なら `return.md` で差し戻す。conductor のときは、最後のビルドの子が PR を作る前の同意ゲートで、サイクル全体の事項について同意を取る（監督はコミットしない）。そのうえで、ユーザーがレビューする最後の PR（conductor ブランチ→ベースブランチ）の本文に、全フェーズで受け入れたリスクの一覧と同意・退けの決定を載せる
+- **文脈**: US-20 で、速度を優先するユーザーが、上限を超えるリスクの受け入れをマージの前にまとめて同意できるようにする。同意を省くのではなく遅らせる（US-10.5）
+- **外の前提**:
+  - Hikyaku はデプロイを行わず、マージの前の同意はリスクが利用者に届く前の引き受けになる（事実。concepts.md、2026-11-16 確認）
+  - 利用者のリポジトリでマージがユーザーの関門になっているか（自動マージしない、マージがそのままリリースにならない）は、Hikyaku からは確かめない。ユーザーが宣言に書く（仮定。Q9 の回答による。GitHub の設定は確かめていない）
+- **検討した案**:
+  - Minimal: `post_consent`。前提が欠けたら設定エラーで止める。conductor では最後のビルドの子が同意を取る
+  - Clean: `[consent] defer` と、全フェーズの PR 本文をスクリプトが組み立てる `pr body`。conductor では監督が記録をコミットする
+  - Pragmatic: `[consent] deferred` と `consentStep`、`ledger pr-section`。前提が欠けたら有効にせず理由を示す
+- **推奨**: Pragmatic。conductor のところだけ Minimal の形
+- **採用理由**: 同意ゲートの部品が既存の `publicationStep` と同じ型に乗る。conductor で最後のビルドの子が同意を取れば、監督がコミットしない原則を保ち、退けた項目も既存の `return.md` の経路（US-20.11）に乗る
+- **受け入れたこと**:
+  - PR を作る時点でユーザーが居ないと止まる（Q9 で受け入れ）（拠り所: `app.merge_gate`）
+  - conductor で前のフェーズの判断を退けたときは、元のフェーズへ直接は戻らず、最後のビルドからの差し戻しとして architect が再設計する（拠り所: `app.merge_gate`）
+  - G1 の後で事後同意を選び直すには、ベースブランチへのマージか、planner を回し直して G1 を取り直すことが要る
+- **トレードオフ**: patch では PR を Draft で先に作るので、同意は Draft の PR ができた状態で取る
+- **再評価条件**: マージがユーザーの関門という前提が、GitHub の設定などから機械で確かめられるようになったとき。退けた項目の作り直しで差し戻しが頻発したとき
+- **退けた推奨で失う利点**: なし（推奨どおり採用。最後の PR の本文に全フェーズの一覧と決定を載せることは、ユーザーの追加の指示）
+- **影響範囲**: `scripts/lib/config.mts`（サイクル設定でだけ書けるキーの新設）、`scripts/lib/steps/consent.mts`（新規）、architect・builder・patch の手順、`scripts/lib/conductor.mts`、`scripts/commands/ledger.mts`、各 `skills/*/steps/pr.md`、`skills/conductor/SKILL.md`、`docs/configuration/config-file.md`・`profiles.md`
+- **実装で確定したこと（001-v3-core-concepts）**:
+  - 決定の「異議も `risk` の事項」は、実装で変わった。上限を超える異議の受け入れは、`objection` の事項（`who=user`・`when=merge@<記録した単位>`・`exceedsCeiling: true`、basis・harm・loses つき）として `ledger object --defer` だけが積む。根拠と害を同意ゲートの一覧に残すため。積めるのは、事後同意が有効で、前提が宣言（`app.*`・宣言済みの `area:*`）だけで、上限を超え、今の回に同意ゲートの置き場があるときだけ（build-18）
+  - 同意ゲートの対象として数える決定は、ユーザーの `consented` / `decided` / `resolved`（`rejected` は数えない。高の異議は受け入れの言葉つき）。事後同意を選んだサイクルでは、対象をサイクル全体の事項から探す（build-06・18）
+  - G1 の承認の記録に値を残すのは、サイクル設定の最後のコミットが、最後の提示の起点（G1 の直前に完了したステップか、G1 の差し戻しのうち最後の記録）より前のときだけ。値を変えるときは、設定をコミットしてから差し戻しを報告して提示し直す（提示の時刻が記録に無いため）。merge-base の値で有効にするのは、デフォルトブランチと `defaultBase` の読めたすべての ref の merge-base に値があるときだけ（build-16）
+  - G3・G4 の `deferred` は、`step report` が事項を自動で積む。ユーザーが退けていない事項の前提が判定の前提を覆うときだけ `deferred` のままで、覆わなければ `now` に戻る（build-16）
+  - 退けの作り直し: 同じ作業単位の事項は、`args.reworkFrom`（ゲートの戻り先はステップ定義の `reworks`、内部スキルのステップは呼ぶ call、同意ゲートより後ろはゲートの前の run）を報告し直せば、`resolved` の前でも承認と PR を受け付ける。前のフェーズの事項は `resolved` まで受け付けない（builder は `ledger return-draft` の下書きで architect へ差し戻し、再開後は `args.resumed` で resolved を尋ねる）。どちらも `resolved` まで「未解決の退け」に出続ける（build-17）
+  - conductor では、事後同意が有効なサイクルの最後のビルド（作業ツリーの tasklist で、ほかの全ビルドの PR 列が埋まっている）の子だけが同意ゲートを持ち、対象はサイクル全体（`merge@architect`・`merge@build-NN`）。architect と最後以外のビルドの子は同意ゲートを持たず、PR を作る前なら上限を超える受け入れを最後のビルドの同意ゲートへ回せる。後ろに同意ゲートが無い子（全ビルドの PR 列が埋まった後の architect・close-cycle）と、事後同意が有効でないサイクルの子は、その場で止める（build-19。build-06・16 の時点の「子では同意ゲートを置かない」は、ここで置き換わった）

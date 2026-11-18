@@ -1,7 +1,7 @@
 /**
  * conductor — 非対話の子セッションが出す問いの分類と、子の起動コマンドの組み立て。
  *
- * 監督（LLM）は子の問いに答えるか人間に上げるかを決める。そのうち ID だけで
+ * 監督（LLM）は子の問いに答えるかユーザーに上げるかを決める。そのうち ID だけで
  * 機械的に決まる部分（既定の振り分けと、設定による上書き）をここに置く。
  * 「スコープを広げる回答か」のように成果物を読まないと決まらない判断は監督が行う。
  *
@@ -12,10 +12,15 @@
 import { createHash } from "node:crypto";
 import type { Gates, Reviews } from "./config.mts";
 import { HikyakuError } from "./errors.mts";
+import { checkEscalation, describeEscalationProblems } from "./escalation.mts";
 import { reviewerLogin } from "./github.mts";
+import { buildDirName } from "./tasklist.mts";
 
 export type AskCategory = "route" | "confirm" | "consent" | "spec" | "failure" | "abandon" | "unknown";
-export type Handler = "supervisor" | "human";
+export type Handler = "supervisor" | "user";
+
+/** 子の手順のゲートが、その回に確認か同意か（directive の approval） */
+export type Approval = "confirm" | "consent";
 
 export const CATEGORY_LABELS: Record<AskCategory, string> = {
   route: "経路の判断",
@@ -30,15 +35,17 @@ export const CATEGORY_LABELS: Record<AskCategory, string> = {
 const DEFAULT_HANDLERS: Record<AskCategory, Handler> = {
   route: "supervisor",
   confirm: "supervisor",
-  consent: "supervisor",
+  consent: "user",
   spec: "supervisor",
-  failure: "human",
-  abandon: "human",
-  unknown: "human",
+  failure: "user",
+  abandon: "user",
+  unknown: "user",
 };
 
-/** 設定で振り分けを変えられない種別。中止と分類できない問いは常に人間が判断する */
-const FIXED_CATEGORIES: AskCategory[] = ["abandon", "unknown"];
+/**
+ * 設定で振り分けを変えられない種別。同意（原則11）・中止・分類できない問いは常にユーザーが判断する
+ */
+const FIXED_CATEGORIES: AskCategory[] = ["consent", "abandon", "unknown"];
 
 export interface AskDefinition {
   id: string;
@@ -57,7 +64,7 @@ export interface AskSettings {
 
 /**
  * conductor が起動するフェーズ（architect / builder / close-cycle と、そこから
- * 呼ばれる build-manager / retrospective）の問い。PLAN は人間が対話で行うので含めない
+ * 呼ばれる build-manager / retrospective）の問い。PLAN はユーザーが対話で行うので含めない
  */
 export const ASKS: AskDefinition[] = [
   { id: "cycle", category: "route", where: "対象サイクルを決められない" },
@@ -75,9 +82,11 @@ export const ASKS: AskDefinition[] = [
     enabledWhen: (s) => s.reviews.retrospective === "prompt",
   },
   { id: "docs-link", category: "confirm", where: "close-cycle: AGENTS.md の索引の更新" },
-  { id: "G6", category: "consent", where: "build-manager: tasklist / issue の変更" },
-  { id: "G8", category: "consent", where: "builder: plan + test-spec の承認" },
-  { id: "G10", category: "consent", where: "close-cycle: 永続ドキュメントへの昇格" },
+  { id: "G6", category: "confirm", where: "build-manager: tasklist / issue の変更" },
+  { id: "G8", category: "confirm", where: "builder: plan + test-spec の承認" },
+  { id: "G10", category: "confirm", where: "close-cycle: 永続ドキュメントへの昇格", enabledWhen: (s) => s.gates.promotion },
+  { id: "delegation", category: "consent", where: "architect / builder: 委任の前提が崩れたあと（差し戻し・設計と要件の衝突）、委任を続けるか" },
+  { id: "deferred-consent", category: "consent", where: "architect / builder / patch: PR を作る直前の事後同意の一覧（planner / close-cycle は pr で決定が無いと拒まれたとき）" },
   { id: "questions", category: "spec", where: "architect / builder: 質問ループ" },
   { id: "adr-status", category: "spec", where: "architect / close-cycle: ADR に status 欄が無い" },
   { id: "design-conflict", category: "spec", where: "builder: 設計どおりでは要件を満たせない" },
@@ -89,6 +98,16 @@ export const ASKS: AskDefinition[] = [
 ];
 
 export const ASK_IDS: string[] = ASKS.map((ask) => ask.id);
+
+/**
+ * 静的には確認だが、回によって同意になるゲートと、その条件（conductor asks の表示用）。
+ * 判定の正はステップ定義の consent で、ここは説明だけを持つ
+ */
+export const CONSENT_WHEN: Record<string, string> = {
+  G3: "差し戻しからの再設計の回と、[app] の宣言があって options の申告が上限を超える・重い領域に当たる・欠けている回、基準の宣言を読めない回は同意（ユーザーに上げる）",
+  G4: "差し戻しからの再設計の回と、設計が G3 の申告に無い重い領域に触れる回（申告の裏取り）、外との境界（[boundaries] external）に触れる回、基準の宣言や境界を確かめられない回は同意（ユーザーに上げる）",
+  G10: "decisions・constraints の変更を含む回は同意（ユーザーに上げる）",
+};
 
 /** 子として動くスキル。conductor lint はこれらの SKILL.md と references/・steps/ からタグを集める */
 export const CONDUCTED_SKILLS = ["architect", "builder", "build-manager", "close-cycle", "retrospective"];
@@ -102,7 +121,7 @@ export function collectTags(text: string): string[] {
 
 /**
  * スキルのタグと ASKS の突き合わせ。食い違うと子は表に無い ID で gate を出し、
- * 監督は「分類できない問い」として人間に上げ続ける。動作は止まらず静かにずれるので、
+ * 監督は「分類できない問い」としてユーザーに上げ続ける。動作は止まらず静かにずれるので、
  * CI で検出する
  */
 export function lintTags(tagsByFile: Map<string, string[]>): string[] {
@@ -129,9 +148,9 @@ export const CONDUCTOR_PHASES = ["architect", "builder", "close-cycle"] as const
 export type ConductorPhase = (typeof CONDUCTOR_PHASES)[number];
 
 export interface ConductorConfig {
-  /** 既定では監督が答える問いのうち、人間に上げるもの */
+  /** 既定では監督が答える問いのうち、ユーザーに上げるもの */
   escalate: string[];
-  /** 既定では人間に上げる問いのうち、監督に任せるもの */
+  /** 既定ではユーザーに上げる問いのうち、監督に任せるもの */
   delegate: string[];
   /** 子に許可するツール（既定に追加される） */
   allowedTools: string[];
@@ -169,7 +188,7 @@ export function modelFor(conductor: ConductorConfig, phase: ConductorPhase): str
 /**
  * escalate / delegate の検査。
  *
- * タイプミスを黙って捨てると、人間に上げるつもりの問いを監督が答えてしまう。
+ * タイプミスを黙って捨てると、ユーザーに上げるつもりの問いを監督が答えてしまう。
  * 起きてから気づけない壊れ方なので、未知の ID はエラーにする
  */
 export function checkConductorAsks(config: ConductorConfig, where: string): void {
@@ -182,10 +201,12 @@ export function checkConductorAsks(config: ConductorConfig, where: string): void
           `使用できる ID: ${ASK_IDS.filter((x) => !isFixed(x)).join(" | ")}`,
         );
       }
-      if (isFixed(id)) {
+      // 同意ゲートを escalate に書くのは、すでにユーザーに上がるものを上げるだけなので害が無い
+      // （v2 では G10 を手元に残す書き方だった）。監督に任せる delegate だけを拒む
+      if (isFixed(id) && !(key === "escalate" && ask.category === "consent")) {
         throw new HikyakuError(
           `${where}.${key} に ${id} は指定できません`,
-          `${CATEGORY_LABELS[ask.category]}は常に人間が判断します。`,
+          `${CATEGORY_LABELS[ask.category]}は常にユーザーが判断します。`,
         );
       }
     }
@@ -209,6 +230,159 @@ function isFixed(id: string): boolean {
   return ask !== undefined && FIXED_CATEGORIES.includes(ask.category);
 }
 
+// ---------------------------------------------------------------------------
+// 監督が答えてよい値（安全側の既定）— US-15.1・US-15.2
+
+/** 監督が答えてよい問いの、答えの値の表。safe に無い値を監督が渡すと conductor launch が拒む */
+export interface SafeAnswer {
+  /** 答えの値と、その意味（監督とユーザーに示す） */
+  choices: Record<string, string>;
+  /** 監督が選んでよい値（安全側） */
+  safe: string[];
+  /** スクリプトが決めた既定（推奨案・安全な分割・差し戻し）。監督が判断に迷ったときに選ぶ値 */
+  default: string;
+}
+
+/**
+ * 確認ゲートは承認と差し戻しの両方が安全側。承認は確認として監督に委ねた範囲で（同意の回は handler が
+ * user になり、監督は答えない）、差し戻しは受け入れを増やさない。既定は差し戻し
+ */
+const CONFIRM_ANSWER: SafeAnswer = {
+  choices: { approved: "承認する", rejected: "差し戻す（フィードバックを返す）" },
+  safe: ["approved", "rejected"],
+  default: "rejected",
+};
+
+export const SAFE_ANSWERS: Record<string, SafeAnswer> = {
+  ...Object.fromEntries(["G2", "G4", "G6", "G7", "G8", "G10", "docs-link"].map((id) => [id, CONFIRM_ANSWER])),
+  G3: {
+    choices: { recommended: "推奨案を選ぶ", other: "推奨以外の案を選ぶ", rejected: "差し戻す（案を作り直させる）" },
+    safe: ["recommended", "rejected"],
+    default: "recommended",
+  },
+  retrospective: {
+    choices: { run: "振り返りを実施する", skip: "振り返りを省く" },
+    safe: ["run"],
+    default: "run",
+  },
+  "design-conflict": {
+    choices: { return: "architect に差し戻す", conform: "設計に合わせて要件を改める", adjust: "ビルドの中で設計を改める" },
+    safe: ["return"],
+    default: "return",
+  },
+  "unsafe-split": {
+    choices: { merge: "上限を超えたまま1ビルドにまとめる", redesign: "設計に戻る", unsafe: "安全でない分割を選ぶ" },
+    safe: ["merge"],
+    default: "merge",
+  },
+  "review-findings": {
+    choices: { fix: "今修正する", "new-build": "新ビルド化して後で対応する", proceed: "そのまま進める（リスクの申告が要る）" },
+    safe: ["fix", "new-build", "proceed"],
+    default: "fix",
+  },
+};
+
+export function safeAnswerOf(id: string): SafeAnswer | undefined {
+  return SAFE_ANSWERS[id];
+}
+
+/** リスクの申告（--harm か --no-risk）が要りうる問い。questions は常に、review-findings は proceed のとき */
+const RISK_DECLARING_ASKS = ["questions", "review-findings"];
+
+/**
+ * 監督の答えにリスクの申告が要るか。conductor launch と ledger decide が同じ関数を使い、監督と子の判定を割らない。
+ * 付け忘れで上げる向きと逆に倒れないため、受け入れうる答えには申告を必須にする
+ */
+export function needsRiskDeclaration(ask: string | undefined, choice: string | undefined): boolean {
+  if (ask === "questions") return true;
+  return ask === "review-findings" && choice === "proceed";
+}
+
+/** 子に渡す答えの環境変数（conductor launch だけが組み立て、ledger decide / object が読む） */
+export const ANSWER_ENV = {
+  from: "HIKYAKU_ANSWER_FROM",
+  items: "HIKYAKU_ANSWER_ITEMS",
+  ask: "HIKYAKU_ANSWER_ASK",
+  choice: "HIKYAKU_ANSWER_CHOICE",
+  risk: "HIKYAKU_ANSWER_RISK",
+  token: "HIKYAKU_ANSWER_TOKEN",
+  /** 監督の上限を超える受け入れを事後同意へ回す（1 のときだけ。checkSupervisorAnswer が受け付けたとき） */
+  defer: "HIKYAKU_ANSWER_DEFER",
+} as const;
+
+/** ユーザーに上げる問いを記録させる固定文の作業単位（builder は build-NN、architect は architect、close-cycle は close） */
+export function escalateUnit(phase: ConductorPhase, buildId: string | undefined): string {
+  if (phase === "close-cycle") return "close";
+  if (phase === "architect") return "architect";
+  if (buildId === undefined) throw new HikyakuError("builder にはビルドを指定してください");
+  return buildDirName(buildId);
+}
+
+/**
+ * ユーザーに上げる問いを、子に記録させる固定文（conductor launch --escalate）。子は答えを待たずに記録して
+ * blocked で終え、監督は依存しないビルドを先に進める（ADR conductor-runs-to-end）
+ */
+export function escalateMessage(unit: string, cycle: string, ask: string): string {
+  return [
+    `この問い（${ask}）はユーザーに上げます。答えは後で、このセッションの再開か新しい起動で届きます。`,
+    "次の順に行って終えてください。承認の後のステップ（実装など）は先に進めないでください。",
+    "",
+    `1. 問いを記録する: hikyaku ledger open ${unit} ${cycle} --type question --who user --when now --ask ${ask} --summary "<問いの本文の要約>"`,
+    "   問いの本文・選択肢・推奨（スキルが推奨を示す問いなら）は、記録先のファイル（builder なら build-NN/questions.md、",
+    "   architect なら design/design-questions.md）に「未回答（ユーザーが決める）」として書く",
+    "2. 成果物と記録をコミットして push する",
+    "3. 本文の行頭に `waiting: <記録した ID>` の行を置いた blocked ブロックで終える（行き詰まりの報告の節は要らない）",
+  ].join("\n");
+}
+
+/**
+ * --closes の事項をユーザーの答えで閉じる固定文。子が ID を知らない新しい起動でも閉じられるよう、回答の先頭に置く。
+ * items は答えを待つ事項（decided で閉じる）、consentItems は同意ゲートの項目（事後同意。項目ごとに決定を選ぶ）
+ */
+export function closesMessage(
+  unit: string,
+  cycle: string,
+  items: string[],
+  answer: string,
+  consentItems: { open: { id: string } }[] = [],
+): string {
+  // 答えは単一引用符でくくる（$ やバッククォートを子のシェルに展開させない）。`--input=` の形にするのは、
+  // 答えが - で始まってもフラグと読まれないため（args.mts は次のトークンが - で始まると値にしない）
+  const input = `'${answer.replace(/'/g, `'\\''`)}'`;
+  const lines: string[] = [];
+  if (items.length > 0) {
+    lines.push(
+      "次の事項はユーザーの答えで閉じます。続きに進む前に、それぞれを記録してください（答えは書き換えずにそのまま渡す）。",
+      ...items.map((id) => `- hikyaku ledger decide ${unit} ${id} ${cycle} --decision decided --by user --input=${input}`),
+      "",
+    );
+  }
+  if (consentItems.length > 0) {
+    lines.push(
+      "次の項目は、マージの前にユーザーが同意する項目（事後同意）です。ユーザーの答えに従って項目ごとに consented / decided / rejected / resolved を選び、" +
+        "高として扱う異議（害が高か、上限を超える）はユーザーが受け入れると書いた言葉を --accepts に添えて記録してください" +
+        "（答えから決められない項目は記録せず、gate でもう一度尋ねる）。",
+      ...consentItems.map(
+        ({ open }) => `- hikyaku ledger decide ${unit} ${open.id} ${cycle} --decision <consented|decided|rejected|resolved> --by user --input=${input} [--accepts=<ユーザーの言葉>]`,
+      ),
+      "",
+    );
+  }
+  return [...lines, "ユーザーの答え:", answer].join("\n");
+}
+
+/**
+ * 監督の上限を超える受け入れを事後同意へ回すときに、子への回答の先頭に置く固定文（HIKYAKU_ANSWER_DEFER=1）。
+ * risk の事項は ledger decide --by supervisor が決定と同時に書くので、子に求めるのは --loses だけ
+ */
+export function deferNotice(unit: string, cycle: string): string {
+  return [
+    "この監督の答えは、AI に任せてよい上限を超える受け入れを、最後のビルドの同意ゲート（事後同意）へ回します。",
+    `答えを hikyaku ledger decide ${unit} <ID> ${cycle} --by supervisor で記録するときは、--loses に退けた安全側の案で失う利点を添えてください。`,
+    "決定と同時に、受け入れたリスクが risk の事項（ユーザーがマージの前に決める）として記録されます。",
+  ].join("\n");
+}
+
 export interface ResolvedAsk {
   id: string;
   category: AskCategory;
@@ -219,28 +393,45 @@ export interface ResolvedAsk {
   source: "default" | "escalate" | "delegate" | "fixed";
   /** profile や設定で無効なら false（その問いは出ない） */
   enabled: boolean;
+  /** 監督が答えてよい値の表（自由文で答える問いは null） */
+  safe: SafeAnswer | null;
+  /** 監督の答えにリスクの申告（--harm か --no-risk）が要りうる問いか */
+  declaresRisk: boolean;
 }
 
 /**
- * 問いの ID を振り分ける。表に無い ID は「分類できない問い」として人間に上げる
- * （子が規約にない ID を出したとき、監督が推測で答えないようにするため）
+ * 問いの ID を振り分ける。表に無い ID は「分類できない問い」としてユーザーに上げる
+ * （子が規約にない ID を出したとき、監督が推測で答えないようにするため）。
+ *
+ * approval は、子の手順がそのゲートで止まっているときの、その回の承認の種類（directive の approval）。
+ * 渡されたら ASKS の静的な分類より優先する。同意なら escalate / delegate に関わらずユーザーに固定する。
+ * そのゲートで止まっているので、profile で無効な問いでも enabled にする
  */
-export function resolveAsk(id: string, conductor: ConductorConfig, settings: AskSettings): ResolvedAsk {
+export function resolveAsk(
+  id: string,
+  conductor: ConductorConfig,
+  settings: AskSettings,
+  approval?: Approval,
+): ResolvedAsk {
   const ask = findAsk(id) ?? { id, category: "unknown" as const, where: "表に無い ID" };
+  // 中止と分類できない問いは、子の手順が何を返しても変えない
+  const category: AskCategory = approval === undefined || ask.category === "abandon" || ask.category === "unknown" ? ask.category : approval;
   const base = {
     id,
-    category: ask.category,
-    categoryLabel: CATEGORY_LABELS[ask.category],
+    category,
+    categoryLabel: CATEGORY_LABELS[category],
     where: ask.where,
-    enabled: ask.enabledWhen === undefined ? true : ask.enabledWhen(settings),
+    enabled: approval !== undefined || ask.enabledWhen === undefined ? true : ask.enabledWhen(settings),
+    safe: safeAnswerOf(id) ?? null,
+    declaresRisk: RISK_DECLARING_ASKS.includes(id),
   };
 
-  if (FIXED_CATEGORIES.includes(ask.category)) {
-    return { ...base, handler: "human", source: "fixed" };
+  if (FIXED_CATEGORIES.includes(category)) {
+    return { ...base, handler: "user", source: "fixed" };
   }
-  if (conductor.escalate.includes(id)) return { ...base, handler: "human", source: "escalate" };
+  if (conductor.escalate.includes(id)) return { ...base, handler: "user", source: "escalate" };
   if (conductor.delegate.includes(id)) return { ...base, handler: "supervisor", source: "delegate" };
-  return { ...base, handler: DEFAULT_HANDLERS[ask.category], source: "default" };
+  return { ...base, handler: DEFAULT_HANDLERS[category], source: "default" };
 }
 
 export function resolveAllAsks(conductor: ConductorConfig, settings: AskSettings): ResolvedAsk[] {
@@ -264,14 +455,27 @@ export interface ParsedResult {
   costUsd: number | null;
   /** violation / error の理由 */
   reason?: string;
+  /** 答えを待つ blocked が指す、ユーザーの答えを待つ事項の ID（本文の行頭の waiting: <id>） */
+  waiting?: string[];
 }
+
+export interface ParseOptions {
+  /**
+   * 本文の waiting: <id> が、実在する未決のユーザーの事項（question・who=user・when=now）か。
+   * 渡さなければ waiting を信じず、従来どおり行き詰まりの報告を検査する
+   */
+  isWaitingItem?: (id: string) => boolean;
+}
+
+/** 行頭の waiting: の行。同じ行の ID だけを読み（改行をまたがない）、カンマか空白で区切った複数の ID を受け付ける */
+const WAITING_LINE = /^waiting:[ \t]*([^\n]*?)[ \t]*$/gm;
 
 const BLOCK_PATTERN =
   /^<hikyaku-(gate|done|blocked)((?:\s+[a-z]+="[^"]*")*)\s*>\n?([\s\S]*?)\n?^<\/hikyaku-\1>\s*$/gm;
 const ATTRIBUTE_PATTERN = /([a-z]+)="([^"]*)"/g;
 
 /** 最終出力の末尾に置かれたブロックを1つ取り出す */
-export function parseFinalText(text: string): Omit<ParsedResult, "sessionId" | "costUsd"> {
+export function parseFinalText(text: string, options: ParseOptions = {}): Omit<ParsedResult, "sessionId" | "costUsd"> {
   const blocks = [...text.matchAll(BLOCK_PATTERN)];
   const tail = text.trimEnd().slice(-2000);
 
@@ -304,6 +508,16 @@ export function parseFinalText(text: string): Omit<ParsedResult, "sessionId" | "
     return { outcome: "gate", id, body };
   }
   if (kind === "done") return { outcome: "done", next: attributes.get("next") ?? "", body };
+  // 答えを待つ blocked（ユーザーに上げる問いを記録して終えた）は行き詰まりではないので検査から外す。
+  // 外すのは、指す ID がすべて記録に裏取りできたときだけ（1つでも指す先が無ければ従来どおり検査する）
+  const waiting = [...body.matchAll(WAITING_LINE)].flatMap((m) => (m[1] ?? "").split(/[,\s]+/).filter((id) => id !== ""));
+  const isWaitingItem = options.isWaitingItem;
+  if (waiting.length > 0 && isWaitingItem !== undefined && waiting.every((id) => isWaitingItem(id))) {
+    return { outcome: "blocked", body, waiting };
+  }
+  // blocked はユーザーに上げる行き詰まりの報告。欠けていれば violation にして、書き直させるかユーザーに上げる（US-3.4）
+  const check = checkEscalation(body);
+  if (!check.ok) return { outcome: "violation", body, reason: describeEscalationProblems(check.problems) };
   return { outcome: "blocked", body };
 }
 
@@ -313,7 +527,7 @@ export function parseFinalText(text: string): Omit<ParsedResult, "sessionId" | "
  * 予算超過やターン上限で終わった場合は result が無いか、途中の出力になる。
  * それを規約違反と混同しないよう、is_error / subtype を先に見る
  */
-export function parseResultJson(raw: string): ParsedResult {
+export function parseResultJson(raw: string, options: ParseOptions = {}): ParsedResult {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -354,7 +568,7 @@ export function parseResultJson(raw: string): ParsedResult {
     };
   }
 
-  return { ...parseFinalText(result), sessionId, costUsd };
+  return { ...parseFinalText(result, options), sessionId, costUsd };
 }
 
 // ---------------------------------------------------------------------------
@@ -426,8 +640,8 @@ export function shellQuote(value: string): string {
  *
  * 子は Write / Edit を持つので、.hikyaku.config の allowed_tools や delegate を
  * 書き換えられる。launch / parse は起動のたびに設定を読み直すため、書き換えが
- * 次の起動で効くと、人間が合意していない権限や振り分けになる。監督は起動時に
- * 人間と合意したときのダイジェストを全呼び出しに渡し、変わっていれば止める。
+ * 次の起動で効くと、ユーザーが合意していない権限や振り分けになる。監督は起動時に
+ * ユーザーと合意したときのダイジェストを全呼び出しに渡し、変わっていれば止める。
  *
  * 設定ファイルの内容そのもの（configFiles）も含める。base_branch や [branch] が
  * 変わると、PR の向き先や completed の判定まで変わるため。キーを選んで含めると
@@ -504,7 +718,7 @@ export interface PrVerdict {
   checks: { status: ChecksStatus; failing: string[]; pending: string[]; total: number };
   /** 未解決のレビュースレッド（レビューの指摘が残っている） */
   threads: { ok: boolean; unresolved: ReviewThread[]; truncated: boolean };
-  /** ok でない理由（人間と監督に示す） */
+  /** ok でない理由（ユーザーと監督に示す） */
   problems: string[];
   /**
    * 待てば解消しうる問題（CI の実行中、レビューの依頼が残っている）だけで止まっているか。
@@ -618,7 +832,7 @@ export function judgePr(
   const truncated = view.reviewThreads?.truncated ?? false;
   const threadsOk = unresolved.length === 0 && !truncated;
 
-  // 待てば解消しうるもの（waits）と、人間の対応が要るもの（blocks）に分ける
+  // 待てば解消しうるもの（waits）と、ユーザーの対応が要るもの（blocks）に分ける
   const blocks: string[] = [];
   const waits: string[] = [];
   if (!readyOk) blocks.push("PR が Draft です（Ready for Review になっていません）");

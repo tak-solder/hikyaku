@@ -1,0 +1,76 @@
+name: 利用中のフィードバック
+description: Hikyaku を使っていて起きた問題や、改善の提案を送る
+title: "[feedback] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        このリポジトリは公開されています。非公開のプロジェクトで Hikyaku を使っている場合は、プロジェクトの中身が分からない形に一般化して書いてください。
+
+        本文を AI に下書きさせてもかまいません。ただし、AI に一般化を頼んでも、プロジェクトの固有名が残ることがあります。送る前に、必ずご自身で全文を読んでください。起票もご自身で行ってください。
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 種類
+      options:
+        - 不具合（スクリプトやスキルが誤った結果を返す）
+        - 手順が想定どおりに進まない（止まる、飛ばされる、繰り返す）
+        - 指示文の過不足（守られない、読まれたが役に立たない）
+        - 改善の提案
+        - ドキュメント
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Hikyaku の版
+      description: "`claude plugin list` で確認できます"
+      placeholder: "3.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: where
+    attributes:
+      label: どのスキル・手順・ゲートで起きたか
+      placeholder: "builder の implement の手順 / G8（実装の直前に、実装手順とテストシナリオをまとめて承認）"
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: 起きる頻度
+      options:
+        - 1回だけ
+        - ときどき
+        - 毎回
+
+  - type: textarea
+    id: what
+    attributes:
+      label: 何が起きたか
+      description: 一般化して書いてください。例えば「外部サービスの利用上限」「モジュール間の呼び出し順」のような抽象度で書きます
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待した振る舞い
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 手がかり
+      description: 中身を含まない記録（件数、手順の ID、Hikyaku のエラーメッセージなど）。プロジェクトのパスや固有名は除いてください
+
+  - type: checkboxes
+    id: disclosure
+    attributes:
+      label: 公開してよいかの確認
+      options:
+        - label: プロジェクトの名前・ドメイン・機能名・コード・ファイル名・プロジェクト固有のサービス名を含んでいない
+          required: true
+        - label: AI が下書きした部分も含めて、自分で全文を読んだ
+          required: true

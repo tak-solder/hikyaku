@@ -9,7 +9,7 @@
  *   3. AGENTS.md から参照させれば Hikyaku 以外のセッションからも使える
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { HikyakuError } from "./errors.mts";
 import { findTableByHeaders } from "./markdown.mts";
@@ -98,8 +98,13 @@ export const RETIRED_HINT =
 export interface DocEntry {
   name: string;
   ownership: DocOwnership;
-  /** リポジトリルートからの相対パス。ownership が 未作成/対象外 のときは undefined */
+  /**
+   * リポジトリルートからの相対パス（アンカーを除く）。ownership が 未作成/対象外 のときは undefined。
+   * ファイルを開く・差分を取る呼び出し元はこれを使う。読む節を示すときは docRef で表示する
+   */
   path: string | undefined;
+  /** 節のアンカー（`#` の後ろ。デコード済み）。登録がファイル全体を指すなら undefined */
+  anchor: string | undefined;
   summary: string;
   definition: DocDefinition | undefined;
 }
@@ -127,6 +132,99 @@ function extractPath(cell: string): string | undefined {
   return trimmed;
 }
 
+/** `docs/concepts.md#用語` をパスとアンカーに分ける。パーセントエンコードされたアンカーはデコードする */
+function splitAnchor(raw: string | undefined): { path: string | undefined; anchor: string | undefined } {
+  if (raw === undefined) return { path: undefined, anchor: undefined };
+  const at = raw.indexOf("#");
+  if (at === -1) return { path: raw, anchor: undefined };
+  const path = raw.slice(0, at);
+  const fragment = raw.slice(at + 1);
+  let anchor = fragment;
+  try {
+    anchor = decodeURIComponent(fragment);
+  } catch {
+    // 読めないエンコードはそのまま比べる（validate が節の不一致として知らせる）
+  }
+  return { path: path === "" ? undefined : path, anchor: anchor === "" ? undefined : anchor };
+}
+
+/** 読む場所の表示（アンカー付き）。パスが無ければ undefined */
+export function docRef(entry: Pick<DocEntry, "path" | "anchor">): string | undefined {
+  if (entry.path === undefined) return undefined;
+  return entry.anchor === undefined ? entry.path : `${entry.path}#${entry.anchor}`;
+}
+
+/**
+ * 見出しから GitHub 式のアンカーを作る。小文字にし、文字・数字・`-`・`_`・空白以外を除き、空白を `-` にする。
+ * 日本語などの文字はそのまま残る（GitHub と同じ）
+ */
+export function githubAnchor(heading: string): string {
+  return heading
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}\p{Pc}\- ]/gu, "")
+    .replace(/ /g, "-");
+}
+
+/**
+ * Markdown の見出しのアンカーの集合。ATX（`## 用語`。字下げ 3 つまで）と setext（下線の `===` / `---`）の
+ * 見出しを読む。コードブロックの中は除き、同じアンカーには `-1` `-2` を付ける（GitHub と同じ）
+ */
+export function markdownAnchors(source: string): Set<string> {
+  const anchors = new Set<string>();
+  const seen = new Map<string, number>();
+  const add = (raw: string): void => {
+    const text = raw.replace(/`([^`]*)`/g, "$1").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+    const base = githubAnchor(text);
+    const count = seen.get(base) ?? 0;
+    seen.set(base, count + 1);
+    anchors.add(count === 0 ? base : `${base}-${count}`);
+  };
+  const lines = source.split("\n");
+  // 先頭の YAML frontmatter（`---` で囲む）は読まない。閉じの `---` を setext の見出しと取り違えないため
+  let start = 0;
+  if (lines[0]?.trim() === "---") {
+    const close = lines.findIndex((line, index) => index > 0 && line.trim() === "---");
+    if (close !== -1) start = close + 1;
+  }
+  // 閉じるのは、開いたのと同じ文字で、同じ長さ以上の囲み（``` の中の ~~~ では閉じない）
+  let fence: { char: string; length: number } | undefined;
+  // setext の見出しになりうる段落の行（下線の直前まで続く行をつなげる）
+  let paragraph: string[] = [];
+  for (const line of lines.slice(start)) {
+    const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (fence !== undefined) {
+      if (marker && (marker[1] as string)[0] === fence.char && (marker[1] as string).length >= fence.length && (marker[2] as string).trim() === "") {
+        fence = undefined;
+      }
+      continue;
+    }
+    if (marker) {
+      fence = { char: (marker[1] as string)[0] as string, length: (marker[1] as string).length };
+      paragraph = [];
+      continue;
+    }
+    const atx = /^ {0,3}#{1,6}(?:\s+(.*?))?\s*$/.exec(line);
+    if (atx) {
+      add((atx[1] ?? "").replace(/\s+#+$/, ""));
+      paragraph = [];
+      continue;
+    }
+    // setext: 段落の直後の下線。箇条書き・表・引用で始まる段落は見出しにしない
+    if (/^ {0,3}(=+|-+)\s*$/.test(line) && paragraph.length > 0) {
+      add(paragraph.map((part) => part.trim()).join(" "));
+      paragraph = [];
+      continue;
+    }
+    if (line.trim() === "" || (paragraph.length === 0 && /^\s*([-*+>|]|\d+[.)])/.test(line))) {
+      paragraph = [];
+      continue;
+    }
+    paragraph.push(line);
+  }
+  return anchors;
+}
+
 export function parseGuide(source: string): DocEntry[] {
   const table = findTableByHeaders(source, GUIDE_HEADERS);
   if (!table) {
@@ -150,10 +248,12 @@ export function parseGuide(source: string): DocEntry[] {
         );
       }
       const ownership = rawOwnership as DocOwnership;
+      const located = ownership === "hikyaku" || ownership === "repo" ? splitAnchor(extractPath(row[2] ?? "")) : undefined;
       return {
         name,
         ownership,
-        path: ownership === "hikyaku" || ownership === "repo" ? extractPath(row[2] ?? "") : undefined,
+        path: located?.path,
+        anchor: located?.anchor,
         summary: (row[3] ?? "").trim(),
         definition: DOC_DEFINITIONS.find((d) => d.name === name),
       };
@@ -211,6 +311,13 @@ export function validateGuide(entries: DocEntry[], repoRoot: string): GuideProbl
       const absolute = isAbsolute(entry.path) ? entry.path : resolve(repoRoot, entry.path);
       if (!existsSync(absolute)) {
         problems.push({ entry: entry.name, message: `パスが存在しません: ${entry.path}` });
+      } else if (entry.anchor !== undefined) {
+        // 節を指す登録は、見出しが改名・削除されると読む場所を失う。ファイルの存在だけでは気づけない
+        if (!statSync(absolute).isFile()) {
+          problems.push({ entry: entry.name, message: `アンカーはファイルにだけ付けられます: ${docRef(entry)}` });
+        } else if (!markdownAnchors(readFileSync(absolute, "utf8")).has(githubAnchor(entry.anchor))) {
+          problems.push({ entry: entry.name, message: `節が見つかりません: ${docRef(entry)}（見出しが改名・削除されていないか確かめてください）` });
+        }
       }
     }
 
@@ -246,7 +353,7 @@ export function renderIndexBlock(entries: DocEntry[]): string {
   } else {
     for (const entry of listed) {
       const summary = entry.summary === "" ? "" : ` — ${entry.summary}`;
-      lines.push(`- ${entry.name}: \`${entry.path}\`${summary}`);
+      lines.push(`- ${entry.name}: \`${docRef(entry)}\`${summary}`);
     }
   }
   lines.push(

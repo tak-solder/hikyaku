@@ -82,7 +82,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" init --root {HIKYAKU_ROOT}
 | リポジトリルート/`.hikyaku.config` | 設定のベース（必須）。`hikyaku_root` の唯一の宣言先 |
 | `{HIKYAKU_ROOT}/cycles.md` | サイクル索引 |
 | `{HIKYAKU_ROOT}/document-guide.md` | ドキュメントガイドの雛形 |
-| `{HIKYAKU_ROOT}/.gitignore` | `.hikyaku.local` の1行だけ（既にあれば1行だけ追記する） |
+| `{HIKYAKU_ROOT}/.gitignore` | `.hikyaku.local` と `feedback/` の2行だけ（既にあれば無い行だけ追記する） |
 
 予測ピークの見積もりのガイド（`{HIKYAKU_ROOT}/token-guide/guide.md`）は生成しない。無ければプラグインの
 標準のガイドで見積もり、`/hikyaku:token-guide` で補正するときに作られる。

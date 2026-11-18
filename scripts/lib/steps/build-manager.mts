@@ -40,7 +40,7 @@ export const BUILD_MANAGER_STEPS: SkillSteps = {
       when: (ctx) => ctx.config.reviews.tasklist,
       args: (ctx) => ({ caller: ctx.unit }),
     },
-    { id: "G6", kind: "gate", title: "tasklist と issue.md の変更の承認", ask: "G6" },
+    { id: "G6", kind: "gate", title: "tasklist と issue.md の変更の承認", consent: false, ask: "G6" },
     { id: "write", kind: "run", title: "tasklist と issue.md の書き込み" },
   ],
 };

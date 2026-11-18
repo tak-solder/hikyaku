@@ -1,0 +1,15 @@
+{"at":"2026-11-17T09:23:49.931Z","skill":"builder","step":"plan","result":"done","peak":340000,"context":176112,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T09:29:13.986Z","skill":"builder","step":"plan-review","result":"done","peak":395000,"context":207681,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T09:33:25.274Z","skill":"builder","step":"test-spec","result":"done","context":217894,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T09:35:02.806Z","skill":"builder","step":"test-spec-review","result":"done","context":227780,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T09:35:58.522Z","skill":"builder","step":"G8","result":"approved","input":"承認（監督の委任された判断）。ADR との差は handoff の永続化すること（decisions 宛て）に、要確認の2点は残したことに残す。解釈3件も受け入れる","context":231304,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T09:56:15.878Z","skill":"builder","step":"implement","result":"done","context":286563,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T09:56:21.406Z","skill":"builder","step":"verify","result":"done","context":288077,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T10:18:27.742Z","skill":"builder","step":"review","result":"done","context":314946,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T10:18:50.783Z","skill":"builder","step":"handoff","result":"done","context":317255,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T10:19:07.335Z","skill":"retrospective","step":"peak-actual","result":"done","context":326178,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T10:19:10.800Z","skill":"retrospective","step":"analyze","result":"done","context":327085,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T10:19:34.189Z","skill":"retrospective","step":"write","result":"done","context":331090,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T10:19:34.466Z","skill":"builder","step":"retrospective","result":"done","context":331090,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T10:21:02.687Z","skill":"builder","step":"pr","result":"done","pr":"https://github.com/tak-solder/hikyaku/pull/125","context":339337,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}
+{"at":"2026-11-17T10:21:06.735Z","skill":"builder","step":"publish","result":"done","context":342550,"session":"f58851cf-5a5a-4cd1-afdc-904e58edd85d","hikyaku":"3.0.0"}

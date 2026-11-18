@@ -1,7 +1,7 @@
 /** validate — ワークスペース全体の整合性を検証する */
 
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { flagString } from "../lib/args.mts";
 import { loadConfig } from "../lib/config.mts";
 import { cycleDir, cycleDirName, loadCycles } from "../lib/cycles.mts";
@@ -9,6 +9,7 @@ import { loadGuide, RENAMED_FILES, validateGuide } from "../lib/docs.mts";
 import { HikyakuError, ValidationError } from "../lib/errors.mts";
 import { ISSUE_UNSAFE_HEADING, RESOLVED_BY_LABEL, resolveUnsafeSplit, validateUnsafeSplits } from "../lib/integrity.mts";
 import { emit } from "../lib/output.mts";
+import { documentFiles, idRanges, persistentAcceptances, premisesReview, reviewLines } from "../lib/premises.mts";
 import { register } from "../lib/registry.mts";
 import { TOKEN_GUIDE_DIR, TOKEN_GUIDE_FILE, tokenGuideProblems } from "../lib/tokens.mts";
 import { buildDirName, loadTasklist, validateGraph } from "../lib/tasklist.mts";
@@ -20,11 +21,28 @@ interface Problem {
   message: string;
 }
 
+/**
+ * ID の範囲を見る永続ドキュメント。glossary は除く: 管理の対象が「用語」節だけで、ほかの節は
+ * 利用者向けの説明として範囲の書き方の例（「AD-1〜AD-5」）を載せうる
+ */
+const PERSISTENT_RANGE_DOCS = ["overview", "decisions", "constraints", "conventions"];
+
+/** ディレクトリの下の .md（再帰） */
+function markdownFiles(directory: string): string[] {
+  const files: string[] = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...markdownFiles(path));
+    else if (entry.isFile() && entry.name.endsWith(".md")) files.push(path);
+  }
+  return files.sort();
+}
+
 
 register({
   name: "validate",
   summary: "document-guide・cycles.md・各 tasklist の整合性をまとめて検証する",
-  usage: "hikyaku validate [<cycle>] [--root <path>] [--json]",
+  usage: "hikyaku validate [<cycle>] [--base <ref>] [--root <path>] [--json]",
   details: [
     "検証する内容:",
     "  - 読み込まれなくなった旧名のファイルが残っていないか",
@@ -46,7 +64,17 @@ register({
     "呼べば人間が手で編集した内容の不整合も拾えます。",
     "",
     "問題が見つかった場合は終了コード 2 で終了します。",
+    "",
+    "次は警告として示し、終了コードは変えません（JSON の warnings）:",
+    "  - 永続ドキュメント（glossary を除く）と、進行中のサイクル（引数があればそのサイクル）の .md で、",
+    "    ポインタに ID の範囲（AD-1〜AD-5・US-15.1〜15.3 の形）が添えられているところ",
+    "  - decisions・constraints の「受け入れたこと」の節にあって、箇条書きでない行と、",
+    "    （拠り所: …）の中身が参照の書式に合わない行",
+    "  - --base <ref> を付けると、その ref から変わった宣言（[app]・[[app.areas]]）と、",
+    "    それを拠り所にした受け入れ（hikyaku ledger premises --changed-from <ref> と同じ）",
   ].join("\n"),
+  options: ["base"],
+  maxOperands: 1,
   run: ({ args, operands }) => {
     const config = loadConfig({ root: flagString(args, "root") });
     const problems: Problem[] = [];
@@ -73,6 +101,7 @@ register({
     const records = loadCycles(config.hikyakuRoot);
     const ids = new Set(records.map((record) => record.id));
     const filter = operands[0];
+    const targetCycles: string[] = [];
 
     // 引数のタイプミスで対象サイクルが1つも検証されないまま成功するのを防ぐ。
     // 「検証した結果、問題が無かった」と「そもそも検証していない」は別物
@@ -109,6 +138,8 @@ register({
         problems.push({ scope: `cycles/${name}`, message: `ディレクトリが存在しません: ${directory}` });
         continue;
       }
+      // ID の範囲の警告は、進行中のサイクル（引数があればそのサイクル）だけ。閉じたサイクルは履歴
+      if (filter !== undefined || record.status === "active") targetCycles.push(directory);
 
       const builds = loadTasklist(directory);
       for (const problem of validateGraph(builds)) {
@@ -151,10 +182,48 @@ register({
       });
     }
 
-    emit({ ok: problems.length === 0, problems }, () =>
-      problems.length === 0
-        ? "整合性の問題は見つかりませんでした。"
-        : problems.map((p) => `✗ ${p.scope}: ${p.message}`).join("\n"),
+    // 警告の段階（終了コードは変えない）
+    const warnings: Problem[] = [];
+    const rangeTargets = [
+      ...documentFiles(config, PERSISTENT_RANGE_DOCS),
+      ...targetCycles.flatMap((directory) => markdownFiles(directory)),
+    ];
+    for (const file of rangeTargets) {
+      for (const range of idRanges(readFileSync(file, "utf8"))) {
+        warnings.push({
+          scope: `${relative(config.repoRoot, file)}:${range.line}`,
+          message: `ID の範囲（${range.text}）がポインタに添えられています。範囲は古くなるので、ID を個別に書くか、正の所在だけを指してください`,
+        });
+      }
+    }
+    const base = flagString(args, "base");
+    if (base === undefined) {
+      for (const problem of persistentAcceptances(config).problems) {
+        warnings.push({ scope: `${problem.source}:${problem.line}`, message: problem.message });
+      }
+    } else {
+      const review = premisesReview(config, base);
+      for (const warning of review.warnings) warnings.push({ scope: "受け入れたこと", message: warning });
+      if (review.changes.changed.length > 0) {
+        const targets = reviewLines(review);
+        warnings.push({
+          scope: "宣言の変更",
+          message: [
+            `変わった宣言: ${review.changes.changed.join(", ")}（基準: ${review.changes.bases.map((entry) => entry.ref).join(", ") || "読めず"}）`,
+            ...(targets.length === 0 ? ["この宣言を拠り所にした受け入れはありません"] : ["この宣言を拠り所にした受け入れを見直してください:", ...targets]),
+          ].join("\n  "),
+        });
+      }
+      for (const notice of review.changes.notices) warnings.push({ scope: "宣言の変更", message: notice });
+    }
+
+    emit({ ok: problems.length === 0, problems, warnings }, () =>
+      [
+        problems.length === 0
+          ? "整合性の問題は見つかりませんでした。"
+          : problems.map((p) => `✗ ${p.scope}: ${p.message}`).join("\n"),
+        ...warnings.map((w) => `! ${w.scope}: ${w.message}`),
+      ].join("\n"),
     );
 
     if (problems.length > 0) {

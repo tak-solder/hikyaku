@@ -21,11 +21,11 @@ import {
 } from "../scripts/lib/conductor.mts";
 import { pluginRoot } from "../scripts/lib/paths.mts";
 import { parsePrReviewState, parsePrView } from "../scripts/lib/github.mts";
-import { planReviewers, skipTargetOf, type ReviewerInput } from "../scripts/lib/reviewers.mts";
-import { cli, snapshot, succeeds, testEnvironment, workspace, write } from "./helpers.mts";
+import { planReviewers, planWithoutPr, skipTargetOf, type ReviewerInput } from "../scripts/lib/reviewers.mts";
+import { cli, ESCALATION_BODY, snapshot, succeeds, testEnvironment, withoutGh, workspace, write } from "./helpers.mts";
 
 const settings: AskSettings = {
-  gates: { userStories: true, codebaseSurvey: false, designChoice: true, architecture: true, plan: false },
+  gates: { codebaseSurvey: false, designChoice: true, architecture: true, plan: false, promotion: true },
   reviews: {
     userStories: true, architecture: true, tasklist: true, plan: true, testSpec: true, code: true,
     security: "recommended", retrospective: "auto", validate: "manual",
@@ -56,19 +56,34 @@ function result(text: string, extra: Record<string, unknown> = {}): string {
   });
 }
 
-test("conductor: 既定では同意ゲートを監督に、障害・中止・分類できない問いを人間に振り分ける", () => {
-  const handlers = Object.fromEntries(resolveAllAsks(conductor(), settings).map((ask) => [ask.id, ask.handler]));
+test("conductor: 既定では確認ゲートを監督に、同意・障害・中止・分類できない問いをユーザーに振り分ける", () => {
+  const asks = resolveAllAsks(conductor(), settings);
+  const handlers = Object.fromEntries(asks.map((ask) => [ask.id, ask.handler]));
   for (const id of ["cycle", "branch", "G3", "G6", "G8", "G10", "questions", "review-findings", "docs-link"]) {
     assert.equal(handlers[id], "supervisor", id);
   }
-  for (const id of ["retry-limit", "abandon", "other"]) assert.equal(handlers[id], "human", id);
+  for (const id of ["delegation", "retry-limit", "abandon", "other"]) assert.equal(handlers[id], "user", id);
+  assert.ok(asks.every((ask) => ask.handler === "supervisor" || ask.handler === "user"));
 });
 
-test("conductor: escalate と delegate で振り分けを上書きし、中止は常に人間に上げる", () => {
+test("conductor: G10 は同意の回（decisions・constraints の変更を含む）だけユーザーに固定し、G6・G8 は確認で既定では監督が答える", () => {
+  const g10 = resolveAsk("G10", conductor({ delegate: ["G10"] }), settings, "consent");
+  assert.deepEqual([g10.category, g10.handler, g10.source], ["consent", "user", "fixed"]);
+  const confirm = resolveAsk("G10", conductor(), settings, "confirm");
+  assert.deepEqual([confirm.category, confirm.handler, confirm.source], ["confirm", "supervisor", "default"]);
+  const express = { ...settings, gates: { ...settings.gates, promotion: false } };
+  assert.equal(resolveAsk("G10", conductor(), express).enabled, false, "promotion_gate が off なら確認の回は出ない");
+  for (const id of ["G6", "G8"]) {
+    const ask = resolveAsk(id, conductor(), settings);
+    assert.deepEqual([ask.category, ask.handler, ask.source], ["confirm", "supervisor", "default"], id);
+  }
+});
+
+test("conductor: escalate と delegate で振り分けを上書きし、中止は常にユーザーに上げる", () => {
   const config = conductor({ escalate: ["G8"], delegate: ["retry-limit"] });
   assert.deepEqual(
     [resolveAsk("G8", config, settings).handler, resolveAsk("G8", config, settings).source],
-    ["human", "escalate"],
+    ["user", "escalate"],
   );
   assert.deepEqual(
     [resolveAsk("retry-limit", config, settings).handler, resolveAsk("retry-limit", config, settings).source],
@@ -76,14 +91,37 @@ test("conductor: escalate と delegate で振り分けを上書きし、中止�
   );
   assert.deepEqual(
     [resolveAsk("abandon", config, settings).handler, resolveAsk("abandon", config, settings).source],
-    ["human", "fixed"],
+    ["user", "fixed"],
   );
 });
 
-test("conductor: 表に無い ID は分類できない問いとして人間に上げる", () => {
+test("conductor: 子の手順の approval が同意なら、escalate・delegate に関わらずユーザーに固定する", () => {
+  const express = { ...settings, gates: { ...settings.gates, designChoice: false, architecture: false } };
+  const redesign = resolveAsk("G3", conductor(), express, "consent");
+  assert.deepEqual(
+    [redesign.category, redesign.handler, redesign.source, redesign.enabled],
+    ["consent", "user", "fixed", true],
+  );
+  assert.deepEqual(
+    [resolveAsk("G4", conductor({ delegate: ["G4"] }), express, "consent").handler, resolveAsk("G4", conductor({ delegate: ["G4"] }), express, "consent").source],
+    ["user", "fixed"],
+  );
+  assert.equal(resolveAsk("G3", conductor({ escalate: ["G3"] }), express, "consent").source, "fixed");
+});
+
+test("conductor: approval が確認なら監督に振り、そのゲートで止まっているので enabled にする", () => {
+  const off = { ...settings, gates: { ...settings.gates, designChoice: false, architecture: false } };
+  const confirm = resolveAsk("G4", conductor(), off, "confirm");
+  assert.deepEqual([confirm.category, confirm.handler, confirm.enabled], ["confirm", "supervisor", true]);
+  const statically = resolveAsk("G3", conductor(), off);
+  assert.deepEqual([statically.category, statically.handler, statically.enabled], ["confirm", "supervisor", false]);
+});
+
+test("conductor: 表に無い ID は分類できない問いとしてユーザーに上げる", () => {
   const ask = resolveAsk("G1", conductor(), settings);
   assert.equal(ask.category, "unknown");
-  assert.equal(ask.handler, "human");
+  assert.equal(ask.handler, "user");
+  assert.equal(resolveAsk("Z9", conductor(), settings).source, "fixed");
 });
 
 test("conductor: profile と振り返りの設定で出ない問いを enabled: false にする", () => {
@@ -101,11 +139,27 @@ for (const [name, config, pattern] of [
   ["delegate の abandon", conductor({ delegate: ["abandon"] }), /指定できません/],
   ["delegate の other", conductor({ delegate: ["other"] }), /指定できません/],
   ["両方に同じ ID", conductor({ escalate: ["G8"], delegate: ["G8"] }), /両方/],
+  ["delegate の同意ゲート delegation", conductor({ delegate: ["delegation"] }), /指定できません/],
+  ["escalate の abandon", conductor({ escalate: ["abandon"] }), /指定できません/],
 ] as const) {
   test(`conductor: 設定の検査で${name}を拒否する`, () => {
     assert.throws(() => checkConductorAsks(config, "[conductor]"), pattern);
   });
 }
+
+test("conductor: 同意ゲートを delegate に書いたエラーは、ユーザーが判断することを示す", () => {
+  assert.throws(
+    () => checkConductorAsks(conductor({ delegate: ["delegation"] }), "[conductor]"),
+    (error: Error & { hint?: string }) => /ユーザー/.test(`${error.message}\n${error.hint ?? ""}`) && !/人間/.test(`${error.message}\n${error.hint ?? ""}`),
+  );
+  assert.doesNotThrow(() => checkConductorAsks(conductor({ delegate: ["G8"] }), "[conductor]"));
+  // すでにユーザーに上がる同意ゲートを escalate に書くのは害が無いので受け付ける
+  assert.doesNotThrow(() => checkConductorAsks(conductor({ escalate: ["delegation"] }), "[conductor]"));
+  assert.equal(resolveAsk("delegation", conductor({ escalate: ["delegation"] }), settings).source, "fixed");
+  // G10 は回によって同意になる確認のゲート。delegate に書けるが、同意の回はユーザーに固定される
+  assert.doesNotThrow(() => checkConductorAsks(conductor({ delegate: ["G10"] }), "[conductor]"));
+  assert.equal(resolveAsk("G10", conductor({ escalate: ["G10"] }), settings).source, "escalate");
+});
 
 test("conductor: 最終出力の末尾にある gate / done / blocked を取り出す", () => {
   assert.deepEqual(parseFinalText('plan を書きました。\n\n<hikyaku-gate id="G8">\n承認しますか？\n</hikyaku-gate>\n'), {
@@ -114,9 +168,24 @@ test("conductor: 最終出力の末尾にある gate / done / blocked を取り�
   assert.deepEqual(parseFinalText('<hikyaku-done next="/hikyaku:builder 001-test 2">\nPR: x\n</hikyaku-done>'), {
     outcome: "done", next: "/hikyaku:builder 001-test 2", body: "PR: x",
   });
-  assert.deepEqual(parseFinalText("<hikyaku-blocked>\n差し戻し\n</hikyaku-blocked>"), {
-    outcome: "blocked", body: "差し戻し",
+  assert.deepEqual(parseFinalText(`<hikyaku-blocked>\n差し戻し\n\n${ESCALATION_BODY}</hikyaku-blocked>`), {
+    outcome: "blocked", body: `差し戻し\n\n${ESCALATION_BODY}`.trim(),
   });
+});
+
+test("conductor: 行き詰まりの報告の欠けた blocked は violation にし、reason に欠けを示す", () => {
+  const parsed = parseFinalText("<hikyaku-blocked>\nテストが通らないので止まります\n</hikyaku-blocked>");
+  assert.equal(parsed.outcome, "violation");
+  assert.equal(parsed.body, "テストが通らないので止まります");
+  assert.match(parsed.reason ?? "", /「試したこと」の節がありません/);
+  assert.match(parsed.reason ?? "", /「推奨」の節がありません/);
+});
+
+test("conductor: 行き詰まりに見えない blocked（PR 作成の代行の依頼）も同じ形式で検査する", () => {
+  const plain = "PR 作成の代行を依頼します。\nbase: main\nhead: x";
+  assert.equal(parseFinalText(`<hikyaku-blocked>\n${plain}\n</hikyaku-blocked>`).outcome, "violation");
+  const formed = `${plain}\n\n試したこと: 本文を .tmp/pr.md に書き出した\n選択肢:\n- 監督が PR を作る 失うもの: なし\n推奨: 監督が PR を作る`;
+  assert.equal(parseFinalText(`<hikyaku-blocked>\n${formed}\n</hikyaku-blocked>`).outcome, "blocked");
 });
 
 for (const [name, text, reason] of [
@@ -271,7 +340,8 @@ test("CLI: conductor launch の architect add は指摘のファイルを必須�
   write(directory, "answer.md", "回答（委任された判断）: 承認\n");
   const resumed = JSON.parse(succeeds(
     directory, "conductor", "launch", "architect", "001", "add", "--resume", output.sessionId,
-    "--message", join(directory, "answer.md"), "--expect-digest", expected, "--json",
+    "--message", join(directory, "answer.md"), "--from", "supervisor", "--ask", "G6", "--choice", "approved",
+    "--expect-digest", expected, "--json",
   ));
   assert.equal(resumed.argv[2], "回答（委任された判断）: 承認");
   assert.ok(resumed.argv.includes("--resume"));
@@ -284,7 +354,7 @@ test("CLI: conductor launch は再開時に回答ファイルを渡し、組で�
   const expected = digest(directory);
   const output = JSON.parse(succeeds(
     directory, "conductor", "launch", "builder", "001", "1", "--resume", "s-1", "--message", "answer.txt",
-    "--expect-digest", expected, "--json",
+    "--from", "supervisor", "--ask", "G8", "--choice", "approved", "--expect-digest", expected, "--json",
   ));
   assert.equal(output.resumed, true);
   assert.equal(output.sessionId, "s-1");
@@ -309,8 +379,11 @@ test("CLI: conductor parse は gate の振り分けまで返す", (t) => {
 
   write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[conductor]\nescalate = ["G8"]\n');
   const escalated = JSON.parse(succeeds(directory, "conductor", "parse", "r.json", "001", "--expect-digest", digest(directory), "--json"));
-  assert.equal(escalated.ask.handler, "human");
+  assert.equal(escalated.ask.handler, "user");
   assert.equal(escalated.ask.source, "escalate");
+  const text = succeeds(directory, "conductor", "parse", "r.json", "001", "--expect-digest", digest(directory));
+  assert.match(text, /ユーザーに上げる/);
+  assert.doesNotMatch(text, /人間/);
 });
 
 test("CLI: 合意したときから委任の設定が変わっていれば launch / parse を止める", (t) => {
@@ -716,7 +789,7 @@ test("conductor: 未解決のレビュースレッドがあれば、待たずに
   assert.equal(truncated.ok, false);
 });
 
-test("conductor: 待てば解消しうる問題（CI の実行中・レビューの依頼）だけなら waiting、人間の対応が要る問題が混ざれば waiting でない", () => {
+test("conductor: 待てば解消しうる問題（CI の実行中・レビューの依頼）だけなら waiting、ユーザーの対応が要る問題が混ざれば waiting でない", () => {
   const running = { __typename: "CheckRun", name: "c", status: "IN_PROGRESS" };
   const failed = { __typename: "CheckRun", name: "f", status: "COMPLETED", conclusion: "FAILURE" };
   const request = [{ __typename: "Bot", login: "copilot-pull-request-reviewer" }];
@@ -885,15 +958,73 @@ reviewers_skip = ["plan"]
   assert.equal([...gh.calls(), ...already.calls()].some((call) => call.startsWith("pr edit")), false);
 });
 
-test("CLI: pr request-reviewers は --pr が無い・gh が失敗したときに終了コード 1 を返す", (t) => {
+test("CLI: pr request-reviewers は --pr が無ければ終了コード 1、gh pr edit の失敗は止めずに代わりに行うことを返す", (t) => {
   const directory = workspace(t, true);
   write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["alice"]\n');
   const gh = useGh(t, directory, { view: prView({ baseRefName: "main" }), editFails: true });
   assert.equal(gh.cli("pr", "request-reviewers", "plan", "001").status, 1);
-  const failed = gh.cli("pr", "request-reviewers", "plan", "001", "--pr", "7");
-  assert.equal(failed.status, 1);
-  assert.match(failed.stderr, /レビュアーの依頼に失敗しました: alice/);
-  assert.match(failed.stderr, /PR 自体は作成済み/);
+  const failed = gh.cli("pr", "request-reviewers", "plan", "001", "--pr", "7", "--json");
+  assert.equal(failed.status, 0, failed.stderr);
+  const output = JSON.parse(failed.stdout);
+  assert.deepEqual([output.applied, output.reason, output.stage, output.requested], [false, "gh-failed", "gh pr edit", false]);
+  assert.match(output.manual, /PR #7 の画面で/);
+  assert.match(output.manual, /alice/);
+});
+
+test("CLI: pr request-reviewers は gh api graphql の失敗も止めずに stage を返す", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["alice"]\n');
+  const gh = useGh(t, directory, { view: prView({ baseRefName: "main" }), graphql: { data: null } });
+  const result = gh.cli("pr", "request-reviewers", "plan", "001", "--pr", "7", "--json");
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.deepEqual([output.applied, output.reason, output.stage], [false, "gh-failed", "gh api graphql"]);
+  assert.match(output.manual, /^GitHub の PR #7 の画面で[^\n]*\n {2}alice$/, "マージ先が分かっていれば一覧は1つ");
+  assert.equal(gh.calls().some((call) => call.startsWith("pr edit")), false);
+});
+
+test("CLI: gh が無い環境で pr request-reviewers は止めず、マージ先が分からなければ両方の一覧を示す", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["alice"]\n[conductor]\nphase_reviewers = ["@copilot"]\n');
+  const result = withoutGh(t, directory, "pr", "request-reviewers", "build-01", "001", "--pr", "7", "--json");
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.deepEqual([output.applied, output.reason, output.stage], [false, "gh-unavailable", "gh pr view"]);
+  assert.match(output.manual, /phase_reviewers: @copilot/);
+  assert.match(output.manual, /\[pr\] reviewers: alice/);
+});
+
+test("CLI: phase_reviewers が空でも、マージ先が分からなければ conductor ブランチ向けは依頼しないと示す", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["alice"]\n');
+  const output = JSON.parse(withoutGh(t, directory, "pr", "request-reviewers", "build-01", "001", "--pr", "7", "--json").stdout);
+  assert.match(output.manual, /phase_reviewers: （依頼しない）/);
+  assert.match(output.manual, /\[pr\] reviewers: alice/);
+});
+
+test("CLI: pr request-reviewers は gh pr view の応答が JSON でなければ終了コード 1", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["alice"]\n');
+  assert.equal(useGh(t, directory, { view: "not json" }).cli("pr", "request-reviewers", "plan", "001", "--pr", "7").status, 1);
+});
+
+test("CLI: gh が無い環境でも、オフ・空の一覧なら gh を呼ばずに何もしない", (t) => {
+  const directory = workspace(t, true);
+  const empty = withoutGh(t, directory, "pr", "request-reviewers", "plan", "001", "--pr", "7", "--json");
+  assert.equal(empty.status, 0, empty.stderr);
+  assert.deepEqual([JSON.parse(empty.stdout).source, JSON.parse(empty.stdout).applied], ["none", true]);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["alice"]\nreviewers_skip = ["build"]\n');
+  const skipped = withoutGh(t, directory, "pr", "request-reviewers", "build-01", "001", "--pr", "7", "--json");
+  assert.equal(skipped.status, 0, skipped.stderr);
+  assert.equal(JSON.parse(skipped.stdout).skipped, true);
+});
+
+test("planWithoutPr: オフなら skip、どちらの一覧も空なら none、片方でもあれば決めない", () => {
+  const base = { phase: "build-03", conductorBranch: "hikyaku/001-test/conductor", reviewers: [] as string[], skip: [] as string[], phaseReviewers: [] as string[] };
+  assert.equal(planWithoutPr({ ...base, skip: ["build"], reviewers: ["alice"] })?.skipped, true);
+  assert.equal(planWithoutPr(base)?.source, "none");
+  assert.equal(planWithoutPr({ ...base, phaseReviewers: ["@copilot"] }), undefined);
+  assert.equal(planWithoutPr({ ...base, conductorBranch: undefined, phaseReviewers: ["@copilot"] })?.source, "none");
 });
 
 test("CLI: conductor check-pr は gh の結果で取り込めるかを返し、満たさなければ終了コード 2", (t) => {

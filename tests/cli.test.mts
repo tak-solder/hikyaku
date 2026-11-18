@@ -4,7 +4,7 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { pluginVersion } from "../scripts/lib/paths.mts";
-import { cli, repository, snapshot, succeeds, testEnvironment, workspace, write } from "./helpers.mts";
+import { cli, repository, returnRecord, snapshot, succeeds, testEnvironment, workspace, write } from "./helpers.mts";
 import { githubRepositoryOf } from "../scripts/lib/github.mts";
 
 const tasklist = "docs/hikyaku/cycles/001-test/tasklist.md";
@@ -43,7 +43,35 @@ test("CLI: init を再実行しても既存文書を上書きせず、gitignore 
   assert.deepEqual(snapshot(directory), before);
   assert.equal(readFileSync(join(directory, "docs/hikyaku/document-guide.md"), "utf8"), "# 手書きのガイド\n");
   assert.match(readFileSync(join(directory, "docs/hikyaku/.gitignore"), "utf8"), /^custom-entry\n/);
+  const lines = readFileSync(join(directory, "docs/hikyaku/.gitignore"), "utf8").split("\n");
+  assert.equal(lines.filter((line) => line === ".hikyaku.local").length, 1);
+  assert.equal(lines.filter((line) => line === "feedback/").length, 1);
+});
+
+test("CLI: init は .gitignore に無い除外の行だけを足す（先頭の / 付きも揃っているとみなす）", (t) => {
+  const directory = repository(t);
+  write(directory, "docs/hikyaku/.gitignore", ".hikyaku.local\n");
+  const appended = JSON.parse(succeeds(directory, "init", "--root", "docs/hikyaku", "--json"));
+  assert.equal(appended.files.find((file: { path: string }) => file.path.endsWith(".gitignore")).status, "append");
   assert.equal(readFileSync(join(directory, "docs/hikyaku/.gitignore"), "utf8").split("\n").filter((line) => line === ".hikyaku.local").length, 1);
+  assert.match(readFileSync(join(directory, "docs/hikyaku/.gitignore"), "utf8"), /^feedback\/$/m);
+
+  const other = repository(t);
+  write(other, "docs/hikyaku/.gitignore", "/.hikyaku.local\n/feedback\n");
+  const skipped = JSON.parse(succeeds(other, "init", "--root", "docs/hikyaku", "--json"));
+  assert.equal(skipped.files.find((file: { path: string }) => file.path.endsWith(".gitignore")).status, "skip");
+
+  // `.hikyaku.local/` はディレクトリにだけ当たり、ファイルの .hikyaku.local を除外しない
+  const directoryOnly = repository(t);
+  write(directoryOnly, "docs/hikyaku/.gitignore", ".hikyaku.local/\nfeedback/\n");
+  succeeds(directoryOnly, "init", "--root", "docs/hikyaku");
+  assert.match(readFileSync(join(directoryOnly, "docs/hikyaku/.gitignore"), "utf8"), /^\.hikyaku\.local$/m);
+
+  // `!feedback/` はユーザーが追跡に戻すと決めた方針。後ろに feedback/ を足して覆さない
+  const negated = repository(t);
+  write(negated, "docs/hikyaku/.gitignore", ".hikyaku.local\n!feedback/\n");
+  const kept = JSON.parse(succeeds(negated, "init", "--root", "docs/hikyaku", "--json"));
+  assert.equal(kept.files.find((file: { path: string }) => file.path.endsWith(".gitignore")).status, "skip");
 });
 
 test("CLI: 正規化するとリポジトリルートになる init のパスを拒否する", (t) => {
@@ -319,24 +347,24 @@ test("CLI: return.md があれば cycle status・next・cycle list が差し戻�
   assert.equal(normal.returned, null);
   assert.deepEqual(normal.available, ["1", "2"]);
 
-  write(directory, `${cycleDirectory}/return.md`, "# 差し戻し: build-01\n\n## 何が崩れたか\n");
+  write(directory, `${cycleDirectory}/return.md`, returnRecord());
 
   const status = JSON.parse(succeeds(directory, "cycle", "status", "001", "--no-fetch", "--json"));
   assert.equal(status.phase, "building");
-  assert.deepEqual(status.returned, { buildId: "1" });
+  assert.deepEqual(status.returned, { buildId: "1", problems: [] });
   assert.equal(status.suggestion, "/hikyaku:architect 001-test build-01");
   const text = succeeds(directory, "cycle", "status", "001", "--no-fetch");
   assert.match(text, /^cycle 001-test: building（差し戻し中: build-01）/);
   assert.match(text, /再開: \/hikyaku:architect 001-test build-01/);
 
   const next = JSON.parse(succeeds(directory, "next", "001", "--no-fetch", "--json"));
-  assert.deepEqual(next.returned, { buildId: "1" });
+  assert.deepEqual(next.returned, { buildId: "1", problems: [] });
   assert.deepEqual(next.available, []);
   assert.match(succeeds(directory, "next", "001", "--no-fetch"), /どのビルドにも着手できません/);
 
   const list = JSON.parse(succeeds(directory, "cycle", "list", "--json"));
   assert.equal(list.cycles[0].phase, "building");
-  assert.deepEqual(list.cycles[0].returned, { buildId: "1" });
+  assert.deepEqual(list.cycles[0].returned, { buildId: "1", problems: [] });
   assert.match(succeeds(directory, "cycle", "list"), /building（差し戻し中: build-01）/);
 
   // architect が再設計の最後に return.md を消すと、通常の再開に戻る

@@ -18,6 +18,7 @@ PR は作らず、報告もしない。`token-guide/progress.jsonl` の変更を
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers token-guide --pr {PR の URL}
 ```
 
-  失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
+  失敗しても PR は作成済みなので止めない。出力の `applied` が `false` なら、できなかったことと `manual`
+  （ユーザーが代わりに行うこと）を、完了の案内と一緒にユーザーに伝える
 - [ ] `done` を報告する（`--pr` に PR の URL）
 - [ ] 同じブランチへコミット & push する（progress.jsonl）

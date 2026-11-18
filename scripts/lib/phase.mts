@@ -14,6 +14,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildDirName, isComplete, normalizeBuildId, type BuildRecord } from "./tasklist.mts";
 import type { CycleRecord } from "./cycles.mts";
+import { checkEscalation } from "./escalation.mts";
 
 export type DerivedPhase =
   | "planning"
@@ -57,16 +58,22 @@ export const RETURN_FILE = "return.md";
 export interface ReturnRecord {
   /** 差し戻し元のビルド ID。見出しから読めなければ undefined */
   buildId: string | undefined;
+  /** 行き詰まりの報告の欠け（試したこと / 選択肢と失うもの / 推奨）。そろっていれば空 */
+  problems: string[];
 }
 
-/** 差し戻し元は見出し（`# 差し戻し: build-NN`）から読む。中身の他の部分は解釈しない */
+/** 差し戻し元は見出し（`# 差し戻し: build-NN`）から読む。本文は行き詰まりの報告の形式だけを確かめる */
 const RETURN_HEADING = /^#\s*差し戻し\s*[:：]\s*(build-\d+)/m;
 
 export function readReturn(cycleDirectory: string): ReturnRecord | undefined {
   const path = join(cycleDirectory, RETURN_FILE);
   if (!existsSync(path)) return undefined;
-  const match = RETURN_HEADING.exec(readFileSync(path, "utf8"));
-  return { buildId: match?.[1] === undefined ? undefined : normalizeBuildId(match[1]) };
+  const text = readFileSync(path, "utf8");
+  const match = RETURN_HEADING.exec(text);
+  return {
+    buildId: match?.[1] === undefined ? undefined : normalizeBuildId(match[1]),
+    problems: checkEscalation(text).problems,
+  };
 }
 
 interface ArtifactSpec {

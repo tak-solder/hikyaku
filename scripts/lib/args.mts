@@ -24,6 +24,11 @@ const BOOLEAN_FLAGS = new Set([
   "uncertain",
   "repeated",
   "ref",
+  "full",
+  "defer",
+  "notice",
+  "escalate",
+  "no-risk",
 ]);
 
 /** すべてのコマンドが受け付けるグローバルオプション */

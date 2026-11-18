@@ -1,0 +1,203 @@
+# Build 03: 未決事項と決定の記録（ledger の中核）
+
+## 依存パッケージ
+
+なし
+
+## クラス設計
+
+### `scripts/lib/jsonl.mts`（新規。progress.mts から切り出し）
+
+```ts
+/** 追記型の JSONL を厳密に解析する。空行は読み飛ばし、JSON でない行・形の合わない行は HikyakuError（行番号つき）。
+ *  文字列から読むので、build-07 が origin のブランチの記録（git show の出力）を同じ検査で読める */
+export function parseJsonl<T>(text: string, source: string, isRecord: (value: unknown) => value is T, labels: { writer: string; shape: string }): T[];
+/** ファイルを読んで parseJsonl。無ければ空 */
+export function readJsonl<T>(path: string, isRecord: (value: unknown) => value is T, labels: { writer: string; shape: string }): T[];
+/** 1行追記する（ディレクトリが無ければ作る） */
+export function appendJsonl(path: string, record: unknown): void;
+```
+
+`progress.mts` の `readProgress` / `appendProgress` はこれを使う（文言は変えない）。
+
+### `scripts/lib/ledger.mts`（新規）
+
+```ts
+export const LEDGER_FILE = "decisions.jsonl";
+export type ItemType = "question" | "provisional" | "objection" | "risk";
+export type Decision = "decided" | "consented" | "rejected" | "resolved";
+export type Harm = "高" | "中";            // risk.mts の Harm を再利用
+/** 「誰が」: user / ai:<phase> / supervisor */
+export type Who = "user" | `ai:${string}` | "supervisor";
+
+export interface OpenRecord {
+  record: "open"; at: string; id: string;
+  /** 事項を記録した作業単位（フェーズ: plan / architect / build-NN / close / create / patch-YYYYMM-slug） */
+  unit: string;
+  /** 記録したときのその単位の現在のステップ（ledger open が engine の評価から入れる。内部スキルの最中なら呼ばれた側のステップ）。
+   *  回は at と progress.jsonl の restart の記録から導く。build-04（そのステップの高の異議）と build-06（deferred の回の risk）が引く */
+  step?: string;
+  type: ItemType; summary: string;
+  /** 正規化した「いつ」（gate・merge は @unit を補って保存） */
+  when: string; who: Who;
+  premises?: string[]; loses?: string; harm?: Harm; ask?: string;
+  session?: string; hikyaku?: string;
+}
+export interface DecideRecord {
+  record: "decide"; at: string; id: string;
+  /** 決めた作業単位（このファイルの置き場） */
+  unit: string;
+  decision: Decision; by: Who;
+  input?: string;      // ユーザーの答え（by=user で必須）
+  accepts?: string;    // ユーザーが受け入れると書いた言葉
+  reason?: string;
+  from?: string;       // 答えの出どころ（値を入れるのは build-07）
+  session?: string; hikyaku?: string;
+}
+
+/** 「いつ」 */
+export type When =
+  | { kind: "now" } | { kind: "phase"; phase: string }
+  | { kind: "gate"; gate: string; unit: string } | { kind: "merge"; unit: string } | { kind: "close" };
+export function parseWhen(raw: string, ctx: RefContext): When;     // 語彙外・参照先の不在は HikyakuError
+export function formatWhen(when: When): string;
+export function parseWho(raw: string): Who;                         // ai:<phase> の phase も isPhase で検査
+export function whoLabel(who: Who): string;                         // ユーザー / AI（build-03）/ 監督
+/** 前提の参照。app.exposure / app.data / app.impact / app.merge_gate / area:<name> / constraints#<anchor> / adr:<file> / assumption:<短い文> */
+export function parsePremise(raw: string): Premise;                 // 書式外は HikyakuError
+export function parsePremises(raw: string): string[];               // カンマ区切り。assumption は文中のカンマを許さない（区切りに使う）
+
+/** 参照先の検査に使う、サイクルの実在する単位 */
+export interface RefContext { cycleDirectory: string; builds: BuildRecord[]; opening: string }
+/** ゲート ID → それを持つスキル（SKILL_STEPS の gate のうち G<n> / P<n>） */
+export function gateOwners(gate: string): SkillSteps[];
+
+export interface LedgerItem { open: OpenRecord; decisions: DecideRecord[]; latest: DecideRecord | undefined }
+/** サイクルの全作業単位（直下・planning・design・build-NN・patches/*/*）の decisions.jsonl を読み、ID で結ぶ */
+export function readLedger(cycleDirectory: string): LedgerItem[];
+export function ledgerDirectoryOf(cycleDirectory: string, phase: Phase): string;  // ownerOf(phase).directory
+export function nextItemId(items: LedgerItem[], unit: string): string;            // `{unit}.{n}-{4桁の16進}`（コードレビューの指摘: 2つのブランチの採番が重ならないように乱数を添える）
+export function openItem(cycleDirectory: string, record: OpenRecord, items: LedgerItem[]): void;   // 同じ ID の2回目は HikyakuError
+export function decideItem(cycleDirectory: string, record: DecideRecord, items: LedgerItem[]): void;
+/** 付け替えの禁止: who=user の事項は by=user だけ。by=user は input 必須。それ以外は who と同じ決め手（ai:<phase> は同じフェーズ）か user（コードレビュー2回目の指摘で ai:* から改めた） */
+export function assertDecider(item: OpenRecord, by: Who, input: string | undefined): void;
+
+/** 期限の判定 */
+export type Timing = "pending" | "due" | "overdue";
+export interface UnitPosition { events: ProgressEvent[]; skill: SkillSteps; current: string | undefined /* 現在のステップ。done なら undefined */; done: boolean }
+export interface CycleTimeline {
+  active: boolean;
+  units: Map<string, UnitPosition>;
+  /** ベースブランチへマージ済みのビルド（cycle status の views.mergedIds）。分からなければ undefined */
+  merged: Set<string> | undefined;
+}
+/** 期限の判定の唯一の正。build-06 の pr-section・consent-list もこれを呼ぶだけにする */
+export function timingOf(item: LedgerItem, timeline: CycleTimeline): Timing;
+/**
+ * サイクルの作業単位の位置を progress.jsonl の記録から近似で集める（cycle status 用）。現在のステップは、最後の
+ * restart の後で完了したステップのうち定義の並びで最も後ろのものの次とする（engine で全単位を評価すると、G3・G4 の
+ * consent が git を読み、他の単位の評価の失敗で status が止まるため）。directive は自分の単位を engine の評価で上書きする
+ */
+export function cycleTimeline(config: ResolvedConfig, cycle: CycleContext): CycleTimeline;
+export interface LedgerSummary { due: Array<LedgerItem & { timing: "due" | "overdue" }>; open: LedgerItem[]; rejected: LedgerItem[] }
+export function summarize(items: LedgerItem[], timeline: CycleTimeline): LedgerSummary;
+export function noticeLines(summary: LedgerSummary): string[];     // 1事項1行
+```
+
+- **「いつ」の期限**（状態は保存せず、progress.jsonl・cycles.md・マージの導出から導く）。design-delta には「過ぎた」の定義が無いので、以下は AI が解釈で決めた振る舞い。handoff の「後続ビルドが前提にすること」に残す
+  - **回**: どの判定も、事項の `at` より後の記録だけを見る（architect の `add` の回で記録した事項が、前の回の `pr` や G4 の承認で「過ぎた」にならないように）
+  - `now`: 記録した時点から来ている（過ぎない。決まるまで示す）
+  - `phase:<P>`: P の作業単位に（事項より後の）記録があれば来た。過ぎたのは、build-NN ならベースブランチへマージされたとき（`merged`）、plan は architect に、architect はいずれかの build-NN に事項より後の記録があるとき、close は cycles.md の status が active でなくなったとき。patch は過ぎない（決まるまで「来た」で示す）。P は plan / architect / build-NN（tasklist に在る）/ close / サイクルの patch
+  - `gate:<G>[@<unit>]`: unit の現在のステップが G か、G の記録があれば来た。G が `approved` になったら過ぎた。G が外れていて（プロファイル・回の条件）、記録が無いまま G より後ろのステップの完了の記録があれば、それも過ぎた（外れたゲートの事項が埋もれないように）。@unit を省くと、G を持つスキルが固定のフェーズ（G1→plan、G2〜G4→architect、G10→close）ならそのフェーズ、そうでなければ（G6・G7・G8・P1・P2）事項を記録した作業単位。内部スキルのゲート（G6）は、呼び出し元の単位（architect / build-NN）が担う。G を持つスキル（内部スキルなら呼び出し元になりうるスキル）がその unit を担わないならエラー
+  - `merge[@<unit>]`: unit の現在のステップが「マージの前の区切り」以降（完了を含む）なら来た。区切りは、`consent`（build-06 が足す同意ゲート）があればそれ、無ければ patch は `publish`（patch は Draft PR を実装より前に作るため）、ほかは `pr`。build-06 は ID `consent` のステップを足すだけで判定に乗る。過ぎたのは、build-NN がベースブランチへマージされたとき（`cycle status` の `merged`。conductor では各ビルドの PR は conductor ブランチ向けなので、最後の PR がマージされるまで過ぎない）。plan / architect / close / patch のマージは導けないので、決まるまで「来た」で示し続ける（US-19.2 の「PR のマージの前」に、PR を作ってからマージするまでに決めるのは正当なので、PR の記録では過ぎたにしない）。directive（step next）ではマージを導かない（`merged` が undefined）ので「来た」として示す。@unit 省略は記録した作業単位
+  - `close`: サイクル直下に close-cycle の記録があれば来た。cycles.md の status が active でなくなったら過ぎた
+  - 参照先の実在: build-NN は tasklist.md に、patch はサイクルの patches/ に在ること。plan / architect / close は常に在る
+  - **他の単位の現在のステップ**（cycle status と、directive で自分以外の単位）: 記録のある単位を engine で評価する（コードレビューの指摘: 記録からの近似は when で外れたステップに落ちる）。評価に失敗した単位だけ、最後の restart の後で完了したステップのうち、定義の並びで最も後ろのものの次で近似する。directive は内部スキルの評価で呼び出し元の単位を上書きしない。記録を読めなければ notices に1行出して手順は止めない。内部スキルの記録は呼び出し元の単位の記録として数え、G6 の記録があれば来た・承認で過ぎたとする
+- **決まったか**: 最新の `decide`（`at` 順。同時刻は読み順で後のもの。読み順はサイクル直下 → planning → design → build-NN（番号順）→ patches（パス順）、ファイルの中は行順）。`decide` が無ければ未決。最新が `rejected` なら「未解決の退け」（`resolved` で消える）。期限の判定は未決の事項だけ
+- **置き場**: `open` は記録した作業単位のファイル、`decide` は決めた作業単位（`ledger decide` に渡したフェーズ）のファイル
+
+### `scripts/commands/ledger.mts`（新規）
+
+```
+hikyaku ledger open <phase> [<cycle>] --type <type> --when <when> --who <who> --summary <text>
+                    [--premises <ref,...>] [--loses <text>] [--harm 高|中] [--ask <id>] [--dry-run] [--json]
+hikyaku ledger decide <phase> <id> [<cycle>] --decision <decision> --by <who>
+                    [--input <text>] [--accepts <text>] [--reason <text>] [--dry-run] [--json]
+hikyaku ledger list [<cycle>] [--json]      # 未決・期限・未解決の退け
+hikyaku ledger show <id> [<cycle>] [--json] # 事項と決定の全欄
+```
+
+- `<phase>` は `requirePhase` + `scopeFor`。サイクルに属さない patch はエラー（スコープ外 Q13）
+- `--ask` は `conductor.mts` の `ASK_IDS` か、ゲートの ID（G1・P1・P2 は ASKS に無いため）に在ること。build-04 は異議の事項に `ask`（ゲートの ID）を入れ、「そのステップの高の異議」をこの欄で引く。`--harm` は 高 / 中
+- `open` は単位を `directive.open` で開いて engine で評価し、現在のステップを `step` に入れる（内部スキルの最中なら `locate.mts` の `directiveOf` と同じく呼ばれた側）。`--when` で gate を指し、その単位でそのゲートがすでに外れている（評価で off）なら、記録はするが出力で「このゲートは今の設定では現れないので、後ろのステップに進むと期限を過ぎた事項になります」と知らせる。`--when` は `--who` と合わせて検査。`--premises` は書式の検査
+- `decide` は `assertDecider`、決めた作業単位のファイルに追記
+- 記録に `session`（CLAUDE_CODE_SESSION_ID）と `hikyaku`（版）を添える（progress と同じ）
+
+### `scripts/lib/steps/directive.mts`
+
+- `BuildOptions.notices?: boolean`（既定 true）。`locate.mts` の `directiveOf`（Stop フック・step where・conductor parse の経路）は `notices: false` を渡す
+- `buildDirective` は、サイクルがあり notices が有効なら、`cycleTimeline` に自分の評価（現在のステップ）を重ねて `summarize` し、`noticeLines` を `notices` に入れる
+
+### `scripts/commands/cycle.mts`（status）
+
+- 期限の判定に `views.mergedIds`（ベースブランチへマージ済みのビルド）を `merged` として渡す
+- JSON に `ledger: { due, open, rejected }`（各要素は id・unit・type・summary・when・who・timing / 最新の決定）
+- テキストに「未決事項」の節（期限が来た・過ぎた事項を1行ずつ、未決の総数、未解決の退け）。無ければ出さない
+
+### `skills/navigator/SKILL.md`
+
+判定表に1行: `cycle status` の `ledger.due` か `ledger.rejected` があれば、次の一手に添えて伝える（スキルは変えない）。
+
+### docs・CHANGELOG
+
+- `docs/reference/directory-layout.md`: 作業単位の `decisions.jsonl`（書き手は CLI だけ、決定は決めた作業単位に置く）
+- `docs/reference/cli.md`: ledger の4コマンドを「いつ、なぜ使うか」で
+- `CHANGELOG.md` の `[3.0.0]` Added
+
+## 非機能要件
+
+- **セキュリティ**: 外部に出す処理なし。記録は作業単位のファイルに追記するだけ
+- **パフォーマンス**: notices は step next / report のときだけ読む（Stop フックの経路では読まない）。サイクルの decisions.jsonl はファイル数が作業単位の数で、全件読みで足りる
+- **エラーハンドリング**: 壊れた行・語彙外の値・参照先の不在・付け替えはエラー（黙って捨てない）
+- **マージ時点のデータ安全**: 該当なし（プラグインのスクリプトと文書の変更）。新しいファイルを足すだけで、progress.jsonl・tasklist.md・cycles.md の形は変えない。書き手（各スキルの手順）はまだ無いので、decisions.jsonl が無いワークスペースでは notices と status の節が空になるだけ
+
+## 予測ピーク
+
+| 段階 | 予測ピーク |
+|------|------------|
+| architectフェーズ段階 | 355k |
+| builderフェーズ段階 | 425k |
+
+**読むファイル**
+
+- 読了: issue.md、design-delta、ADR pending-items-ledger、`progress.mts`、`steps/directive.mts`・`locate.mts`・`engine.mts`（型）・`builder.mts`（ゲート）・`index.mts`、`branch.mts`・`patch.mts`・`stack.mts` の一部、`commands/cycle.mts` の status、navigator の判定表
+- これから: planner / architect / build-manager / close-cycle / patch / publication の steps 定義、`engine.mts` の回（startOf / currentEvents）、`tasklist.mts`・`cycles.mts`・`risk.mts`（Harm）・`hikyaku.mts`、`commands/step.mts` の一部、`workspace.mts`・`conductor.mts`（ASK_IDS）の一部、`tests/helpers.mts`・`cli.test.mts` の一部、`docs/reference/cli.md`・`directory-layout.md`、`CHANGELOG.md` の `[3.0.0]`
+
+**作成・変更するファイル**
+
+- `scripts/lib/jsonl.mts`・`ledger.mts`（新規）、`scripts/commands/ledger.mts`（新規）、`scripts/hikyaku.mts`（登録）
+- `scripts/lib/progress.mts`・`steps/directive.mts`・`steps/locate.mts`、`scripts/commands/cycle.mts`
+- `tests/ledger.test.mts`（新規）
+- `skills/navigator/SKILL.md`、`docs/reference/directory-layout.md`・`cli.md`、`CHANGELOG.md`
+
+**builderフェーズ段階の内訳**（plan-review の指摘を反映して見積もり直した。分割を検討する 450k に近いので、根拠に挙げた判定が膨らむなら実装の途中で build-manager を呼ぶ）
+
+| 成分 | 予測 | 根拠 |
+|------|------|------|
+| 固定費 | 90k | — |
+| 読み込み | 130k | 読了: progress.mts・directive.mts・locate.mts・engine.mts 冒頭・design-delta・ADR・cycle.mts status・builder steps・navigator の表・build-04〜07 の issue。これから: planner/architect/build-manager/close-cycle/patch/publication の steps 定義・tasklist.mts・cycles.mts・risk.mts（Harm）・hikyaku.mts・engine.mts の回（startOf/currentEvents）・tests/helpers.mts・step.test/cli.test の一部・docs の cli.md・directory-layout.md・CHANGELOG [3.0.0] |
+| 実装 | 95k | jsonl.mts（progress から切り出し・parseJsonl）、ledger.mts 新規（約550行: 欄・語彙・前提の参照・参照先の検査・導出・期限）、commands/ledger.mts（約300行）、directive の notices、cycle status の節、navigator の1行、docs 2本と CHANGELOG |
+| テスト | 60k | ledger の unit（語彙・付け替え・導出・期限）、CLI 結合（dry-run・decide の置き場・2ブランチのマージで衝突しない・notices・Stop フックで読まない・status --json） |
+| 未知の領域 | 50k | plan-review の指摘で増えた判定: 回（事項の at より後だけ）、外れたゲートを過ぎたとする位置の近似、内部スキル G6 の現在地、merge の区切り（consent / publish / pr）とマージの導出、ledger と directive の循環 import の回避 |
+| **予測ピーク** | **425k** | 狙いの帯（300k〜450k） |
+| ガイド | 標準 v2 | 03897ac0 |
+
+## 実装ステップ
+
+- [x] Step 1: `jsonl.mts` の切り出しと `progress.mts` の置き換え
+- [x] Step 2: `ledger.mts`（steps/ の評価に依存する部分は引数で受け、循環 import を避ける。欄・語彙・前提の参照・参照先の検査・付け替えの禁止・読み書き・導出・期限）
+- [x] Step 3: `commands/ledger.mts`（open / decide / list / show）と登録
+- [x] Step 4: directive の notices（Stop フックの経路は読まない）、cycle status の節、navigator の1行
+- [x] Step 5: テスト（unit・CLI 結合・2ブランチのマージ・回と外れたゲートの期限・壊れた decisions.jsonl があっても `step hook stop` と `step where` が失敗しない）
+- [x] Step 6: docs・CHANGELOG
+- [ ] Step 7: ローカル検証（`npx tsc --noEmit`・`npm test`・`step lint`・`conductor lint`）

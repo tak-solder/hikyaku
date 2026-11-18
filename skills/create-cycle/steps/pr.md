@@ -19,7 +19,8 @@ Hikyaku の規則に従う / 現在のブランチで作業する / 別のブラ
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers create {NNN}-{slug} --pr {PR の URL}
 ```
 
-  失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
+  失敗しても PR は作成済みなので止めない。出力の `applied` が `false` なら、できなかったことと `manual`
+  （ユーザーが代わりに行うこと）を、完了の案内と一緒にユーザーに伝える
 
 cycles.md がデフォルトブランチに入らないと、他サイクルからこのサイクルが見えない。
 並行サイクルの検出が機能しなくなるため、この PR は速やかにマージするよう案内する。

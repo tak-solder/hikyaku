@@ -47,7 +47,7 @@ CLI を自分のシェルからも叩きたい場合は、[実行方法](referen
 リポジトリルート/.hikyaku.config   設定のベース。hikyaku_root の唯一の宣言先
 {HIKYAKU_ROOT}/cycles.md           サイクル索引
 {HIKYAKU_ROOT}/document-guide.md   ドキュメントガイド
-{HIKYAKU_ROOT}/.gitignore          .hikyaku.local の1行だけ
+{HIKYAKU_ROOT}/.gitignore          .hikyaku.local と feedback/ の2行だけ
 ```
 
 雛形を生成したあとの手順は、`hikyaku step next init` が1手ずつ決めます。進み具合は `{HIKYAKU_ROOT}/progress.jsonl` に記録されるので、途中で止まっても、もう一度 `/hikyaku:init` を実行すれば続きから再開できます。この記録も PR に含まれます。
@@ -123,7 +123,7 @@ hikyaku next
 /hikyaku:close-cycle
 ```
 
-各ビルドの `handoff.md` と振り返りから永続化の候補が集められ、置き場ごとに、追加・置き換え・削除が分けて提示されます。何を残し、何を消すかを選んで承認してください。この取捨選択は人間の判断で、どのプロファイルでも省略されません。
+各ビルドの `handoff.md` と振り返りから永続化の候補が集められ、置き場ごとに、追加・置き換え・削除が分けて提示されます。何を残し、何を消すかを選んで承認してください。この取捨選択はユーザーの判断で、どのプロファイルでも省略されません。
 
 承認された内容が永続ドキュメントへ書き込まれ、ADR の status が `accepted` から `implemented` に更新され、サイクルが `closed` になります。最後に PR が作られます。
 

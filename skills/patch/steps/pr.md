@@ -18,5 +18,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr base {phase} {cycle}
     「PR の本文」。検証結果とドキュメントの更新は、まだ「未」のままにする（publish で埋める）
   - `gh pr create --draft` で作る。Draft に対応していないリポジトリで作成に失敗したら、`--draft` を外して作り直し、
     完了の案内で Draft にできなかったことを伝える
-- [ ] `done` を報告する（`--pr` に PR の URL）
+- [ ] 同意ゲートで退けて作り直している回（この patch の Draft PR がすでにある）は、PR を作り直さない。既存の
+  Draft PR の本文の合意を、作り直した対応方針に直す
+- [ ] `done` を報告する（`--pr` に PR の URL。作り直しの回は既存の PR）
 - [ ] progress.jsonl をコミット & push する

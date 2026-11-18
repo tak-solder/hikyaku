@@ -23,6 +23,8 @@ import { join } from "node:path";
 import { patchUnitDirectory } from "../patch.mts";
 import { formatK } from "../tokens.mts";
 import { publicationStep } from "./publication.mts";
+import { consentProblem, consentStep } from "./consent.mts";
+import { declarationArgs } from "../premises.mts";
 import { currentEvents, latestPeak, type SkillSteps, type StepContext } from "./engine.mts";
 
 export const PATCH_HANDOFF = "handoff.md";
@@ -78,10 +80,17 @@ export const PATCH_STEPS: SkillSteps = {
         };
       },
     },
-    { id: "P1", kind: "gate", title: "対応方針の合意" },
+    {
+      id: "P1",
+      kind: "gate",
+      title: "対応方針の合意",
+      consent: () => ({ timing: "now", reason: "対応方針の合意（意図を決める判断）" }),
+      reworks: "scope",
+    },
     { id: "pr", kind: "run", title: "Draft PR の作成（依頼と合意した挙動を本文に）", recordsPr: true },
-    { id: "implement", kind: "run", title: "実装とテスト" },
-    { id: "verify", kind: "run", title: "ローカル検証" },
+    // builder と同じ retry-policy に従うので、failed --reason に行き詰まりの報告を添える
+    { id: "implement", kind: "run", title: "実装とテスト", escalates: true },
+    { id: "verify", kind: "run", title: "ローカル検証", escalates: true },
     {
       id: "review",
       kind: "run",
@@ -96,8 +105,18 @@ export const PATCH_STEPS: SkillSteps = {
       accepts: handoffWritten,
       args: (ctx) => ({ cycle: ctx.cycle?.name ?? null }),
     },
-    { id: "P2", kind: "gate", title: "永続ドキュメントの更新の承認", when: writesDocs },
+    {
+      id: "P2",
+      kind: "gate",
+      title: "永続ドキュメントの更新の承認",
+      when: writesDocs,
+      // decisions・constraints の変更を含みうるので、G10 と同じく同意の側に倒す
+      consent: () => ({ timing: "now", reason: "永続ドキュメントの更新（decisions・constraints の変更を含みうる）" }),
+    },
     { id: "write", kind: "run", title: "永続ドキュメントの書き込みと検証", when: writesDocs },
-    publicationStep("patch"),
+    // patch は pr を実装の前に作るので、宣言の変更は実装を終えた publish で見る
+    // サイクルに属す patch だけに現れる（consentStep の when がサイクルを要する）
+    consentStep("patch"),
+    { ...publicationStep("patch", undefined, declarationArgs), accepts: consentProblem("patch") },
   ],
 };

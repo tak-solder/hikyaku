@@ -1,0 +1,15 @@
+{"at":"2026-11-16T23:59:20.650Z","skill":"builder","step":"plan","result":"done","peak":365000,"context":171329,"session":"3ca4f49c-6511-4a30-83f6-631a760a6e02","hikyaku":"3.0.0"}
+{"at":"2026-11-17T00:03:41.304Z","skill":"builder","step":"plan-review","result":"done","peak":400000,"context":202502,"session":"3ca4f49c-6511-4a30-83f6-631a760a6e02","hikyaku":"3.0.0"}
+{"at":"2026-11-17T00:06:14.694Z","skill":"builder","step":"test-spec","result":"done","context":209261,"session":"3ca4f49c-6511-4a30-83f6-631a760a6e02","hikyaku":"3.0.0"}
+{"at":"2026-11-17T00:07:41.335Z","skill":"builder","step":"test-spec-review","result":"done","context":238409,"session":"3ca4f49c-6511-4a30-83f6-631a760a6e02","hikyaku":"3.0.0"}
+{"at":"2026-11-17T00:12:32.385Z","skill":"builder","step":"G8","result":"approved","input":"承認（監督の委任された判断）。受け入れ基準はすべて test-spec に対応し、plan はやることの範囲内。patch の handoff を集計に含めない判断と、休眠の基準を所在だけ書く判断を受け入れる（questions.md Q1）","context":245367,"session":"3ca4f49c-6511-4a30-83f6-631a760a6e02","hikyaku":"3.0.0"}
+{"at":"2026-11-17T00:23:37.894Z","skill":"builder","step":"implement","result":"done","context":323250,"session":"3ca4f49c-6511-4a30-83f6-631a760a6e02","hikyaku":"3.0.0"}
+{"at":"2026-11-17T00:28:50.207Z","skill":"builder","step":"verify","result":"done","context":327393,"session":"3ca4f49c-6511-4a30-83f6-631a760a6e02","hikyaku":"3.0.0"}
+{"at":"2026-11-17T00:46:10.251Z","skill":"builder","step":"review","result":"done","context":364900,"session":"3ca4f49c-6511-4a30-83f6-631a760a6e02","hikyaku":"3.0.0"}
+{"at":"2026-11-17T00:46:43.861Z","skill":"builder","step":"handoff","result":"done","context":370150,"session":"3ca4f49c-6511-4a30-83f6-631a760a6e02","hikyaku":"3.0.0"}
+{"at":"2026-11-17T00:46:56.928Z","skill":"retrospective","step":"peak-actual","result":"done","context":376742,"session":"3ca4f49c-6511-4a30-83f6-631a760a6e02","hikyaku":"3.0.0"}
+{"at":"2026-11-17T00:47:04.877Z","skill":"retrospective","step":"analyze","result":"done","context":378157,"session":"3ca4f49c-6511-4a30-83f6-631a760a6e02","hikyaku":"3.0.0"}
+{"at":"2026-11-17T00:47:27.525Z","skill":"retrospective","step":"write","result":"done","context":380247,"session":"3ca4f49c-6511-4a30-83f6-631a760a6e02","hikyaku":"3.0.0"}
+{"at":"2026-11-17T00:47:33.513Z","skill":"builder","step":"retrospective","result":"done","context":382806,"session":"3ca4f49c-6511-4a30-83f6-631a760a6e02","hikyaku":"3.0.0"}
+{"at":"2026-11-17T00:49:14.417Z","skill":"builder","step":"pr","result":"done","pr":"https://github.com/tak-solder/hikyaku/pull/116","context":388147,"session":"3ca4f49c-6511-4a30-83f6-631a760a6e02","hikyaku":"3.0.0"}
+{"at":"2026-11-17T00:49:26.290Z","skill":"builder","step":"publish","result":"done","context":390932,"session":"3ca4f49c-6511-4a30-83f6-631a760a6e02","hikyaku":"3.0.0"}

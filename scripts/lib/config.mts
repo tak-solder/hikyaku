@@ -24,7 +24,14 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { type DiffPatterns, DEFAULT_DIFF_EXCLUDE, DEFAULT_DIFF_TESTS } from "./diff-stats.mts";
+import {
+  type DiffPatterns,
+  DEFAULT_ASSERTION_MARKERS,
+  DEFAULT_DIFF_EXCLUDE,
+  DEFAULT_DIFF_TESTS,
+  DEFAULT_SKIP_MARKERS,
+  DEFAULT_TEST_DECLARATIONS,
+} from "./diff-stats.mts";
 import { DEFAULT_PEAK_BANDS, type PeakBands } from "./tokens.mts";
 import type { BranchNaming } from "./branch.mts";
 import {
@@ -56,25 +63,21 @@ export function checkExternalTarget(value: string, where: string): ExternalTarge
 export const PROFILE_NAMES: ProfileName[] = ["express", "economy", "standard", "thorough"];
 
 /**
- * 承認ゲート。ここに無いゲートは profile の管轄外で、常に有効:
+ * 確認ゲートのオン・オフ。ここに無いゲートは profile の管轄外で、常に有効:
+ *   G1  user-stories 承認（planner。要件の合意なので常に同意で、設定で外せない）
  *   G6  tasklist / issue 変更承認（build-manager）
  *   G8  plan + test-spec 承認（builder）
  *   G10 永続ドキュメント昇格の承認（close-cycle）
- * profile で外せるのは「確認」であって「同意」ではない。
+ * profile で外せるのは「確認」であって「同意」ではない。同意の回（差し戻しからの再設計の
+ * G3・G4 など）は、ここが false でもステップ定義の consent が手順に残す。
  */
 export interface Gates {
-  /**
-   * G1 planner: user-stories 承認。
-   * どのプロファイルでも on。要件の合意は後段の承認では代替できない
-   * （設計も plan も「その要件で正しいか」を前提に置くため）。
-   */
-  userStories: boolean;
   /** G2 architect: codebase-survey 確認 */
   codebaseSurvey: boolean;
   /**
    * G3 architect: 設計案の選択。
    * off にすると AI が推奨案をそのまま採用する。express だけが off で、
-   * 要件（G1）を人間が握っているなら、その先の trade-off は推奨に委ねても
+   * 要件（G1）をユーザーが握っているなら、その先の trade-off は推奨に委ねても
    * 引き返せる、という判断による。採用理由と退けた案は ADR に残る。
    */
   designChoice: boolean;
@@ -82,6 +85,11 @@ export interface Gates {
   architecture: boolean;
   /** G7 builder: plan 単独の承認（thorough のみ。他は G8 に統合） */
   plan: boolean;
+  /**
+   * G10 close-cycle: 永続ドキュメントへの昇格の承認のうち、確認の回（同意が要る変更が無い回）。
+   * express だけ off。decisions・constraints の変更を含む回は同意で、ここに関わらず手順に残る
+   */
+  promotion: boolean;
 }
 
 export interface Reviews {
@@ -185,16 +193,16 @@ interface ProfileDefinition {
 }
 
 const PROFILES: Record<ProfileName, ProfileDefinition> = {
-  // 人間の時間を節約する。承認は減らすが AI には見させる。
-  // 人間が握るのは要件（G1）だけで、その先の設計判断は AI の推奨に委ねる。
+  // ユーザーの時間を節約する。承認は減らすが AI には見させる。
+  // ユーザーが握るのは要件（G1）だけで、その先の設計判断は AI の推奨に委ねる。
   // 委ねるぶん、security と retrospective は AI 側で回して担保を戻す
   express: {
     gates: {
-      userStories: true,
       codebaseSurvey: false,
       designChoice: false,
       architecture: false,
       plan: false,
+      promotion: false,
     },
     reviews: {
       userStories: true,
@@ -209,16 +217,16 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
     },
     reviewRounds: 1,
   },
-  // AI 実行コストを節約する。中間成果物のレビューを起動しないが人間は見る。
+  // AI 実行コストを節約する。中間成果物のレビューを起動しないがユーザーは見る。
   // code だけは全プロファイルで残す（コードの差分は承認ゲートが拾える粒度を超えるため）。
   // security も落とさない（節約の対象にしてよい観点ではないため、既定は recommended）
   economy: {
     gates: {
-      userStories: true,
       codebaseSurvey: false,
       designChoice: true,
       architecture: true,
       plan: false,
+      promotion: true,
     },
     reviews: {
       userStories: false,
@@ -233,14 +241,14 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
     },
     reviewRounds: 1,
   },
-  // 完成した成果物の単位で、人間も AI も見る
+  // 完成した成果物の単位で、ユーザーも AI も見る
   standard: {
     gates: {
-      userStories: true,
       codebaseSurvey: false,
       designChoice: true,
       architecture: true,
       plan: false,
+      promotion: true,
     },
     reviews: {
       userStories: true,
@@ -260,11 +268,11 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
   // 条件付きの security も該当判定を挟まず常に実行する
   thorough: {
     gates: {
-      userStories: true,
       codebaseSurvey: true,
       designChoice: true,
       architecture: true,
       plan: true,
+      promotion: true,
     },
     reviews: {
       userStories: true,
@@ -348,12 +356,24 @@ export interface ResolvedConfig {
   conductor: ConductorConfig;
   /** [data_integrity] — ビルドのマージで本番データを壊さないための宣言 */
   dataIntegrity: DataIntegrityConfig;
+  /** [app] と [[app.areas]]（作業ツリーの宣言）。無ければ undefined（上限を設けない）。基準側との比較は risk.mts */
+  app: AppDeclaration | undefined;
+  /** [boundaries]。照合は gate brief（build-12） */
+  boundaries: Boundaries;
+  /** [consent]（サイクル設定の素の値）。有効の判定は deferred-consent.mts（git を読むのでここでは計算しない） */
+  consent: ConsentConfig;
   /** [diff] — ビルドの差分の集計（tokens history build-NN）が数えない生成物と、テストとして分けるパス */
   diff: DiffPatterns;
   /** [context] — builder の区切りで、メインセッションのコンテキストと比べる目安 */
   context: ContextBudget;
   /** [context] merge_below / split_above — 予測ピークの判定の帯 */
   peakBands: PeakBands;
+  /** [rules] — rule を機械の検査やリファクタへ移す候補を出す感度 */
+  rules: RulesConfig;
+  /** [areas] — 領域が休眠しているとみなす期間 */
+  areas: AreasConfig;
+  /** [metrics] — 基準を消した PR のマージ前後の指標の比較 */
+  metrics: MetricsConfig;
   /**
    * ルート設定の ask に並んでいて、まだ答えが記録されていないキー。
    * create-cycle が尋ねる対象。サイクルを重ねた結果ここに残っていれば、
@@ -384,6 +404,26 @@ export interface ContextBudget {
 
 export const DEFAULT_CONTEXT_BUDGET: ContextBudget = { approval: 250_000, implement: 300_000, review: 400_000 };
 
+export interface RulesConfig {
+  /** レビューの記録で、同じ rule がこの回数以上引かれたら移す候補にする（サイクルをまたいで数える） */
+  hitThreshold: number;
+}
+
+export interface AreasConfig {
+  /** 最終変更からこの日数を超えた領域を休眠とみなす */
+  dormantDays: number;
+}
+
+export const DEFAULT_RULES: RulesConfig = { hitThreshold: 3 };
+export const DEFAULT_AREAS: AreasConfig = { dormantDays: 180 };
+
+export interface MetricsConfig {
+  /** 基準を消した PR のマージ前後で、それぞれ何サイクルを比べるか */
+  window: number;
+}
+
+export const DEFAULT_METRICS: MetricsConfig = { window: 2 };
+
 export interface DataIntegrityConfig {
   /**
    * リリースされるブランチのパターン（glob）。ルート設定でのみ宣言できる。
@@ -392,6 +432,47 @@ export interface DataIntegrityConfig {
   releaseBranches: string[];
   /** マージ時点で本番データの安全を保てないビルド分割を許すか。既定は false */
   allowUnsafeSplit: boolean;
+}
+
+/** アプリケーションの状況の3軸（ADR risk-ceiling-table）。並びは軽い段から重い段 */
+export const EXPOSURES = ["personal", "internal", "public"] as const;
+export const DATA_WEIGHTS = ["none", "internal", "personal-or-secret"] as const;
+export const IMPACTS = ["low", "medium", "high"] as const;
+export type Exposure = (typeof EXPOSURES)[number];
+export type DataWeight = (typeof DATA_WEIGHTS)[number];
+export type Impact = (typeof IMPACTS)[number];
+
+export interface AppAxes {
+  exposure: Exposure;
+  data: DataWeight;
+  impact: Impact;
+}
+
+/**
+ * 重い領域（[[app.areas]]）。name は前提の参照 `area:<name>` に使う。軸は省略でき、
+ * 省略した軸はアプリケーションの値になる（重い領域に触れる受け入れは害の重さに関わらず
+ * 上限を超えるので、軸はゲートの判定には効かない）
+ */
+export interface AppArea {
+  name: string;
+  paths: string[];
+  exposure?: Exposure;
+  data?: DataWeight;
+  impact?: Impact;
+}
+
+/** [app] — AI に任せてよい害の上限を決める宣言。ルート設定でのみ書ける */
+export interface AppDeclaration {
+  axes: AppAxes;
+  /** マージがユーザーの関門である前提（事後同意の前提。"user" だけを受け付ける） */
+  mergeGate: "user" | undefined;
+  areas: AppArea[];
+}
+
+/** [boundaries] — 外との境界・内部の境界のパス（glob）。ルート設定でのみ書ける */
+export interface Boundaries {
+  external: string[];
+  internal: string[];
 }
 
 export interface LoadOptions {
@@ -448,6 +529,25 @@ function readInteger(table: TomlTable | undefined, key: string, where: string): 
     throw new HikyakuError(`${where}.${key} は整数で指定してください`);
   }
   return value;
+}
+
+function readPositiveInteger(table: TomlTable | undefined, key: string, where: string, fallback: number): number {
+  const value = readInteger(table, key, where);
+  if (value === undefined) return fallback;
+  if (value <= 0) throw new HikyakuError(`${where}.${key} は正の整数で指定してください（現在: ${value}）`);
+  return value;
+}
+
+function readRulesConfig(table: TomlTable | undefined): RulesConfig {
+  return { hitThreshold: readPositiveInteger(table, "hit_threshold", "[rules]", DEFAULT_RULES.hitThreshold) };
+}
+
+function readAreasConfig(table: TomlTable | undefined): AreasConfig {
+  return { dormantDays: readPositiveInteger(table, "dormant_days", "[areas]", DEFAULT_AREAS.dormantDays) };
+}
+
+function readMetricsConfig(table: TomlTable | undefined): MetricsConfig {
+  return { window: readPositiveInteger(table, "window", "[metrics]", DEFAULT_METRICS.window) };
 }
 
 function readNumber(table: TomlTable | undefined, key: string, where: string): number | undefined {
@@ -872,8 +972,10 @@ function mergeTables(base: TomlTable, override: TomlTable): TomlTable {
 }
 
 /**
- * [diff] を読む。配列は既定値を置き換える（足し合わせない）。
- * 既定値に足したいときは、既定値（hikyaku config --json の diff）を写してから足す
+ * [diff] を読む。exclude / tests は既定値を置き換える（足し合わせない）。
+ * 既定値に足したいときは、既定値（hikyaku config --json の diff）を写してから足す。
+ * 差分の事実の印（test_declarations / skip_markers / assertion_markers）は既定に追加される。
+ * 既定を消せると、テストの後退を設定で見えなくできてしまう
  */
 function readDiffPatterns(table: TomlTable | undefined): DiffPatterns {
   const where = "[diff]";
@@ -884,7 +986,14 @@ function readDiffPatterns(table: TomlTable | undefined): DiffPatterns {
     }
     return values;
   };
-  return { exclude: read("exclude", DEFAULT_DIFF_EXCLUDE), tests: read("tests", DEFAULT_DIFF_TESTS) };
+  const extend = (key: string, defaults: string[]): string[] => [...new Set([...defaults, ...read(key, [])])];
+  return {
+    exclude: read("exclude", DEFAULT_DIFF_EXCLUDE),
+    tests: read("tests", DEFAULT_DIFF_TESTS),
+    testDeclarations: extend("test_declarations", DEFAULT_TEST_DECLARATIONS),
+    skipMarkers: extend("skip_markers", DEFAULT_SKIP_MARKERS),
+    assertionMarkers: extend("assertion_markers", DEFAULT_ASSERTION_MARKERS),
+  };
 }
 
 /**
@@ -948,7 +1057,7 @@ function readPeakBands(table: TomlTable | undefined): PeakBands {
 }
 
 /** v3 で廃止したキー */
-const RETIRED_KEYS = ["bp_max", "bp_actual"] as const;
+const RETIRED_KEYS = ["bp_max", "bp_actual", "user_stories_gate"] as const;
 
 /**
  * v3 で廃止したキーの、移行先を示すエラー。黙って無視すると「設定したのに効かない」になるので、
@@ -970,6 +1079,15 @@ function retiredKeyErrors(table: TomlTable, where: string): HikyakuError[] {
     errors.push(new HikyakuError(
       `${where}: [bp_actual] は [diff] に改名しました`,
       "exclude / tests の書き方は同じです。テーブル名を [diff] に変えてください。",
+    ));
+  }
+  if (table["user_stories_gate"] !== undefined) {
+    errors.push(new HikyakuError(
+      `${where}: user_stories_gate は v3 で廃止しました`,
+      [
+        "G1（user-stories の承認）は要件の合意なので同意として扱い、どのプロファイル・設定でも外せません。",
+        "user_stories_gate を削除してください（docs/configuration/profiles.md）。",
+      ].join("\n"),
     ));
   }
   const review = table["review"];
@@ -1048,6 +1166,109 @@ function readDataIntegrity(table: TomlTable | undefined): DataIntegrityConfig {
   };
 }
 
+function readAxis<T extends string>(table: TomlTable, key: string, values: readonly T[], where: string): T | undefined {
+  const value = table[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !(values as readonly string[]).includes(value)) {
+    throw new HikyakuError(`${where}.${key} の値が不正です: ${JSON.stringify(value)}`, `使用できる値: ${values.join(" | ")}`);
+  }
+  return value as T;
+}
+
+function readPaths(table: TomlTable, key: string, where: string, required: boolean): string[] {
+  const paths = readStringArray(table, key, where);
+  if (paths === undefined) {
+    if (required) throw new HikyakuError(`${where}.${key} がありません`, "パス（glob）の配列で書いてください。");
+    return [];
+  }
+  if (paths.some((path) => path.trim() === "")) throw new HikyakuError(`${where}.${key} に空のパスがあります`);
+  if (required && paths.length === 0) throw new HikyakuError(`${where}.${key} が空です`);
+  return paths;
+}
+
+/**
+ * [app] を読む。作業ツリーのルート設定と、基準（merge-base）のルート設定の両方で使う。
+ * 宣言は上限を決めるので、不正な値・知らないキーは黙って捨てずにエラーにする
+ */
+export function readAppDeclaration(table: TomlTable | undefined, where = "[app]"): AppDeclaration | undefined {
+  if (table === undefined) return undefined;
+  assertKnownKeys(table, ["exposure", "data", "impact", "merge_gate", "areas"], where);
+  const exposure = readAxis(table, "exposure", EXPOSURES, where);
+  const data = readAxis(table, "data", DATA_WEIGHTS, where);
+  const impact = readAxis(table, "impact", IMPACTS, where);
+  if (exposure === undefined || data === undefined || impact === undefined) {
+    throw new HikyakuError(
+      `${where} には exposure・data・impact の3つが必要です`,
+      "どれかを省くと上限を決められません。3軸すべてを書いてください（docs/configuration/config-file.md）。",
+    );
+  }
+  const mergeGate = readAxis(table, "merge_gate", ["user"] as const, where);
+
+  const rawAreas = table["areas"];
+  const areas: AppArea[] = [];
+  if (rawAreas !== undefined) {
+    if (!Array.isArray(rawAreas) || rawAreas.some((item) => !isTable(item))) {
+      throw new HikyakuError(`${where}.areas は [[app.areas]] のテーブル配列で書いてください`);
+    }
+    rawAreas.forEach((item, index) => {
+      const area = item as TomlTable;
+      const at = `[[app.areas]] の ${index + 1} 件目`;
+      assertKnownKeys(area, ["name", "paths", "exposure", "data", "impact"], at);
+      const name = readString(area, "name", at);
+      if (name === undefined || name.trim() === "") throw new HikyakuError(`${at} に name がありません`, "前提の参照 area:<name> に使う名前を書いてください。");
+      if (areas.some((entry) => entry.name === name)) throw new HikyakuError(`[[app.areas]] の name が重複しています: ${name}`);
+      const entry: AppArea = { name, paths: readPaths(area, "paths", at, true) };
+      const areaExposure = readAxis(area, "exposure", EXPOSURES, at);
+      const areaData = readAxis(area, "data", DATA_WEIGHTS, at);
+      const areaImpact = readAxis(area, "impact", IMPACTS, at);
+      if (areaExposure !== undefined) entry.exposure = areaExposure;
+      if (areaData !== undefined) entry.data = areaData;
+      if (areaImpact !== undefined) entry.impact = areaImpact;
+      areas.push(entry);
+    });
+  }
+  return { axes: { exposure, data, impact }, mergeGate, areas };
+}
+
+/** [consent]（サイクル設定でだけ書ける）。deferred は書いた素の値で、有効かは deferred-consent.mts が判定する */
+export interface ConsentConfig {
+  deferred: boolean | undefined;
+}
+
+/**
+ * [consent] を読む。作業ツリーのサイクル設定と、基準（merge-base）のサイクル設定の両方で使う。
+ * 事後同意は緩める向きの設定なので、知らないキー・真偽値でない値は黙って捨てずにエラーにする
+ */
+export function readConsent(table: TomlTable | undefined, where = "[consent]"): ConsentConfig {
+  if (table === undefined) return { deferred: undefined };
+  assertKnownKeys(table, ["deferred"], where);
+  return { deferred: readBoolean(table, "deferred", where) };
+}
+
+/** サイクル設定でだけ書けるテーブル（ルートに書くと全サイクルに効き、G1 の合意を経ずに緩められる） */
+const CYCLE_ONLY_TABLES = ["consent"] as const;
+
+/** ルート設定に、サイクル設定でだけ書けるテーブルが無いか検査する */
+function assertNotCycleOnly(table: TomlTable, path: string): void {
+  const found = CYCLE_ONLY_TABLES.filter((key) => table[key] !== undefined);
+  if (found.length === 0) return;
+  throw new HikyakuError(
+    `${path}: ${found.map((key) => `[${key}]`).join("・")} はリポジトリルートの設定では指定できません`,
+    [
+      "事後同意（[consent] deferred）はサイクルごとに G1 でユーザーが合意して選ぶ設定なので、",
+      "サイクルの .hikyaku.config にだけ書けます（docs/configuration/config-file.md）。",
+    ].join("\n"),
+  );
+}
+
+/** [boundaries] を読む。作業ツリーのルート設定と、基準（merge-base）のルート設定の両方で使う */
+export function readBoundaries(table: TomlTable | undefined): Boundaries {
+  if (table === undefined) return { external: [], internal: [] };
+  const where = "[boundaries]";
+  assertKnownKeys(table, ["external", "internal"], where);
+  return { external: readPaths(table, "external", where, false), internal: readPaths(table, "internal", where, false) };
+}
+
 /**
  * サイクル設定に、サイクル側では決められないキーが無いか検査する。
  *
@@ -1090,6 +1311,19 @@ function assertCycleOverridable(table: TomlTable, path: string): void {
     );
   }
 
+  // アプリケーションの状況と境界はリポジトリの宣言。サイクルが自分の上限を緩められると、
+  // 害の受け入れを AI に任せてよいかの判断をサイクル自身が下せてしまう
+  const declared = ["app", "boundaries"].filter((key) => table[key] !== undefined);
+  if (declared.length > 0) {
+    throw new HikyakuError(
+      `${path}: ${declared.map((key) => `[${key}]`).join("・")} はサイクル設定では指定できません`,
+      [
+        "アプリケーションの状況（[app]・[[app.areas]]）と境界（[boundaries]）はリポジトリの宣言なので、",
+        "リポジトリルートの .hikyaku.config でのみ書けます。",
+      ].join("\n"),
+    );
+  }
+
   const locked = CYCLE_LOCKED_KEYS.filter((key) => table[key] !== undefined);
   if (locked.length > 0) {
     throw new HikyakuError(
@@ -1121,6 +1355,7 @@ export function loadConfig(options: LoadOptions = {}): ResolvedConfig {
       ].join("\n"),
     );
   }
+  if (repoConfig) assertNotCycleOnly(repoConfig, repoConfigPath);
   const legacy = repoConfig ? checkLegacyKeys(repoConfig, repoConfigPath) : {};
   // ルート設定は全サイクルに効くので、読んだ時点で止める
   const [retiredAtRoot] = repoConfig ? retiredKeyErrors(repoConfig, repoConfigPath) : [];
@@ -1221,12 +1456,12 @@ function finalize(
   const preset = PROFILES[profile];
 
   const gates: Gates = {
-    userStories: readBoolean(merged, "user_stories_gate", "config") ?? preset.gates.userStories,
     codebaseSurvey:
       readBoolean(merged, "codebase_survey_gate", "config") ?? preset.gates.codebaseSurvey,
     designChoice: readBoolean(merged, "design_choice_gate", "config") ?? preset.gates.designChoice,
     architecture: readBoolean(merged, "architecture_gate", "config") ?? preset.gates.architecture,
     plan: readBoolean(merged, "plan_gate", "config") ?? preset.gates.plan,
+    promotion: readBoolean(merged, "promotion_gate", "config") ?? preset.gates.promotion,
   };
 
   const reviews: Reviews = {
@@ -1279,9 +1514,15 @@ function finalize(
     },
     conductor: readConductor(readTable(merged, "conductor")),
     dataIntegrity: readDataIntegrity(readTable(merged, "data_integrity")),
+    app: readAppDeclaration(requireTable(merged, "app", "config")),
+    boundaries: readBoundaries(requireTable(merged, "boundaries", "config")),
+    consent: readConsent(requireTable(merged, "consent", "config")),
     diff: readDiffPatterns(readTable(merged, "diff")),
     context: readContextBudget(readTable(merged, "context")),
     peakBands: readPeakBands(readTable(merged, "context")),
+    rules: readRulesConfig(readTable(merged, "rules")),
+    areas: readAreasConfig(readTable(merged, "areas")),
+    metrics: readMetricsConfig(readTable(merged, "metrics")),
     askAtCreate,
     sources,
     retired: [],
