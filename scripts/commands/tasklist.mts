@@ -8,6 +8,7 @@ import {
   buildDirName,
   isComplete,
   normalizeBuildId,
+  readyBuilds,
   renderGraph,
   validateGraph,
   type BuildRecord,
@@ -59,13 +60,14 @@ function describeInput(build: BuildRecord): string {
 }
 
 function summarize(builds: BuildRecord[]): string {
+  const ready = new Set(readyBuilds(builds).map((build) => build.id));
   return table(
     builds.map((build) => [
       buildDirName(build.id),
       build.title,
       formatK(build.peak),
       build.dependsOn.length > 0 ? build.dependsOn.map(buildDirName).join(", ") : "—",
-      isComplete(build) ? "完了" : "未完了",
+      isComplete(build) ? "完了" : ready.has(build.id) ? "着手可能" : "待機中",
       build.pr || "—",
     ]),
     ["build", "title", "予測ピーク", "依存", "状態", "PR"],

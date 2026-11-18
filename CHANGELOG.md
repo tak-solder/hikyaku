@@ -73,6 +73,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **`tasklist.md` を、並行するビルドの PR がコンフリクトしにくい形で書くようにした。** 依存グラフはビルドごとのブロックに分け、`hikyaku tasklist done` で変わるのは完了したビルドのブロックだけになった。全ビルドの状態を1行にまとめていた `class b01,b02 ready` と `linkStyle 0,1,2` は書かない。完了はそのビルドのノードの行（`:::merged`）、待機中は未完了の先行ビルドから出る線（`-.-> b04:::blocked`）、着手可能は何も付いていない未完了ビルドの既定の色（`classDef default`）で表す。色分け（紫・緑・グレー）は変わらず、点線の色だけが実線と同じになる。表は `PR` 列の幅をそろえなくなった（1つのビルドが `PR` 列を埋めると全行の空白が変わっていたため）。buildID が隣り合うビルドを並行して完了させたときの、表の行のコンフリクトは残る
+- `hikyaku tasklist read / add / update / done` の一覧の「状態」を、完了 / 未完了から、完了 / 着手可能 / 待機中にした
+
 - **永続ドキュメントを書けるスキルの例外に、サイクルに属さない patch を加えた。** コードと同じ PR で、P2 の承認を得て永続ドキュメント・`instructions.md`・スキルを直す（同じ PR でマージされるので、マージ時点で as-is が保たれる）。進行中のサイクルに属す patch は書かず、`patches/{YYYYMM}/{slug}/handoff.md` の「永続化すること」に残す
 - close-cycle: `hikyaku promotions` が、サイクルに属す patch の handoff.md も候補として集める
 - create-cycle: patch から引き継いだときは `planning/intake.md` に依頼・調べたこと・合意したことを書く。planner と `context plan` はこれを企画の入力として読む
@@ -149,6 +152,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **Asana への投影を廃止した。** `[external] target` は `none` / `github` だけになり、`asana_project_gid` と `cycle new --external-project` も無くなった
 
 ### Migration
+
+- 既存の `tasklist.md` は、次に `tasklist` のコマンドで書き込んだときに新しい形へ書き直される。進行中のサイクルで並行するビルドがあると、最初の `tasklist done` 同士が一度だけコンフリクトしうる。ベースブランチ側の `tasklist.md` を採ってから `hikyaku tasklist done` を実行し直せば解消する（`docs/operations/troubleshooting.md#tasklistmd-がコンフリクトする`）
 
 - patch の導入に対応は不要。サイクルに属さない patch の記録は `{HIKYAKU_ROOT}/patches/` にコミットされ、マージのたびに増えるので、ときどき `hikyaku patch prune --before <YYYYMM>` で古い月を消して PR にする
 - 永続ドキュメントを独自の仕組みで「close-cycle だけが書く」と検査している場合は、patch の PR（`{prefix}/patch/...` のブランチ）を例外に加える
