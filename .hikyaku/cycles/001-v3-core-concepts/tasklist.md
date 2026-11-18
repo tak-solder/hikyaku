@@ -27,7 +27,7 @@
 | 16      | 事後同意の有効の判定と、上限を超える受け入れの積み上げ                     | 435k       | 2, 6, 12, 15                                                  | [#123](https://github.com/tak-solder/hikyaku/pull/123) |
 | 17      | 同意ゲートで退けた項目の作り直しの経路                                     | 320k       | 6, 9                                                          | [#124](https://github.com/tak-solder/hikyaku/pull/124) |
 | 18      | 上限を超える異議と、事後同意の同意ゲートの範囲                             | 395k       | 16                                                            | [#125](https://github.com/tak-solder/hikyaku/pull/125) |
-| 19      | conductor での事後同意（最後のビルドの子の同意ゲートと、最後の PR の一覧） | 380k       | 7                                                             | —                                                      |
+| 19      | conductor での事後同意（最後のビルドの子の同意ゲートと、最後の PR の一覧） | 380k       | 7                                                             | [#127](https://github.com/tak-solder/hikyaku/pull/127) |
 
 ## 依存グラフ
 
@@ -68,7 +68,7 @@ graph TD
   b08 --> b14
   b11 --> b14
   b13 --> b14
-  b19 -.-> b14
+  b19 --> b14
   b02 --> b15
   b06 --> b16
   b12 --> b16
@@ -78,10 +78,8 @@ graph TD
   classDef merged fill:#fbefff,stroke:#8250df,color:#6639ba
   classDef ready fill:#dafbe1,stroke:#1a7f37,color:#116329
   classDef blocked fill:#f6f8fa,stroke:#8c959f,color:#57606a
-  class b01,b02,b03,b04,b05,b06,b07,b08,b09,b10,b11,b12,b13,b15,b16,b17,b18 merged
-  class b19 ready
-  class b14 blocked
-  linkStyle 16 stroke:#8c959f,stroke-dasharray:5 5
+  class b01,b02,b03,b04,b05,b06,b07,b08,b09,b10,b11,b12,b13,b15,b16,b17,b18,b19 merged
+  class b14 ready
 ```
 
 紫: 完了（merged） / 緑: 着手可能（ready） / グレー: 待機中（blocked）。点線は先行ビルドが未完了の依存
