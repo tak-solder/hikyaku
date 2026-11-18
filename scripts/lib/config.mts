@@ -77,7 +77,7 @@ export interface Gates {
   /**
    * G3 architect: 設計案の選択。
    * off にすると AI が推奨案をそのまま採用する。express だけが off で、
-   * 要件（G1）を人間が握っているなら、その先の trade-off は推奨に委ねても
+   * 要件（G1）をユーザーが握っているなら、その先の trade-off は推奨に委ねても
    * 引き返せる、という判断による。採用理由と退けた案は ADR に残る。
    */
   designChoice: boolean;
@@ -193,8 +193,8 @@ interface ProfileDefinition {
 }
 
 const PROFILES: Record<ProfileName, ProfileDefinition> = {
-  // 人間の時間を節約する。承認は減らすが AI には見させる。
-  // 人間が握るのは要件（G1）だけで、その先の設計判断は AI の推奨に委ねる。
+  // ユーザーの時間を節約する。承認は減らすが AI には見させる。
+  // ユーザーが握るのは要件（G1）だけで、その先の設計判断は AI の推奨に委ねる。
   // 委ねるぶん、security と retrospective は AI 側で回して担保を戻す
   express: {
     gates: {
@@ -217,7 +217,7 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
     },
     reviewRounds: 1,
   },
-  // AI 実行コストを節約する。中間成果物のレビューを起動しないが人間は見る。
+  // AI 実行コストを節約する。中間成果物のレビューを起動しないがユーザーは見る。
   // code だけは全プロファイルで残す（コードの差分は承認ゲートが拾える粒度を超えるため）。
   // security も落とさない（節約の対象にしてよい観点ではないため、既定は recommended）
   economy: {
@@ -241,7 +241,7 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
     },
     reviewRounds: 1,
   },
-  // 完成した成果物の単位で、人間も AI も見る
+  // 完成した成果物の単位で、ユーザーも AI も見る
   standard: {
     gates: {
       codebaseSurvey: false,
