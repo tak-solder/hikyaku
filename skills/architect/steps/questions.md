@@ -10,7 +10,10 @@ codebase-survey.md・planning/・永続ドキュメントに明記されてい�
 - [ ] 技術設計に落とし込む過程で生じる不明点を質問する（ask: questions）
   - 1ラウンドの質問数に上限はない。聞くべきことは1回でまとめて聞く
   - 確認観点: 技術選定, データ設計, インターフェース設計, 非機能要件, 既存コードとの整合
-  - 質問が発生した場合のみ `cycles/{cycle}/design/design-questions.md` に記録する
+  - 選択肢のある質問は、各案の欠点と推奨を添えて示す
+  - 質問が発生した場合のみ `cycles/{cycle}/design/design-questions.md` に記録する（書き方は
+    `${CLAUDE_PLUGIN_ROOT}/skills/architect/references/templates.md` の「design-questions.md」）。
+    ユーザーが推奨を退けたら、推奨案の利点のうち失うものを記録する
   - 未回答の質問を放置しない
 - [ ] 設計判断に必要な情報が揃うまで繰り返す
 - [ ] 質問が無かった場合も `done` を報告してよい

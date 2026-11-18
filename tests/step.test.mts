@@ -3,9 +3,10 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import type { ProgressEvent } from "../scripts/lib/progress.mts";
-import { currentRound, evaluate, type SkillSteps, type StepContext } from "../scripts/lib/steps/engine.mts";
+import { currentRound, evaluate, lintApproval, type SkillSteps, type StepContext } from "../scripts/lib/steps/engine.mts";
+import { stepsOf } from "../scripts/lib/steps/index.mts";
 import { publicationStep } from "../scripts/lib/steps/publication.mts";
-import { cli, cliWith, succeeds, temporaryDirectory, workspace, write } from "./helpers.mts";
+import { cli, cliWith, ESCALATION_BODY, returnRecord, succeeds, temporaryDirectory, workspace, write } from "./helpers.mts";
 
 const BUILD = "docs/hikyaku/cycles/001-test/build-01";
 
@@ -264,6 +265,64 @@ test("step: 差し戻し中（return.md）は、前に受け取った directive 
   assert.equal(existsSync(join(directory, BUILD, "progress.jsonl")), false);
 });
 
+test("step: 差し戻しの記録に欠けがあれば、builder の止まる理由に欠けを示す", (t) => {
+  const directory = built(t);
+  write(directory, "docs/hikyaku/cycles/001-test/return.md", returnRecord().replace(" 失うもの: CSV での取り込み", ""));
+  const directive = next(directory);
+  assert.equal(directive.kind, "stop");
+  assert.match(directive.message ?? "", /差し戻しの記録が欠けています/);
+  assert.match(directive.message ?? "", /「選択肢」の1件目に「失うもの:」がありません/);
+});
+
+test("step restart: --round return は、return.md が無いか欠けていれば受け付けない", (t) => {
+  const directory = built(t);
+  const restart = () => cli(directory, "step", "restart", "architect", "001", "--round", "return", "--reason", "build-01 からの差し戻し");
+  const missing = restart();
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /差し戻しの記録（return\.md）がありません/);
+
+  write(directory, "docs/hikyaku/cycles/001-test/return.md", "# 差し戻し: build-01\n\n## 何が崩れたか\n\n- x\n");
+  const lacking = restart();
+  assert.equal(lacking.status, 1);
+  assert.match(lacking.stderr, /欠けています/);
+  assert.match(lacking.stderr, /「推奨」の節がありません/);
+  assert.equal(existsSync(join(directory, "docs/hikyaku/cycles/001-test/design/progress.jsonl")), false);
+
+  write(directory, "docs/hikyaku/cycles/001-test/return.md", returnRecord());
+  assert.equal(restart().status, 0);
+});
+
+test("step restart: --round return 以外は return.md を見ない", (t) => {
+  const directory = built(t);
+  const result = cli(directory, "step", "restart", "architect", "001", "--round", "add", "--reason", "指摘からの追加設計");
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("step report: escalates のステップの failed は、行き詰まりの報告の形式を満たさなければ受け付けない", (t) => {
+  const directory = built(t);
+  const failed = (step: string, reason: string) => cli(directory, "step", "report", "build-01", step, "001", "--result", "failed", "--reason", reason);
+  // escalates の無い plan は自由文のまま記録する
+  assert.equal(failed("plan", "issue.md を読めない").status, 0);
+  upToG8(directory);
+  report(directory, "G8", "--result", "approved", "--input", "OK");
+
+  const lacking = failed("implement", "テストが通らない。リトライ上限に達した");
+  assert.equal(lacking.status, 1);
+  assert.match(lacking.stderr, /行き詰まりの報告の形式を満たしていません/);
+  assert.match(lacking.stderr, /「試したこと」の節がありません/);
+  assert.equal(failed("implement", ESCALATION_BODY).status, 0);
+});
+
+test("step: patch の implement・verify も escalates（builder と同じ retry-policy に従う）", () => {
+  const escalating = (stepsOf("patch")?.steps ?? []).filter((step) => step.escalates === true).map((step) => step.id);
+  assert.deepEqual(escalating, ["implement", "verify"]);
+});
+
+test("step lint: gate に escalates を付けた定義を問題として返す", () => {
+  const problems = lintApproval({ skill: "synthetic", steps: [{ id: "G", kind: "gate", title: "t", consent: false, escalates: true }] });
+  assert.deepEqual(problems, ["synthetic: ゲート G は escalates を持てません（failed を報告しないため）"]);
+});
+
 test("step: plan の done には見積もり直した予測ピークが必須（分割の検討を報告の漏れで飛ばさない）", (t) => {
   const directory = built(t);
   write(directory, `${BUILD}/plan.md`);
@@ -289,6 +348,8 @@ test("step: 振り返りを PR 前に終え、PR 列と URL が揃うまで完�
   report(directory, "G8", "--result", "approved");
   report(directory, "implement", "--result", "done");
   report(directory, "verify", "--result", "done");
+  write(directory, `${BUILD}/agreement.md`);
+  report(directory, "agreement-review", "--result", "done");
   report(directory, "review", "--result", "done");
   write(directory, `${BUILD}/handoff.md`);
   assert.equal(report(directory, "handoff", "--result", "done").step, "retrospective");
@@ -359,7 +420,9 @@ test("step: 区切りでは現在のセッションのコンテキストを目�
   assert.equal(last?.["session"], "s-1");
 
   reportWith(directory, env, "implement", "--result", "done");
-  const review = reportWith(directory, env, "verify", "--result", "done");
+  assert.equal(reportWith(directory, env, "verify", "--result", "done").step, "agreement-review");
+  write(directory, `${BUILD}/agreement.md`);
+  const review = reportWith(directory, env, "agreement-review", "--result", "done");
   assert.equal(review.step, "review");
   assert.deepEqual(review.overruns?.map((entry) => entry.checkpoint), ["approval", "implement"]);
 });

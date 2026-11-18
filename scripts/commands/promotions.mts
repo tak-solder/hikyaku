@@ -6,6 +6,7 @@ import { emit, table } from "../lib/output.mts";
 import {
   PROMOTE_HEADING,
   UNHELPFUL_HEADING,
+  candidateApproval,
   collectPromotions,
   groupCandidates,
   groupUnhelpful,
@@ -32,6 +33,9 @@ register({
     "",
     "宛先が論理名のとき、document-guide.md で「対象外」になっていれば印を付けます",
     "（意図的に持たない文書へは昇格させません）。",
+    "",
+    "宛先ごと・候補ごとに approval を返します。decisions・constraints 宛ては consent（同意が要る変更）、",
+    "それ以外は confirm（確認）です。G10 はこの区分で提示を分けます。",
   ].join("\n"),
   run: ({ args, operands }) => {
     const { config, context: ctx } = openCycle(args, operands[0]);
@@ -44,8 +48,10 @@ register({
     const candidates = [...groupCandidates(collected.candidates)].map(([target, items]) => ({
       target,
       kind: (items[0] as Candidate).kind,
+      // decisions・constraints 宛ては同意（G10 で同意と確認を分けて示す）
+      approval: candidateApproval(items[0] as Candidate),
       note: excluded.has(target) ? "対象外" : uncreated.has(target) ? "未作成" : undefined,
-      items,
+      items: items.map((item) => ({ ...item, approval: candidateApproval(item) })),
     }));
     const unhelpful = groupUnhelpful(collected.unhelpful);
 
@@ -67,10 +73,11 @@ register({
         }
         for (const group of candidates) {
           const mark = group.note === undefined ? "" : `（${group.note}）`;
-          lines.push(`${group.target}${mark}`);
+          lines.push(`${group.target}${mark}${group.approval === "consent" ? " — 同意が要る変更" : ""}`);
           for (const item of group.items) {
             const tags = [item.importance, item.written ? "済" : undefined].filter((t) => t !== undefined).join("・");
-            lines.push(`  ${tags === "" ? "" : `[${tags}] `}${item.text}  ← ${item.source}`);
+            const reasons = item.reasons === undefined ? "" : `（防ぐ: ${item.reasons.prevents} / 立つ: ${item.reasons.basis}）`;
+            lines.push(`  ${tags === "" ? "" : `[${tags}] `}${item.text}${reasons}  ← ${item.source}`);
           }
           lines.push("");
         }

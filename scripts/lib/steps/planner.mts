@@ -9,6 +9,8 @@
  */
 
 import { publicationStep } from "./publication.mts";
+import { consentProblem } from "./consent.mts";
+import { declarationArgs } from "../premises.mts";
 import type { SkillSteps } from "./engine.mts";
 
 export const PLANNER_STEPS: SkillSteps = {
@@ -33,8 +35,12 @@ export const PLANNER_STEPS: SkillSteps = {
       id: "G1",
       kind: "gate",
       title: "user-stories.md の承認",
-      when: (ctx) => ctx.config.gates.userStories,
+      // 要件の合意は意図を決める判断なので、どのプロファイル・設定でも外さない
+      consent: () => ({ timing: "now", reason: "要件の合意（意図を決める判断）" }),
       ask: "G1",
+      // 選んだプロファイルのままでよいかと、事後同意を選ぶかを、要件と一緒に確かめる（US-14.1・US-20）。
+      // 事後同意の値は step report が承認の記録に残し、有効の判定（deferred-consent.mts）に使う
+      args: (ctx) => ({ profile: ctx.config.profile, deferredConsent: ctx.config.consent.deferred === true }),
     },
     {
       id: "retrospective",
@@ -44,7 +50,8 @@ export const PLANNER_STEPS: SkillSteps = {
       when: (ctx) => ctx.config.reviews.retrospective !== "skip",
       reason: () => "企画フェーズの最後の振り返り",
     },
-    { id: "pr", kind: "run", title: "サイクルの issue と PR の作成", recordsPr: true },
+    // merge@plan の who=user の事項が決定なしで PR になるのを防ぐ（同意ゲートは置かない）
+    { id: "pr", kind: "run", title: "サイクルの issue と PR の作成", recordsPr: true, accepts: consentProblem("planner"), args: declarationArgs },
     publicationStep("planner"),
   ],
 };

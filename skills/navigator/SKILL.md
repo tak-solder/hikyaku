@@ -25,7 +25,7 @@ argument-hint: "[{cycle}]"
 - **読むだけ。** ファイルを書かない。コミットしない。ブランチを切り替えない。
   `cycle use` も実行しない（起動したスキルが自分で行う）
 - **起動は選ばれてから。** 候補が1つしかなくても、ユーザーの確認なしに起動しない
-- **人間の作業も「次の一手」に含める。** PR のマージ待ち・レビュー待ちのように、スキルでは進められない
+- **ユーザーの作業も「次の一手」に含める。** PR のマージ待ち・レビュー待ちのように、スキルでは進められない
   状態はそう伝える。無理にスキルを勧めない
 
 ## 作業ステップ
@@ -95,8 +95,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step where {cycle} --json
 | `building` かつ `next` の `available` が1件以上 | `/hikyaku:builder {cycle} {NN}`。複数あれば並行して進められる |
 | `building` かつ `inProgress` のビルドのブランチに今居る | そのビルドの再開: `/hikyaku:builder {cycle} {NN}` |
 | `building` かつ `available` が空で `inProgress` あり | 他のセッションが作業中の可能性。スキルは勧めず、そのブランチ名を伝える |
-| `building` かつ `mergePending` のみ | PR のマージ待ち。人間の作業として伝える |
+| `building` かつ `mergePending` のみ | PR のマージ待ち。ユーザーの作業として伝える |
 | `completed` | `/hikyaku:close-cycle {cycle}` |
+| `cycle status` の `ledger.due` か `ledger.rejected` が1件以上 | 上の行で決めた次の一手に添えて、期限が来た・過ぎた未決事項と未解決の退けを、ID・「いつ」・決める人とともに伝える（スキルは変えない） |
 
 `step where` の作業単位とスキルの対応（`directive.unit` で引く）:
 

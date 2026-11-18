@@ -7,6 +7,7 @@ import { loadConfig } from "../lib/config.mts";
 import { HikyakuError, ValidationError } from "../lib/errors.mts";
 import {
   DOC_DEFINITIONS,
+  docRef,
   INDEX_MARKER,
   guidePath,
   loadGuide,
@@ -35,7 +36,7 @@ register({
 
     emit({ entries }, () =>
       table(
-        entries.map((e) => [e.name, e.ownership, e.path ?? "—", e.summary]),
+        entries.map((e) => [e.name, e.ownership, docRef(e) ?? "—", e.summary]),
         ["論理名", "管理", "パス", "概要"],
       ),
     );
@@ -50,6 +51,8 @@ register({
     "検証する内容:",
     "  - 論理名が既知のものか、重複していないか",
     "  - 管理が hikyaku / repo の行のパスが実在するか",
+    "  - パスにアンカー（docs/concepts.md#用語）があれば、その見出しの節が在るか",
+    "    （アンカーは GitHub 式。見出しの改名・削除で読む場所を失ったことに気づくため）",
     "  - 必要なドキュメントの行が揃っているか（未作成 / 対象外 でも行は必要）",
     "  - 対象外の行に理由が書かれているか",
     "",

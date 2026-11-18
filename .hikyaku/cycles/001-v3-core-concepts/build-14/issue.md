@@ -28,7 +28,7 @@
 
 ## 予測ピーク
 
-読むファイル（2026-11-16 時点の grep の結果。build-01〜13 が先に直す行があるので、着手時に grep し直して対象を絞る）:
+読むファイル（2026-11-16 時点の grep の結果。build-01〜13・15 が先に直す行があるので、着手時に grep し直して対象を絞る）:
 - docs: `workflow/conductor.md`・`workflow/build.md`・`workflow/close.md`・`getting-started.md`・`reference/cli.md`・`configuration/profiles.md`・`configuration/config-file.md`・`configuration/documents.md`・`operations/ci.md`
 - skills: `conductor/SKILL.md`・`conductor/references/headless-protocol.md`・`close-cycle/steps/G10.md`・`close-cycle/steps/pr.md`・`close-cycle/steps/followups.md`・`patch/steps/P1.md`・`patch/steps/P2.md`・`builder/references/security-review.md`・`architect/steps/pr.md`・`architect/steps/G3.md`・`navigator/SKILL.md`・`token-guide/steps/approve.md`・`init/steps/link-approval.md`
 - agents: `doc-reviewer.md`
@@ -38,7 +38,7 @@
 | 成分 | 予測 | 根拠 |
 |------|------|------|
 | 固定費 | 90k | 実測なし。標準ガイドの出発点 80k〜100k の中央 |
-| 読み込み | 100k | 2026-11-16 の grep で「人間」を含む docs（9ファイル）・skills（13ファイル）・agents（1ファイル）・scripts（15ファイル）の該当箇所の前後。conductor の SKILL.md と workflow/conductor.md、lib と commands の conductor.mts が大半。build-01〜13 が先に直す行を差し引く |
+| 読み込み | 100k | 2026-11-16 の grep で「人間」を含む docs（9ファイル）・skills（13ファイル）・agents（1ファイル）・scripts（15ファイル）の該当箇所の前後。conductor の SKILL.md と workflow/conductor.md、lib と commands の conductor.mts が大半。build-01〜13・15 が先に直す行を差し引く |
 | 実装 | 50k | 操作する人を指す「人間」を「ユーザー」に置き換える編集（多ファイル・小さな差分） |
 | テスト | 15k | 出力文字列を固定しているテストの更新と実行 |
 | 未知の領域 | 20k | 操作する人以外を指す「人間」の判別 |

@@ -7,7 +7,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr ready {phase} {cycle} --pr {
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers {phase} {cycle} --pr {pr}
 ```
 
-Ready にするかは CLI が設定と実行元から決める。Ready への切り替えに失敗したら `failed` を報告し、
-エラーと再実行のコマンドを伝えて止まる。レビュアー依頼だけの失敗は内容を伝え、公開の完了を報告してよい。
+Ready にするかは CLI が設定と実行元から決める。gh が使えずにできなかったこと（出力の `applied` が `false`）は、
+止めずに `manual`（ユーザーが代わりに行うこと）を伝え、公開の完了を報告してよい。終了コードが 1 なら
+`failed` を報告し、エラーと再実行のコマンドを伝えて止まる。
 
 - [ ] `done` を報告し、progress.jsonl をコミット & push する

@@ -50,9 +50,94 @@ export const DEFAULT_DIFF_TESTS: string[] = [
   "test_*.py",
 ];
 
+/**
+ * 差分の事実（diff facts）で使う印。テストファイルの変更行に**部分文字列**として現れるかで照合する。
+ * 正規表現にしないのは、利用者が [diff] に足した印のエスケープ漏れで検査が壊れないため。
+ * [diff] に書いた印は既定に追加される（既定は消せない。見逃しを設定で増やせないようにする）
+ */
+export const DEFAULT_TEST_DECLARATIONS: string[] = [
+  // JS / TS（node:test・Jest・Vitest・Mocha）
+  "it(", "test(", "describe(", "it.only(", "test.only(",
+  "it.each(", "test.each(", "describe.each(", "test.concurrent(", "it.concurrent(",
+  // Python
+  "def test_", "class Test",
+  // Go
+  "func Test", "func Benchmark",
+  // Ruby（RSpec・Minitest）
+  "it \"", "it '", "describe \"", "context \"",
+  // Java / Kotlin（JUnit）・C#
+  "@Test", "@ParameterizedTest", "[Test]", "[Fact]", "[TestMethod]",
+  // Rust
+  "#[test]", "#[tokio::test", "#[rstest",
+  // PHP（PHPUnit）
+  "public function test",
+];
+
+export const DEFAULT_SKIP_MARKERS: string[] = [
+  // JS / TS。.only・fit・fdescribe は、ほかのテストを走らせなくする（絞り込み）のでスキップと同じく並べる
+  ".skip(", ".skipIf(", ".todo(", "xit(", "xdescribe(", "xtest(", "{ skip:", "{ todo:", "t.skip(", "t.todo(",
+  ".only(", "fit(", "fdescribe(", "ftest(",
+  // Python
+  "@pytest.mark.skip", "@pytest.mark.xfail", "@unittest.skip", "pytest.skip(", "self.skipTest(",
+  // Go
+  "t.Skip(", "t.Skipf(", "t.SkipNow(", "b.Skip(", "b.Skipf(",
+  // Ruby
+  "skip(", "skip \"", "skip '", "pending \"", "pending '", "xit \"", "xit '",
+  // Java / Kotlin・C#
+  "@Disabled", "@Ignore", "[Ignore]", "Skip =",
+  // Rust
+  "#[ignore",
+  // PHP
+  "markTestSkipped(", "markTestIncomplete(",
+];
+
+export const DEFAULT_ASSERTION_MARKERS: string[] = [
+  "assert", "expect(", "expect {", ".should", "t.Error", "t.Fatal", "require.", "EXPECT_", "ASSERT_",
+  "verify(", "refute",
+];
+
+const IDENTIFIER = /[A-Za-z0-9_$]/;
+
+/**
+ * 行に印が現れるか。印が識別子の文字で始まるときは、直前が識別子の文字でない位置だけを数える
+ * （`it(` が `submit(` に、`test(` が `latest(` に当たらないように）
+ */
+/**
+ * 印に見えるが印ではない書き方。照合の前に行から消す（正規表現リテラルの `.test(`、`require.resolve(`）。
+ * 既定の印の誤検出を防ぐためのもので、[diff] の追加の印にも同じく効く
+ */
+const NOT_MARKERS = [/\/[gimsuyd]*\.test\(/g, /\brequire\.resolve\(/g];
+
+export function findMarker(markers: string[], rawLine: string): string | undefined {
+  const line = NOT_MARKERS.reduce((text, pattern) => text.replace(pattern, (match) => " ".repeat(match.length)), rawLine);
+  // 当たる印のうち最も長いもの（`@pytest.mark.skip(` に `.skip(` ではなく `@pytest.mark.skip` を返す）
+  let found: string | undefined;
+  for (const marker of markers) {
+    if (found !== undefined && marker.length <= found.length) continue;
+    const guarded = IDENTIFIER.test(marker[0] ?? "");
+    let from = 0;
+    for (;;) {
+      const index = line.indexOf(marker, from);
+      if (index === -1) break;
+      if (!guarded || index === 0 || !IDENTIFIER.test(line[index - 1] as string)) {
+        found = marker;
+        break;
+      }
+      from = index + 1;
+    }
+  }
+  return found;
+}
+
 export interface DiffPatterns {
   exclude: string[];
   tests: string[];
+  /** テストの宣言の印（削除されたテストの検出） */
+  testDeclarations: string[];
+  /** スキップの印（追加されたスキップの検出） */
+  skipMarkers: string[];
+  /** アサーションの印（アサーションの行の変更の検出） */
+  assertionMarkers: string[];
 }
 
 /**
@@ -95,7 +180,7 @@ function matchesAny(patterns: string[], path: string): boolean {
 export type FileKind = "generated" | "test" | "implementation";
 
 /** 生成物の判定が先。テストのスナップショットは生成物として数えない */
-export function classifyPath(patterns: DiffPatterns, path: string): FileKind {
+export function classifyPath(patterns: Pick<DiffPatterns, "exclude" | "tests">, path: string): FileKind {
   if (matchesAny(patterns.exclude, path)) return "generated";
   if (matchesAny(patterns.tests, path)) return "test";
   return "implementation";
@@ -123,7 +208,7 @@ export interface DiffStats {
   generatedPaths: string[];
 }
 
-export function summarizeDiff(files: DiffFile[], patterns: DiffPatterns): DiffStats {
+export function summarizeDiff(files: DiffFile[], patterns: Pick<DiffPatterns, "exclude" | "tests">): DiffStats {
   const stats: DiffStats = {
     newFiles: 0,
     changedFiles: 0,

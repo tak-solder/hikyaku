@@ -10,9 +10,8 @@
  * 別のセッション・別のマシンから再開したときも、ここから続きを導出できる。
  */
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { HikyakuError } from "./errors.mts";
+import { join } from "node:path";
+import { appendJsonl, readJsonl } from "./jsonl.mts";
 
 export const PROGRESS_FILE = "progress.jsonl";
 
@@ -37,10 +36,27 @@ export interface ProgressEvent {
   reason?: string;
   /** ゲートでのユーザーの答え */
   input?: string;
+  /**
+   * ゲートの承認の種類（その回の consent が now なら consent）。承認したあとに同意が要る変更が出たとき、
+   * 確認として受けた承認では足りないと分かるように残す（G10）。無い記録は種類が分からない
+   */
+  approval?: "consent" | "confirm";
   /** step restart で始めた回の種類（architect の return / add など）。スキルが定義で読む */
   round?: string;
   /** 報告で添えた予測ピーク（トークン。plan / plan-review） */
   peak?: number;
+  /**
+   * 害の重さの申告（architect の options の done。G3 に提示するすべての案のうち最も重い害）。
+   * 読む側（steps/architect.mts）は、高・中以外の値を欠けとして扱う
+   */
+  harm?: "高" | "中";
+  /** 触れるパスの申告（options の done。全案が触れるパスの glob の和） */
+  paths?: string[];
+  /**
+   * planner の G1 の承認で提示した事後同意（[consent] deferred）の値。step report が設定から読んで書く
+   * （LLM の引数では受け取らない）。提示のあとに書き換えた値は false（deferred-consent.mts の g1ConsentRecord）
+   */
+  deferredConsent?: boolean;
   /** 報告で添えた PR（URL か番号。pr ステップ） */
   pr?: string;
   /** 報告した時点のメインセッションのコンテキスト（#68）。計測できなければ記録しない */
@@ -62,28 +78,10 @@ export function progressPath(unitDirectory: string): string {
  * 1行の欠けが「そのステップは未実施」と読まれ、手順が巻き戻るため
  */
 export function readProgress(unitDirectory: string): ProgressEvent[] {
-  const path = progressPath(unitDirectory);
-  if (!existsSync(path)) return [];
-  const events: ProgressEvent[] = [];
-  readFileSync(path, "utf8")
-    .split("\n")
-    .forEach((line, index) => {
-      if (line.trim() === "") return;
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(line);
-      } catch {
-        throw new HikyakuError(
-          `${path}:${index + 1} を JSON として読めません`,
-          "progress.jsonl は hikyaku step report だけが追記します。手で編集した場合は元に戻してください。",
-        );
-      }
-      if (!isEvent(parsed)) {
-        throw new HikyakuError(`${path}:${index + 1} は進捗のイベントの形をしていません`);
-      }
-      events.push(parsed);
-    });
-  return events;
+  return readJsonl(progressPath(unitDirectory), isEvent, {
+    writer: "progress.jsonl は hikyaku step report だけが追記します。",
+    shape: "進捗のイベント",
+  });
 }
 
 function isEvent(value: unknown): value is ProgressEvent {
@@ -98,7 +96,5 @@ function isEvent(value: unknown): value is ProgressEvent {
 }
 
 export function appendProgress(unitDirectory: string, event: ProgressEvent): void {
-  const path = progressPath(unitDirectory);
-  mkdirSync(dirname(path), { recursive: true });
-  appendFileSync(path, `${JSON.stringify(event)}\n`, "utf8");
+  appendJsonl(progressPath(unitDirectory), event);
 }

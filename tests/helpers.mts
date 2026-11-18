@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { devNull, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { TestContext } from "node:test";
@@ -84,6 +84,39 @@ export function write(directory: string, path: string, content = "# テスト成
   const target = join(directory, path);
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, content, "utf8");
+}
+
+/**
+ * gh が無い環境で CLI を実行する。開発環境には本物の gh があるので、PATH を git だけのディレクトリに差し替える
+ * （CLI は process.execPath で起動するので node は PATH に要らない）
+ */
+export function withoutGh(t: TestContext, directory: string, ...args: string[]) {
+  const bin = mkdtempSync(join(tmpdir(), "hikyaku-nogh-"));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const git = (process.env["PATH"] ?? "").split(":").map((entry) => join(entry, "git")).find((path) => existsSync(path));
+  if (git !== undefined) symlinkSync(git, join(bin, "git"));
+  return cliWith(directory, { PATH: bin }, ...args);
+}
+
+/** 行き詰まりの報告の3つの節（試したこと / 問題を変える選択肢と失うもの / 推奨）がそろった本文 */
+export const ESCALATION_BODY = [
+  "## 試したこと",
+  "",
+  "- タイムアウトを 30s に延ばした",
+  "",
+  "## 問題を変える選択肢",
+  "",
+  "- スコープから CSV 出力を外す 失うもの: CSV での取り込み",
+  "",
+  "## 推奨",
+  "",
+  "CSV 出力を外す",
+  "",
+].join("\n");
+
+/** 3つの節がそろった return.md（見出しの差し戻し元だけを変える） */
+export function returnRecord(heading = "# 差し戻し: build-01"): string {
+  return `${heading}\n\n## 何が崩れたか\n\n- 設計と要件が両立しない\n\n${ESCALATION_BODY}`;
 }
 
 /** Git 管理情報以外のファイルを比較し、予期しない書き込みも検出する。 */
