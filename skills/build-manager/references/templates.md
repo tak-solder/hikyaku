@@ -17,31 +17,31 @@
 先行ビルドがマージされていても、そのブランチから積んで（スタックして）いても構いません。
 依存関係がないビルドは並行実行できます。
 
-| buildID | title              | 予測ピーク | dependencies | PR         |
-| ------- | ------------------ | ---------- | ------------ | ---------- |
-| 1       | DB基盤             | 320k       | —            | pr/10      |
-| 2       | 認証API            | 410k       | 1, 4         | —          |
-| 3       | 投稿API            | 380k       | 2            | —          |
-| 4       | 共通ユーティリティ | 300k       | 1            | —          |
+| buildID | title              | 予測ピーク | dependencies | PR |
+| ------- | ------------------ | ---------- | ------------ | --- |
+| 1       | DB基盤             | 320k       | —            | [#10](https://github.com/owner/repo/pull/10) |
+| 2       | 認証API            | 410k       | 1, 4         | — |
+| 3       | 投稿API            | 380k       | 2            | — |
+| 4       | 共通ユーティリティ | 300k       | 1            | — |
 
 ## 依存グラフ
 
 ```mermaid
 graph TD
-  b01["build-01: DB基盤"]
-  b02["build-02: 認証API"]
-  b03["build-03: 投稿API"]
-  b04["build-04: 共通ユーティリティ"]
-  b04 -.-> b02
-  b02 -.-> b03
-  b01 --> b04
-  classDef merged fill:#fbefff,stroke:#8250df,color:#6639ba
-  classDef ready fill:#dafbe1,stroke:#1a7f37,color:#116329
+  classDef default fill:#dafbe1,stroke:#1a7f37,color:#116329
   classDef blocked fill:#f6f8fa,stroke:#8c959f,color:#57606a
-  class b01 merged
-  class b04 ready
-  class b02,b03 blocked
-  linkStyle 0,1 stroke:#8c959f,stroke-dasharray:5 5
+  classDef merged fill:#fbefff,stroke:#8250df,color:#6639ba
+
+  b01["build-01: DB基盤"]:::merged
+  b01 --> b04
+
+  b02["build-02: 認証API"]
+  b02 -.-> b03:::blocked
+
+  b03["build-03: 投稿API"]
+
+  b04["build-04: 共通ユーティリティ"]
+  b04 -.-> b02:::blocked
 ```
 
 紫: 完了（merged） / 緑: 着手可能（ready） / グレー: 待機中（blocked）。点線は先行ビルドが未完了の依存
