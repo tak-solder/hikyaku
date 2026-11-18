@@ -4,3 +4,9 @@
 {"at":"2026-11-18T01:41:31.085Z","skill":"builder","step":"G8","result":"approved","input":"承認する（委任された判断。test-spec を作らないことも含む）。注意: スキルの description も対象に含める。テスト名は名前だけを変え、期待値は変えない","context":114743,"session":"7cbf6637-584f-4bc4-bd65-0057c9e1ee95","hikyaku":"3.0.0"}
 {"at":"2026-11-18T01:44:07.582Z","skill":"builder","step":"implement","result":"done","context":185625,"session":"7cbf6637-584f-4bc4-bd65-0057c9e1ee95","hikyaku":"3.0.0"}
 {"at":"2026-11-18T01:54:18.112Z","skill":"builder","step":"verify","result":"done","context":188701,"session":"7cbf6637-584f-4bc4-bd65-0057c9e1ee95","hikyaku":"3.0.0"}
+{"at":"2026-11-18T02:05:57.042Z","skill":"builder","step":"review","result":"done","context":204826,"session":"7cbf6637-584f-4bc4-bd65-0057c9e1ee95","hikyaku":"3.0.0"}
+{"at":"2026-11-18T02:06:13.150Z","skill":"builder","step":"handoff","result":"done","context":209702,"session":"7cbf6637-584f-4bc4-bd65-0057c9e1ee95","hikyaku":"3.0.0"}
+{"at":"2026-11-18T02:06:24.602Z","skill":"retrospective","step":"peak-actual","result":"done","context":217327,"session":"7cbf6637-584f-4bc4-bd65-0057c9e1ee95","hikyaku":"3.0.0"}
+{"at":"2026-11-18T02:06:34.616Z","skill":"retrospective","step":"analyze","result":"done","context":222054,"session":"7cbf6637-584f-4bc4-bd65-0057c9e1ee95","hikyaku":"3.0.0"}
+{"at":"2026-11-18T02:06:49.776Z","skill":"retrospective","step":"write","result":"done","context":222901,"session":"7cbf6637-584f-4bc4-bd65-0057c9e1ee95","hikyaku":"3.0.0"}
+{"at":"2026-11-18T02:06:52.401Z","skill":"builder","step":"retrospective","result":"done","context":224931,"session":"7cbf6637-584f-4bc4-bd65-0057c9e1ee95","hikyaku":"3.0.0"}
