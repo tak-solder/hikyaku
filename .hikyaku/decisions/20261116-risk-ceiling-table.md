@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: implemented
 ---
 
 # AI に任せてよい害の上限を、アプリケーションの状況の3軸の最も重い段で決める
@@ -23,3 +23,6 @@ status: accepted
 - **再評価条件**: 最上段の宣言をしたリポジトリで、問いの多さが運用の妨げになったと報告されたとき。3段では表せない状況の報告があったとき
 - **退けた推奨で失う利点**: なし（推奨どおり採用）
 - **影響範囲**: `scripts/lib/risk.mts`（新規）、`scripts/lib/config.mts`（`[app]` と重い領域・境界のパス）、ゲートの `consent`、conductor の振り分け、異議の判定、`docs/configuration/config-file.md`
+- **実装で確定したこと（001-v3-core-concepts）**:
+  - 上限の基準は、ベースブランチ（`defaultBase`）とデフォルトブランチ（`origin/HEAD`）のそれぞれとの merge-base の宣言で、基準ごとに `origin/<branch>` とローカルの `<branch>` の両方を読み、作業ツリーを含めて最も厳しいものを使う。Hikyaku のブランチは基準にしない。どれも厳しくする向きにだけ効く（`base_branch` は作業ツリーの設定で、`origin/HEAD` は set-head で向け直せる。ローカルのブランチには PR を経ないコミットが載り、`origin/` は fetch していなければ古い）（build-02）
+  - 上限は異議にも効く。害が中でも、前提に宣言済みの重い領域を挙げた異議や、基準の宣言を読めない回の異議は上限を超え、高と同じく受け入れの言葉と前提が要る（US-13.3、build-18）

@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: implemented
 ---
 
 # 差分の事実はスクリプトが並べ、全プロファイル必須の agreement-review が合意と突き合わせる

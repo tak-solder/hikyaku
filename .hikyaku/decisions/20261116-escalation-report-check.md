@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: implemented
 ---
 
 # 行き詰まりの報告の形式を、1つの検査関数で既存の関門に差し込んで確かめる
@@ -20,3 +20,5 @@ status: accepted
 - **再評価条件**: 行き詰まりの報告の経路が、いまの4つ以外に増えたとき
 - **退けた推奨で失う利点**: なし（推奨どおり採用）
 - **影響範囲**: `scripts/lib/escalation.mts`（新規）、`scripts/lib/phase.mts`、`scripts/lib/steps/{engine,builder,architect}.mts`、`scripts/commands/step.mts`、`scripts/lib/conductor.mts`、`skills/builder/references/{templates,return,retry-policy}.md`、`skills/conductor/references/headless-protocol.md`
+- **実装で確定したこと（001-v3-core-concepts）**:
+  - conductor の blocked のうち、本文の行頭の `waiting: <ID>` が、作業ツリーの記録にある未決のユーザーの問い（`question`・`who=user`・`when=now`）を指すもの（答えを待つ blocked）は、行き詰まりの報告の検査から外す。問いを ID で記録に裏取りでき、行き詰まりではなくユーザーの答えを待つだけのため。指す先が1つでも無ければ従来どおり検査する（再評価条件「検査する経路が増減したとき」に当たる変更。build-07）

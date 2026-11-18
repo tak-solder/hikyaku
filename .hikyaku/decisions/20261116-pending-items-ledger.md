@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: implemented
 ---
 
 # 未決事項と決定の記録を、作業単位ごとの追記型ファイル decisions.jsonl に置く
@@ -21,3 +21,8 @@ status: accepted
 - **再評価条件**: サイクルをまたぐ未決（ADR の再評価条件など、Q12 でスコープ外にしたもの）を扱うとき。並行ビルドどうしで事項を即時に見せる必要が出たとき
 - **退けた推奨で失う利点**: なし（推奨どおり採用）
 - **影響範囲**: `scripts/lib/ledger.mts`・`scripts/commands/ledger.mts`（新規）、`scripts/lib/progress.mts`（JSONL の読み書きの共有）、`scripts/lib/steps/directive.mts`（`notices`）、`scripts/commands/cycle.mts`、記録する側の各スキル、`skills/navigator/SKILL.md`、`skills/conductor/references/headless-protocol.md`
+- **実装で確定したこと（001-v3-core-concepts）**:
+  - 事項の ID は `{unit}.{n}-{4桁の16進}`。2つのブランチで採番が重ならないようにするため（build-03）
+  - `ai:<phase>`・`supervisor` の事項は、`who` と同じ決め手かユーザーだけが決められる。`--by ai:<phase>` は、決めた作業単位と同じフェーズだけが書ける（build-03）
+  - 高の異議の受け入れ（`consented`）には `accepts`（ユーザーの言葉）と記録時の `premises` が要る。ユーザーが選択を改めた `decided` には `accepts` を求めない（build-04）
+  - conductor の子の `--by user` は、ユーザーの答えで再開された起動（`HIKYAKU_ANSWER_FROM=user`）が `--closes` で渡された事項（`HIKYAKU_ANSWER_ITEMS`）にだけ書ける。`--by supervisor` は監督の答えの起動だけが書ける。問い・値・リスクの申告・起動の印は、環境変数から決定のレコードに必ず残す（build-07。build-19 で、別の問いの事項に書けない制限と `--loses` が加わった）

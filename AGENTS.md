@@ -64,10 +64,19 @@
 - スクリプトを変更したら `npm test` も通してください。CI の `check-scripts` はテスト本体・補助ファイルを型チェックし、単体・CLI 結合テストを実行します
 - 予測ピークの標準のガイド（`skills/build-manager/references/token-guide.md`）の本文を変えたら、先頭の `version` を上げて `hash` を本文に合わせてください。`tests/tokens.test.mts` が食い違いを検出し、CI（check-scripts）の `npm test` も同じテストを実行します
 - 書き込みを伴うコマンドには必ず `--dry-run` を用意してください。承認はスキル側が取ります
-- patch のブランチ名（`{prefix}{sep}patch{sep}{YYYYMM}{sep}{slug}`）と作業単位（`patches/{YYYYMM}/{slug}/`）の対応は `scripts/lib/branch.mts` と `scripts/lib/patch.mts` が正です。Stop フックは現在のブランチの patch だけを読むので、patch の記録を全件走査する処理を足さないでください（サイクルに属さない patch の記録はマージのたびに増えます）
+- patch のブランチ名（`{prefix}{sep}patch{sep}{YYYYMM}{sep}{slug}`）と作業単位（`patches/{YYYYMM}/{slug}/`）の対応は `scripts/lib/branch.mts` と `scripts/lib/patch.mts` が正です。Stop フックに限らず、ユーザーが手で呼ぶコマンドも含めて、patch の記録を全件走査する処理を足さないでください。`{HIKYAKU_ROOT}/patches/` を読む処理は、現在のブランチの patch か、サイクルの中の patch に絞ります（サイクルに属さない patch の記録はマージのたびに増えます）
 - 子として動くスキル（architect / builder / build-manager / close-cycle / retrospective）にユーザーへ尋ねる箇所を足したら、`（ask: <id>）` のタグを付け、`scripts/lib/conductor.mts` の `ASKS` にも同じ ID を足してください。ID の改名・削除も両方で行います。`node scripts/hikyaku.mts conductor lint` が食い違いを検出し、CI（check-scripts）も同じコマンドを実行します。タグの付け忘れは検出できません
 - 知見の重要度と置き場の基準は `skills/close-cycle/references/persistence.md` が唯一の正です。builder・retrospective・close-cycle の手順と `agents/doc-triager.md` には写さず、このファイルを読ませてください。利用者向けの説明は `docs/configuration/persistence.md` に置きます
 - handoff.md と retrospective.md の「永続化すること」「役に立たなかった記述」は、`scripts/lib/promotions.mts` が見出しと行頭を読みます。見出し・宛先・理由の語を変えるときは、テンプレート（`skills/builder/references/templates.md`・`skills/retrospective/steps/write.md`）と `persistence.md` とスクリプトを同じ PR で直してください
+- ゲートの承認の種類・条件や、directive の args の値の意味を変えたら、`scripts/lib/conductor.mts` の `CONSENT_WHEN`・`scripts/commands/config.mts` のゲートの説明行と、`skills/`・`docs/` 全体でその値名・ゲート ID を検索し、前提にしている説明を同じ PR で直してください（直し漏れはテストも lint も通ったまま、誤った説明として残ります）
+- 次のものは唯一の正が決まっています。片方だけを変えると、記録や候補が黙って読めなくなるので、組になっているものは同じ PR で直してください
+  - `decisions.jsonl` を書くのは `hikyaku ledger` だけで、期限の判定は `scripts/lib/ledger.mts` の `timingOf` だけに置きます
+  - ADR・constraints の「受け入れたこと」の行の書式（1件1行、行末の `（拠り所: \`<参照>\`）`）は、テンプレートと `premises.mts` の `parseAcceptedSection` が組です
+  - 行き詰まりの報告の3つの節（試したこと / 問題を変える選択肢と `失うもの:` / 推奨）は、`scripts/lib/escalation.mts` と、テンプレート（`skills/builder/references/templates.md` の return.md・`skills/builder/references/retry-policy.md`・`skills/conductor/references/headless-protocol.md`）が組です
+  - 基準の理由の行末 `（防ぐ: … / 立つ: … / 重要度: 高|中）` と「レビューの記録」の行は、`persistence.md`・テンプレート（builder の templates.md・retrospective の write.md）と、`promotions.mts` の `parseCriterionReasons`・`review-records.mts` の `parseReviewRecord` が組です
+  - G10 の同意が要る変更の判定は `promotions.mts` の `consentChanges` だけに置き、G10 の consent・write の accepts・promotions の approval が同じ判定を使います
+  - `（ask: delegation）`・`（ask: deferred-consent）` は consent の種別でユーザーに固定し、`[conductor] delegate` の対象にしません
+  - PR 本文の事実の節（`diff facts --format pr`・`ledger pr-section` など）は CLI の出力を貼り、スキルの指示文で書き写させません
 - PR を作るスキルを足したら、PR を作った直後に `hikyaku pr request-reviewers <phase> [<cycle>] --pr <PR>` を呼ぶ手順を入れ、そのフェーズを `scripts/lib/config.mts` の `REVIEWER_SKIP_TARGETS` にも足してください（`[pr] reviewers_skip` でオフにできるようにするため）
 
 ## ドキュメント
@@ -92,7 +101,7 @@
 
 - 開発の取り込み先は `main` です。v3 で Codex のホスト対応（`codex-plugin` ブランチの配布）は廃止しました。Codex はレビューの実行先（`[review] provider = "codex"`）としてだけ使い、Codex で Hikyaku のスキルを動かすための入口や読み替えは足さないでください。
 - `main` 向け PR で `skills/`, `agents/`, `scripts/`, `hooks/`, `.claude-plugin/` を変更したときは、`.claude-plugin/plugin.json` の `version` を更新してください。
-- `beta/v<N>`（次のメジャーを積むブランチ）向けの PR では、`version` を `<N>.0.0` に固定し、CHANGELOG は `[<N>.0.0]` の節に追記してください。PR ごとには上げません。
+- `beta/v<N>` や `feature/v<N>-*`（次のメジャーを積むブランチと、その前段を積むブランチ）向けの PR では、`version` を `<N>.0.0` に固定し、CHANGELOG は `[<N>.0.0]` の節に追記してください。PR ごとには上げません。
 - バージョンは `MAJOR.MINOR.PATCH` の形式で、変更の内容に応じて適切にインクリメントしてください。スキルのフロントマターに `metadata` は置かず、プラグインのマニフェストで管理します。
 - `docs/`, `README.md`, `AGENTS.md`, `CHANGELOG.md` だけの変更ではバージョンを上げません（プラグインの挙動が変わらないため）。
 - バージョンを上げる際は`CHANGELOG.md`に変更内容を記載してください。
@@ -122,8 +131,9 @@
 <!-- hikyaku:docs:begin -->
 ## 設計ドキュメント
 
+- decisions: `.hikyaku/decisions/` — 設計判断（ADR）。コードから復元できない唯一の情報。1判断1ファイル（`{YYYYMMDD}-{slug}.md`）
 - conventions: `AGENTS.md` — リポジトリ全体に効く取り決め（設計の原則 v3・スクリプト規約・ドキュメントの役割・バージョン運用）
-- glossary: `docs/concepts.md` — 「用語」節だけが対象の用語集。AGENTS.md が唯一の正と宣言している。ほかの節は利用者向けの説明なので、Hikyaku は追記しない
+- glossary: `docs/concepts.md#用語` — 「用語」節だけが対象の用語集。AGENTS.md が唯一の正と宣言している。ほかの節は利用者向けの説明なので、Hikyaku は追記しない
 
 この一覧は Hikyaku が document-guide.md から生成しています（`hikyaku docs link`）。
 編集は document-guide.md 側で行ってください。
