@@ -8,21 +8,27 @@
  *   - when は、事後同意を選んでいないサイクルではその作業単位の decisions.jsonl 1つだけを読む（手順の位置だけを
  *     読む経路でも呼ばれるため）。ほかの作業単位で記録した when=merge@<この単位> の事項は、pr の accepts（報告の時だけ
  *     サイクル全体を読む）が止める。事後同意を選んだサイクルではサイクル全体から探す（build-18。hasConsentItems）
- *   - conductor の子では、ユーザーに固定の問いで子が止まるのを避けるため手順に入れない（conductor での扱いは
- *     build-07）。pr / publish の accepts は外さないので、決定の無い項目があれば PR は完了せずユーザーに上がる
+ *   - conductor の子の扱いは conductorConsentMode が決める（build-19）。事後同意が有効なサイクルでは、最後のビルドの
+ *     子だけが同意ゲートを持ち、対象はサイクル全体。architect と最後以外のビルドの子は同意ゲートを持たず、pr の accepts も
+ *     決定の無い項目で止めない（最後のビルドの同意ゲートへ回す）。有効でないサイクルの子と close-cycle の子は
+ *     同意ゲートを持たず、pr / publish の accepts が決定の無い項目で止めてユーザーに上げる
  *
  * ledger.mts は steps/index.mts を import しているので、ここからは ledger.mts の関数を呼び出し時にだけ使い、
  * ledger.mts からこのファイルを import しない（循環で未初期化の値を読まないため）。
  */
 
+import { deferredConsent } from "../deferred-consent.mts";
 import {
   consentItemsOf,
+  cycleConsentItems,
   readLedger,
   undecidedConsentItems,
   unitConsentItemsAfter,
   unitHasConsentItems,
+  type Ledger,
   type LedgerItem,
 } from "../ledger.mts";
+import { isComplete, loadTasklist, normalizeBuildId, type BuildRecord } from "../tasklist.mts";
 import { currentEvents, isOn, type SkillSteps, type StepContext, type StepDefinition } from "./engine.mts";
 import { stepsOf } from "./index.mts";
 
@@ -186,31 +192,101 @@ export function asConductorChild<T>(run: () => T): T {
 /** 同意ゲートを手順に置くスキル。それ以外（planner・close-cycle）は pr の accepts だけを持つ */
 const GATED = new Set(["architect", "builder", "patch"]);
 
+/** 作業ツリーの tasklist の PR 列から見た、その作業単位の位置。読めなければ undefined */
+interface TasklistState {
+  /** その作業単位のビルドの行（build-NN でない・行が無ければ undefined） */
+  own: BuildRecord | undefined;
+  /** ビルドの行が1つ以上ある */
+  hasBuilds: boolean;
+  /** その作業単位以外の全ビルドの PR 列が埋まっている */
+  othersComplete: boolean;
+}
+
+function tasklistState(cycleDirectory: string, unit: string): TasklistState | undefined {
+  const id = /^build-\d+$/.test(unit) ? normalizeBuildId(unit) : undefined;
+  try {
+    const builds = loadTasklist(cycleDirectory);
+    return {
+      own: builds.find((build) => build.id === id),
+      hasBuilds: builds.length > 0,
+      othersComplete: builds.every((build) => build.id === id || isComplete(build)),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 /**
- * pr / publish（と同意ゲート）の accepts。サイクル全体の記録を読み、その作業単位の対象のうち決定の
+ * 作業ツリーの tasklist で、このビルド以外の全ビルドの PR 列が埋まっているか（conductor の最後のビルド）。
+ * build-NN でなければ false。tasklist を読めない・そのビルドの行が無ければ true（同意ゲートを置いて止める向き）
+ */
+export function isLastBuild(cycleDirectory: string, unit: string): boolean {
+  if (!/^build-\d+$/.test(unit)) return false;
+  const state = tasklistState(cycleDirectory, unit);
+  return state === undefined || state.own === undefined || state.othersComplete;
+}
+
+/**
+ * conductor の子の同意の扱い（build-19・ADR deferred-consent）。
+ *
+ *   last      最後のビルドの子。同意ゲートを手順に入れ、対象はサイクル全体
+ *   deferred  architect の子と、最後以外のビルドの子。同意ゲートを手順に入れず、pr の accepts も決定の無い項目で
+ *             止めない（最後のビルドの同意ゲートへ回す）。ledger object --defer は PR を作る前なら受け付ける
+ *   none      子でない、architect・ビルド以外の子（close-cycle・patch）、または事後同意が有効でないサイクルの子。従来どおり。
+ *             全ビルドの PR 列が埋まった後（最後のビルドの同意ゲートを過ぎた後）の architect の子（指摘からの追加設計など）と、
+ *             tasklist を読めない architect の子も none（後ろに拾う同意ゲートが無いので、その場で止める。コードレビューの指摘）
+ *
+ * last と deferred は、事後同意が有効なサイクルの子だけ（選んでいない・有効でないサイクルで同意を後ろへ回さない。原則11）。
+ * 子と監督（asConductorChild）は ctx と環境変数から同じ評価をする
+ */
+export type ConductorConsentMode = "last" | "deferred" | "none";
+
+export function conductorConsentMode(skill: string, ctx: Pick<StepContext, "config" | "cycle" | "unit">): ConductorConsentMode {
+  if (!isConductorChild() || ctx.cycle === undefined) return "none";
+  if (skill !== "architect" && skill !== "builder") return "none";
+  // config が無い単体テストの ctx でも読めるよう、?. で読む（requested でなければ git を読まない）
+  if (ctx.config?.consent?.deferred !== true) return "none";
+  if (!deferredConsent(ctx.config, ctx.cycle.directory).effective) return "none";
+  const state = tasklistState(ctx.cycle.directory, ctx.unit);
+  if (skill === "architect") return state === undefined || (state.hasBuilds && state.othersComplete) ? "none" : "deferred";
+  return state === undefined || state.own === undefined || state.othersComplete ? "last" : "deferred";
+}
+
+/**
+ * 同意ゲート・pr の accepts・consent-list・pr-section・return-draft・launch --closes が使う対象。
+ * 最後のビルドの子（last）ならサイクル全体、それ以外はその作業単位（when=merge@<unit>）
+ */
+export function consentTargets(ledger: Ledger, skill: string, ctx: Pick<StepContext, "config" | "cycle" | "unit">): LedgerItem[] {
+  return conductorConsentMode(skill, ctx) === "last" ? cycleConsentItems(ledger) : consentItemsOf(ledger, ctx.unit);
+}
+
+/**
+ * pr / publish（と同意ゲート）の accepts。サイクル全体の記録を読み、対象（consentTargets）のうち決定の
  * 足りないものがあれば理由を返す。記録を読めなければ受け付けない（安全側）
  */
 export function consentProblem(skill: string): (ctx: StepContext) => string | undefined {
   return (ctx) => {
     if (ctx.cycle === undefined) return undefined;
+    const mode = conductorConsentMode(skill, ctx);
     let pending: LedgerItem[];
     try {
-      pending = undecidedConsentItems(consentItemsOf(readLedger(ctx.cycle.directory), ctx.unit));
+      pending = undecidedConsentItems(consentTargets(readLedger(ctx.cycle.directory), skill, ctx));
     } catch (error) {
       return `未決事項の記録を読めず、事後同意の決定を確かめられません: ${error instanceof Error ? error.message : String(error)}（hikyaku ledger list で確かめてください）`;
     }
     if (pending.length === 0) return undefined;
     // 同じ作業単位で退けて作り直した項目は受け付ける（resolved までは PR 本文と cycle status に未解決の退けとして出る）
     const rejections = consentRejections(skill, pending, ctx);
-    const undecided = pending.filter((item) => item.latest?.decision !== "rejected");
+    // 最後以外の子（deferred）は、決定の無い項目では止めない（最後のビルドの同意ゲートが拾う）。退けの作り直しは確かめる
+    const undecided = mode === "deferred" ? [] : pending.filter((item) => item.latest?.decision !== "rejected");
     const problems: string[] = [];
     if (undecided.length > 0) {
       const ids = undecided.map((item) => item.open.id).join(", ");
-      // 同意ゲートが手順に入るのは、この作業単位のファイルに対象があるときだけ。ほかの単位で記録した対象だけなら
-      // ゲートは外れているので、consent.md（承認の報告で終わる）ではなく、その場で示す案内にする
-      const guide = isConductorChild()
+      // 同意ゲートが手順に入るのは、対象があるときだけ。ゲートが外れているなら、consent.md（承認の報告で終わる）
+      // ではなく、その場で示す案内にする
+      const guide = isConductorChild() && mode === "none"
         ? "conductor の子では同意ゲートが手順に入りません。PR を完了にせず、blocked でユーザーに上げてください。"
-        : GATED.has(skill) && hasConsentItems(ctx) && !gateApproved(skill, ctx)
+        : GATED.has(skill) && hasConsentItems(skill, ctx) && !gateApproved(skill, ctx)
           ? `skills/${skill}/steps/consent.md の手順で一覧をユーザーに示し、決定を記録してから報告し直してください。`
           : `その場で一覧（hikyaku ledger consent-list ${ctx.unit}）をユーザーに示し、項目ごとにユーザーの決定を hikyaku ledger decide ${ctx.unit} <ID> --decision <decision> --by user --input "<ユーザーの答え>" [--accepts "<受け入れる言葉>"] で記録してから報告し直してください（高として扱う異議（害が高か、上限を超える）は、ユーザーが受け入れると自分の言葉で書いたことを --accepts に添える）。`;
       problems.push(`マージの前にユーザーの同意が要る項目に、ユーザーの決定がありません（${ids}）。${guide}`);
@@ -260,9 +336,18 @@ function gateApproved(skill: string, ctx: StepContext): boolean {
  *     ゲートで示すため、サイクル全体の記録を読む。読めなければ手順に入れる
  *   - requested で手順の位置だけを読む経路（Stop フック・step where・conductor parse）は、記録を読まずに手順に入れる
  *     （安全側。位置だけの経路は壊れた記録で止めない）
+ *   - conductor の最後のビルドの子（last）は、位置だけの経路でもサイクル全体の記録を読む。監督の childStep と子の
+ *     step next で、最後のビルドの同意ゲートの有無をそろえるため（build-06 の handoff）。読めなければ手順に入れる
  */
-function hasConsentItems(ctx: StepContext): boolean {
+function hasConsentItems(skill: string, ctx: StepContext): boolean {
   if (ctx.cycle === undefined) return false;
+  if (conductorConsentMode(skill, ctx) === "last") {
+    try {
+      return cycleConsentItems(readLedger(ctx.cycle.directory)).length > 0;
+    } catch {
+      return true;
+    }
+  }
   // config が無い単体テストの ctx でも読めるよう、?. で読む
   if (ctx.config.consent?.deferred !== true) return unitHasConsentItems(ctx.unitDirectory, ctx.unit);
   if (ctx.positionOnly === true) return true;
@@ -276,16 +361,34 @@ function hasConsentItems(ctx: StepContext): boolean {
 /** 置き場（slot）を持つ同意ゲートの定義。ledger object --defer が、今の回に置き場があるかを確かめるのに使う */
 interface ConsentStepDefinition extends StepDefinition {
   slot: (ctx: StepContext) => boolean;
+  /** 構造の条件（差し戻しの回でない）・サイクルがある・この回で PR を作るステップを終えていない（子かどうかは見ない） */
+  open: (ctx: StepContext) => boolean;
+}
+
+/** そのビルドの PR 列が作業ツリーの tasklist で埋まっているか（読めなければ true＝置き場が無い向き） */
+function buildCompleted(cycleDirectory: string, unit: string): boolean {
+  const state = tasklistState(cycleDirectory, unit);
+  return state === undefined || (state.own !== undefined && isComplete(state.own));
 }
 
 /**
- * その作業単位の今の回に、同意ゲートの置き場があるか。無ければ理由を返す（ledger object --defer が使う）。
+ * その作業単位の今の回に、同意ゲートの置き場があるか。無ければ理由を返す（ledger object --defer と、
+ * conductor launch の監督の上限を超える答えの検査が使う）。
  * 同意ゲートを持たないスキル（planner・close-cycle・create-cycle）、architect の差し戻しの回、
- * この回で PR を作るステップを done にした後は、置き場が無い（積んでもこの回のゲートに載らない）
+ * この回で PR を作るステップを done にした後は、置き場が無い（積んでもこの回のゲートに載らない）。
+ * conductor の最後以外の子（deferred）は、自分の同意ゲートは無いが、最後のビルドの同意ゲートが拾うので置き場とみなす
+ * （記録は when=merge@<その単位> のまま）。ただし差し戻しの回・この回で PR を作った後・自分の PR 列が埋まった後は
+ * 置き場が無い（PR 列が埋まると、ほかのビルドが最後になって同意ゲートを過ぎているかもしれない。コードレビューの指摘）
  */
 export function consentGateSlot(skill: SkillSteps, ctx: StepContext): string | undefined {
   const definition = skill.steps.find((step) => step.id === "consent") as ConsentStepDefinition | undefined;
   if (definition === undefined) return `${ctx.unit} の手順には同意ゲートがありません（同意ゲートは architect・ビルド・サイクルに属す patch の PR の前に置かれます）`;
+  if (conductorConsentMode(skill.skill, ctx) === "deferred") {
+    if (!definition.open(ctx) || (ctx.cycle !== undefined && buildCompleted(ctx.cycle.directory, ctx.unit))) {
+      return `${ctx.unit} の今の回からは、最後のビルドの同意ゲートへ回せません（差し戻しからの再設計の回か、この回で PR を作るステップをもう終えた、または PR 列が埋まった）`;
+    }
+    return undefined;
+  }
   if (!definition.slot(ctx)) {
     return `${ctx.unit} の今の回には同意ゲートが現れません（差し戻しからの再設計の回か、この回で PR を作るステップをもう終えた、または conductor の子）`;
   }
@@ -294,12 +397,13 @@ export function consentGateSlot(skill: SkillSteps, ctx: StepContext): string | u
 
 /** 同意ゲート。when はスキルごとの構造の条件（architect の差し戻しの回を外す、など） */
 export function consentStep(skill: string, when?: (ctx: StepContext) => boolean): StepDefinition {
-  // 置き場: 構造の条件・サイクルがある・conductor の子でない・この回で PR を作るステップを終えていない。
-  // モジュールの const の表に持たない（循環 import で、このファイルの本体より先に consentStep が呼ばれるため）
-  const slot = (ctx: StepContext): boolean =>
-    (when === undefined || when(ctx)) && ctx.cycle !== undefined && !isConductorChild() && !anchorDone(skill, ctx);
+  // 置き場: 構造の条件・サイクルがある・conductor の子でないか最後のビルドの子（last）・この回で PR を作るステップを
+  // 終えていない。モジュールの const の表に持たない（循環 import で、このファイルの本体より先に consentStep が呼ばれるため）
+  const open = (ctx: StepContext): boolean => (when === undefined || when(ctx)) && ctx.cycle !== undefined && !anchorDone(skill, ctx);
+  const slot = (ctx: StepContext): boolean => open(ctx) && (!isConductorChild() || conductorConsentMode(skill, ctx) === "last");
   const definition: ConsentStepDefinition = {
     slot,
+    open,
     // CONSENT_STEP と同じ値。steps/<skill>.mts の評価中に呼ばれ、循環 import（consent → ledger・index →
     // architect / builder / patch → consent）でこのファイルを先に読み始めたときは const がまだ初期化されていないので、
     // リテラルで書く
@@ -309,14 +413,26 @@ export function consentStep(skill: string, when?: (ctx: StepContext) => boolean)
     // PR を作るステップをこの回で終えたら、もう手順に入れない。そのとき pr / publish の accepts が決定を確かめ済み。
     // 入れたままだと、あとから対象が足されたときや、conductor の子が終えた単位を子でない環境で評価したときに、
     // 承認の無いゲートが PR の前に現れ、終えた pr / publish をやり直しにする（コードレビュー2回目の指摘）
-    when: (ctx) => slot(ctx) && hasConsentItems(ctx),
+    when: (ctx) => slot(ctx) && hasConsentItems(skill, ctx),
     consent: () => ({ timing: "now", reason: "上限を超えるリスクの受け入れ（事後同意）" }),
     ask: "deferred-consent",
     accepts: consentProblem(skill),
-    // 承認のあとに、その作業単位の記録に決定の足りない対象が足されたら取り直す（ファイル1つだけを読む）
+    // 承認のあとに、決定の足りない対象が足されたら取り直す。ふだんはその作業単位のファイル1つだけを読み、
+    // 最後のビルドの子（last）はサイクル全体を読む（ほかの単位に足された対象もゲートに載るため）
     reopens: (ctx, approval) => {
       if (ctx.cycle === undefined) return undefined;
-      const added = unitConsentItemsAfter(ctx.cycle.directory, ctx.unit, approval.at);
+      let added: LedgerItem[] | undefined;
+      if (conductorConsentMode(skill, ctx) === "last") {
+        // 記録した時刻では比べない（承認のあとに取り込んだブランチの、承認より前に記録した項目も拾う。コードレビューの指摘）。
+        // 退けた項目は作り直しの検査（accepts）が扱うので、決定の無い項目だけで取り直す
+        try {
+          added = undecidedConsentItems(cycleConsentItems(readLedger(ctx.cycle.directory))).filter((item) => item.latest?.decision !== "rejected");
+        } catch {
+          added = undefined;
+        }
+      } else {
+        added = unitConsentItemsAfter(ctx.cycle.directory, ctx.unit, approval.at);
+      }
       if (added === undefined) return "未決事項の記録を読めず、承認のあとに足された同意の対象を確かめられません";
       if (added.length === 0) return undefined;
       return `承認のあとに、同意の対象が足されました（${added.map((item) => item.open.id).join(", ")}）。一覧を示し直してください`;
@@ -324,7 +440,7 @@ export function consentStep(skill: string, when?: (ctx: StepContext) => boolean)
     args: (ctx) => {
       if (ctx.positionOnly === true || ctx.cycle === undefined) return { items: [] };
       try {
-        const items = consentItemsOf(readLedger(ctx.cycle.directory), ctx.unit);
+        const items = consentTargets(readLedger(ctx.cycle.directory), skill, ctx);
         const args: Record<string, unknown> = { items: items.map((item) => item.open.id) };
         // 退けた項目があるときだけ、作り直しの戻り先（同じ作業単位）と差し戻す項目（前のフェーズ）を添える
         const rejections = consentRejections(skill, undecidedConsentItems(items), ctx);

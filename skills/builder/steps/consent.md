@@ -4,6 +4,9 @@
 リスク・異議）があるときだけ返る。同意なので、プロファイルに関わらずユーザーに尋ねる（ask: deferred-consent）。
 あなたは決めない。監督や AI に付け替える手順も無い。
 
+conductor の子では、事後同意が有効なサイクルの最後のビルドだけに返り、対象はサイクル全体（architect・ほかのビルドで
+`when=merge@…` に積んだ項目）になる。一覧と決定のコマンドは同じで、決定はこのビルドの記録に書く。
+
 - [ ] 一覧を出してユーザーに示す。1項目3行の要約を示し、求められたら `--full` の全文を示す
 
 ```bash
@@ -35,3 +38,6 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger decide build-{NN} <ID> {
   「同意ゲートで前のフェーズの判断を退けたとき」に従って architect へ差し戻す
 - `args.resumed`（差し戻しの再設計を経て再開した項目）: もう一度差し戻さない。作り直しが済んだかをユーザーに
   尋ね（ask: deferred-consent）、認めたら `resolved` を記録する
+
+conductor の最後のビルドの子では、`reworkFrom` は子の中で作り直す。`returns`（architect やほかのビルドで記録した
+項目）は return.md の経路で差し戻す。`resumed` は deferred-consent の問いとして止まり、ユーザーの答えを待つ。

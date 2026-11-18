@@ -10,6 +10,7 @@ import {
   type Approval,
   ASK_IDS,
   closesMessage,
+  deferNotice,
   escalateMessage,
   escalateUnit,
   needsRiskDeclaration,
@@ -40,16 +41,19 @@ import { emit, table } from "../lib/output.mts";
 import { pluginRoot } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
 import type { Directive } from "../lib/steps/directive.mts";
-import { asConductorChild } from "../lib/steps/consent.mts";
-import { directiveOf, locateSession } from "../lib/steps/locate.mts";
+import { asConductorChild, consentGateSlot, consentTargets } from "../lib/steps/consent.mts";
+import { directiveOf, locateSession, openUnit, type SessionPosition } from "../lib/steps/locate.mts";
+import { deferredConsent } from "../lib/deferred-consent.mts";
 import { normalizeBuildId } from "../lib/tasklist.mts";
 import type { ResolvedConfig } from "../lib/config.mts";
 import {
+  deferrablePremisesProblem,
   formatRiskDeclaration,
   HARMS,
   isWaitingItem,
   parsePremises,
   readLedger,
+  undecidedConsentItems,
   type Ledger,
   type RiskDeclaration,
 } from "../lib/ledger.mts";
@@ -90,6 +94,8 @@ register({
     "以後の conductor launch / parse に --expect-digest で渡します。",
     "各問いには、監督が選べる答えの表（safe。自由文で答える問いは null）と、リスクの申告が要りうるか（declaresRisk）、",
     "JSON の queueing には問いを積む方針（ユーザーに上げる問いは記録に積み、依存しないビルドを先に進める）が入ります。",
+    "JSON の deferredConsent（{ requested, effective, reason }）は、事後同意（[consent] deferred）を選んだか・有効か・その理由です。",
+    "有効なら、上限を超える受け入れは最後のビルドの同意ゲートで一覧にしてユーザーに尋ねます。",
   ].join("\n"),
   run: ({ args, operands }) => {
     const { config, context } = openCycle(args, operands[0]);
@@ -108,7 +114,14 @@ register({
       skipped: config.pr.reviewersSkip,
     };
 
-    emit({ cycle: context.name, profile: config.profile, digest, allowedTools, models, review, asks, consentWhen: CONSENT_WHEN, queueing: QUEUEING }, () => {
+    const judged = deferredConsent(config, context.directory);
+    const deferred = { requested: judged.requested, effective: judged.effective, reason: judged.reason };
+    const deferredLine = !judged.requested
+      ? "選んでいない（上限を超える受け入れは、その場でユーザーの同意を取る）"
+      : judged.effective
+        ? "有効（上限を超える受け入れは、最後のビルドの同意ゲートで一覧にしてユーザーに尋ねる）"
+        : `無効（${judged.reason}）`;
+    emit({ cycle: context.name, profile: config.profile, digest, allowedTools, models, review, asks, consentWhen: CONSENT_WHEN, queueing: QUEUEING, deferredConsent: deferred }, () => {
       // profile で出ない問いでも、回によって同意になるゲートは条件を添える（その回は出てユーザーに上がる）
       const ids = (filter: (ask: ResolvedAsk) => boolean): string =>
         asks
@@ -125,6 +138,7 @@ register({
         `ユーザーに上げるその他の問い: ${ids((a) => !consent(a) && a.enabled && a.handler === "user")}`,
         `この profile では出ない問い: ${ids((a) => !a.enabled)}`,
         `問いの扱い: ${QUEUEING}`,
+        `事後同意: ${deferredLine}`,
         `子に許可するツール: ${allowedTools.join(" ")}`,
         `子のモデル: ${CONDUCTOR_PHASES.map((phase) => `${phase}=${models[phase] ?? "既定"}`).join(" / ")}`,
         `フェーズの PR のレビュアー: ${review.phaseReviewers.length === 0 ? "なし" : review.phaseReviewers.join(", ")}（待つ上限 ${review.timeoutMinutes} 分、承認${review.requireApproval ? "必須" : "不問"}）`,
@@ -169,17 +183,23 @@ register({
     "答えの出どころ（--from）か、答えではないこと（--notice）を必ず添えます。",
     "",
     "  --from user        ユーザーの答え。--closes に答えで閉じる待ちの事項の ID（作業ツリーの記録にある、",
-    "                     決定の無い question・who=user・when=now）が要ります。回答の先頭に、その ID を",
-    "                     ledger decide --by user で閉じる固定文を足します",
+    "                     再開する子の作業単位の、決定の無い question・who=user・when=now）か、再開する子の",
+    "                     同意ゲートの項目の ID（最後のビルドの子ならサイクル全体）が要ります。回答の先頭に、",
+    "                     待ちの事項を ledger decide --by user で閉じる固定文と、同意の項目ごとに決定を選んで",
+    "                     記録するひな形を足します",
     "  --from supervisor  監督の答え。--ask が要ります。答えの値の表がある問い（conductor asks の safe）は",
     "                     --choice が要り、安全側（safe）に無い値は拒みます。handler が user の問い（同意の回、",
     "                     escalate、中止など）も拒みます。リスクを受け入れうる答え（questions、review-findings の",
-    "                     proceed）は --harm と --premises か --no-risk が要り、上限（[app] の宣言）を超える",
-    "                     申告は拒みます。拒まれたら --escalate でユーザーに上げます",
+    "                     proceed）は --harm と --premises か --no-risk が要ります。上限（[app] の宣言）を超える",
+    "                     申告は、事後同意が有効で、--resume の子に同意ゲートの置き場があり（PR を作る前の architect・",
+    "                     最後以外のビルドの子と、同意ゲートの手前の最後のビルドの子。差し戻しの回は除く）、前提が宣言の参照（app.*・宣言にある",
+    "                     area:*）だけのときに受け付け、HIKYAKU_ANSWER_DEFER=1 と、--loses を求める固定文を足します",
+    "                     （子の ledger decide が risk の事項を書き、最後のビルドの同意ゲートでユーザーが決める）。",
+    "                     それ以外は拒みます。拒まれたら --escalate でユーザーに上げます",
     "  --notice           答えではない知らせ（中断からの再開、書き直しの依頼、ブランチを取り込んだ知らせ）",
     "",
     "--from を添えたときは、子のコマンドの前に答えの環境変数（HIKYAKU_ANSWER_FROM・_ITEMS・_ASK・_CHOICE・",
-    "_RISK・_TOKEN）を置きます。子の中の ledger decide / object は、この値で書ける決定を縛られ、監督の答えの",
+    "_RISK・_TOKEN・_DEFER）を置きます。子の中の ledger decide / object は、この値で書ける決定を縛られ、監督の答えの",
     "問い・値・申告を決定に必ず残します。JSON の answerToken は、conductor parse --expect-answer に渡します。",
     "",
     "--escalate はユーザーに上げる問いを、子に記録させる固定文（ledger open --type question --who user",
@@ -304,19 +324,35 @@ register({
         );
       }
       const ledger = readLedger(context.directory);
+      // 再開する子の同意ゲートの、決定の足りない項目（子として評価する。最後のビルドの子ならサイクル全体）。項目ごとの決定を
+      // 子が記録する。決定済みの項目は渡さない（同じ答えで決め直させて、受け入れの言葉つきの決定を弱めないため）
+      const consentIds = new Set(
+        undecidedConsentItems(asConductorChild(() => consentTargets(ledger, phase, { config, cycle: context, unit }))).map((item) => item.open.id),
+      );
+      const waiting: string[] = [];
+      const consenting: typeof ledger.items = [];
       const unclosable = closes.filter((id) => {
         const item = ledger.items.find((entry) => entry.open.id === id);
+        if (item === undefined) return true;
         // 閉じる事項は、再開する子の作業単位で記録したものだけ（決定はその単位の記録に書くので、別の単位の事項を閉じると
         // 事項と決定が別のブランチに分かれ、取り込むまで待ちが消えない）
-        return item === undefined || !isWaitingItem(item) || item.open.unit !== unit;
+        if (isWaitingItem(item) && item.open.unit === unit) {
+          waiting.push(id);
+          return false;
+        }
+        if (consentIds.has(id)) {
+          consenting.push(item);
+          return false;
+        }
+        return true;
       });
       if (unclosable.length > 0) {
         throw new HikyakuError(
-          `--closes に、${unit} でユーザーの答えを待つ未決の事項ではない ID があります: ${unclosable.join(", ")}`,
-          "作業ツリーの記録に、その ID の question（who=user・when=now）が決定なしであることを確かめてください（待ちのビルドのブランチへ conductor ブランチを取り込んでから再開します）。",
+          `--closes に、${unit} でユーザーの答えを待つ未決の事項でも、${unit} の同意ゲートの項目でもない ID があります: ${unclosable.join(", ")}`,
+          "作業ツリーの記録に、その ID の question（who=user・when=now）が決定なしであるか、同意ゲートの項目（hikyaku ledger consent-list）であることを確かめてください（待ちのビルドのブランチへ conductor ブランチを取り込んでから再開します）。",
         );
       }
-      message = closesMessage(unit, context.name, closes, message as string);
+      message = closesMessage(unit, context.name, waiting, message as string, consenting);
       answerEnv.push([ANSWER_ENV.from, "user"], [ANSWER_ENV.items, closes.join(",")]);
       if (ask !== undefined) answerEnv.push([ANSWER_ENV.ask, ask]);
     } else if (from === "supervisor") {
@@ -326,6 +362,10 @@ register({
       if (checked.choice !== undefined) answerEnv.push([ANSWER_ENV.choice, checked.choice]);
       if (checked.risk !== undefined) answerEnv.push([ANSWER_ENV.risk, formatRiskDeclaration(checked.risk)]);
       answerEnv.push([ANSWER_ENV.token, answerToken]);
+      if (checked.defer) {
+        answerEnv.push([ANSWER_ENV.defer, "1"]);
+        message = `${deferNotice(unit, context.name)}\n\n${message as string}`;
+      }
     }
 
     const sessionId = resume ?? randomUUID();
@@ -587,7 +627,7 @@ function checkSupervisorAnswer(
   context: CycleContext,
   ask: string | undefined,
   resume: string | undefined,
-): { ask: string; choice: string | undefined; risk: RiskDeclaration | undefined } {
+): { ask: string; choice: string | undefined; risk: RiskDeclaration | undefined; defer: boolean } {
   if (ask === undefined) throw new HikyakuError("--from supervisor には --ask で答える問いの ID を渡してください");
 
   // 1. 振り分け。子の手順がその問いのゲートで止まっていれば、その回の承認の種類で判定する（parse と同じ）。
@@ -659,14 +699,42 @@ function checkSupervisorAnswer(
     );
   }
 
-  // 4. 上限との比較。超える受け入れは、事後同意の有無に関わらず監督には答えさせない（build-19 まで）
+  // 4. 上限との比較。超える受け入れは、事後同意が有効で、子に同意ゲートの置き場があり、前提が宣言の参照だけのときだけ
+  //    受け付け、最後のビルドの同意ゲートへ回す（子の ledger decide が risk の事項を書く。ADR deferred-consent・US-15.4）。
+  //    それ以外は監督には答えさせない
+  let defer = false;
   if (risk?.kind === "declared" && exceedsCeilingFor(effectiveDeclaration(config), risk.harm, risk.premises)) {
-    throw new HikyakuError(
-      `申告したリスク（害 ${risk.harm}・前提 ${risk.premises.join(", ")}）は AI に任せてよい上限を超えるので、監督は受け入れられません`,
-      ESCALATE_HINT,
-    );
+    const problem = deferProblem(args, config, context, position, risk.premises);
+    if (problem !== undefined) {
+      throw new HikyakuError(
+        `申告したリスク（害 ${risk.harm}・前提 ${risk.premises.join(", ")}）は AI に任せてよい上限を超えるので、監督は受け入れられません（事後同意へ回せない: ${problem}）`,
+        ESCALATE_HINT,
+      );
+    }
+    defer = true;
   }
-  return { ask, choice, risk };
+  return { ask, choice, risk, defer };
+}
+
+/**
+ * 監督の上限を超える受け入れを、事後同意へ回せない理由（回せれば undefined）。子に同意ゲートの置き場があるかは
+ * ledger object --defer と同じ consentGateSlot を、子として評価する
+ */
+function deferProblem(
+  args: ParsedArgs,
+  config: ResolvedConfig,
+  context: CycleContext,
+  position: SessionPosition | undefined,
+  premises: string[],
+): string | undefined {
+  const judged = deferredConsent(config, context.directory);
+  if (!judged.effective) return `事後同意が有効ではありません（${judged.reason}）`;
+  if (position === undefined) return "子の手順の位置を確かめられません（--resume が無いか、子のセッションの記録がありません）";
+  const root = flagString(args, "root");
+  const opened = openUnit(position.unit, root === undefined ? {} : { root });
+  const slot = asConductorChild(() => consentGateSlot(opened.skill, opened.ctx));
+  if (slot !== undefined) return slot;
+  return deferrablePremisesProblem(config, premises);
 }
 
 /** --wait のとき、CI のチェックが1つも無くても none と判定せずに待つ時間（PR を作った直後の猶予） */

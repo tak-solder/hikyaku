@@ -246,12 +246,27 @@ test("無効: 基準の宣言を読めない（origin が無い）ときは有�
   assert.match(result.reason, /基準の宣言を読めず/);
 });
 
-test("無効: conductor の子では有効にならない", (t) => {
+test("有効: conductor の子でも有効になる（build-19）", (t) => {
   const directory = workspace(t, { consentOnMain: true });
   git(directory, "checkout", "-q", "-b", "hikyaku/001-test/architect");
   const result = judged(directory, { HIKYAKU_CONDUCTOR_CHILD: "1" });
-  assert.equal(result.effective, false);
-  assert.match(result.reason, /conductor の子/);
+  assert.equal(result.effective, true, result.reason);
+  assert.doesNotMatch(result.reason, /conductor の子/);
+});
+
+test("有効: 同じプロセスで、子でない評価のあとに asConductorChild の中で評価しても同じ結果（キャッシュの鍵に子かを持たない）", async (t) => {
+  const directory = workspace(t, { consentOnMain: true });
+  git(directory, "checkout", "-q", "-b", "hikyaku/001-test/architect");
+  const { loadConfig } = await import("../scripts/lib/config.mts");
+  const { deferredConsent } = await import("../scripts/lib/deferred-consent.mts");
+  const { asConductorChild } = await import("../scripts/lib/steps/consent.mts");
+  const saved = process.cwd();
+  process.chdir(directory);
+  t.after(() => process.chdir(saved));
+  const cycleDirectory = join(directory, CYCLE);
+  const config = loadConfig({ cycleDir: cycleDirectory });
+  assert.equal(deferredConsent(config, cycleDirectory).effective, true);
+  assert.equal(asConductorChild(() => deferredConsent(config, cycleDirectory)).effective, true);
 });
 
 test("無効: 作業中のブランチで足した値は効かず、デフォルトブランチへマージすると有効になる", (t) => {
@@ -497,13 +512,76 @@ test("G3: 申告が欠けた回は事後同意に回さない", (t) => {
   assert.equal(ledger(directory).length, 0);
 });
 
-test("G3: conductor の子では積まずにその場で同意", (t) => {
+const CHILD = { HIKYAKU_CONDUCTOR_CHILD: "1" };
+
+test("G3: 事後同意が有効なサイクルの architect の子でも、上限を超える受け入れを積んで確認にする（build-19）", (t) => {
   const directory = deferredWorkspace(t);
   driveTo(directory, ["options"]);
-  const result = cliWith(directory, { HIKYAKU_CONDUCTOR_CHILD: "1" }, "step", "report", "architect", "options", "001", "--result", "done", "--harm", "高", "--paths", "src/api/**", "--json");
+  const options = ["step", "report", "architect", "options", "001", "--result", "done", "--harm", "高", "--paths", "src/api/**"];
+  const refused = cliWith(directory, CHILD, ...options);
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /--loses/);
+  assert.equal(ledger(directory).length, 0);
+
+  const result = cliWith(directory, CHILD, ...options, "--loses", "入力検証を先に作る利点", "--json");
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(parse(result.stdout).approval, "confirm");
+  const [item] = ledger(directory);
+  assert.equal(item?.["type"], "risk");
+  assert.equal(item?.["who"], "user");
+  assert.equal(item?.["when"], "merge@architect");
+  assert.equal(item?.["source"], "step-report");
+});
+
+test("G3: 事後同意が無効なサイクルの architect の子は、従来どおりその場で同意", (t) => {
+  const directory = workspace(t, { app: app({ areas: [AUTH] }) });
+  git(directory, "checkout", "-q", "-b", "hikyaku/001-test/architect");
+  driveTo(directory, ["options"]);
+  const result = cliWith(directory, CHILD, "step", "report", "architect", "options", "001", "--result", "done", "--harm", "高", "--paths", "src/api/**", "--json");
   assert.equal(result.status, 0, result.stderr);
   assert.equal(parse(result.stdout).approval, "consent");
   assert.equal(ledger(directory).length, 0);
+});
+
+test("G4: 事後同意が有効なサイクルの architect の子で、申告に無い重い領域に触れる設計は積んで確認にする（build-19）", (t) => {
+  const directory = deferredWorkspace(t, { app: app({ exposure: "personal", areas: [AUTH, BILLING] }) });
+  driveTo(directory, ["options"]);
+  report(directory, "architect", "options", "--result", "done", "--harm", "中", "--paths", "src/api/**");
+  driveTo(directory, ["design-delta"]);
+  write(directory, `${DESIGN}/design-delta.md`, "# 設計差分\n\n- `src/billing/invoice.ts` を変える\n");
+  const result = cliWith(directory, CHILD, "step", "report", "architect", "design-delta", "001", "--result", "done", "--loses", "課金に触れない", "--json");
+  assert.equal(result.status, 0, result.stderr);
+  const [item] = ledger(directory);
+  assert.equal(item?.["ask"], "G4");
+  assert.deepEqual(item?.["premises"], ["area:billing"]);
+  // G4 の位置で、子の評価が確認になる
+  let directive = parse(succeeds(directory, "step", "next", "architect", "001", "--json"));
+  for (let i = 0; i < 10 && directive.step !== "G4"; i += 1) {
+    directive = directive.kind === "gate"
+      ? report(directory, "architect", directive.step ?? "", "--result", "approved", "--input", "OK")
+      : report(directory, "architect", directive.step ?? "", "--result", "done");
+  }
+  const child = cliWith(directory, CHILD, "step", "next", "architect", "001", "--json");
+  assert.equal(parse(child.stdout).step, "G4");
+  assert.equal(parse(child.stdout).approval, "confirm");
+});
+
+test("G3: supervisor-answer の risk は、G3 を deferred にする根拠に数えない", (t) => {
+  const directory = deferredWorkspace(t);
+  driveTo(directory, ["options"]);
+  report(directory, "architect", "options", "--result", "done", "--harm", "高", "--paths", "src/api/**", "--loses", "x");
+  const [stepped] = ledger(directory);
+  succeeds(directory, "ledger", "decide", "architect", stepped?.["id"] as string, "001", "--decision", "rejected", "--by", "user", "--input", "受け入れない");
+  // ask=G3 の supervisor-answer の事項を足しても、その場の同意のまま
+  const path = join(directory, DESIGN, "decisions.jsonl");
+  appendFileSync(path, `${JSON.stringify({
+    record: "open", at: new Date().toISOString(), id: "architect.9-abcd", unit: "architect", step: "options", type: "risk",
+    summary: "監督の答え（questions）で受け入れたリスク: x", when: "merge@architect", who: "user", premises: ["app.exposure", "app.data", "app.impact"],
+    loses: "x", harm: "高", ask: "G3", source: "supervisor-answer", token: "t-1",
+  })}\n`);
+  const directive = parse(cliWith(directory, CHILD, "step", "next", "architect", "001", "--json").stdout);
+  assert.equal(directive.step, "G3");
+  assert.equal(directive.approval, "consent");
 });
 
 test("G4: 申告に無い重い領域に触れる設計は積んで確認にし、事項に無い領域に触れ直すと同意に戻る", (t) => {

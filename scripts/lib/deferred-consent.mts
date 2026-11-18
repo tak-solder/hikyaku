@@ -6,7 +6,6 @@
  * 次のすべてを満たすときだけ:
  *
  *   - サイクル設定に deferred = true がある（requested）
- *   - conductor の子でない（conductor での扱いは build-07。それまでは安全側）
  *   - 基準の宣言を読めない回（incomplete）でない
  *   - [app] にマージがユーザーの関門である前提（merge_gate = "user"）があり、それが作業ツリーと読めた基準すべてで
  *     書かれている（effectiveDeclaration の strictest の論理積）
@@ -17,8 +16,10 @@
  *         サイクル設定に deferred = true がある。ユーザーがマージしたコミットで入った値。読めない基準・Hikyaku の
  *         ブランチが1つでもあれば成り立たない。PR のマージ先（スタック元・conductor ブランチ）は使わない
  *
+ * conductor の子でも同じ判定をする（build-19。子での扱いは steps/consent.mts の conductorConsentMode が決める）。
+ * 結果は子かどうかで変わらないので、監督が asConductorChild で子として評価しても同じ値になる。
+ *
  * git を読むので loadConfig の中では計算せず、ResolvedConfig とサイクルのディレクトリを鍵にキャッシュする。
- * consent.mts（conductor の子の判定）は ledger.mts 経由で steps/ と循環するので import せず、環境変数を直接読む。
  */
 
 import { join, relative, sep } from "node:path";
@@ -38,10 +39,6 @@ export interface DeferredConsent {
 
 const CONFIG_FILE = ".hikyaku.config";
 
-function isConductorChild(): boolean {
-  return process.env["HIKYAKU_CONDUCTOR_CHILD"] === "1";
-}
-
 const cache = new WeakMap<ResolvedConfig, Map<string, DeferredConsent>>();
 
 /** 事後同意が有効か。requested でなければ git も記録も読まない */
@@ -49,8 +46,7 @@ export function deferredConsent(config: ResolvedConfig, cycleDirectory: string |
   if (config.consent.deferred !== true) {
     return { requested: false, effective: false, reason: "サイクル設定に [consent] deferred = true がありません" };
   }
-  // conductor の子かどうかで結果が変わる（監督が asConductorChild で子として評価する）ので鍵に含める
-  const key = `${isConductorChild() ? "child" : "self"}:${cycleDirectory ?? ""}`;
+  const key = cycleDirectory ?? "";
   let entries = cache.get(config);
   if (entries === undefined) {
     entries = new Map();
@@ -65,7 +61,6 @@ export function deferredConsent(config: ResolvedConfig, cycleDirectory: string |
 
 function compute(config: ResolvedConfig, cycleDirectory: string | undefined): DeferredConsent {
   const no = (reason: string): DeferredConsent => ({ requested: true, effective: false, reason });
-  if (isConductorChild()) return no("conductor の子では事後同意を有効にしません（conductor での扱いはまだ入っていません）");
   if (cycleDirectory === undefined) return no("サイクルが分からないので、G1 の記録も基準のサイクル設定も読めません");
   const effective = effectiveDeclaration(config);
   if (effective.incomplete) return no("基準の宣言を読めず、マージがユーザーの関門である前提を確かめられません");
