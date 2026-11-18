@@ -5,3 +5,6 @@
 {"at":"2026-11-17T15:53:50.997Z","skill":"builder","step":"G8","result":"approved","input":"承認する（監督の委任された判断。questions.md に記録）。G8 の時点のコンテキストが 284k / 目安 250k のため、このセッションでは implement に進まず、新しいセッションで implement から続ける","context":289530,"session":"75bbbf24-191c-4c01-9520-90c8e574cf97","hikyaku":"3.0.0"}
 {"at":"2026-11-17T16:30:21.856Z","skill":"builder","step":"implement","result":"done","context":340136,"session":"fa400376-8a76-45f9-bc3a-73b3c089ed9b","hikyaku":"3.0.0"}
 {"at":"2026-11-17T16:39:54.300Z","skill":"builder","step":"verify","result":"done","context":342252,"session":"fa400376-8a76-45f9-bc3a-73b3c089ed9b","hikyaku":"3.0.0"}
+{"at":"2026-11-17T17:13:27.503Z","skill":"builder","step":"review","result":"done","context":394885,"session":"fa400376-8a76-45f9-bc3a-73b3c089ed9b","hikyaku":"3.0.0"}
+{"at":"2026-11-17T17:13:57.202Z","skill":"builder","step":"handoff","result":"done","context":402228,"session":"fa400376-8a76-45f9-bc3a-73b3c089ed9b","hikyaku":"3.0.0"}
+{"at":"2026-11-17T17:14:09.133Z","skill":"retrospective","step":"peak-actual","result":"done","context":408855,"session":"fa400376-8a76-45f9-bc3a-73b3c089ed9b","hikyaku":"3.0.0"}
