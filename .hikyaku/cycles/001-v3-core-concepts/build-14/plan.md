@@ -64,9 +64,9 @@
 
 ## 実装ステップ
 
-- [ ] Step 1: docs/ の該当行を置き換える
-- [ ] Step 2: skills/・agents/ の該当行を置き換える
-- [ ] Step 3: scripts/ の出力の文字列とコメントを置き換え、テスト名を直す
-- [ ] Step 4: grep で「人間」の残りを列挙し、すべてが「残す用法」に当たることを確かめる
-- [ ] Step 5: CHANGELOG の `[3.0.0]` に追記する
+- [x] Step 1: docs/ の該当行を置き換える
+- [x] Step 2: skills/・agents/ の該当行を置き換える
+- [x] Step 3: scripts/ の出力の文字列とコメントを置き換え、テスト名を直す
+- [x] Step 4: grep で「人間」の残りを列挙し、すべてが「残す用法」に当たることを確かめる
+- [x] Step 5: CHANGELOG の `[3.0.0]` に追記する
 - [ ] Step 6: ローカル検証（`npx tsc --noEmit`・`npm test`・`node scripts/hikyaku.mts conductor lint`）

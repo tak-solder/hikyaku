@@ -1,7 +1,7 @@
 /**
  * conductor — 非対話の子セッションが出す問いの分類と、子の起動コマンドの組み立て。
  *
- * 監督（LLM）は子の問いに答えるか人間に上げるかを決める。そのうち ID だけで
+ * 監督（LLM）は子の問いに答えるかユーザーに上げるかを決める。そのうち ID だけで
  * 機械的に決まる部分（既定の振り分けと、設定による上書き）をここに置く。
  * 「スコープを広げる回答か」のように成果物を読まないと決まらない判断は監督が行う。
  *
@@ -64,7 +64,7 @@ export interface AskSettings {
 
 /**
  * conductor が起動するフェーズ（architect / builder / close-cycle と、そこから
- * 呼ばれる build-manager / retrospective）の問い。PLAN は人間が対話で行うので含めない
+ * 呼ばれる build-manager / retrospective）の問い。PLAN はユーザーが対話で行うので含めない
  */
 export const ASKS: AskDefinition[] = [
   { id: "cycle", category: "route", where: "対象サイクルを決められない" },
@@ -121,7 +121,7 @@ export function collectTags(text: string): string[] {
 
 /**
  * スキルのタグと ASKS の突き合わせ。食い違うと子は表に無い ID で gate を出し、
- * 監督は「分類できない問い」として人間に上げ続ける。動作は止まらず静かにずれるので、
+ * 監督は「分類できない問い」としてユーザーに上げ続ける。動作は止まらず静かにずれるので、
  * CI で検出する
  */
 export function lintTags(tagsByFile: Map<string, string[]>): string[] {
@@ -148,9 +148,9 @@ export const CONDUCTOR_PHASES = ["architect", "builder", "close-cycle"] as const
 export type ConductorPhase = (typeof CONDUCTOR_PHASES)[number];
 
 export interface ConductorConfig {
-  /** 既定では監督が答える問いのうち、人間に上げるもの */
+  /** 既定では監督が答える問いのうち、ユーザーに上げるもの */
   escalate: string[];
-  /** 既定では人間に上げる問いのうち、監督に任せるもの */
+  /** 既定ではユーザーに上げる問いのうち、監督に任せるもの */
   delegate: string[];
   /** 子に許可するツール（既定に追加される） */
   allowedTools: string[];
@@ -188,7 +188,7 @@ export function modelFor(conductor: ConductorConfig, phase: ConductorPhase): str
 /**
  * escalate / delegate の検査。
  *
- * タイプミスを黙って捨てると、人間に上げるつもりの問いを監督が答えてしまう。
+ * タイプミスを黙って捨てると、ユーザーに上げるつもりの問いを監督が答えてしまう。
  * 起きてから気づけない壊れ方なので、未知の ID はエラーにする
  */
 export function checkConductorAsks(config: ConductorConfig, where: string): void {
@@ -640,8 +640,8 @@ export function shellQuote(value: string): string {
  *
  * 子は Write / Edit を持つので、.hikyaku.config の allowed_tools や delegate を
  * 書き換えられる。launch / parse は起動のたびに設定を読み直すため、書き換えが
- * 次の起動で効くと、人間が合意していない権限や振り分けになる。監督は起動時に
- * 人間と合意したときのダイジェストを全呼び出しに渡し、変わっていれば止める。
+ * 次の起動で効くと、ユーザーが合意していない権限や振り分けになる。監督は起動時に
+ * ユーザーと合意したときのダイジェストを全呼び出しに渡し、変わっていれば止める。
  *
  * 設定ファイルの内容そのもの（configFiles）も含める。base_branch や [branch] が
  * 変わると、PR の向き先や completed の判定まで変わるため。キーを選んで含めると
@@ -718,7 +718,7 @@ export interface PrVerdict {
   checks: { status: ChecksStatus; failing: string[]; pending: string[]; total: number };
   /** 未解決のレビュースレッド（レビューの指摘が残っている） */
   threads: { ok: boolean; unresolved: ReviewThread[]; truncated: boolean };
-  /** ok でない理由（人間と監督に示す） */
+  /** ok でない理由（ユーザーと監督に示す） */
   problems: string[];
   /**
    * 待てば解消しうる問題（CI の実行中、レビューの依頼が残っている）だけで止まっているか。
@@ -832,7 +832,7 @@ export function judgePr(
   const truncated = view.reviewThreads?.truncated ?? false;
   const threadsOk = unresolved.length === 0 && !truncated;
 
-  // 待てば解消しうるもの（waits）と、人間の対応が要るもの（blocks）に分ける
+  // 待てば解消しうるもの（waits）と、ユーザーの対応が要るもの（blocks）に分ける
   const blocks: string[] = [];
   const waits: string[] = [];
   if (!readyOk) blocks.push("PR が Draft です（Ready for Review になっていません）");

@@ -170,7 +170,7 @@ register({
     "[--escalate --ask <id>] [--out <file>] [--root <path>] [--json]",
   details: [
     "実行すべきコマンド行と session-id を返します。起動は呼び出し元（監督）が行います。",
-    "起動を監督の Bash に置くのは、許可ルール（Bash(claude -p:*)）で人間が制御できる",
+    "起動を監督の Bash に置くのは、許可ルール（Bash(claude -p:*)）でユーザーが制御できる",
     "場所で権限を広げるためです。",
     "",
     "  architect     /hikyaku:architect <cycle> [build-NN]（build を渡すと差し戻しからの再設計）",
@@ -228,7 +228,7 @@ register({
     "--model も入ります。どちらも無ければ Claude Code の既定のモデルで動きます。",
     "--out を省くと、一時ディレクトリに session-id 入りの名前で書きます。",
     "",
-    "--expect-digest には、監督が起動時に人間と合意したときの conductor asks の digest を",
+    "--expect-digest には、監督が起動時にユーザーと合意したときの conductor asks の digest を",
     "渡します。設定が変わっていればエラーで止まります。子は .hikyaku.config を書き換えられる",
     "ので、書き換えた権限や振り分けが次の起動で黙って効くのを防ぐためです。",
   ].join("\n"),
@@ -438,7 +438,7 @@ register({
     "  blocked    子が続行できないと判断した。cycle status で次を決める。本文の行頭の waiting: <ID> が",
     "             作業ツリーの記録にある未決のユーザーの問い（question・who=user・when=now）を指せば、",
     "             答えを待つ blocked として waiting に ID を返し、行き詰まりの報告の検査を外す",
-    "  violation  規約どおりのブロックが無い。監督は自由文から推測せず、人間に上げる",
+    "  violation  規約どおりのブロックが無い。監督は自由文から推測せず、ユーザーに上げる",
     "  error      予算超過などで子が異常終了した",
     "",
     "gate / done / blocked では、子の手順の位置（step）も返します。子のセッション ID が入った",
@@ -913,7 +913,7 @@ register({
     `対象は子として動くスキル（${CONDUCTED_SKILLS.join(" / ")}）の SKILL.md と references/・steps/ です。`,
     "（G8）や（ask: branch）の形のタグを集め、scripts/lib/conductor.mts の ASKS と突き合わせます。",
     "",
-    "  タグにあって ASKS に無い ID   子が出しても「分類できない問い」として人間に上がる",
+    "  タグにあって ASKS に無い ID   子が出しても「分類できない問い」としてユーザーに上がる",
     "  ASKS にあってタグに無い ID   改名や削除の取り残し。escalate に書いても効かない",
     "",
     "タグの付け忘れ（問いの箇所なのにタグが無い）は検出しません。",
@@ -956,7 +956,7 @@ function requireDigest(args: ParsedArgs, config: ResolvedConfig): void {
   if (expected === undefined) {
     throw new HikyakuError(
       "--expect-digest を指定してください",
-      "監督が起動時に人間と合意したときの conductor asks の digest を渡します。",
+      "監督が起動時にユーザーと合意したときの conductor asks の digest を渡します。",
     );
   }
   const actual = digestOf(config);
@@ -966,7 +966,7 @@ function requireDigest(args: ParsedArgs, config: ResolvedConfig): void {
       [
         "profile か .hikyaku.config（ルート・サイクル）の内容が変わりました。子が .hikyaku.config を",
         "書き換えた可能性があります。git log -p -- .hikyaku.config などで変更を確かめ、",
-        "人間に委任の範囲を確認し直してください。",
+        "ユーザーに委任の範囲を確認し直してください。",
       ].join("\n"),
     );
   }
@@ -976,7 +976,7 @@ function requireConductorPhase(raw: string | undefined): ConductorPhase {
   if (raw === undefined || !(CONDUCTOR_PHASES as readonly string[]).includes(raw)) {
     throw new HikyakuError(
       raw === undefined ? "フェーズを指定してください" : `フェーズの値が不正です: ${raw}`,
-      `使用できる値: ${CONDUCTOR_PHASES.join(" | ")}（PLAN は人間が対話で行うため対象外）`,
+      `使用できる値: ${CONDUCTOR_PHASES.join(" | ")}（PLAN はユーザーが対話で行うため対象外）`,
     );
   }
   return raw as ConductorPhase;

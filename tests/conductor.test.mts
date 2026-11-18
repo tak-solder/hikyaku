@@ -789,7 +789,7 @@ test("conductor: 未解決のレビュースレッドがあれば、待たずに
   assert.equal(truncated.ok, false);
 });
 
-test("conductor: 待てば解消しうる問題（CI の実行中・レビューの依頼）だけなら waiting、人間の対応が要る問題が混ざれば waiting でない", () => {
+test("conductor: 待てば解消しうる問題（CI の実行中・レビューの依頼）だけなら waiting、ユーザーの対応が要る問題が混ざれば waiting でない", () => {
   const running = { __typename: "CheckRun", name: "c", status: "IN_PROGRESS" };
   const failed = { __typename: "CheckRun", name: "f", status: "COMPLETED", conclusion: "FAILURE" };
   const request = [{ __typename: "Bot", login: "copilot-pull-request-reviewer" }];

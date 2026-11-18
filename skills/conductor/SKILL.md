@@ -1,6 +1,6 @@
 ---
 name: conductor
-description: "Hikyaku 監督: PLAN 済みのサイクルを、ARCHITECT → BUILD を非対話の子セッション（claude -p）に実行させて進める。子の問いには監督が答え、取り返しのつかない判断だけを人間に上げる。モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。"
+description: "Hikyaku 監督: PLAN 済みのサイクルを、ARCHITECT → BUILD を非対話の子セッション（claude -p）に実行させて進める。子の問いには監督が答え、取り返しのつかない判断だけをユーザーに上げる。モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。"
 user-invocable: true
 argument-hint: "[{cycle}]"
 ---
@@ -11,10 +11,10 @@ PLAN を終えたサイクルを、ARCHITECT から最後のビルドまで進�
 各フェーズは非対話の**子セッション**（`claude -p`）が既存のスキルのまま実行する。
 
 ```
-/hikyaku:planner       → 人間と要件をすり合わせる（conductor の対象外）
+/hikyaku:planner       → ユーザーと要件をすり合わせる（conductor の対象外）
 /hikyaku:conductor     → architect → build-01 → build-02 … を子に実行させる  ← あなたはここ
                           各 PR は conductor ブランチへ向け、監督が取り込む
-（人間が conductor ブランチ → デフォルトブランチの PR をマージ）
+（ユーザーが conductor ブランチ → デフォルトブランチの PR をマージ）
 /hikyaku:conductor     → close-cycle を子に実行させる
 ```
 
@@ -29,10 +29,10 @@ PLAN を終えたサイクルを、ARCHITECT から最後のビルドまで進�
 - **子の報告をそのまま信じない。** 「検証の義務」を必ず行う
 - **デフォルトブランチにはマージしない。** サイクルの統合ブランチ（conductor ブランチ）を1本切り、
   各フェーズのブランチはそこから切って PR もそこへ向ける。子の PR を conductor ブランチに取り込むのは
-  監督、conductor ブランチをデフォルトブランチへマージするのは人間
-- **委任の範囲を固定する。** Step 0 で人間と合意したときの `digest` を、以後のすべての
+  監督、conductor ブランチをデフォルトブランチへマージするのはユーザー
+- **委任の範囲を固定する。** Step 0 でユーザーと合意したときの `digest` を、以後のすべての
   `conductor launch` / `parse` に `--expect-digest` で渡す。子が `.hikyaku.config` を書き換えて
-  権限や振り分けが変わっていれば、CLI がエラーで止まる。そのときは人間に上げる
+  権限や振り分けが変わっていれば、CLI がエラーで止まる。そのときはユーザーに上げる
 - **子の自由文から問いを推測しない。** 判断の起点は常に `conductor parse` の結果
 - **子の手順の位置は `conductor parse` の `step` で読む。** 子が最後に進めた作業単位の次の1手
   （`step next` と同じ判定）が入る。progress.jsonl を自分で読んで位置を判断しない
@@ -55,7 +55,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --require-cycle 
 ```
 
 - 未初期化（`.hikyaku.config` が無い等）なら、`/hikyaku:init` を先に実行するよう伝えて**終了**する
-- サイクルを決められなければ、進行中サイクルの一覧を示して人間に尋ねる
+- サイクルを決められなければ、進行中サイクルの一覧を示してユーザーに尋ねる
 
 - [ ] サイクルの状態を確認する
 
@@ -65,7 +65,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle} --json
 
 | `phase` | 対応 |
 |---|---|
-| `planning` | `/hikyaku:planner {cycle}` を先に実行するよう伝えて**終了**する。要件のすり合わせは人間が対話で行う |
+| `planning` | `/hikyaku:planner {cycle}` を先に実行するよう伝えて**終了**する。要件のすり合わせはユーザーが対話で行う |
 | `closed` / `abandoned` | 何もせず**終了**する |
 | それ以外 | 続ける |
 
@@ -82,10 +82,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor asks {cycle} --json
   - `asks` の `allowedTools` で許可されているかを照合する
     （既定は `git` のサブコマンドと Hikyaku CLI の実行などだけで、`npm test` / `node --test` や
     環境変数を前置きしたコマンドは含まない）
-  - 許可されていなければ、`.hikyaku.config` の `[conductor] allowed_tools` に足してコミットするよう人間に
+  - 許可されていなければ、`.hikyaku.config` の `[conductor] allowed_tools` に足してコミットするようユーザーに
     案内して**終了**する。許可が無いと builder はローカル検証で blocked になる
 
-- [ ] **人間に1回だけ確認する**（`AskUserQuestion`）。次を示し、進めてよいかを尋ねる
+- [ ] **ユーザーに1回だけ確認する**（`AskUserQuestion`）。次を示し、進めてよいかを尋ねる
 
 ```
 サイクル {cycle}（profile: {profile}）を {ARCHITECT / BUILD / CLOSE} から進めます。
@@ -220,7 +220,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor launch {architect|bui
 
 - [ ] 返ってきた `command` を **Bash の `run_in_background` で実行**する（`timeout` は最大値にする）
   - 子は10分を超えうる。フォアグラウンドで待たない。完了の通知を待ち、ポーリングしない
-  - 起動が許可ルールで拒否されたら、`Bash(claude -p:*)` を許可するよう人間に案内して止まる
+  - 起動が許可ルールで拒否されたら、`Bash(claude -p:*)` を許可するようユーザーに案内して止まる
 - [ ] 完了したら結果を解析する
 
 ```bash
@@ -287,15 +287,15 @@ launch が `--from supervisor` を拒んだら（ユーザーが答える問い�
 `stepProblems` が空なら、子の手順は `step` の作業単位で終わっている（`step.kind` が `done`）。
 
 - [ ] 「検証の義務」のうち、そのフェーズの done に当たるものを行う
-- [ ] 問題があれば人間に上げる（自分で直さない）
+- [ ] 問題があればユーザーに上げる（自分で直さない）
 - [ ] 子の architect / builder の PR を取り込む前に、監督として公開する
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr ready {architect|build-NN} {cycle} --pr {PR} --for-merge
 ```
 
-  失敗したら取り込まず、エラーを人間に示して止まる。公開後の `check-pr` で Draft に戻っていたら、
-  再び Ready にせず、その検証結果を人間に上げる。
+  失敗したら取り込まず、エラーをユーザーに示して止まる。公開後の `check-pr` で Draft に戻っていたら、
+  再び Ready にせず、その検証結果をユーザーに上げる。
 - [ ] 子が PR を作っていれば（architect / builder）、取り込む前にその PR を検証する。レビューや CI を待つので、
   **Bash の `run_in_background` で実行する**（`timeout` は最大値にする）
 
@@ -317,14 +317,14 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor check-pr {PR の番�
     `timedOut: true` で終了コード 2 になる。Draft・未解決の指摘・CI の失敗・マージ先の食い違いは、待っても
     解消しないので、見つけた時点で返る
   - **未解決のレビュースレッド**（`threads.unresolved`）があれば、取り込まない。指摘の場所・投稿者・URL を
-    人間に示して上げる。**監督は指摘に自分で対応せず、子を再開して直させることもしない**。人間が対応するか、
+    ユーザーに示して上げる。**監督は指摘に自分で対応せず、子を再開して直させることもしない**。ユーザーが対応するか、
     同意して resolve したら、`check-pr` をやり直す
   - Draft・承認の不足・CI の失敗・マージ先の食い違い・待機の上限超過も、取り込まずに `problems` を示して
-    人間に上げる（`gh pr ready` で Draft を外したり、依頼を取り下げたりしない）。人間が対応したら
+    ユーザーに上げる（`gh pr ready` で Draft を外したり、依頼を取り下げたりしない）。ユーザーが対応したら
     `check-pr` をやり直す
   - **終了コード 1**（`gh` の応答に必須のフィールドが無い、型が違う、取得できないなど、状態を判定できなかった）
     も、取り込まない。判定できなかった PR を、CI なし・依頼なし・Ready として合格させない。エラーの内容を
-    人間に示して上げる
+    ユーザーに示して上げる
   - `none`（CI が1つも無い）は失敗にならない。PR を作った直後にチェックがまだ登録されていない場合は、
     `--wait` が最初の少しのあいだ待ってから判定するので、再実行は要らない。`none` で通ったら、最後の PR の
     本文に「フェーズの PR に CI が走っていなかった」と書く
@@ -337,9 +337,9 @@ git fetch origin {フェーズのブランチ}
 git rev-parse {フェーズのブランチ} origin/{フェーズのブランチ}
 ```
 
-  - 2行とも `headSha` と一致することを確かめる。一致しなければ取り込まず、人間に上げる。
+  - 2行とも `headSha` と一致することを確かめる。一致しなければ取り込まず、ユーザーに上げる。
     ローカルに push されていないコミットがある、または検証のあとに push されたコミットがあるので、
-    検証していないコミットを取り込むことになる。`check-pr` をやり直すかは人間が決める
+    検証していないコミットを取り込むことになる。`check-pr` をやり直すかはユーザーが決める
 
 ```bash
 git switch {conductor}
@@ -363,7 +363,7 @@ git push origin --delete {フェーズのブランチ}
 #### blocked
 
 - [ ] `cycle status {cycle} --json` を実行する。`step` があれば、子がどこで止まったか（`step.kind` が `stop` なら
-  `step.message`）も人間に上げるときに添える
+  `step.message`）もユーザーに上げるときに添える
 - `waiting` があれば（答えを待つ blocked。`--escalate` で記録させた問い）、ユーザーに上げずに conductor ブランチへ
   切り替えて Step 1 へ（問いは「待っている問いを尋ねる」でまとめて尋ねる）
 - `returned` があれば（builder からの差し戻し）→ Step 1 へ（architect が差し戻しを扱う）
@@ -376,11 +376,11 @@ git push origin --delete {フェーズのブランチ}
 - 1回目: 同じ session-id で `--notice` で再開し、「非対話規約に従い、最後に gate / done / blocked のどれか1つを
   出力してください」と伝え、`reason` を添える（blocked の行き詰まりの報告が欠けていたときは、欠けた節が
   `reason` にある）
-- 2回目も violation なら、`body`（出力の末尾）と `reason` を示して人間に上げる
+- 2回目も violation なら、`body`（出力の末尾）と `reason` を示してユーザーに上げる
 
 #### error
 
-予算超過や利用上限への到達などで子が異常終了した。`reason` と `costUsd` を示して人間に上げ、再開するかを尋ねる。
+予算超過や利用上限への到達などで子が異常終了した。`reason` と `costUsd` を示してユーザーに上げ、再開するかを尋ねる。
 再開するなら、**同じ session-id で** `--resume` と `--notice` を付け、「中断したところから続けてください」とだけ伝える。
 子は止まる直前の文脈を持っているので、新しい session で起動し直すより確実に続きから進む。
 `--resume` 自体が失敗したときだけ、新しい session で起動し直す（子は `step next` で progress.jsonl から続きを導く）。
@@ -423,14 +423,14 @@ gh pr list --head {conductor ブランチ} --base {baseBranch} --state open --js
   - 外部連携が有効なら、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref conductor {cycle}` の行
     （サイクルの issue への `Refs #12`）を本文の末尾に入れる。issue は CLOSE の PR で閉じる
 - [ ] 設定に従って公開する（失敗したら、再実行のコマンドと Draft のままであることを案内する。出力の
-  `applied` が `false` なら、gh でできなかったことと `manual` を人間に伝える）
+  `applied` が `false` なら、gh でできなかったことと `manual` をユーザーに伝える）
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr ready conductor {cycle} --pr {PR}
 ```
 - [ ] この PR にレビュアーをアサインする（`[pr] reviewers` が空、または `[pr] reviewers_skip` に
-  `conductor` があれば何もしない）。人間がレビューする PR なので、待たない。出力の `applied` が `false` なら、
-  `manual`（人間が代わりに依頼するレビュアー）を伝える
+  `conductor` があれば何もしない）。ユーザーがレビューする PR なので、待たない。出力の `applied` が `false` なら、
+  `manual`（ユーザーが代わりに依頼するレビュアー）を伝える
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers conductor {cycle} --pr {PR の URL}
@@ -450,11 +450,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr ready conductor {cycle} --pr
   architect とビルドの PR）、本文の一覧に追記する（`gh pr edit {PR} --body-file {ファイル}`）。
   レビュアーのアサイン（上の手順。依頼済みの相手には重ねて依頼しない）を行い、PR の URL を示して
   **終了**する
-- [ ] 追記するものが無ければ、PR の URL を示し、最後の PR の指摘にビルドを足して対応するかを人間に
+- [ ] 追記するものが無ければ、PR の URL を示し、最後の PR の指摘にビルドを足して対応するかをユーザーに
   尋ねる（`AskUserQuestion`）。対応しないなら、マージ後の再開を案内して**終了**する
-- [ ] 対応するなら、対応する指摘を人間から受け取る（PR のコメントの URL と内容。監督は指摘を選ばない）。
+- [ ] 対応するなら、対応する指摘をユーザーから受け取る（PR のコメントの URL と内容。監督は指摘を選ばない）。
   architect のブランチ（`branch verify architect {cycle}` の `expected`）が残っていれば、前回の追加設計が
-  途中で止まっている。そのことも人間に示す
+  途中で止まっている。そのこともユーザーに示す
 - [ ] 指摘をスクラッチパッドのファイルに書き、architect を指摘からの追加設計として起動する。ブランチは
   Step 2 の architect と同じく、conductor ブランチから用意する（残っていればそれに切り替える）
 
@@ -487,9 +487,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr ready close {cycle} --pr {CL
 | id | 答え方 |
 |---|---|
 | `cycle` | 対象サイクル名を答える |
-| `branch` | Step 2 で用意したブランチなら「Hikyaku の規則に従う」。食い違いの理由が分からなければ人間に上げる |
+| `branch` | Step 2 で用意したブランチなら「Hikyaku の規則に従う」。食い違いの理由が分からなければユーザーに上げる |
 | `build-select` | Step 1 で選んだビルドを答える |
-| `overlap` | このサイクルの design-delta で分担を決められるなら答える。**他のサイクルの設計を変える必要があれば人間に上げる** |
+| `overlap` | このサイクルの design-delta で分担を決められるなら答える。**他のサイクルの設計を変える必要があればユーザーに上げる** |
 | `G3` | 推奨案が user-stories と `constraints` に反していなければ推奨案を選ぶ（`--choice recommended`）。反していれば差し戻す（`rejected`）。推奨以外の案（`other`）は選べない。同意の回は `handler` が `user` になり、答えない |
 | `G2` / `G4` / `G7` | 成果物を読み、承認観点（スキルが示すもの）に沿って承認するか差し戻す（`approved` / `rejected`。G4 の同意の回は答えない） |
 | `retrospective` | 実施する（`run`） |
@@ -509,7 +509,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr ready close {cycle} --pr {CL
 | G8 の前 | plan.md と test-spec.md が、issue.md の受け入れ基準をすべて網羅しているかを読む |
 | builder の done の後 | テストを自分で再実行する。差分（`git diff {conductor}...HEAD --stat` と主要ファイル）が plan.md の範囲に収まっているかを読む |
 
-テストのコマンドは handoff.md / plan.md から引く。再実行に許可が要れば人間に案内する。
+テストのコマンドは handoff.md / plan.md から引く。再実行に許可が要ればユーザーに案内する。
 
 ## ユーザーに上げるとき
 

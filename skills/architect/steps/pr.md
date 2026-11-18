@@ -18,7 +18,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify architect {cycle}
   - `external ref` が返した行（`Refs #12` など）を本文の末尾に入れる。空なら入れない
   - 向き先は `pr base` に従う（値 `round` が `add` で conductor から動いているなら conductor ブランチ）
   - 値 `designChoiceGate` が false（G3 を行わない回。express の通常の回など）なら、採用案と退けた案を本文に一行で示す
-    （express では PR レビューが人間の目になる）
+    （express では PR レビューがユーザーの目になる）
   - 値 `declarationChanged` が `false` でなければ、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger premises --format pr`
     の出力を本文にそのまま貼る（変わった宣言を拠り所にした受け入れを、ユーザーがマージの前に見直すため）
   - `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger pr-section architect {cycle}` の出力を本文にそのまま貼る
