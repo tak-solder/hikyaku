@@ -1,0 +1,3 @@
+{"at":"2026-11-18T01:38:23.293Z","skill":"builder","step":"plan","result":"done","peak":210000,"context":97841,"session":"7cbf6637-584f-4bc4-bd65-0057c9e1ee95","hikyaku":"3.0.0"}
+{"at":"2026-11-18T01:40:40.642Z","skill":"builder","step":"plan-review","result":"done","peak":250000,"context":107456,"session":"7cbf6637-584f-4bc4-bd65-0057c9e1ee95","hikyaku":"3.0.0"}
+{"at":"2026-11-18T01:40:45.419Z","skill":"builder","step":"test-spec","result":"skipped","reason":"文書・指示文・出力の文字列とコメントの用語の置き換えだけで、振る舞いが変わらずテスト対象が無い。issue.md の対応する受け入れ基準も「なし」。受け入れ基準は grep の列挙と既存の tsc・npm test で確かめる","context":110827,"session":"7cbf6637-584f-4bc4-bd65-0057c9e1ee95","hikyaku":"3.0.0"}
