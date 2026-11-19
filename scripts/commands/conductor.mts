@@ -38,6 +38,7 @@ import { branchName } from "../lib/branch.mts";
 import { fetchPrGraphql, parsePrView, PR_VIEW_FIELDS, run } from "../lib/github.mts";
 import { HikyakuError, ValidationError } from "../lib/errors.mts";
 import { emit, table } from "../lib/output.mts";
+import { writeProtocol } from "../lib/headless.mts";
 import { pluginRoot } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
 import type { Directive } from "../lib/steps/directive.mts";
@@ -214,7 +215,8 @@ register({
     "",
     "組み立てるコマンドには次が必ず入ります。",
     "",
-    "  --append-system-prompt-file   非対話規約（skills/conductor/references/headless-protocol.md）",
+    "  --append-system-prompt-file   非対話規約（skills/conductor/references/headless-protocol.md）のうち、",
+    "                                この起動で起こりうる場面の節だけを組み立てたもの（一時ディレクトリに書く）",
     `  --disallowedTools             ${DISALLOWED_TOOLS.join(" ")}`,
     "                                子は回答を同じプロセスで待たず、ブロックを出して終了する。",
     "                                タイマーで待つと結果ファイルが書かれず、監督に完了が届かない",
@@ -371,7 +373,13 @@ register({
 
     const sessionId = resume ?? randomUUID();
     const out = flagString(args, "out") ?? join(tmpdir(), `hikyaku-conductor-${sessionId}-${Date.now()}.json`);
-    const protocol = join(pluginRoot(), "skills", "conductor", "references", "headless-protocol.md");
+    // 非対話規約は、この起動で起こりうる場面の節だけを渡す（子の system prompt に毎回足されるため）
+    const protocol = writeProtocol(join(pluginRoot(), "skills", "conductor", "references", "headless-protocol.md"), {
+      builder: phase === "builder",
+      escalate,
+      from,
+      deferredConsent: deferredConsent(config, context.directory).effective,
+    });
     const allowedTools = allowedToolsOf(config);
     const model = modelFor(config.conductor, phase);
 
