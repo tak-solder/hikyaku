@@ -234,7 +234,8 @@ function reportCommand(opened: Opened, step: string, result: StepResult): string
         : "";
   // 欠けていても受け付けるが、宣言のあるワークスペースでは G3 が同意になるので、必須の形で示す
   const risk = result === "done" && definition?.declaresRisk === true ? " --harm 高|中 --paths <触れるパスの glob,...>" : "";
-  return `${CLI} step report ${opened.phase} ${step}${cycleArg(opened.ctx)}${skillArg(opened)} --result ${result}${extra}${peak}${risk}${pr}`;
+  const findings = result === "done" && definition?.countsFindings === true ? " --findings <指摘の件数> --adopted <反映した件数>" : "";
+  return `${CLI} step report ${opened.phase} ${step}${cycleArg(opened.ctx)}${skillArg(opened)} --result ${result}${extra}${peak}${findings}${risk}${pr}`;
 }
 
 function progressOf(evaluation: Evaluation): { complete: number; total: number } {

@@ -71,7 +71,7 @@ test("planner: planning/ に記録し、user-stories → レビュー → G1 →
 
   write(directory, `${PLANNING}/user-stories.md`, "# stories\n");
   assert.equal(report(directory, "plan", "user-stories", "--result", "done").step, "review");
-  const gate = report(directory, "plan", "review", "--result", "done");
+  const gate = report(directory, "plan", "review", "--result", "done", "--findings", "0", "--adopted", "0");
   assert.equal(gate.kind, "gate");
   assert.equal(gate.step, "G1");
 
@@ -107,7 +107,7 @@ test("planner: G1 の承認は、承認後に user-stories.md を直しても自
   report(directory, "plan", "scope", "--result", "done");
   write(directory, `${PLANNING}/user-stories.md`, "# stories\n");
   report(directory, "plan", "user-stories", "--result", "done");
-  report(directory, "plan", "review", "--result", "done");
+  report(directory, "plan", "review", "--result", "done", "--findings", "0", "--adopted", "0");
   assert.equal(report(directory, "plan", "G1", "--result", "approved", "--input", "OK").step, "pr");
 
   // 変更は Git の履歴で追う。取り直すと決めたら user-stories を報告し直す

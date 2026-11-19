@@ -110,7 +110,7 @@ register({
   name: "step report",
   summary: "1手の結果を進捗に記録し、次の1手を返す",
   usage:
-    "hikyaku step report <phase> <step> [<cycle>] [--skill <内部スキル>] --result done|skipped|approved|rejected|failed|handover [--reason <理由>] [--input <答え>] [--peak <トークン数>] [--harm 高|中] [--paths <glob,...>] [--loses <失うもの>] [--pr <URL|番号>] [--dry-run] [--json]",
+    "hikyaku step report <phase> <step> [<cycle>] [--skill <内部スキル>] --result done|skipped|approved|rejected|failed|handover [--reason <理由>] [--input <答え>] [--peak <トークン数>] [--findings <件数> --adopted <件数>] [--harm 高|中] [--paths <glob,...>] [--loses <失うもの>] [--pr <URL|番号>] [--dry-run] [--json]",
   writes: true,
   details: [
     "作業単位のディレクトリの progress.jsonl に1行追記します。報告できるのは現在地のステップと、",
@@ -128,6 +128,9 @@ register({
     "",
     "--peak は見積もり直した予測ピークです（380000・380k。分割の検討の判定に使う）。plan の done では必須、",
     "plan-review では任意です。見積もりの上限（[context] limit × estimate_ratio）を超えると、builder は分割の検討（split）を返します。",
+    "--findings と --adopted は、中間レビュー（planner の review・architecture-review・tasklist-review・",
+    "plan-review・test-spec-review）の done で必須です。指摘の件数と、そのうち成果物に反映した件数で、",
+    "反映しなかった指摘（主観的として無視したものも）は件数にだけ入ります。集計は review findings で見ます。",
     "--pr は作った PR の URL か番号です。PR を作るステップ（pr）の done では必須です。",
     "--harm と --paths は、architect の options の done に添える申告です（G3 に提示する案のうち最も重い害と、",
     "全案が触れるパスの glob。--paths は波括弧の外のカンマで区切る）。欠けていても受け付けますが、",
@@ -357,6 +360,7 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
     throw new HikyakuError(`${definition.id} の done には --peak で見積もり直した予測ピークを添えてください`);
   }
 
+  readFindings(definition, result, args, event);
   readRiskDeclaration(definition, result, args, event);
 
   const prRaw = flagString(args, "pr");
@@ -376,6 +380,42 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
   if (measured.sessionId !== undefined) event.session = measured.sessionId;
   event.hikyaku = pluginVersion();
   return event;
+}
+
+/**
+ * 中間レビューの指摘の件数と反映した件数（--findings / --adopted）。countsFindings のステップの done で必須。
+ * 欠けた報告を通すと、採用率がレビューを回した回より少ない回から計算され、レビューを残すかの判断を誤るため
+ */
+function readFindings(definition: EvaluatedStep["definition"], result: StepResult, args: ParsedArgs, event: ProgressEvent): void {
+  const findingsRaw = flagString(args, "findings");
+  const adoptedRaw = flagString(args, "adopted");
+  if (findingsRaw === undefined && adoptedRaw === undefined) {
+    if (definition.countsFindings === true && result === "done") {
+      throw new HikyakuError(
+        `${definition.id} の done には --findings（指摘の件数）と --adopted（反映した件数）を添えてください`,
+        "指摘が無ければ --findings 0 --adopted 0 です。反映しなかった指摘（主観的として無視したものも）は --findings にだけ数えます。",
+      );
+    }
+    return;
+  }
+  if (definition.countsFindings !== true) throw new HikyakuError(`${definition.id} には --findings / --adopted を添えられません`);
+  if (result !== "done") throw new HikyakuError("--findings / --adopted は done の報告にだけ添えられます");
+  if (findingsRaw === undefined || adoptedRaw === undefined) {
+    throw new HikyakuError("--findings と --adopted は組で添えてください");
+  }
+  const findings = countOf(findingsRaw, "findings");
+  const adopted = countOf(adoptedRaw, "adopted");
+  if (adopted > findings) {
+    throw new HikyakuError(`--adopted（${adopted}）が --findings（${findings}）を超えています`, "--adopted は、指摘のうち成果物に反映した件数です。");
+  }
+  event.findings = findings;
+  event.adopted = adopted;
+}
+
+function countOf(raw: string, flag: string): number {
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) throw new HikyakuError(`--${flag} は 0 以上の整数で指定してください（現在: ${raw}）`);
+  return Number(trimmed);
 }
 
 /**

@@ -144,3 +144,10 @@ export function cycle(id = "001", overrides: Partial<CycleRecord> = {}): CycleRe
     ticket: "", external: "", dependsOn: [], started: "2026-10-03", finished: "", summary: "", ...overrides,
   };
 }
+
+/** 中間レビュー（countsFindings）の done に添える件数。planner の review は呼び出し側で添える（builder の review と同じ ID のため） */
+export function findingCounts(step: string | undefined): string[] {
+  return step !== undefined && ["architecture-review", "tasklist-review", "plan-review", "test-spec-review"].includes(step)
+    ? ["--findings", "0", "--adopted", "0"]
+    : [];
+}

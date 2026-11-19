@@ -14,3 +14,5 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc plan {cycle}
 - [ ] 渡す情報: `cycles/{cycle}/planning/user-stories.md`, `planning/questions.md`（存在する場合）
   - 出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/agents/doc-reviewer.md` を参照
 - [ ] 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
+- [ ] `done` に `--findings`（レビューが返した指摘の件数。`###` の項目の数で、確度が低い懸念も含む）と
+  `--adopted`（そのうち user-stories.md に反映した件数）を添える。主観的として無視した指摘も `--findings` には数える

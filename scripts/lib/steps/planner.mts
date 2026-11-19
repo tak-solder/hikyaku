@@ -30,6 +30,7 @@ export const PLANNER_STEPS: SkillSteps = {
       kind: "run",
       title: "doc-reviewer による user-stories.md のレビュー",
       when: (ctx) => ctx.config.reviews.userStories,
+      countsFindings: true,
     },
     {
       id: "G1",

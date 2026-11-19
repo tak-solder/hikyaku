@@ -91,6 +91,7 @@ export const BUILDER_STEPS: SkillSteps = {
       title: "doc-reviewer による plan.md のレビュー",
       when: (ctx) => ctx.config.reviews.plan,
       peak: "optional",
+      countsFindings: true,
     },
     {
       id: "split",
@@ -122,6 +123,7 @@ export const BUILDER_STEPS: SkillSteps = {
       kind: "run",
       title: "doc-reviewer による test-spec.md のレビュー",
       when: (ctx) => ctx.config.reviews.testSpec && !testSpecSkipped(ctx),
+      countsFindings: true,
     },
     {
       id: "G8",

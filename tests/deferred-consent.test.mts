@@ -13,7 +13,7 @@ import { test, type TestContext } from "node:test";
 // steps/index.mts を先に読み込む（architect.mts を先に読むと、循環で初期化前に参照される）
 import { lintApproval } from "../scripts/lib/steps/engine.mts";
 import "../scripts/lib/steps/index.mts";
-import { cli, cliWith, repository, succeeds, temporaryDirectory, testEnvironment, write } from "./helpers.mts";
+import { cli, cliWith, findingCounts, repository, succeeds, temporaryDirectory, testEnvironment, write } from "./helpers.mts";
 
 const CYCLE = "docs/hikyaku/cycles/001-test";
 const DESIGN = `${CYCLE}/design`;
@@ -150,7 +150,8 @@ function plannerToG1(directory: string): Directive {
   for (let i = 0; i < 10; i += 1) {
     if (directive.step === "G1") return directive;
     if (directive.step === "user-stories") write(directory, `${PLANNING}/user-stories.md`, "# ユーザーストーリー\n");
-    directive = report(directory, "plan", directive.step ?? "", "--result", "done");
+    const counts = directive.step === "review" ? ["--findings", "0", "--adopted", "0"] : [];
+    directive = report(directory, "plan", directive.step ?? "", "--result", "done", ...counts);
   }
   throw new Error(`G1 に着きません（現在: ${directive.step}）`);
 }
@@ -172,11 +173,11 @@ function driveTo(directory: string, stop: string[], drive: Drive = {}): Directiv
     }
     if (step === "survey") write(directory, `${DESIGN}/codebase-survey.md`);
     if (step === "options") {
-      directive = report(directory, "architect", step, "--result", "done", ...(drive.options ?? []));
+      directive = report(directory, "architect", step, "--result", "done", ...(drive.options ?? []), ...findingCounts(step));
       continue;
     }
     if (step === "design-delta") write(directory, `${DESIGN}/design-delta.md`, drive.delta ?? "# 設計差分\n");
-    directive = report(directory, "architect", step, "--result", "done");
+    directive = report(directory, "architect", step, "--result", "done", ...findingCounts(step));
   }
   throw new Error(`${stop.join("/")} に着きません（現在: ${directive.step}）`);
 }
@@ -402,7 +403,7 @@ test("G1: 承認のあとに差し戻した・planner を回し直したら、�
   report(directory, "plan", "G1", "--result", "approved", "--input", "OK");
   assert.equal(judged(directory).effective, true);
   // 報告し直して G1 を差し戻す
-  report(directory, "plan", "review", "--result", "done");
+  report(directory, "plan", "review", "--result", "done", "--findings", "0", "--adopted", "0");
   report(directory, "plan", "G1", "--result", "rejected", "--input", "直す");
   assert.equal(judged(directory).effective, false);
   report(directory, "plan", "G1", "--result", "approved", "--input", "OK");
@@ -559,7 +560,7 @@ test("G4: 事後同意が有効なサイクルの architect の子で、申告�
   for (let i = 0; i < 10 && directive.step !== "G4"; i += 1) {
     directive = directive.kind === "gate"
       ? report(directory, "architect", directive.step ?? "", "--result", "approved", "--input", "OK")
-      : report(directory, "architect", directive.step ?? "", "--result", "done");
+      : report(directory, "architect", directive.step ?? "", "--result", "done", ...findingCounts(directive.step));
   }
   const child = cliWith(directory, CHILD, "step", "next", "architect", "001", "--json");
   assert.equal(parse(child.stdout).step, "G4");

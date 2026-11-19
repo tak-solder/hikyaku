@@ -143,10 +143,10 @@ function report(directory: string, step: string, ...extra: string[]): Directive 
 function upToG8(directory: string): void {
   write(directory, `${BUILD}/plan.md`, "# plan\n");
   report(directory, "plan", "--result", "done", "--peak", "350k");
-  report(directory, "plan-review", "--result", "done");
+  report(directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0");
   write(directory, `${BUILD}/test-spec.md`, "# test-spec\n");
   report(directory, "test-spec", "--result", "done");
-  report(directory, "test-spec-review", "--result", "done");
+  report(directory, "test-spec-review", "--result", "done", "--findings", "0", "--adopted", "0");
 }
 
 function jsonl(directory: string, path: string): Record<string, unknown>[] {
@@ -244,10 +244,10 @@ test("step report: decided（解釈）・中・別のステップの異議はゲ
   report(directory, "plan", "--result", "done", "--peak", "350k");
   // plan-review の最中に記録した高の異議は G8 を止めない
   openId(directory, "build-01", "001", "--type", "objection", "--harm", "高", "--when", "now", "--who", "user", "--summary", "別のステップ", "--premises", "app.data");
-  report(directory, "plan-review", "--result", "done");
+  report(directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0");
   write(directory, `${BUILD}/test-spec.md`, "# test-spec\n");
   report(directory, "test-spec", "--result", "done");
-  report(directory, "test-spec-review", "--result", "done");
+  report(directory, "test-spec-review", "--result", "done", "--findings", "0", "--adopted", "0");
   openId(directory, "build-01", "001", "--type", "objection", "--harm", "中", "--when", "now", "--who", "user", "--summary", "中");
   succeeds(directory, ...OBJECT, "--harm", "高", "--decision", "decided", "--input", "改める");
   assert.equal(report(directory, "G8", "--result", "approved", "--input", "OK").step, "implement");
@@ -258,9 +258,9 @@ test("step report: 内部スキルの G6 でも高の異議で拒否し、記録
   write(directory, `${BUILD}/plan.md`, "# plan\n");
   // 見積もり直しで見積もりの上限を超え、build-manager を呼ぶ
   report(directory, "plan", "--result", "done", "--peak", "500k");
-  report(directory, "plan-review", "--result", "done");
+  report(directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0");
   for (const step of ["load", "scope", "estimate", "dry-run", "tasklist-review"]) {
-    succeeds(directory, "step", "report", "build-01", step, "001", "--skill", "build-manager", "--result", "done");
+    succeeds(directory, "step", "report", "build-01", step, "001", "--skill", "build-manager", "--result", "done", ...(step === "tasklist-review" ? ["--findings", "0", "--adopted", "0"] : []));
   }
   assert.equal(next(directory).step, "split");
   openId(directory, "build-01", "001", "--type", "objection", "--harm", "高", "--when", "now", "--who", "user", "--summary", "G6", "--premises", "app.data");
@@ -501,7 +501,8 @@ test("conductor: delegation はユーザーに固定され、delegate に書け�
 test("planner: G1 の args にプロファイルが入る", (t) => {
   const directory = workspace(t, true);
   const step = (id: string) => {
-    const result = cli(directory, "step", "report", "plan", id, "001", "--result", "done", "--json");
+    const counts = id === "review" ? ["--findings", "0", "--adopted", "0"] : [];
+    const result = cli(directory, "step", "report", "plan", id, "001", "--result", "done", ...counts, "--json");
     assert.equal(result.status, 0, result.stderr);
     return (JSON.parse(result.stdout) as { directive: Directive }).directive;
   };

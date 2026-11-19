@@ -22,7 +22,7 @@ import {
   findMarker,
   type DiffPatterns,
 } from "../scripts/lib/diff-stats.mts";
-import { cli, succeeds, testEnvironment, workspace, write } from "./helpers.mts";
+import { cli, findingCounts, succeeds, testEnvironment, workspace, write } from "./helpers.mts";
 
 const PATTERNS: DiffPatterns = {
   exclude: DEFAULT_DIFF_EXCLUDE,
@@ -625,7 +625,7 @@ test("step: どのプロファイルでも verify の次は agreement-review で
       if (step === "plan") write(directory, `${BUILD}/plan.md`);
       if (step === "test-spec") write(directory, `${BUILD}/test-spec.md`);
       const result = directive.kind === "gate" ? "approved" : "done";
-      const extra = step === "plan" ? ["--peak", "350k"] : [];
+      const extra = step === "plan" ? ["--peak", "350k"] : findingCounts(step);
       directive = JSON.parse(succeeds(directory, "step", "report", "build-01", step, "001", "--result", result, ...extra, "--json")).directive;
     }
     assert.equal(directive.step, "agreement-review", profile);

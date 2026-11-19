@@ -32,6 +32,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **中間レビューの指摘の件数を記録する**: planner の `review`・architect の `architecture-review`・build-manager の `tasklist-review`・builder の `plan-review` と `test-spec-review` の `done` に、`step report` の `--findings <指摘の件数> --adopted <反映した件数>` を必須にした。値は `progress.jsonl` に残る。`--adopted` が `--findings` を超える報告や、ほかのステップへの添付は受け付けない。ステップの定義に `countsFindings` を足し、`step lint` はゲートでの指定を拒む。tasklist-review は、反映するときも先に件数つきで `done` を報告してから `scope` を報告し直す手順にした
+- **`hikyaku review findings [<cycle>]`（読み取り専用）**: 上の件数をステップごとに集計し、回数・件数なしの回数・指摘のあった回・指摘・反映・採用率を返す。件数の無い記録（この版より前の報告）は採用率に入れない
+
 - **アプリケーションの状況と境界の宣言（`[app]`・`[[app.areas]]`・`[boundaries]`）**: 公開範囲・扱うデータの重さ・壊れたときの影響の3軸と `merge_gate`、名前つきの重い領域のパス、外との境界・内部の境界のパスを、ルート設定に書ける。サイクル設定に書くと、不正な値・知らないキー・重い領域の名前の重複と同じくエラー。`hikyaku config` に宣言と、作業ツリーの宣言から求めた AI に任せてよい害の上限を表示する。上限は、作業ツリーと、base_branch・デフォルトブランチとの merge-base にある宣言のうち最も厳しいもので決める（ユーザーがマージしていない宣言で緩めない）。`[app]`・`[[app.areas]]` の上限は G3・G4 の判定に使う（次項）。`[boundaries]` は G4 の外との境界の同意と提示に使う（`gate brief` の項）
 - **G3・G4 を宣言の上限で同意にする**: architect の options の done に `--harm 高|中`（G3 に提示する案のうち最も重い害）と `--paths <glob,...>`（全案が触れるパス。波括弧の外のカンマで区切る）を添え、`progress.jsonl` に残す。欠けていても報告は受け付ける。`[app]` を宣言したワークスペースでは、申告の害が上限を超える・申告したパスが重い領域に当たる・申告が欠ける回の G3 が同意（プロファイル・`design_choice_gate` で外れない）。G4 は申告の裏取りで、`design-delta.md` とこのサイクルの ADR が触れるパスが G3 の申告に無い重い領域に当たれば同意になり、当たった領域を `args.undeclaredAreas` で示す。基準の宣言を読めない回（`incomplete`）は G3・G4 とも同意にし、読めなかった理由を directive の notices に出す。宣言が無ければ従来どおりプロファイルで決まる。`conductor asks` の `consentWhen`・`hikyaku config` の G3・G4 の説明も改めた
 - **G4 と G8 の提示（`hikyaku gate brief G4|G8 <phase> [<cycle>] [--full]`、読み取り専用）**: G4 は、`design-delta.md` とこのサイクルの ADR が触れるパスを `[boundaries]` の `external` / `internal` と照合し、外との境界の変更（同意が要る）と内部の境界の変更（確かめる）に分けて示す。G3 の申告に無い重い領域も並べる。境界は、作業ツリーと基準のブランチ（merge-base）の `[boundaries]` の和で照合する（作業中のブランチで消しても効く）。外との境界の変更がある回、境界を照合できない回（ADR を読めない）、作業ツリーだけが境界を宣言していて基準を1つも読めない回の G4 は同意（`now`。事後同意には回さない）で、`args.boundaries` に照合の結果が載る。`[boundaries]` を宣言していなければ従来どおりの提示。G8 は、`test-spec.md` の見出しに「（解釈）」の印が付いたシナリオと、どのシナリオの `- 対応:` にも無い受け入れ基準だけを示す（番号で追跡できないサイクルでは `issue.md` の受け入れ基準の節、`test-spec.md` が無いビルドでは `plan.md` の提示を案内する）。`--full` で全文を出す。architect の G4・builder の G8 の手順はこの出力を提示し、test-spec の書式に「（解釈）」の印と `- 解釈:` の行を足した
@@ -215,6 +218,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Migration
 
+- 中間レビューの件数の記録に伴い、進行中の作業単位で planner の review・architecture-review・tasklist-review・plan-review・test-spec-review を `done` で報告するときは `--findings` と `--adopted` が要る（足りなければ `step report` がエラーで案内する。`step next` の報告のコマンドにも出る）。既存の `progress.jsonl` はそのまま読める。この版より前の報告は `review findings` で「件数なし」として数える
 - agreement-review の導入に対応は不要。進行中のビルドで verify を終えていれば、次の1手が agreement-review になる。`[diff]` の印のキーは省略すれば既定を使う。テストの書き方が既定の印で拾えない枠組みなら、`[diff]` の `test_declarations` / `skip_markers` / `assertion_markers` に足す
 - 既存の `tasklist.md` は、次に `tasklist` のコマンドで書き込んだときに新しい形へ書き直される。進行中のサイクルで並行するビルドがあると、最初の `tasklist done` 同士が一度だけコンフリクトしうる。ベースブランチ側の `tasklist.md` を採ってから `hikyaku tasklist done` を実行し直せば解消する（`docs/operations/troubleshooting.md#tasklistmd-がコンフリクトする`）
 - patch の導入に対応は不要。サイクルに属さない patch の記録は `{HIKYAKU_ROOT}/patches/` にコミットされ、マージのたびに増えるので、ときどき `hikyaku patch prune --before <YYYYMM>` で古い月を消して PR にする
