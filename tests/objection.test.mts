@@ -257,7 +257,7 @@ test("step report: 内部スキルの G6 でも高の異議で拒否し、記録
   const directory = built(t);
   write(directory, `${BUILD}/plan.md`, "# plan\n");
   // 見積もり直しで見積もりの上限を超え、build-manager を呼ぶ
-  report(directory, "plan", "--result", "done", "--peak", "500k");
+  report(directory, "plan", "--result", "done", "--peak", "600k");
   report(directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0");
   for (const step of ["load", "scope", "estimate", "dry-run", "tasklist-review"]) {
     succeeds(directory, "step", "report", "build-01", step, "001", "--skill", "build-manager", "--result", "done", ...(step === "tasklist-review" ? ["--findings", "0", "--adopted", "0"] : []));

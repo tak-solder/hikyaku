@@ -161,7 +161,7 @@ test("step: 見積もり直した予測ピークが見積もりの上限を超�
   const directory = built(t);
   write(directory, `${BUILD}/plan.md`);
   report(directory, "plan", "--result", "done", "--peak", "400k");
-  const directive = report(directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0", "--peak", "500k");
+  const directive = report(directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0", "--peak", "600k");
   assert.equal(directive.kind, "call");
   assert.equal(directive.step, "split");
   assert.equal(directive.call, "build-manager");
@@ -172,13 +172,13 @@ test("step: 見積もりの上限をわずかに超えた予測ピークも、�
   const directory = built(t);
   write(directory, `${BUILD}/plan.md`);
   const estimate = JSON.parse(succeeds(directory, "tokens", "estimate", "001",
-    "--fixed", "90k", "--reading", "130.4k", "--implementation", "100k", "--tests", "60k", "--unknown", "70k", "--json"));
-  assert.equal(estimate.peak, 450_400);
+    "--fixed", "90k", "--reading", "130.4k", "--implementation", "100k", "--tests", "60k", "--unknown", "160k", "--json"));
+  assert.equal(estimate.peak, 540_400);
   assert.equal(estimate.verdict, "split");
   const shown = /\*\*予測ピーク\*\* \| \*\*([^*]+)\*\*/.exec(estimate.markdown)?.[1];
-  assert.equal(shown, "450.4k", "表の予測ピークは丸めない");
+  assert.equal(shown, "540.4k", "表の予測ピークは丸めない");
   report(directory, "plan", "--result", "done", "--peak", shown ?? "");
-  assert.equal(events(directory).at(-1)?.["peak"], 450_400);
+  assert.equal(events(directory).at(-1)?.["peak"], 540_400);
   assert.equal(report(directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0").step, "split");
 });
 
@@ -492,18 +492,18 @@ test("step: 区切りでは現在のセッションのコンテキストから�
     type: "assistant", sessionId: "s-1", cwd: "/repo", isSidechain: false, timestamp: "2026-10-23T00:00:00Z",
     message: { id, model: "claude-opus-5-5", usage: { input_tokens: context, output_tokens: 10 } },
   });
-  write(home, "projects/-repo/s-1.jsonl", `${line("a", 120_000)}\n${line("b", 320_000)}\n`);
+  write(home, "projects/-repo/s-1.jsonl", `${line("a", 120_000)}\n${line("b", 420_000)}\n`);
   assert.ok(existsSync(transcript));
   const env = { CLAUDE_CONFIG_DIR: home, CLAUDE_CODE_SESSION_ID: "s-1" };
 
   const gate = next(directory, env);
   assert.equal(gate.step, "G8");
-  assert.equal(gate.context?.tokens, 320_000);
-  assert.equal(gate.context?.limit, 500_000);
+  assert.equal(gate.context?.tokens, 420_000);
+  assert.equal(gate.context?.limit, 600_000);
   // 既定の係数: 残り = 83k + 0.163 × 予測ピーク 350k、誤差 10%
   const remaining = Math.round(83_000 + 0.163 * 350_000);
   assert.equal(gate.context?.forecast?.remaining, remaining);
-  assert.equal(gate.context?.forecast?.continueAt, 320_000 + remaining);
+  assert.equal(gate.context?.forecast?.continueAt, 420_000 + remaining);
   assert.equal(gate.context?.forecast?.over, true);
   assert.equal(gate.context?.forecast?.recommendation, "split", "plan.md に内訳が無ければ切り替えを見込めない");
   const text = cliWith(directory, env, "step", "next", "build-01", "001").stdout;
@@ -514,7 +514,7 @@ test("step: 区切りでは現在のセッションのコンテキストから�
   assert.equal(implement.step, "implement");
   assert.equal(implement.context?.forecast?.checkpoint, "implement");
   const last = events(directory).at(-1);
-  assert.equal(last?.["context"], 320_000);
+  assert.equal(last?.["context"], 420_000);
   assert.equal(last?.["session"], "s-1");
 
   reportWith(directory, env, "implement", "--result", "done");

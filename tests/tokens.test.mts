@@ -52,10 +52,10 @@ test("tokens: 成分を合計し、帯の境目を含めて判定する", () => 
   assert.equal(estimate.components[1]?.basis, "");
 
   const bands = DEFAULT_PEAK_BANDS;
-  assert.equal(peakVerdict(299_999, bands), "merge");
-  assert.equal(peakVerdict(300_000, bands), "target");
-  assert.equal(peakVerdict(450_000, bands), "target");
-  assert.equal(peakVerdict(450_001, bands), "split");
+  assert.equal(peakVerdict(359_999, bands), "merge");
+  assert.equal(peakVerdict(360_000, bands), "target");
+  assert.equal(peakVerdict(540_000, bands), "target");
+  assert.equal(peakVerdict(540_001, bands), "split");
 });
 
 test("tokens: 内訳表の最後の行にガイドの版とハッシュを残し、根拠の | と改行をエスケープする", () => {
@@ -74,7 +74,7 @@ test("tokens: 内訳表の最後の行にガイドの版とハッシュを残し
   const lines = markdown.split("\n");
   assert.equal(lines[0], "| 成分 | 予測 | 根拠 |");
   assert.equal(lines[2], "| 固定費 | 90k | a\\|b c |");
-  assert.match(markdown, /\| \*\*予測ピーク\*\* \| \*\*540k\*\* \| 見積もりの上限（450k）超/);
+  assert.match(markdown, /\| \*\*予測ピーク\*\* \| \*\*540k\*\* \| 狙いの帯（360k〜540k）/);
   assert.equal(lines.at(-1), "| ガイド | プロジェクト v3 | 1a2b3c4d |");
 });
 

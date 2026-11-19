@@ -71,7 +71,7 @@ test("step hook stop: 内部スキルを呼んでいる最中は、呼ばれた�
   const directory = built(t);
   write(directory, `${BUILD}/plan.md`);
   report(t, directory, "plan", "--result", "done", "--peak", "400k");
-  report(t, directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0", "--peak", "500k");
+  report(t, directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0", "--peak", "600k");
 
   const blocked = hook(directory, { session_id: SESSION });
   assert.equal(blocked?.decision, "block");

@@ -43,9 +43,9 @@ export function parseTokenAmount(raw: string): number | undefined {
 }
 
 /**
- * 380000 → 380k、450400 → 450.4k。k 単位で書くが、丸めない（1000 未満はそのまま）。
+ * 380000 → 380k、540400 → 540.4k。k 単位で書くが、丸めない（1000 未満はそのまま）。
  * 表の値はそのまま --peak や tasklist に渡され、判定の帯と比べ直されるので、丸めると
- * 450,400（分割を検討）が 450k（狙いの帯）になって判定が変わる。parseTokenAmount で元の値に戻る
+ * 540,400（分割を検討）が 540k（狙いの帯）になって判定が変わる。parseTokenAmount で元の値に戻る
  */
 export function formatK(value: number | undefined): string {
   if (value === undefined) return "—";
@@ -116,8 +116,8 @@ export interface PeakBands {
   estimateLimit: number;
 }
 
-/** 既定の limit（500k）に、既定の割合（60% / 90%）を掛けた値 */
-export const DEFAULT_PEAK_BANDS: PeakBands = { mergeHint: 300_000, estimateLimit: 450_000 };
+/** 既定の limit（600k）に、既定の割合（60% / 90%）を掛けた値 */
+export const DEFAULT_PEAK_BANDS: PeakBands = { mergeHint: 360_000, estimateLimit: 540_000 };
 
 /**
  * merge  … 小さい。統合を検討する（推奨のみ。分けたままでもよい）

@@ -406,7 +406,7 @@ export interface ContextLimits {
   mergeRatio: number;
 }
 
-export const DEFAULT_CONTEXT_LIMITS: ContextLimits = { limit: 500_000, estimateRatio: 0.9, mergeRatio: 0.6 };
+export const DEFAULT_CONTEXT_LIMITS: ContextLimits = { limit: 600_000, estimateRatio: 0.9, mergeRatio: 0.6 };
 
 /** 上限と割合から、予測ピークの判定の帯を求める */
 export function peakBandsOf(limits: ContextLimits): PeakBands {
@@ -1040,7 +1040,7 @@ function readContextLimits(table: TomlTable | undefined): ContextLimits {
     if (value === undefined) {
       throw new HikyakuError(
         `${where}.limit はトークン数で指定してください（現在: ${JSON.stringify(rawLimit)}）`,
-        '正の整数（500000）か、k / m の単位を付けた文字列（"500k"）で書いてください。',
+        '正の整数（600000）か、k / m の単位を付けた文字列（"600k"）で書いてください。',
       );
     }
     limit = value;
@@ -1088,7 +1088,7 @@ function retiredKeyErrors(table: TomlTable, where: string): HikyakuError[] {
       `${where}: bp_max は v3 で廃止しました`,
       [
         "ビルドの大きさは BP ではなく、メインセッションのコンテキストの予測ピーク（トークン）で判定します。",
-        '上限は [context] limit（既定 "500k"）で、予測ピークが見積もりの上限（limit の 90%）を超えたら分割を検討します。',
+        '上限は [context] limit（既定 "600k"）で、予測ピークが見積もりの上限（limit の 90%）を超えたら分割を検討します。',
         "bp_max を削除してください（docs/migration/v2-to-v3.md）。",
       ].join("\n"),
     ));
@@ -1114,7 +1114,7 @@ function retiredKeyErrors(table: TomlTable, where: string): HikyakuError[] {
     errors.push(new HikyakuError(
       `${where}: [context] ${retiredContext.join(" / ")} は v3 で廃止しました`,
       [
-        "[context] は上限（limit、既定 \"500k\"）だけを決める形になりました。",
+        "[context] は上限（limit、既定 \"600k\"）だけを決める形になりました。",
         "見積もりの上限（分割を検討する境目）は limit × estimate_ratio（既定 90%）、統合の目安は limit × merge_ratio（既定 60%）で求めます。",
         "区切り（G8・実装開始前・レビュー前）の目安は、完了までの見込みを limit と比べる判定に置き換わりました。",
         "split_above を変えていたなら limit = split_above ÷ 0.9 を目安に書き換え、ほかのキーは削除してください（docs/migration/v2-to-v3.md）。",

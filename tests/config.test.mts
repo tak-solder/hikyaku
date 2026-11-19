@@ -86,7 +86,7 @@ test("設定: ブランチを栞より優先し、profile 単独の確認は両�
   assert.equal(config.review.code.maxRounds, 5);
   assert.equal(JSON.parse(succeeds(directory, "config", "--profile", "express", "--json")).review.code.maxRounds, 1);
   assert.equal(JSON.parse(succeeds(directory, "tokens", "guide", "--json")).bands.estimateLimit, 540_000);
-  assert.equal(JSON.parse(succeeds(directory, "tokens", "guide", "--profile", "express", "--json")).bands.estimateLimit, 450_000);
+  assert.equal(JSON.parse(succeeds(directory, "tokens", "guide", "--profile", "express", "--json")).bands.estimateLimit, 540_000);
 
   write(directory, ".git/HEAD", "ref: refs/heads/main\n");
   succeeds(directory, "cycle", "close", "002", "--summary", "test");
@@ -246,7 +246,7 @@ test("設定: v3 で廃止した bp_max と [bp_actual] は、移行先を示し
 
   write(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config", "bp_max = 8\n");
   write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n');
-  assert.equal(JSON.parse(succeeds(directory, "config", "--json")).peakBands.estimateLimit, 450_000);
+  assert.equal(JSON.parse(succeeds(directory, "config", "--json")).peakBands.estimateLimit, 540_000);
 });
 
 const ROOT = 'hikyaku_root = "docs/hikyaku"\n';

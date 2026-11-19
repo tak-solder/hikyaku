@@ -323,7 +323,7 @@ function renderRepoConfig(hikyakuRoot: string): string {
     "# 超えたら分割を検討し、limit × merge_ratio 未満なら統合を検討します。",
     "# builder の区切り（G8・実装開始前・レビュー前）では、完了時点の見込みを limit と比べます。",
     "[context]",
-    '# limit = "500k"',
+    '# limit = "600k"',
     '# estimate_ratio = "90%"',
     '# merge_ratio = "60%"',
     "",

@@ -9,9 +9,9 @@
 
 | 予測ピーク | 判定 | すること |
 |----|------|------|
-| `mergeHint` 未満（既定 300k） | 統合を検討 | 推奨のみ。依存の近いビルドとまとめられないかを見る。並行して進められるビルドが減る、PR が大きくなりすぎるなら分けたままでよい |
-| `mergeHint`〜`estimateLimit`（既定 300k〜450k） | 狙いの帯 | そのまま進める |
-| `estimateLimit`（見積もりの上限）超（既定 450k） | 分割を検討 | 原則として分割する |
+| `mergeHint` 未満（既定 360k） | 統合を検討 | 推奨のみ。依存の近いビルドとまとめられないかを見る。並行して進められるビルドが減る、PR が大きくなりすぎるなら分けたままでよい |
+| `mergeHint`〜`estimateLimit`（既定 360k〜540k） | 狙いの帯 | そのまま進める |
+| `estimateLimit`（見積もりの上限）超（既定 540k） | 分割を検討 | 原則として分割する |
 
 帯は `.hikyaku.config` の `[context] limit` に割合（`merge_ratio` / `estimate_ratio`）を掛けた値（`hikyaku config {cycle} --json` の
 `peakBands`）。directive の `値` にも `mergeHint` / `estimateLimit` として入っている。
