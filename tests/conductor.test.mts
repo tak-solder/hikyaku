@@ -312,6 +312,7 @@ budget_per_run = 2.5
   assert.deepEqual(output.argv.slice(disallowed + 1, disallowed + 4), ["AskUserQuestion", "ScheduleWakeup", "CronCreate"]);
   assert.equal(output.argv[output.argv.indexOf("--max-budget-usd") + 1], "2.5");
   assert.ok(output.command.endsWith("< /dev/null > r.json"));
+  assert.match(output.command, /^HIKYAKU_CONDUCTOR_CHILD=1 CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1 /, "子ではバックグラウンドの実行を無効にする");
   assert.deepEqual(snapshot(directory), before);
 
   const returned = JSON.parse(succeeds(

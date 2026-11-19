@@ -105,35 +105,41 @@ export function sumComponents(values: Record<ComponentKey, { tokens: number; bas
 // ---------------------------------------------------------------------------
 // 判定
 
-/** 予測ピークの判定の帯（[context] merge_below / split_above） */
+/**
+ * 予測ピークの判定の帯。[context] の limit に estimate_ratio / merge_ratio を掛けて求める
+ * （config.mts の peakBandsOf）
+ */
 export interface PeakBands {
-  mergeBelow: number;
-  splitAbove: number;
+  /** 統合の目安。予測ピークがこれ未満なら統合を検討する（推奨のみ） */
+  mergeHint: number;
+  /** 見積もりの上限。予測ピークがこれを超えたら分割を検討する */
+  estimateLimit: number;
 }
 
-export const DEFAULT_PEAK_BANDS: PeakBands = { mergeBelow: 300_000, splitAbove: 450_000 };
+/** 既定の limit（500k）に、既定の割合（60% / 90%）を掛けた値 */
+export const DEFAULT_PEAK_BANDS: PeakBands = { mergeHint: 300_000, estimateLimit: 450_000 };
 
 /**
  * merge  … 小さい。統合を検討する（推奨のみ。分けたままでもよい）
  * target … 狙いの帯
- * split  … 大きい。原則として分割する
+ * split  … 見積もりの上限を超えた。原則として分割する
  */
 export type PeakVerdict = "merge" | "target" | "split";
 
 export function peakVerdict(total: number, bands: PeakBands): PeakVerdict {
-  if (total > bands.splitAbove) return "split";
-  if (total < bands.mergeBelow) return "merge";
+  if (total > bands.estimateLimit) return "split";
+  if (total < bands.mergeHint) return "merge";
   return "target";
 }
 
 export function describePeakVerdict(verdict: PeakVerdict, bands: PeakBands): string {
   switch (verdict) {
     case "merge":
-      return `統合を検討（${formatK(bands.mergeBelow)} 未満。推奨のみ）`;
+      return `統合を検討（${formatK(bands.mergeHint)} 未満。推奨のみ）`;
     case "target":
-      return `狙いの帯（${formatK(bands.mergeBelow)}〜${formatK(bands.splitAbove)}）`;
+      return `狙いの帯（${formatK(bands.mergeHint)}〜${formatK(bands.estimateLimit)}）`;
     case "split":
-      return `分割を検討（${formatK(bands.splitAbove)} 超。原則として分割する）`;
+      return `見積もりの上限（${formatK(bands.estimateLimit)}）超。原則として分割する`;
   }
 }
 

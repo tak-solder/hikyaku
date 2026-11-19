@@ -17,7 +17,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc {phase} {cyc
 - [ ] この時点ではまだファイルに書き込まれていない。`--dry-run` の出力（変更後の一覧・依存グラフ）と
   issue.md の本文をプロンプトに直接含めて渡す
 - [ ] 参照として渡す: `cycles/{cycle}/planning/user-stories.md`, `cycles/{cycle}/design/design-delta.md`（存在する場合）,
-  見積もりに使ったガイド（`tokens guide {cycle}` が示すパス）、予測ピークの判定の帯（値 `mergeBelow` / `splitAbove`）
+  見積もりに使ったガイド（`tokens guide {cycle}` が示すパス）、予測ピークの判定の帯（値 `mergeHint` / `estimateLimit`）
 - [ ] 予測ピークのレビュー対象は成分の見積もり（列挙した読むファイル・作成するファイルがスコープと合っているか、
   未知の領域の取りこぼしが無いか）。合計と判定はコマンドが行っているので、そこは見ない
 - [ ] 明確な不整合・見積もりの乖離は反映する（主観的な指摘は無視してよい）。

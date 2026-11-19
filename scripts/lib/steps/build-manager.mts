@@ -10,9 +10,9 @@
 import { formatK } from "../tokens.mts";
 import type { SkillSteps, StepContext } from "./engine.mts";
 
-/** 予測ピークの判定の帯（[context] merge_below / split_above） */
+/** 予測ピークの判定の帯（[context] limit × merge_ratio / estimate_ratio） */
 function bands(ctx: StepContext): Record<string, string> {
-  return { mergeBelow: formatK(ctx.config.peakBands.mergeBelow), splitAbove: formatK(ctx.config.peakBands.splitAbove) };
+  return { mergeHint: formatK(ctx.config.peakBands.mergeHint), estimateLimit: formatK(ctx.config.peakBands.estimateLimit) };
 }
 
 export const BUILD_MANAGER_STEPS: SkillSteps = {

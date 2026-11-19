@@ -43,6 +43,7 @@ import { register } from "../lib/registry.mts";
 import type { Directive } from "../lib/steps/directive.mts";
 import { asConductorChild, consentGateSlot, consentTargets } from "../lib/steps/consent.mts";
 import { directiveOf, locateSession, openUnit, type SessionPosition } from "../lib/steps/locate.mts";
+import { readProgress } from "../lib/progress.mts";
 import { deferredConsent } from "../lib/deferred-consent.mts";
 import { normalizeBuildId } from "../lib/tasklist.mts";
 import type { ResolvedConfig } from "../lib/config.mts";
@@ -394,7 +395,9 @@ register({
       "--output-format",
       "json",
     ];
-    const envPrefix = [["HIKYAKU_CONDUCTOR_CHILD", "1"], ...answerEnv].map(([key, value]) => `${key}=${shellQuote(value as string)}`).join(" ");
+    // 子ではバックグラウンドの実行を無効にする。非対話の子はターンを終えると完了の通知を待てず、
+    // サブエージェント（doc-reviewer・test-spec）やレビューの結果を受け取れずに止まるため
+    const envPrefix = [["HIKYAKU_CONDUCTOR_CHILD", "1"], ...CHILD_ENV, ...answerEnv].map(([key, value]) => `${key}=${shellQuote(value as string)}`).join(" ");
     const command = `${envPrefix} ${argv.map(shellQuote).join(" ")} < /dev/null > ${shellQuote(out)}`;
 
     emit(
@@ -437,7 +440,9 @@ register({
     "  done       フェーズを終えた。next に子が案内した次のコマンド",
     "  blocked    子が続行できないと判断した。cycle status で次を決める。本文の行頭の waiting: <ID> が",
     "             作業ツリーの記録にある未決のユーザーの問い（question・who=user・when=now）を指せば、",
-    "             答えを待つ blocked として waiting に ID を返し、行き詰まりの報告の検査を外す",
+    "             答えを待つ blocked として waiting に ID を返し、行き詰まりの報告の検査を外す。",
+    "             行頭の handover: <ステップ> が子のセッションの切り替えの記録と合えば、handover にステップを返し、",
+    "             同じく検査を外す（新しいセッションで起動し直す）",
     "  violation  規約どおりのブロックが無い。監督は自由文から推測せず、ユーザーに上げる",
     "  error      予算超過などで子が異常終了した",
     "",
@@ -479,6 +484,18 @@ register({
       isWaitingItem: (id) => {
         const item = ledger?.items.find((entry) => entry.open.id === id);
         return item !== undefined && isWaitingItem(item);
+      },
+      // handover: <step> は、子のセッションの最後の記録がそのステップの切り替えのときだけ信じる
+      isHandover: (sessionId, step) => {
+        if (sessionId === null) return false;
+        const located = locateSession(config.hikyakuRoot, { records: [context.record], explicit: true }, sessionId);
+        if (located === undefined) return false;
+        try {
+          const last = readProgress(located.unit.directory).filter((event) => event.session === sessionId).at(-1);
+          return last?.result === "handover" && last.step === step;
+        } catch {
+          return false;
+        }
       },
     });
     const step = childStep(parsed, config, context, flagString(args, "root"));
@@ -522,6 +539,7 @@ register({
       }
       if (ask?.declaresRisk) lines.push("監督が答えるときは、リスクの申告（--harm と --premises か --no-risk）が要りうる");
       if (parsed.waiting) lines.push(`答えを待つ事項: ${parsed.waiting.join(", ")}（行き詰まりではない）`);
+      if (parsed.handover) lines.push(`セッションの切り替え: ${parsed.handover} から新しいセッションで起動し直す（行き詰まりではない）`);
       if (parsed.next) lines.push(`次: ${parsed.next}`);
       if (parsed.reason) lines.push(`理由: ${parsed.reason}`);
       lines.push(`session-id: ${parsed.sessionId ?? "不明"}`);
@@ -562,6 +580,9 @@ interface ChildStep {
  * 子のブロックと手順の位置が食い違っていれば problems に入れる。監督は子の報告をそのまま
  * 信じず、done は手順を終えたこと、ゲートの gate はそのゲートで止まっていることを確かめる
  */
+/** 子の起動に添える環境変数（監督の答えとは別に、常に添える） */
+export const CHILD_ENV: [string, string][] = [["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1"]];
+
 function childStep(
   parsed: ParsedResult,
   config: ResolvedConfig,

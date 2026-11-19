@@ -74,7 +74,7 @@ test("tokens: 内訳表の最後の行にガイドの版とハッシュを残し
   const lines = markdown.split("\n");
   assert.equal(lines[0], "| 成分 | 予測 | 根拠 |");
   assert.equal(lines[2], "| 固定費 | 90k | a\\|b c |");
-  assert.match(markdown, /\| \*\*予測ピーク\*\* \| \*\*540k\*\* \| 分割を検討/);
+  assert.match(markdown, /\| \*\*予測ピーク\*\* \| \*\*540k\*\* \| 見積もりの上限（450k）超/);
   assert.equal(lines.at(-1), "| ガイド | プロジェクト v3 | 1a2b3c4d |");
 });
 

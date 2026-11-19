@@ -9,7 +9,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --require-cycle 
 ```
 
 `unsafeSplit`（安全でない分割を許すか）を取得する。予測ピークの判定の帯は `peakBands` にあり、
-値 `mergeBelow` / `splitAbove` にも入っている（サイクル固有の `.hikyaku.config` の値を反映済み）。
+値 `mergeHint` / `estimateLimit` にも入っている（サイクル固有の `.hikyaku.config` の値を反映済み）。
 HIKYAKU_ROOT は引数では受け取らない（設定から解決される）。
 
 - [ ] 見積もりに使うガイドを確かめて読む

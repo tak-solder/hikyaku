@@ -457,6 +457,8 @@ export interface ParsedResult {
   reason?: string;
   /** 答えを待つ blocked が指す、ユーザーの答えを待つ事項の ID（本文の行頭の waiting: <id>） */
   waiting?: string[];
+  /** セッションを切り替えた blocked が指すステップ（本文の行頭の handover: <step>）。新しいセッションで起動し直す */
+  handover?: string;
 }
 
 export interface ParseOptions {
@@ -465,7 +467,17 @@ export interface ParseOptions {
    * 渡さなければ waiting を信じず、従来どおり行き詰まりの報告を検査する
    */
   isWaitingItem?: (id: string) => boolean;
+  /**
+   * 本文の handover: <step> が、子のセッションが記録した切り替え（step report --result handover）か。
+   * 渡さなければ handover を信じず、従来どおり行き詰まりの報告を検査する
+   */
+  isHandover?: (sessionId: string | null, step: string) => boolean;
+  /** 子のセッション ID（parseResultJson が結果から渡す） */
+  sessionId?: string | null;
 }
+
+/** 行頭の handover: の行 */
+const HANDOVER_LINE = /^handover:[ \t]*(\S+)[ \t]*$/m;
 
 /** 行頭の waiting: の行。同じ行の ID だけを読み（改行をまたがない）、カンマか空白で区切った複数の ID を受け付ける */
 const WAITING_LINE = /^waiting:[ \t]*([^\n]*?)[ \t]*$/gm;
@@ -514,6 +526,12 @@ export function parseFinalText(text: string, options: ParseOptions = {}): Omit<P
   const isWaitingItem = options.isWaitingItem;
   if (waiting.length > 0 && isWaitingItem !== undefined && waiting.every((id) => isWaitingItem(id))) {
     return { outcome: "blocked", body, waiting };
+  }
+  // セッションの切り替え（G8 の後で、新しいセッションから implement を続ける）も行き詰まりではない。
+  // 子のセッションの記録で裏取りできたときだけ検査から外す
+  const handover = HANDOVER_LINE.exec(body)?.[1];
+  if (handover !== undefined && options.isHandover?.(options.sessionId ?? null, handover) === true) {
+    return { outcome: "blocked", body, handover };
   }
   // blocked はユーザーに上げる行き詰まりの報告。欠けていれば violation にして、書き直させるかユーザーに上げる（US-3.4）
   const check = checkEscalation(body);
@@ -568,7 +586,7 @@ export function parseResultJson(raw: string, options: ParseOptions = {}): Parsed
     };
   }
 
-  return { ...parseFinalText(result, options), sessionId, costUsd };
+  return { ...parseFinalText(result, { ...options, sessionId }), sessionId, costUsd };
 }
 
 // ---------------------------------------------------------------------------

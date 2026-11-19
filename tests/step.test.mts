@@ -47,7 +47,12 @@ interface Directive {
   note?: string;
   revise?: string;
   call?: string;
-  context?: { tokens: number | null; budget: number; over: boolean; unavailable: string | null };
+  context?: {
+    tokens: number | null;
+    limit: number;
+    unavailable: string | null;
+    forecast: { checkpoint: string; remaining: number; continueAt: number; over: boolean; recommendation: string } | null;
+  };
   overruns?: { checkpoint: string; tokens: number }[];
   message?: string;
 }
@@ -152,7 +157,7 @@ test("step: test-spec のスキップは理由が必須で、スキップする�
   assert.equal(directive.step, "G8");
 });
 
-test("step: 見積もり直した予測ピークが split_above を超えたら build-manager を呼ぶ", (t) => {
+test("step: 見積もり直した予測ピークが見積もりの上限を超えたら build-manager を呼ぶ", (t) => {
   const directory = built(t);
   write(directory, `${BUILD}/plan.md`);
   report(directory, "plan", "--result", "done", "--peak", "400k");
@@ -163,7 +168,7 @@ test("step: 見積もり直した予測ピークが split_above を超えたら 
   assert.equal(report(directory, "split", "--result", "done").step, "test-spec");
 });
 
-test("step: split_above をわずかに超えた予測ピークも、表の値のまま渡せば分割の検討になる", (t) => {
+test("step: 見積もりの上限をわずかに超えた予測ピークも、表の値のまま渡せば分割の検討になる", (t) => {
   const directory = built(t);
   write(directory, `${BUILD}/plan.md`);
   const estimate = JSON.parse(succeeds(directory, "tokens", "estimate", "001",
@@ -231,7 +236,7 @@ test("step: 後ろのステップの成果物があるのに記録が無けれ�
   write(directory, `${BUILD}/handoff.md`);
   const directive = next(directory);
   assert.equal(directive.kind, "stop");
-  assert.match(directive.message ?? "", /進捗の記録が欠けています/);
+  assert.match(directive.message ?? "", /その後のステップの成果物が先にあります/);
   assert.match(directive.message ?? "", /handoff/);
 });
 
@@ -393,7 +398,7 @@ test("engine: PR を作るステップは、記録に PR の無い done を完�
   assert.equal(evaluate(skill, ctx([{ at, skill: "helper", step: "pr", result: "done", pr: "12" }])).current, undefined);
 });
 
-test("step: 区切りでは現在のセッションのコンテキストを目安と比べ、報告に記録する", (t) => {
+test("step: 区切りでは現在のセッションのコンテキストから完了時点を見込んで上限と比べ、報告に記録する", (t) => {
   const directory = built(t);
   upToG8(directory);
   const home = temporaryDirectory(t);
@@ -409,12 +414,20 @@ test("step: 区切りでは現在のセッションのコンテキストを目�
   const gate = next(directory, env);
   assert.equal(gate.step, "G8");
   assert.equal(gate.context?.tokens, 320_000);
-  assert.equal(gate.context?.budget, 250_000);
-  assert.equal(gate.context?.over, true);
+  assert.equal(gate.context?.limit, 500_000);
+  // 既定の係数: 残り = 83k + 0.163 × 予測ピーク 350k、誤差 10%
+  const remaining = Math.round(83_000 + 0.163 * 350_000);
+  assert.equal(gate.context?.forecast?.remaining, remaining);
+  assert.equal(gate.context?.forecast?.continueAt, 320_000 + remaining);
+  assert.equal(gate.context?.forecast?.over, true);
+  assert.equal(gate.context?.forecast?.recommendation, "split", "plan.md に内訳が無ければ切り替えを見込めない");
+  const text = cliWith(directory, env, "step", "next", "build-01", "001").stdout;
+  assert.match(text, /続けた場合の完了時点の見込み/);
+  assert.match(text, /推奨: 分割/);
 
   const implement = reportWith(directory, env, "G8", "--result", "approved", "--input", "OK");
   assert.equal(implement.step, "implement");
-  assert.equal(implement.context?.budget, 300_000);
+  assert.equal(implement.context?.forecast?.checkpoint, "implement");
   const last = events(directory).at(-1);
   assert.equal(last?.["context"], 320_000);
   assert.equal(last?.["session"], "s-1");
@@ -543,4 +556,24 @@ test("engine: requires は完了の条件にだけ使い、記録の欠けの判
   assert.equal(evaluate(skill, ctx(events)).current, undefined);
   ready = false;
   assert.equal(evaluate(skill, ctx(events)).current?.definition.id, "b", "条件を満たさなくなれば未完了");
+});
+
+test("step: implement の手前でセッションを切り替えると、implement は完了にならず次のセッションが同じステップから続ける", (t) => {
+  const directory = built(t);
+  upToG8(directory);
+  const implement = report(directory, "G8", "--result", "approved", "--input", "OK");
+  assert.equal(implement.step, "implement");
+  assert.match(implement.report?.handover ?? "", /--result handover --reason/);
+
+  const missing = cli(directory, "step", "report", "build-01", "implement", "001", "--result", "handover");
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /--reason/);
+  const notAllowed = cli(directory, "step", "report", "build-01", "verify", "001", "--result", "handover", "--reason", "x");
+  assert.equal(notAllowed.status, 1);
+
+  const after = report(directory, "implement", "--result", "handover", "--reason", "完了時点の見込みが上限を超える");
+  assert.equal(after.kind, "run");
+  assert.equal(after.step, "implement");
+  assert.match(after.note ?? "", /セッションを切り替えました/);
+  assert.equal(events(directory).at(-1)?.["result"], "handover");
 });

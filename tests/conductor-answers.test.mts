@@ -267,7 +267,7 @@ test("CLI: conductor launch --from user は --closes の未決の事項だけを
   const q3 = openQuestion(directory);
   const q4 = openQuestion(directory);
   const output = launched(directory, ...RESUME, "--from", "user", "--closes", `${q3},${q4}`);
-  assert.match(output.command, /^HIKYAKU_CONDUCTOR_CHILD=1 HIKYAKU_ANSWER_FROM=user HIKYAKU_ANSWER_ITEMS=/);
+  assert.match(output.command, /^HIKYAKU_CONDUCTOR_CHILD=1 CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1 HIKYAKU_ANSWER_FROM=user HIKYAKU_ANSWER_ITEMS=/);
   assert.ok(output.command.includes(`${q3},${q4}`));
   assert.ok(output.argv[2]?.startsWith("次の事項はユーザーの答えで閉じます"));
   assert.ok(output.argv[2]?.includes(`ledger decide build-01 ${q3} 001-test --decision decided --by user --input='既存の API は残す'`));
@@ -354,7 +354,7 @@ test("CLI: conductor launch はリスクを受け入れうる答えに申告を�
   assert.equal(run("--ask", "review-findings", "--choice", "fix").status, 0);
 
   const first = launched(directory, ...RESUME, "--from", "supervisor", "--ask", "questions", "--no-risk");
-  assert.match(first.command, /^HIKYAKU_CONDUCTOR_CHILD=1 HIKYAKU_ANSWER_FROM=supervisor HIKYAKU_ANSWER_ASK=questions HIKYAKU_ANSWER_RISK=none HIKYAKU_ANSWER_TOKEN=/);
+  assert.match(first.command, /^HIKYAKU_CONDUCTOR_CHILD=1 CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1 HIKYAKU_ANSWER_FROM=supervisor HIKYAKU_ANSWER_ASK=questions HIKYAKU_ANSWER_RISK=none HIKYAKU_ANSWER_TOKEN=/);
   assert.equal(typeof first.answerToken, "string");
   assert.ok(first.command.includes(`HIKYAKU_ANSWER_TOKEN=${first.answerToken}`));
   const second = launched(directory, ...RESUME, "--from", "supervisor", "--ask", "questions", "--no-risk");
@@ -631,4 +631,14 @@ test("CLI: ledger answers は監督が答えた問いを並べ、none を「リ�
     [null, null],
   ]);
   assert.equal(readFileSync(join(directory, LEDGER), "utf8"), before);
+});
+
+const HANDOVER_TEXT = "<hikyaku-blocked>\n完了時点の見込みが上限を超えるので切り替えます。\nhandover: implement\n</hikyaku-blocked>";
+
+test("parseFinalText: 子のセッションの記録で裏取りできた handover は検査を外し、できなければ従来どおり検査する", () => {
+  const verified = parseFinalText(HANDOVER_TEXT, { sessionId: "s1", isHandover: (session, step) => session === "s1" && step === "implement" });
+  assert.equal(verified.outcome, "blocked");
+  assert.equal(verified.handover, "implement");
+  assert.equal(parseFinalText(HANDOVER_TEXT, { sessionId: "s2", isHandover: (session) => session === "s1" }).outcome, "violation");
+  assert.equal(parseFinalText(HANDOVER_TEXT).outcome, "violation", "オプションが無ければ信じない");
 });

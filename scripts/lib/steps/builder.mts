@@ -27,10 +27,10 @@ function reportedPeak(ctx: StepContext): number | undefined {
   return latestPeak(ctx.events.filter((event) => event.skill === "builder"));
 }
 
-/** 見積もり直した予測ピークが split_above を超えたら、分割を検討する（build-manager） */
+/** 見積もり直した予測ピークが見積もりの上限（[context] limit × estimate_ratio）を超えたら、分割を検討する（build-manager） */
 function needsSplit(ctx: StepContext): boolean {
   const peak = reportedPeak(ctx);
-  return peak !== undefined && peak > ctx.config.peakBands.splitAbove;
+  return peak !== undefined && peak > ctx.config.peakBands.estimateLimit;
 }
 
 /** tasklist.md（作業ツリー）の PR 列が埋まっているか */
@@ -99,7 +99,7 @@ export const BUILDER_STEPS: SkillSteps = {
       call: "build-manager",
       when: needsSplit,
       reason: (ctx) =>
-        `見積もり直した予測ピークが ${formatK(reportedPeak(ctx))} で、split_above（${formatK(ctx.config.peakBands.splitAbove)}）を超えています`,
+        `見積もり直した予測ピークが ${formatK(reportedPeak(ctx))} で、見積もりの上限（${formatK(ctx.config.peakBands.estimateLimit)}）を超えています`,
     },
     {
       id: "G7",
@@ -133,7 +133,7 @@ export const BUILDER_STEPS: SkillSteps = {
       checkpoint: "approval",
     },
     // リトライの上限で止まるときは、failed --reason に行き詰まりの報告を添える（retry-policy.md）
-    { id: "implement", kind: "run", title: "実装とテストコードの生成", checkpoint: "implement", escalates: true },
+    { id: "implement", kind: "run", title: "実装とテストコードの生成", checkpoint: "implement", escalates: true, handover: true },
     { id: "verify", kind: "run", title: "ローカル検証", escalates: true },
     {
       // 全プロファイル必須（when 無し）。builder 自身のスコープとデータ安全の確認はここへ移した（US-2.5）

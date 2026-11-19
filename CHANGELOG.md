@@ -66,12 +66,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **`hikyaku step restart`**: 同じ作業単位で、スキルの手順を最初から回し直す区切りを記録する。これより前の記録は現在地の導出に使わない（architect の追加設計、内部スキルの呼び直し）。`--round` で回の種類（スキルが定義した値だけ）を記録でき、スキルの定義はその値で手順を変える
 - ステップの定義に `requires`（記録の欠けの判定には使わない完了の条件）を足した。前から存在しうるファイルの検査を、完了の条件としてスクリプトで確かめられる
 - **`progress.jsonl`**: 作業単位のディレクトリに追記される手順の記録。結果・理由・ユーザーの答え・見積もり直した予測ピーク・作った PR・報告した時点のコンテキスト・セッション ID・Hikyaku の版が入る。成果物と一緒にコミットする
-- **区切りでのコンテキストの実測**: G8 の提示・実装開始前・レビュー前で、`step next` がメインセッションのコンテキストを測り、`[context]` の目安（既定 250k / 300k / 400k）と比べる。超えても止めず、builder が継続か分割かを判断し、継続するなら次のゲートの報告で伝える（[#68](https://github.com/tak-solder/hikyaku/issues/68)）
-- **`[context]` 設定**: `approval` / `implement` / `review`。整数か、単位を付けた文字列（`"250k"`）で書く
+- **区切りでの完了時点の見込み**: G8 の提示・実装開始前・レビュー前で、`step next` がメインセッションのコンテキストを測り、完了時点の見込み（残りの見込みは `base + perPeak × 予測ピーク`。係数は同じセッションで完了まで進んだビルドの `progress.jsonl` から求め、5件に満たないうちは既定値）に誤差（実績の上振れの p90。既定は G8・実装開始前で 10%、レビュー前で 5%）を足して `[context] limit` と比べ、継続（`continue`）・セッションの切り替え（`switch`）・分割（`split`）のどれかを推奨する。切り替えた場合の見込みは `plan.md` の内訳の固定費 + 読み込みから求める。レビュー前の推奨は常に継続。directive の `context` に `forecast` が載り、上限を超える見込みのまま継続した区切りは `overruns` で次のゲートの報告・完了の案内に出る（[#68](https://github.com/tak-solder/hikyaku/issues/68)）
+- **`[context]` 設定**: `limit`（1セッションのピークの上限。既定 `"500k"`。整数か、単位を付けた文字列）と、`estimate_ratio`（見積もりの上限 = limit × この割合。既定 `"90%"`）・`merge_ratio`（統合の目安。既定 `"60%"`）。割合は `"90%"` か `0.9` で書き、`merge_ratio` は `estimate_ratio` より小さくなければならない。`hikyaku config --json` の `context` と `peakBands`（`mergeHint` / `estimateLimit`）に出る
 - `docs/migration/v2-to-v3.md`
-- **Stop フック**（`hooks/hooks.json` → `hikyaku step hook stop`）: スキルの手順の途中でセッションが止まろうとしたら、1回だけ続きを促す。止めるのは、そのセッションが手順を進めていて（`progress.jsonl` にそのセッションの ID がある）、次の1手が `run` か `call` のときだけ。内部スキルを呼んでいる最中は、呼ばれたスキルの1手で判定する（`call` のほか、`run` のステップの中から呼んだときや、手順を終えたあとに呼び直したときも含む）。`cycle close` で終えたサイクルも、CLOSE の手順が PR まで残っていれば見る。`gate` / `done` / `stop`、同じターンの2回目（`stop_hook_active`）、非対話規約のブロックで終えた出力では止めない。判定できないときも止めず、終了コードは常に 0（[#50](https://github.com/tak-solder/hikyaku/issues/50)）
+- **Stop フック**（`hooks/hooks.json` → `hikyaku step hook stop`）: スキルの手順の途中でセッションが止まろうとしたら、1回だけ続きを促す。止めるのは、そのセッションが手順を進めていて（`progress.jsonl` にそのセッションの ID がある）、次の1手が `run` か `call` のときだけ。内部スキルを呼んでいる最中は、呼ばれたスキルの1手で判定する（`call` のほか、`run` のステップの中から呼んだときや、手順を終えたあとに呼び直したときも含む）。`cycle close` で終えたサイクルも、CLOSE の手順が PR まで残っていれば見る。`gate` / `done` / `stop`、同じターンの2回目（`stop_hook_active`）、非対話規約のブロックで終えた出力、バックグラウンドの作業（Stop の入力の `background_tasks`）が残っているとき、そのセッションの最後の記録がセッションの切り替え（`handover`）のときは止めない。判定できないときも止めず、終了コードは常に 0（[#50](https://github.com/tak-solder/hikyaku/issues/50)）
 - **`hikyaku step where [<cycle>]`**: このチェックアウトの作業ツリーにある `progress.jsonl` を読み、記録のある作業単位ごとに `step next` と同じ1手を返す。指定したサイクルの作業単位だけを並べ（init / token-guide は混ぜない）、終えたサイクルも読む。close-cycle の最初の振り返りの途中も、close-cycle の作業単位として並べる。v2 で作成したサイクルでは `legacy` に案内を返す
-- **予測ピーク**: ビルドの大きさを、BP ではなくメインセッションのコンテキストのピークの予測（トークン）で判定する。予測は固定費・読み込み・実装・テスト・未知の領域の5成分の和で、build-manager と builder が見積もりのガイドに沿って成分ごとにトークンと根拠を出し、CLI が合計・判定・記録を行う。判定は `[context]` の帯で、既定では 300k 未満が統合を検討（推奨のみ）、300k〜450k が狙い、450k 超が分割を検討（原則として分割）。BP は表が外れると見積もりと実績が同じように外れ、校正できなかったため（[#68](https://github.com/tak-solder/hikyaku/issues/68)）
+- **予測ピーク**: ビルドの大きさを、BP ではなくメインセッションのコンテキストのピークの予測（トークン）で判定する。予測は固定費・読み込み・実装・テスト・未知の領域の5成分の和で、build-manager と builder が見積もりのガイドに沿って成分ごとにトークンと根拠を出し、CLI が合計・判定・記録を行う。判定は `[context] limit` に割合を掛けた帯で、既定では統合の目安（300k）未満が統合を検討（推奨のみ）、300k〜450k が狙い、見積もりの上限（450k）超が分割を検討（原則として分割）。BP は表が外れると見積もりと実績が同じように外れ、校正できなかったため（[#68](https://github.com/tak-solder/hikyaku/issues/68)）
 - **`hikyaku tokens estimate [<cycle>] --fixed --reading --implementation --tests --unknown`**: 成分の予測を合計し、予測ピークと判定を返す。表と tasklist の値は k 単位で書くが丸めない（`450.4k`）ので、そのまま `--peak` に渡しても判定は変わらない。5成分すべてが必須（該当しなければ 0）。`--<成分>-basis` で根拠を添える。`--markdown` の表の最後の行に、見積もりに使ったガイドの版とハッシュが入る
 - **`hikyaku tokens guide [<cycle>]`**: 有効なガイド（プロジェクトの `{HIKYAKU_ROOT}/token-guide/guide.md` か、標準の `skills/build-manager/references/token-guide.md`）と、その版・ハッシュ・判定の帯を返す
 - **`hikyaku tokens stamp`**: プロジェクトのガイドの版を上げる。無ければ標準の本文をコピーして version 1・`based_on` 付きで作り、本文が変わっていれば version を上げて hash を合わせる。`--dry-run` あり
@@ -87,7 +87,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - close-cycle: PR を作ったあとの `followups` ステップを加えた。そのサイクルで予測ピークが同じ向きに 20% を超えて外れたビルドが2件以上あれば `/hikyaku:token-guide` を呼び、G10 でフックにすると決まった知見があれば動作を確かめてフックを書く（サイクルの記録にフックの候補があるときは、G10 の直後の `hooks` ステップで採るかを記録し、その記録で決める）。どちらも別のブランチの PR にし、採否はマージで決める。未マージの token-guide の PR があれば見送る。ほかに走行中のサイクルがあっても見直しは止めない（残りのビルドは補正後の版で見積もられ、予測の表に版が残るので比較は版ごとに分けられる）
 - `hikyaku tokens history <cycle>`: サイクルを指定すると、見積もりのガイドの見直しを勧めるか（`review`）を返す。実測の無いビルドと、ガイドの版が記録に無いビルドは判定から外す
 - token-guide: close-cycle から呼ばれる回（`--round auto`）を加えた。承認のゲートを置かず、採否を判断できる根拠（ビルドごとの予測・実測・比率、変更前後の文面）を PR の本文に載せる
-- **`[context] merge_below` / `split_above`**: 予測ピークの判定の帯（既定 `"300k"` / `"450k"`）。`merge_below` は `split_above` より小さくなければならない
+- **セッションの切り替え（`step report build-NN implement --result handover --reason <理由>`）**: 区切りの推奨が切り替えのとき、G8 を承認したセッションが implement の手前で切り替えを記録して終える。implement は完了にならず、新しいセッションが implement から続ける。Stop フックは切り替えを記録したセッションを引き止めない。conductor の子は本文の行頭に `handover: implement` を置いた blocked で終え、`conductor parse` は子のセッションの記録で裏取りできたときだけ `handover` を返して行き詰まりの報告の検査を外す。監督は同じビルドを新しい session で起動し直す
 - **`hikyaku tokens session [<phase> [<cycle>]]`**: セッションのコンテキストを、Claude Code のトランスクリプトから実測する。ピーク・開始時の固定分・最新の値・API 呼び出し回数・出力トークンの合計・コンパクション回数・モデル・ホストとその版を返す。引数なしでは `CLAUDE_CODE_SESSION_ID` で現在のセッションを測り、`<phase>` を渡すとそのブランチのセッションから、そのブランチでの API 呼び出しが最も多いものを本体として選ぶ（候補も出力する）。`--transcript <path>` で記録を直接指定できる。読めない・見つからないときは推測せず「計測不可」とその理由を返す。予測ピークと突き合わせる実測（[#68](https://github.com/tak-solder/hikyaku/issues/68)）
 - **`[diff]` 設定**: `exclude`（生成物として数えないパスの glob）と `tests`（テストとして分けるパスの glob）。`tokens history build-NN` の差分の集計に使う。既定値はロックファイル・スナップショット・生成コードと、一般的なテストのパス。書いた配列は既定値を置き換える
 - **`hikyaku tokens history [<cycle>] [--group-by model|hikyaku|host|guide]`**: 各ビルドの retrospective.md の「予測ピークの振り返り」から、予測（architect / builder 段階）・実測のピーク・乖離・比率・開始時の固定分・区切りでのコンテキスト（`progress.jsonl` から）・呼び出し回数・コンパクション・追加行数・モデル・ガイドの版・Hikyaku の版を並べる。`--group-by` は群ごとに件数・予測と実測の平均・実測の範囲・乖離と比率の平均を添える
@@ -166,7 +166,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - CI（check-scripts）で `step lint` を実行する
 - retrospective: 「BP見積もりの振り返り」を「予測ピークの振り返り」に置き換えた。段階表（architect / builder 段階の予測ピーク）・セッション行・乖離（実測 − builder 段階）・成分ごとの乖離の要因・builder 段階の内訳表・セッションの実測表（`tokens session --markdown`）・差分の集計表（`tokens history build-NN --markdown`）を記録する。実績 BP（実測と申告からの算出）は廃止した
 - tasklist.md: `BP` 列を `予測ピーク` 列（`380k` の形）にした。`tasklist add / update` は `--bp` の代わりに `--peak <トークン数>` を受け取る。v2 の見出し（`BP` 列）の tasklist.md は読めるが、書き込みは止める
-- builder: plan で予測ピークを見積もり直し、`--peak` が `[context] split_above` を超えたら分割の検討（split）を返す。plan.md の「BP見積もり」は「予測ピーク」（読むファイル・作成するファイルの列挙と内訳表）になった
+- builder: plan で予測ピークを見積もり直し、`--peak` が見積もりの上限（`[context] limit × estimate_ratio`）を超えたら分割の検討（split）を返す。plan.md の「BP見積もり」は「予測ピーク」（読むファイル・作成するファイルの列挙と内訳表）になった
 - doc-reviewer: `context: tasklist` / `plan` の BP 入力値の乖離の観点を、予測ピークの成分の乖離（読み込みと未知の領域の取りこぼしを優先して見る）に置き換えた
 - init: `bp-guide/` を生成しなくなった。生成する `.hikyaku.config` の雛形から `bp_max` を外し、`[context]` の雛形を加えた
 - validate: `bp-guide/` の検査を、`token-guide/guide.md` の版の宣言の検査に置き換えた
@@ -191,6 +191,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **`pr request-reviewers` と `pr ready` は `gh` が使えなくても手順を止めない。** `gh` の失敗（無い・認証・GraphQL・`gh pr edit` / `gh pr ready`）では、`applied: false`・`reason`（`gh-unavailable` / `gh-failed`）・`stage`・`manual`（ユーザーが代わりに行うこと）を返し、終了コード 0 で終わる（`external sync` にそろえた）。`pr request-reviewers` はアサインがオフか一覧が空なら `gh` を呼ばない。`pr ready` は conductor の子では `gh` を呼ばずに Draft のまま返す。監督の `pr ready --for-merge` と、`gh pr view` の応答の形が想定外のときは、従来どおり終了コード 1（`gh api graphql` の失敗は応答の形によるものも `gh-failed`）
 - conductor: ユーザーに上げる問いはその場で尋ねず、子に記録させて（`--escalate`）依存しないビルドを先に進め、着手できるビルドが無くなったら `conductor waiting` の問いをまとめて尋ねる。答えは待っているビルドのブランチへ conductor ブランチを取り込んでから `--from user --closes` で渡す（session-id が無ければ新しく起動する）。監督の答えは `--from supervisor` で渡し、拒まれたらユーザーに上げる。ユーザーが「監督に任せる」と答えても監督は判断しない。障害・2回目の violation・stepProblems・`check-pr` の不合格は従来どおりその場で上げる。非対話規約に、ユーザーに上げる問いの記録と `waiting:` の blocked、`--by user` の縛りを足した
 - conductor: 同意ゲートは常にユーザーに上がり、`escalate` / `delegate` で変えられない。G6・G8 は確認に分類を改め、既定で監督が答える。`conductor parse` は子の手順のゲートの `approval` で振り分け（`step.approval` / `step.approvalReason` を返す）、`conductor asks` の JSON に `consentWhen` が付く。`ask.handler` の値 `human` は `user` になった。conductor スキルは Step 0 で同意ゲートを監督に委任しなくなり、G10 を監督が承認する手順を除いた
+
+- conductor: 子を `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` で起動する。非対話の子は、バックグラウンドのサブエージェント（doc-reviewer・test-spec）やレビューの完了を待てずに止まっていたため。非対話規約（`headless-protocol.md`）に、サブエージェントとレビューを前景で完了まで待つこと、ブロックの本文と成果物をワークスペースの言語で書くこと、ゲートの承認の前に後ろの作業（G8 の前の実装、handoff.md など）を始めないこと、Bash を単一のコマンドで呼び書き換えは Edit で行うこと、`gh` で PR を作れないときは本文を `.tmp/hikyaku-pr-{phase}.md` に書いて blocked で監督に代行を頼むこと、セッションの切り替えの終え方を足した。conductor スキルの blocked の扱いに、`handover` と PR の作成の代行を足した
+- `step next` が「後ろのステップの成果物が先にある」で止まるときの案内を直した。現在地を終える前に後ろの成果物を先に書いた場合は、成果物を消さずに現在地を終えて報告してから続けるよう示す（手順の外で実施した場合の記録の仕方は従来どおり）
+- builder: G8・implement・review の指示を、区切りの推奨（継続・切り替え・分割）に従う形に改めた。推奨と違う手を選ぶときは、次のゲートの報告で見込みの値と理由を伝える。review の `review run` は、conductor の子では1つずつ前景で実行する
+- build-manager・builder・patch・conductor・doc-reviewer の directive の値と指示の `mergeBelow` / `splitAbove` を `mergeHint` / `estimateLimit`（見積もりの上限）に、patch の fit の `overSplit` を `overEstimate` に改名した
 
 ### Removed
 
@@ -223,14 +228,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `pr request-reviewers` / `pr ready` の終了コード 1 で `gh` の失敗を判定していた独自のスクリプトは、出力の `applied: false` を読むよう直す
 
 
-- **BP は予測ピークに置き換わり、換算できないので自動では移行しない。** リポジトリルートの `.hikyaku.config` の `bp_max` を削除する（閉じたサイクルの `.hikyaku.config` に残った `bp_max` / `[bp_actual]` は履歴として読み飛ばす。進行中のサイクルに残っていると、そのサイクルの `step`・`tokens estimate`・`tasklist` の書き込みが止まり、`validate` も知らせる）（分割の境目は `[context] split_above`、既定 450k）。`{HIKYAKU_ROOT}/bp-guide/README.md` にリポジトリ固有の数え方を書いていたら、`/hikyaku:token-guide` で見積もりのガイドに書き直してから `bp-guide/` を削除する。`[pr] reviewers_skip` の `bp-guide` は `token-guide` に直す（`docs/migration/v2-to-v3.md`）
+- **BP は予測ピークに置き換わり、換算できないので自動では移行しない。** リポジトリルートの `.hikyaku.config` の `bp_max` を削除する（閉じたサイクルの `.hikyaku.config` に残った `bp_max` / `[bp_actual]` は履歴として読み飛ばす。進行中のサイクルに残っていると、そのサイクルの `step`・`tokens estimate`・`tasklist` の書き込みが止まり、`validate` も知らせる）（分割の境目は見積もりの上限で、`[context] limit`（既定 500k）の 90%）。`{HIKYAKU_ROOT}/bp-guide/README.md` にリポジトリ固有の数え方を書いていたら、`/hikyaku:token-guide` で見積もりのガイドに書き直してから `bp-guide/` を削除する。`[pr] reviewers_skip` の `bp-guide` は `token-guide` に直す（`docs/migration/v2-to-v3.md`）
 - 見積もりのガイドは、無ければ標準で動くので、置かなくてよい。`/hikyaku:token-guide` が補正するときに作られる
 - **廃止した論理名の行が `document-guide.md` に残っていると `hikyaku validate` が失敗する。** 行を消すだけにせず、`/hikyaku:init` を実行して中身を振り分ける。落とし穴集には、再発しても気づけない知見（テストが通ってしまう類）が混ざっているため。手順は [v2 → v3 移行ガイド](docs/migration/v2-to-v3.md#永続ドキュメントの論理名の整理)
 - handoff.md と retrospective.md の形式が変わった。v2 の形式からは `hikyaku promotions` が候補を集められないが、進行中のサイクルを v2 のまま終えていれば対応は不要
 - フックは Hikyaku が直接は有効にしない。close-cycle が別のブランチの PR にするので、採るならマージする
 - **v2 で作成したサイクルは、v3 の各フェーズ（planner / architect / builder / close-cycle）では扱わない。** `step next` が止まり、v2 のまま終えるよう案内する。進行中のサイクルは v2 のプラグインで終えてから上げる（`docs/migration/v2-to-v3.md`）
 - `progress.jsonl` はコミット対象。`.gitignore` で除外しない。置き場所は `planning/`・`design/`・`build-NN/`、サイクルのディレクトリ直下（create-cycle・close-cycle）、HIKYAKU_ROOT 直下（init）、`token-guide/`（token-guide）
-- `[context]` は既定値のままで動くので、設定の変更は不要
+- `[context]` は既定値のままで動くので、設定の変更は不要。v3 の途中の版で使っていた `[context]` の `merge_below`・`split_above`・`approval`・`implement`・`review` は廃止し、書いてあるとエラーになる。`split_above` を変えていたなら `limit` を `split_above ÷ 0.9` を目安に書き換え、ほかのキーは削除する
 - Stop フックは、プラグインを有効にすると全てのセッションで動くが、Hikyaku の手順を進めていないセッションでは何もしない。対応は不要
 - v2 の retrospective.md（「BP見積もりの振り返り」）は `tokens history` に並ばない。変更は不要
 - 差分の集計（`tokens history build-NN`）は、ロックファイル・スナップショット・生成コードを数えない。数えたいときは `[diff] exclude = []` を、テストの判定を変えたいときは `[diff] tests` を書く（既定値を置き換える）

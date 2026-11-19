@@ -15,8 +15,12 @@ import { appendJsonl, readJsonl } from "./jsonl.mts";
 
 export const PROGRESS_FILE = "progress.jsonl";
 
-export type StepResult = "done" | "skipped" | "approved" | "rejected" | "failed";
-export const STEP_RESULTS: StepResult[] = ["done", "skipped", "approved", "rejected", "failed"];
+/**
+ * handover は、ビルドの途中でセッションを切り替えたこと（builder の implement に入る前）。
+ * そのステップは完了にせず、新しいセッションが同じステップから続ける
+ */
+export type StepResult = "done" | "skipped" | "approved" | "rejected" | "failed" | "handover";
+export const STEP_RESULTS: StepResult[] = ["done", "skipped", "approved", "rejected", "failed", "handover"];
 
 /**
  * 同じ作業単位で、そのスキルの手順を最初から回し直す区切り（step restart）。

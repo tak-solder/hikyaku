@@ -134,13 +134,10 @@ register({
         `  exclude  ${config.diff.exclude.join(", ")}`,
         `  tests    ${config.diff.tests.join(", ")}`,
         "",
-        "[context]（区切りでのコンテキストの目安）:",
-        `  approval   ${config.context.approval.toLocaleString("en-US")}`,
-        `  implement  ${config.context.implement.toLocaleString("en-US")}`,
-        `  review     ${config.context.review.toLocaleString("en-US")}`,
-        "[context]（予測ピークの判定の帯）:",
-        `  merge_below  ${config.peakBands.mergeBelow.toLocaleString("en-US")}`,
-        `  split_above  ${config.peakBands.splitAbove.toLocaleString("en-US")}`,
+        "[context]（メインセッションのコンテキストの上限）:",
+        `  limit           ${config.context.limit.toLocaleString("en-US")}`,
+        `  estimate_ratio  ${Math.round(config.context.estimateRatio * 100)}%（見積もりの上限 ${config.peakBands.estimateLimit.toLocaleString("en-US")}）`,
+        `  merge_ratio     ${Math.round(config.context.mergeRatio * 100)}%（統合の目安 ${config.peakBands.mergeHint.toLocaleString("en-US")}）`,
       );
       if (config.external.githubRepo) lines.push(`  github_repo  ${config.external.githubRepo}`);
       if (config.askAtCreate.length > 0) {

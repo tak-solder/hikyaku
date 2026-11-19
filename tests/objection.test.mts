@@ -256,7 +256,7 @@ test("step report: decided（解釈）・中・別のステップの異議はゲ
 test("step report: 内部スキルの G6 でも高の異議で拒否し、記録が壊れていたら拒否する", (t) => {
   const directory = built(t);
   write(directory, `${BUILD}/plan.md`, "# plan\n");
-  // 見積もり直しで split_above を超え、build-manager を呼ぶ
+  // 見積もり直しで見積もりの上限を超え、build-manager を呼ぶ
   report(directory, "plan", "--result", "done", "--peak", "500k");
   report(directory, "plan-review", "--result", "done");
   for (const step of ["load", "scope", "estimate", "dry-run", "tasklist-review"]) {
