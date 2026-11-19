@@ -61,8 +61,8 @@
   - ✅ import は拡張子必須（`import { x } from "./config.mts"`）。パスエイリアスは使えません
 - 変更したら `npx tsc --noEmit` を通してください
 - スクリプトのテストは `tests/` の `.test.mts` に置き、Node 標準の `node:test` と `node:assert/strict` を使います。`npm test` で実行し、テスト用の依存も増やしません。CLI の結合テストは一時 Git リポジトリで実行し、作業中のワークスペースや外部サービスに依存させないでください
-- スクリプトを変更したら `npm test` も通してください。CI の `check-scripts` はテスト本体・補助ファイルを型チェックし、単体・CLI 結合テストを実行します
-- 予測ピークの標準のガイド（`skills/build-manager/references/token-guide.md`）の本文を変えたら、先頭の `version` を上げて `hash` を本文に合わせてください。`tests/tokens.test.mts` が食い違いを検出し、CI（check-scripts）の `npm test` も同じテストを実行します
+- スクリプトを変更したら `npm test` も通してください。CI の `check-scripts` はテスト本体・補助ファイルを型チェックし、単体・CLI 結合テストをファイル単位で分けて並列に実行します。CLI はテストから `tests/helpers.mts` の `cli` 系で起動してください（型剥がしの結果を使い回すローダーを通すため）
+- 予測ピークの標準のガイド（`skills/build-manager/references/token-guide.md`）の本文を変えたら、先頭の `version` を上げて `hash` を本文に合わせてください。`tests/tokens.test.mts` が食い違いを検出し、CI（check-scripts）も同じテストを実行します
 - 書き込みを伴うコマンドには必ず `--dry-run` を用意してください。承認はスキル側が取ります
 - patch のブランチ名（`{prefix}{sep}patch{sep}{YYYYMM}{sep}{slug}`）と作業単位（`patches/{YYYYMM}/{slug}/`）の対応は `scripts/lib/branch.mts` と `scripts/lib/patch.mts` が正です。Stop フックに限らず、ユーザーが手で呼ぶコマンドも含めて、patch の記録を全件走査する処理を足さないでください。`{HIKYAKU_ROOT}/patches/` を読む処理は、現在のブランチの patch か、サイクルの中の patch に絞ります（サイクルに属さない patch の記録はマージのたびに増えます）
 - 子として動くスキル（architect / builder / build-manager / close-cycle / retrospective）にユーザーへ尋ねる箇所を足したら、`（ask: <id>）` のタグを付け、`scripts/lib/conductor.mts` の `ASKS` にも同じ ID を足してください。ID の改名・削除も両方で行います。`node scripts/hikyaku.mts conductor lint` が食い違いを検出し、CI（check-scripts）も同じコマンドを実行します。タグの付け忘れは検出できません
