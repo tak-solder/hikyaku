@@ -406,7 +406,7 @@ export interface ContextLimits {
   mergeRatio: number;
 }
 
-export const DEFAULT_CONTEXT_LIMITS: ContextLimits = { limit: 600_000, estimateRatio: 0.9, mergeRatio: 0.6 };
+export const DEFAULT_CONTEXT_LIMITS: ContextLimits = { limit: 600_000, estimateRatio: 0.9, mergeRatio: 2 / 3 };
 
 /** 上限と割合から、予測ピークの判定の帯を求める */
 export function peakBandsOf(limits: ContextLimits): PeakBands {
@@ -1115,7 +1115,7 @@ function retiredKeyErrors(table: TomlTable, where: string): HikyakuError[] {
       `${where}: [context] ${retiredContext.join(" / ")} は v3 で廃止しました`,
       [
         "[context] は上限（limit、既定 \"600k\"）だけを決める形になりました。",
-        "見積もりの上限（分割を検討する境目）は limit × estimate_ratio（既定 90%）、統合の目安は limit × merge_ratio（既定 60%）で求めます。",
+        "見積もりの上限（分割を検討する境目）は limit × estimate_ratio（既定 90%）、統合の目安は limit × merge_ratio（既定 2/3）で求めます。",
         "区切り（G8・実装開始前・レビュー前）の目安は、完了までの見込みを limit と比べる判定に置き換わりました。",
         "split_above を変えていたなら limit = split_above ÷ 0.9 を目安に書き換え、ほかのキーは削除してください（docs/migration/v2-to-v3.md）。",
       ].join("\n"),

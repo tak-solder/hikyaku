@@ -116,8 +116,8 @@ export interface PeakBands {
   estimateLimit: number;
 }
 
-/** 既定の limit（600k）に、既定の割合（60% / 90%）を掛けた値 */
-export const DEFAULT_PEAK_BANDS: PeakBands = { mergeHint: 360_000, estimateLimit: 540_000 };
+/** 既定の limit（600k）に、既定の割合（2/3 / 90%）を掛けた値 */
+export const DEFAULT_PEAK_BANDS: PeakBands = { mergeHint: 400_000, estimateLimit: 540_000 };
 
 /**
  * merge  … 小さい。統合を検討する（推奨のみ。分けたままでもよい）

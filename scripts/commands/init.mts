@@ -325,7 +325,7 @@ function renderRepoConfig(hikyakuRoot: string): string {
     "[context]",
     '# limit = "600k"',
     '# estimate_ratio = "90%"',
-    '# merge_ratio = "60%"',
+    '# merge_ratio = "66.7%"  # 既定は 2/3',
     "",
   ].join("\n");
 }
