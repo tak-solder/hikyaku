@@ -1,12 +1,12 @@
 /** branch name / branch verify / pr title / session title — 命名規則の適用 */
 
 import { flagBoolean, flagString } from "../lib/args.mts";
-import { branchName, isPatchPhase, parseBranch, renderPrTitle, type Phase } from "../lib/branch.mts";
+import { isPatchPhase, phaseTitleLabel, renderPrTitle, renderSessionTitle } from "../lib/branch.mts";
 import { ValidationError } from "../lib/errors.mts";
-import { currentBranch, defaultBranch, listRemoteBranches } from "../lib/git.mts";
+import { listRemoteBranches } from "../lib/git.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
-import { integrationBranch, requirePhase, resolvableRef, resolvePrBase, scopeFor, stackInputs, stackParent } from "../lib/stack.mts";
+import { requirePhase, resolvePrBase, scopeFor, verifyBranch } from "../lib/stack.mts";
 
 register({
   name: "branch verify",
@@ -68,27 +68,7 @@ register({
   run: async ({ args, operands }) => {
     const phase = requirePhase(operands[0]);
     const { config, cycle, context } = scopeFor(args, phase, operands[1]);
-    const expected = branchName(config.branch, phase, cycle);
-    const actual = currentBranch(config.repoRoot);
-    const parsed = actual === undefined ? undefined : parseBranch(config.branch, actual);
-    const ok = actual === expected;
-
-    const base = config.baseBranch ?? defaultBranch(config.repoRoot);
-    // ここは毎フェーズの冒頭とコミット直前に走るので fetch しない。
-    // PR の base として正なのは pr base（そちらは必要なら追跡参照を更新する）
-    // 判定の材料（tasklist の断面とブランチの一覧）は1回だけ集め、統合ブランチとスタック元で共有する
-    const inputs = context === undefined ? undefined : await stackInputs(config, context, base, { fetch: false });
-    // patch はサイクルの統合ブランチから切る（未マージの conductor ブランチがあればそれ）
-    const start =
-      isPatchPhase(phase) && context !== undefined && inputs !== undefined
-        ? await integrationBranch(config, context, base, { fetch: false, inputs })
-        : { name: base, ref: base === undefined ? undefined : await resolvableRef(config.repoRoot, base) };
-    const startPoint = start.name;
-    // base が分からなければ true/false のどちらとも言えない。推測せず null で返す
-    const onBaseBranch = startPoint === undefined || actual === undefined ? null : actual === startPoint;
-
-    const stacked = await stackParent(config, context, phase, base, { fetch: false, ...(inputs === undefined ? {} : { inputs }) });
-    const prBase = stacked?.name ?? base;
+    const { ok, expected, actual, parsed, base, start, startPoint, onBaseBranch, stacked, prBase } = await verifyBranch(config, phase, cycle, context);
 
     emit(
       {
@@ -186,11 +166,10 @@ register({
   run: ({ args, operands }) => {
     const phase = requirePhase(operands[0]);
     const { config, cycle } = scopeFor(args, phase, operands[1]);
-    const buildId = /^build-(\d+)$/.exec(phase)?.[1];
     const title = renderPrTitle(config.pr.title, {
       cycle,
-      phase: phaseLabel(phase),
-      buildId,
+      phase: phaseTitleLabel(phase),
+      buildId: /^build-(\d+)$/.exec(phase)?.[1],
       title: flagString(args, "build-title"),
     });
     emit({ title, phase, cycle }, () => title);
@@ -309,18 +288,7 @@ register({
       return;
     }
 
-    const buildId = /^build-(\d+)$/.exec(phase)?.[1];
-    const title = renderPrTitle(config.session.title, {
-      cycle,
-      phase: phaseLabel(phase),
-      buildId,
-      title: flagString(args, "build-title"),
-    });
+    const title = renderSessionTitle(config.session.title, phase, cycle, flagString(args, "build-title")) as string;
     emit({ title, phase, cycle }, () => title);
   },
 });
-
-/** タイトルに出すフェーズ名。patch は年月と slug を落とす（{title} に依頼の要約が入るため） */
-function phaseLabel(phase: Phase): string {
-  return isPatchPhase(phase) ? "patch" : phase;
-}

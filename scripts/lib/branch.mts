@@ -201,3 +201,22 @@ export function renderPrTitle(
     .replace(new RegExp(`\\s*${DELIMITERS}\\s*$`), "")
     .trim();
 }
+
+/** タイトルに出すフェーズ名。patch は年月と slug を落とす（{title} に依頼の要約が入るため） */
+export function phaseTitleLabel(phase: Phase): string {
+  return isPatchPhase(phase) ? "patch" : phase;
+}
+
+/**
+ * [session] title のテンプレートからセッション名を作る。空のテンプレートは「変更しない」で、undefined を返す。
+ * patch は年月と slug を落とす（{title} に依頼の要約が入るため）
+ */
+export function renderSessionTitle(template: string, phase: Phase, cycle: string | undefined, title: string | undefined): string | undefined {
+  if (template === "") return undefined;
+  return renderPrTitle(template, {
+    cycle,
+    phase: phaseTitleLabel(phase),
+    buildId: /^build-(\d+)$/.exec(phase)?.[1],
+    title,
+  });
+}

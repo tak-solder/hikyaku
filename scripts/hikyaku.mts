@@ -35,6 +35,7 @@ import "./commands/areas.mts";
 import "./commands/validate.mts";
 import "./commands/external.mts";
 import "./commands/naming.mts";
+import "./commands/start.mts";
 import "./commands/tokens.mts";
 import "./commands/conductor.mts";
 import "./commands/reviewers.mts";

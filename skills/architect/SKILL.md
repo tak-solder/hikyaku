@@ -54,44 +54,40 @@ CLI が確かめた結果。自分で base_branch の名前から判断しない
 次の2つも手順は `step next` が返す。同じ `design/` で手順を回し直すので、Step 0 の中で `step restart` で
 回を区切ってから始める。ブランチ・入力・区切り方は、それぞれの準備の手順に従う。
 
-- `$ARGUMENTS[1]` に `build-{NN}` が指定された場合、または `cycle status` が `building（差し戻し中: build-NN）`
-  を返した場合: 差し戻しからの再設計。`${CLAUDE_PLUGIN_ROOT}/skills/architect/references/return.md`
+- `$ARGUMENTS[1]` に `build-{NN}` が指定された場合、または `start` が差し戻し（`return`）を
+  返した場合: 差し戻しからの再設計。`${CLAUDE_PLUGIN_ROOT}/skills/architect/references/return.md`
   （[return.md](references/return.md)）に従う
 - `$ARGUMENTS[1]` が `add` の場合: 指摘からの追加設計。`add` に続く引数の残り（改行以降も含む）が、
   対応する指摘の内容。`${CLAUDE_PLUGIN_ROOT}/skills/architect/references/add.md`（[add.md](references/add.md)）に従う
 
 ## 作業ステップ
 
-### Step 0: 設定の解決と入力の読み込み
+### Step 0: 準備と入力の読み込み
 
 - [ ] `${CLAUDE_PLUGIN_ROOT}/skills/architect/references/templates.md`: 各種テンプレート（必須）
-- [ ] 設定と対象サイクルを解決する
+- [ ] `$ARGUMENTS[1]` に `build-{NN}` が指定されていれば、差し戻しからの再設計の準備（return.md）へ進む。
+  それ以外は、準備をまとめて行う（作業サイクルの記録・ブランチ・状態の確認・セッション名）
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --require-cycle --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" start architect {cycle}
 ```
 
-`$ARGUMENTS[0]` のサイクルを渡す。省略時は CLI が現在のブランチ → `.hikyaku.local` →
-唯一の進行中サイクルの順で決め、決まらなければ候補を添えてエラーになる。そのときは推測せず
-ユーザーに尋ねて（ask: cycle）指定し直す（別サイクルへコミットする事故になる）。HIKYAKU_ROOT は
-`.hikyaku.config` から解決されるので、引数では受け取らない。
+出力の「次」に従う。
 
-出力の `cycle` と `cycleSource` を、作業対象としてユーザーに1行で示す。
-`unsafeSplit.allowed` が true なら、その `message` も1行で示す（このサイクルでは原則を外せることを、
-分割の前にユーザーが知っておくため）。
+- サイクルを決められずに候補が出たら、推測せずユーザーに尋ねて（ask: cycle）指定し直す（別サイクルへコミットする事故になる）
+- ブランチを尋ねるよう出たら（ask: branch）、現在のブランチが実行環境に割り当てられたものだと分かっていても、
+  **自分で決めずに必ず尋ねる。** セッションの中からは、別の作業のブランチに紛れ込んだ状態と区別できない。
+  どれが妥当かの示唆を添えずに3つを示す: 1. 規則どおり期待する名前のブランチを作る（`git switch -c {期待する名前}`）
+  / 2. 現在のブランチで作業する（`--keep-branch` を付ける）/ 3. 別のブランチを指定する（切り替える）。
+  答えに従って `start` をやり直す
+- 差し戻しと出たら（`return`）、差し戻しからの再設計の準備（return.md）へ進む
+- 止まると出たら、内容を伝えて終了する
+- サイクルを1行で示す。「安全でない分割」の行があれば、それも1行で示す（分割の前にユーザーが知っておくため）。
+  セッション名を設定する（設定する手段が無い環境ではスキップ）
 
-- [ ] 対象サイクルを記録する（次回から尋ねられずに済む）
+成果物をコミットする直前に `branch verify architect {cycle}` でブランチを確かめる。
 
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {cycle}
-```
-
-- [ ] 企画成果物を読み込む（必須）
-  - `cycles/{cycle}/planning/user-stories.md`
-  - `cycles/{cycle}/planning/questions.md`（存在する場合）
-
-いずれも無ければ `/hikyaku:planner` を先に実行するよう案内して終了する。
-
+- [ ] 企画成果物を読み込む: `cycles/{cycle}/planning/user-stories.md` と `planning/questions.md`（存在する場合）
 - [ ] 読むべきドキュメントの候補を取得する
 
 ```bash
@@ -107,52 +103,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context architect {cycle}
 `repo` 管理のドキュメントは既存形式が正。参考として読むが、形式には手を出さない。
 永続ドキュメントがコードと矛盾したら常にコードを正とする（勝手に直さず、codebase-survey.md に記録する）。
 
-- [ ] ブランチを作成し、命名規則どおりか確認する（差し戻しからの再設計・指摘からの追加設計では、
-  それぞれの手順のブランチの決め方に従う）
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify architect {cycle}
-```
-
-出力の `ok` と `onBaseBranch` で分岐する。自分で決めず、この表に従う。
-
-| 状況 | 対応 |
-|---|---|
-| `ok: true` | そのまま続ける |
-| `ok: false` かつ `onBaseBranch: true` | `expected` の名前でブランチを作成して続ける |
-| `ok: false` かつ `onBaseBranch` が `false` / `null` | ユーザーに尋ねる（下記）（ask: branch） |
-
-3つ目は、現在のブランチが実行環境に割り当てられたものだと分かっていても、**自分で決めずに
-必ず尋ねる。** セッションの中からは、別の作業のブランチに紛れ込んだ状態と区別できない。
-尋ねる手段（`AskUserQuestion` など）で次の3つを、どれが妥当かの示唆を添えずに提示する。
-
-1. Hikyaku の規則に従う — `expected` の名前でブランチを作成する
-2. 現在のブランチで作業する
-3. 別のブランチを指定する
-
-ユーザーが 2 か 3 を選んだら、`next` の「着手中」検出が効かなくなることを伝える
-（ブランチ名から導出しているため）。ブランチを決めたら、成果物をコミットする直前にもう一度
-この確認を行う。
-
-- [ ] サイクルの状態を確認する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
-```
-
-ブランチを決めてから実行する（成果物の有無は作業ツリーで判定するため、デフォルトブランチの
-ままでは push 済みの成果物が見えない）。中断からの再開なら、表示された位置から再開する。
-
-`building（差し戻し中: build-NN）` と表示されたら、上の「通常の設計以外の起動」の差し戻しからの再設計に進む。
-
 - [ ] 差し戻しからの再設計・指摘からの追加設計なら、それぞれの準備の手順に従って回を区切る（`step restart`）
-- [ ] セッション名を設定する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title architect {cycle}
-```
-
-返った名前をセッション名に設定する。設定する手段が無い環境と、「変更しません」と返った場合はスキップする。
 
 → Step 1 へ。
 

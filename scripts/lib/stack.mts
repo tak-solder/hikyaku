@@ -9,12 +9,13 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { flagString, type ParsedArgs } from "./args.mts";
-import { isCyclelessPhase, isPatchPhase, isPhase, parseBranch, type Phase } from "./branch.mts";
+import { branchName, isCyclelessPhase, isPatchPhase, isPhase, parseBranch, type ParsedBranch, type Phase } from "./branch.mts";
 import { loadConfig, type ResolvedConfig } from "./config.mts";
 import { cycleDirName } from "./cycles.mts";
 import { patchCycleOf, patchUnitDirectory } from "./patch.mts";
 import { HikyakuError } from "./errors.mts";
 import {
+  currentBranch,
   defaultBranch,
   isAncestor,
   listKnownBranches,
@@ -342,4 +343,51 @@ export async function resolvePrBase(
   }
 
   return { base, ref: await resolvableRef(config.repoRoot, base), stacked, defaultBase };
+}
+
+export interface BranchCheck {
+  ok: boolean;
+  expected: string;
+  actual: string | undefined;
+  parsed: ParsedBranch | undefined;
+  /** デフォルトブランチ（base_branch か origin/HEAD）。特定できなければ undefined */
+  base: string | undefined;
+  /** ブランチを切る元。patch では統合ブランチ、それ以外は base */
+  start: IntegrationBranch;
+  startPoint: string | undefined;
+  /** 切る元に居るか。切る元が分からなければ null（推測しない） */
+  onBaseBranch: boolean | null;
+  stacked: KnownBranch | undefined;
+  prBase: string | undefined;
+}
+
+/**
+ * いま居るブランチを、フェーズの命名規則と突き合わせる（branch verify と start が共有する）。
+ * 毎フェーズの冒頭とコミット直前に走るので fetch しない。PR の base として正なのは pr base
+ */
+export async function verifyBranch(
+  config: ResolvedConfig,
+  phase: Phase,
+  cycle: string | undefined,
+  context: CycleContext | undefined,
+): Promise<BranchCheck> {
+  const expected = branchName(config.branch, phase, cycle);
+  const actual = currentBranch(config.repoRoot);
+  const parsed = actual === undefined ? undefined : parseBranch(config.branch, actual);
+  const ok = actual === expected;
+
+  const base = config.baseBranch ?? defaultBranch(config.repoRoot);
+  // 判定の材料（tasklist の断面とブランチの一覧）は1回だけ集め、統合ブランチとスタック元で共有する
+  const inputs = context === undefined ? undefined : await stackInputs(config, context, base, { fetch: false });
+  // patch はサイクルの統合ブランチから切る（未マージの conductor ブランチがあればそれ）
+  const start =
+    isPatchPhase(phase) && context !== undefined && inputs !== undefined
+      ? await integrationBranch(config, context, base, { fetch: false, inputs })
+      : { name: base, ref: base === undefined ? undefined : await resolvableRef(config.repoRoot, base) };
+  const startPoint = start.name;
+  const onBaseBranch = startPoint === undefined || actual === undefined ? null : actual === startPoint;
+
+  const stacked = await stackParent(config, context, phase, base, { fetch: false, ...(inputs === undefined ? {} : { inputs }) });
+  const prBase = stacked?.name ?? base;
+  return { ok, expected, actual, parsed, base, start, startPoint, onBaseBranch, stacked, prBase };
 }
