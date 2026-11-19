@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { stripTypeScriptTypes } from "node:module";
 import { devNull, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { TestContext } from "node:test";
@@ -9,6 +11,54 @@ import type { BuildRecord } from "../scripts/lib/tasklist.mts";
 import type { CycleRecord } from "../scripts/lib/cycles.mts";
 
 const cliPath = fileURLToPath(new URL("../scripts/hikyaku.mts", import.meta.url));
+const scriptsDirectory = fileURLToPath(new URL("../scripts/", import.meta.url));
+const loaderUrl = new URL("./cli-loader.mjs", import.meta.url).href;
+
+/** テストの実行が終わったら消す一時ディレクトリ（テストをまたいで使い回すもの） */
+function processDirectory(prefix: string): string {
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+  process.on("exit", () => rmSync(directory, { recursive: true, force: true }));
+  return directory;
+}
+
+let stripped: string | undefined;
+
+/**
+ * scripts/ の .mts を型剥がしした結果を、中身のハッシュを名前にして一時ディレクトリへ書く。
+ * CLI の子プロセスは cli-loader.mjs がこれを読み、起動のたびの型剥がしを省く（テストを速くするためだけのもの）
+ */
+function strippedScripts(): string {
+  if (stripped !== undefined) return stripped;
+  const directory = processDirectory("hikyaku-stripped-");
+  // stripTypeScriptTypes は試験的な機能の警告を出す。テストの出力を汚さないよう、この間だけ黙らせる
+  const emitWarning = process.emitWarning;
+  process.emitWarning = () => {};
+  try {
+    for (const entry of readdirSync(scriptsDirectory, { recursive: true, withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith(".mts")) continue;
+      const source = readFileSync(join(entry.parentPath, entry.name), "utf8");
+      const hash = createHash("sha1").update(source).digest("hex");
+      writeFileSync(join(directory, `${hash}.mjs`), stripTypeScriptTypes(source), "utf8");
+    }
+  } finally {
+    process.emitWarning = emitWarning;
+  }
+  stripped = directory;
+  return directory;
+}
+
+function spawnCli(directory: string, extraEnv: NodeJS.ProcessEnv, args: string[], input?: string) {
+  const result = spawnSync(process.execPath, ["--import", loaderUrl, cliPath, ...args], {
+    cwd: directory,
+    encoding: "utf8",
+    env: { ...testEnvironment(), HIKYAKU_TEST_STRIPPED: strippedScripts(), ...extraEnv },
+    timeout: 10_000,
+    ...(input === undefined ? {} : { input }),
+  });
+  assert.ifError(result.error);
+  assert.equal(result.signal, null);
+  return result;
+}
 
 export function temporaryDirectory(t: TestContext): string {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), "hikyaku-test-")));
@@ -34,7 +84,10 @@ export function testEnvironment(): NodeJS.ProcessEnv {
 }
 
 export function repository(t: TestContext): string {
-  const directory = temporaryDirectory(t);
+  return initRepository(temporaryDirectory(t));
+}
+
+function initRepository(directory: string): string {
   const result = spawnSync("git", ["init", "--quiet", "--initial-branch=main", directory], {
     encoding: "utf8", env: testEnvironment(), timeout: 10_000,
   });
@@ -49,22 +102,12 @@ export function cli(directory: string, ...args: string[]) {
 
 /** 環境変数を足して CLI を実行する（tokens session の記録の場所を一時ディレクトリへ向ける等） */
 export function cliWith(directory: string, extraEnv: NodeJS.ProcessEnv, ...args: string[]) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
-    cwd: directory, encoding: "utf8", env: { ...testEnvironment(), ...extraEnv }, timeout: 10_000,
-  });
-  assert.ifError(result.error);
-  assert.equal(result.signal, null);
-  return result;
+  return spawnCli(directory, extraEnv, args);
 }
 
 /** 標準入力を渡して CLI を実行する（フックの入力など） */
 export function cliInput(directory: string, input: string, extraEnv: NodeJS.ProcessEnv, ...args: string[]) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
-    cwd: directory, encoding: "utf8", env: { ...testEnvironment(), ...extraEnv }, input, timeout: 10_000,
-  });
-  assert.ifError(result.error);
-  assert.equal(result.signal, null);
-  return result;
+  return spawnCli(directory, extraEnv, args, input);
 }
 
 export function succeeds(directory: string, ...args: string[]): string {
@@ -73,10 +116,19 @@ export function succeeds(directory: string, ...args: string[]): string {
   return result.stdout;
 }
 
+const workspaceTemplates = new Map<boolean, string>();
+
+/** init 済みの一時リポジトリ。init と cycle new は1回だけ実行し、以降はその結果を写す */
 export function workspace(t: TestContext, withCycle = false): string {
-  const directory = repository(t);
-  succeeds(directory, "init", "--root", "docs/hikyaku");
-  if (withCycle) succeeds(directory, "cycle", "new", "test", "--profile", "standard");
+  let template = workspaceTemplates.get(withCycle);
+  if (template === undefined) {
+    template = initRepository(processDirectory("hikyaku-template-"));
+    succeeds(template, "init", "--root", "docs/hikyaku");
+    if (withCycle) succeeds(template, "cycle", "new", "test", "--profile", "standard");
+    workspaceTemplates.set(withCycle, template);
+  }
+  const directory = temporaryDirectory(t);
+  cpSync(template, directory, { recursive: true });
   return directory;
 }
 
