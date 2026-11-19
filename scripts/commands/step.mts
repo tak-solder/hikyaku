@@ -110,7 +110,7 @@ register({
   name: "step report",
   summary: "1手の結果を進捗に記録し、次の1手を返す",
   usage:
-    "hikyaku step report <phase> <step> [<cycle>] [--skill <内部スキル>] --result done|skipped|approved|rejected|failed [--reason <理由>] [--input <答え>] [--peak <トークン数>] [--findings <件数> --adopted <件数>] [--harm 高|中] [--paths <glob,...>] [--loses <失うもの>] [--pr <URL|番号>] [--dry-run] [--json]",
+    "hikyaku step report <phase> <step> [<cycle>] [--skill <内部スキル>] --result done|skipped|approved|rejected|failed|handover [--reason <理由>] [--input <答え>] [--peak <トークン数>] [--findings <件数> --adopted <件数>] [--harm 高|中] [--paths <glob,...>] [--loses <失うもの>] [--pr <URL|番号>] [--dry-run] [--json]",
   writes: true,
   details: [
     "作業単位のディレクトリの progress.jsonl に1行追記します。報告できるのは現在地のステップと、",
@@ -123,9 +123,11 @@ register({
     "  approved  ゲートの承認。--input にユーザーの答えを添えられる",
     "  rejected  ゲートの差し戻し。--input にユーザーの答えが必須",
     "  failed    失敗した。--reason が必須。現在地は動かない",
+    "  handover  このステップの前でセッションを切り替える（builder の implement だけ）。--reason が必須。",
+    "            現在地は動かず、新しいセッションが同じステップから続ける。Stop フックはこのセッションを引き止めない",
     "",
     "--peak は見積もり直した予測ピークです（380000・380k。分割の検討の判定に使う）。plan の done では必須、",
-    "plan-review では任意です。[context] split_above を超えると、builder は分割の検討（split）を返します。",
+    "plan-review では任意です。見積もりの上限（[context] limit × estimate_ratio）を超えると、builder は分割の検討（split）を返します。",
     "--findings と --adopted は、中間レビュー（planner の review・architecture-review・tasklist-review・",
     "plan-review・test-spec-review）の done で必須です。指摘の件数と、そのうち成果物に反映した件数で、",
     "反映しなかった指摘（主観的として無視したものも）は件数にだけ入ります。集計は review findings で見ます。",
@@ -303,7 +305,7 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
   }
   const reason = flagString(args, "reason");
   const input = flagString(args, "input");
-  if ((result === "skipped" || result === "failed") && (reason === undefined || reason.trim() === "")) {
+  if ((result === "skipped" || result === "failed" || result === "handover") && (reason === undefined || reason.trim() === "")) {
     throw new HikyakuError(`${result} には --reason で理由を添えてください`);
   }
   if (result === "failed" && definition.escalates === true) {
@@ -564,7 +566,7 @@ register({
   run: ({ args, operands }) => {
     const opened = open(args, operands[0], operands[1]);
     const evaluation = evaluate(opened.skill, opened.ctx);
-    const checkpoints = checkpointsOf(opened.ctx.events, opened.ctx.config.context);
+    const checkpoints = checkpointsOf(opened.ctx.events);
     emit(
       {
         skill: opened.skill.skill,
@@ -601,7 +603,7 @@ register({
             "",
             "区切りでのコンテキスト:",
             ...checkpoints.map(
-              (entry) => `  ${entry.label}: ${formatTokens(entry.tokens)} / 目安 ${formatTokens(entry.budget)}${entry.over ? "（超過）" : ""}`,
+              (entry) => `  ${entry.label}: ${formatTokens(entry.tokens)} / 上限 ${formatTokens(opened.ctx.config.context.limit)}`,
             ),
           );
         }

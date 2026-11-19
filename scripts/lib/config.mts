@@ -32,7 +32,7 @@ import {
   DEFAULT_SKIP_MARKERS,
   DEFAULT_TEST_DECLARATIONS,
 } from "./diff-stats.mts";
-import { DEFAULT_PEAK_BANDS, type PeakBands } from "./tokens.mts";
+import type { PeakBands } from "./tokens.mts";
 import type { BranchNaming } from "./branch.mts";
 import {
   checkConductorAsks,
@@ -364,9 +364,9 @@ export interface ResolvedConfig {
   consent: ConsentConfig;
   /** [diff] — ビルドの差分の集計（tokens history build-NN）が数えない生成物と、テストとして分けるパス */
   diff: DiffPatterns;
-  /** [context] — builder の区切りで、メインセッションのコンテキストと比べる目安 */
-  context: ContextBudget;
-  /** [context] merge_below / split_above — 予測ピークの判定の帯 */
+  /** [context] — メインセッションのコンテキストの上限と割合 */
+  context: ContextLimits;
+  /** [context] から求めた予測ピークの判定の帯（見積もりの上限・統合の目安） */
   peakBands: PeakBands;
   /** [rules] — rule を機械の検査やリファクタへ移す候補を出す感度 */
   rules: RulesConfig;
@@ -390,19 +390,28 @@ export interface ResolvedConfig {
 }
 
 /**
- * 区切りごとのコンテキストの目安（トークン）。超えていても止めず、builder が継続か分割かを
- * 判断し、継続するならゲートの報告で伝える（#68）。ウィンドウは 1M を前提にした値
+ * [context] — メインセッションのコンテキストの上限と、そこから求める予測ピークの判定の帯。
+ *
+ * ユーザーが決めるのは上限（limit）だけで、見積もりの上限（plan と build-manager の予測ピークと比べる）と
+ * 統合の目安は上限に対する割合で求める。割合は見積もりの誤差のための余裕なので、ほとんどの人は変えない。
+ * ビルドの途中の区切り（G8・実装開始前・レビュー前）は、完了までの見込みを上限と比べる（forecast.mts）。
+ * 既定値は 1M のウィンドウを前提にした値
  */
-export interface ContextBudget {
-  /** plan と test-spec の承認依頼時（G8） */
-  approval: number;
-  /** 実装開始前 */
-  implement: number;
-  /** レビュー前 */
-  review: number;
+export interface ContextLimits {
+  /** 1セッションのピークの上限（トークン） */
+  limit: number;
+  /** 見積もりの上限 = limit × この割合 */
+  estimateRatio: number;
+  /** 統合の目安 = limit × この割合 */
+  mergeRatio: number;
 }
 
-export const DEFAULT_CONTEXT_BUDGET: ContextBudget = { approval: 250_000, implement: 300_000, review: 400_000 };
+export const DEFAULT_CONTEXT_LIMITS: ContextLimits = { limit: 600_000, estimateRatio: 0.9, mergeRatio: 2 / 3 };
+
+/** 上限と割合から、予測ピークの判定の帯を求める */
+export function peakBandsOf(limits: ContextLimits): PeakBands {
+  return { mergeHint: Math.round(limits.limit * limits.mergeRatio), estimateLimit: Math.round(limits.limit * limits.estimateRatio) };
+}
 
 export interface RulesConfig {
   /** レビューの記録で、同じ rule がこの回数以上引かれたら移す候補にする（サイクルをまたいで数える） */
@@ -1011,53 +1020,62 @@ export function parseTokenCount(value: unknown): number | undefined {
   return Number.isInteger(tokens) && tokens > 0 ? tokens : undefined;
 }
 
-function readContextBudget(table: TomlTable | undefined): ContextBudget {
-  const where = "[context]";
-  const read = (key: keyof ContextBudget): number => {
-    const raw = table?.[key];
-    if (raw === undefined) return DEFAULT_CONTEXT_BUDGET[key];
-    const value = parseTokenCount(raw);
-    if (value === undefined) {
-      throw new HikyakuError(
-        `${where}.${key} はトークン数で指定してください（現在: ${JSON.stringify(raw)}）`,
-        '正の整数（250000）か、k / m の単位を付けた文字列（"250k"）で書いてください。',
-      );
-    }
-    return value;
-  };
-  return { approval: read("approval"), implement: read("implement"), review: read("review") };
+/** 割合の指定。"90%" か 0〜1 の小数（0.9）で書ける */
+export function parseRatio(value: unknown): number | undefined {
+  let ratio: number | undefined;
+  if (typeof value === "number") ratio = value;
+  else if (typeof value === "string") {
+    const match = /^\s*(\d+(?:\.\d+)?)\s*%\s*$/.exec(value);
+    if (match !== null) ratio = Number(match[1]) / 100;
+  }
+  return ratio !== undefined && ratio > 0 && ratio < 1 ? ratio : undefined;
 }
 
-/** [context] merge_below / split_above。merge_below は split_above より小さくなければならない */
-function readPeakBands(table: TomlTable | undefined): PeakBands {
+function readContextLimits(table: TomlTable | undefined): ContextLimits {
   const where = "[context]";
-  const read = (key: string, fallback: number): number => {
-    const raw = table?.[key];
-    if (raw === undefined) return fallback;
-    const value = parseTokenCount(raw);
+  let limit = DEFAULT_CONTEXT_LIMITS.limit;
+  const rawLimit = table?.["limit"];
+  if (rawLimit !== undefined) {
+    const value = parseTokenCount(rawLimit);
     if (value === undefined) {
       throw new HikyakuError(
-        `${where}.${key} はトークン数で指定してください（現在: ${JSON.stringify(raw)}）`,
-        '正の整数（300000）か、k / m の単位を付けた文字列（"300k"）で書いてください。',
+        `${where}.limit はトークン数で指定してください（現在: ${JSON.stringify(rawLimit)}）`,
+        '正の整数（600000）か、k / m の単位を付けた文字列（"600k"）で書いてください。',
+      );
+    }
+    limit = value;
+  }
+  const ratio = (key: "estimate_ratio" | "merge_ratio", fallback: number): number => {
+    const raw = table?.[key];
+    if (raw === undefined) return fallback;
+    const value = parseRatio(raw);
+    if (value === undefined) {
+      throw new HikyakuError(
+        `${where}.${key} は 0 より大きく 1 より小さい割合で指定してください（現在: ${JSON.stringify(raw)}）`,
+        '"90%" か 0.9 のように書いてください。',
       );
     }
     return value;
   };
-  const bands = {
-    mergeBelow: read("merge_below", DEFAULT_PEAK_BANDS.mergeBelow),
-    splitAbove: read("split_above", DEFAULT_PEAK_BANDS.splitAbove),
+  const limits = {
+    limit,
+    estimateRatio: ratio("estimate_ratio", DEFAULT_CONTEXT_LIMITS.estimateRatio),
+    mergeRatio: ratio("merge_ratio", DEFAULT_CONTEXT_LIMITS.mergeRatio),
   };
-  if (bands.mergeBelow >= bands.splitAbove) {
+  if (limits.mergeRatio >= limits.estimateRatio) {
     throw new HikyakuError(
-      `${where}.merge_below（${bands.mergeBelow}）は split_above（${bands.splitAbove}）より小さくしてください`,
-      "merge_below 未満が統合の検討、split_above 超が分割の検討、その間が狙いの帯です。",
+      `${where}.merge_ratio（${limits.mergeRatio}）は estimate_ratio（${limits.estimateRatio}）より小さくしてください`,
+      "予測ピークが limit × merge_ratio 未満なら統合を検討、limit × estimate_ratio（見積もりの上限）超なら分割を検討します。",
     );
   }
-  return bands;
+  return limits;
 }
 
 /** v3 で廃止したキー */
 const RETIRED_KEYS = ["bp_max", "bp_actual", "user_stories_gate"] as const;
+
+/** v3 で廃止した [context] のキー（limit と割合に置き換えた） */
+const RETIRED_CONTEXT_KEYS = ["merge_below", "split_above", "approval", "implement", "review"] as const;
 
 /**
  * v3 で廃止したキーの、移行先を示すエラー。黙って無視すると「設定したのに効かない」になるので、
@@ -1070,7 +1088,7 @@ function retiredKeyErrors(table: TomlTable, where: string): HikyakuError[] {
       `${where}: bp_max は v3 で廃止しました`,
       [
         "ビルドの大きさは BP ではなく、メインセッションのコンテキストの予測ピーク（トークン）で判定します。",
-        '分割を検討する境目は [context] split_above（既定 "450k"）、統合を検討する境目は merge_below（既定 "300k"）です。',
+        '上限は [context] limit（既定 "600k"）で、予測ピークが見積もりの上限（limit の 90%）を超えたら分割を検討します。',
         "bp_max を削除してください（docs/migration/v2-to-v3.md）。",
       ].join("\n"),
     ));
@@ -1087,6 +1105,19 @@ function retiredKeyErrors(table: TomlTable, where: string): HikyakuError[] {
       [
         "G1（user-stories の承認）は要件の合意なので同意として扱い、どのプロファイル・設定でも外せません。",
         "user_stories_gate を削除してください（docs/configuration/profiles.md）。",
+      ].join("\n"),
+    ));
+  }
+  const context = table["context"];
+  const retiredContext = isTable(context) ? RETIRED_CONTEXT_KEYS.filter((key) => context[key] !== undefined) : [];
+  if (retiredContext.length > 0) {
+    errors.push(new HikyakuError(
+      `${where}: [context] ${retiredContext.join(" / ")} は v3 で廃止しました`,
+      [
+        "[context] は上限（limit、既定 \"600k\"）だけを決める形になりました。",
+        "見積もりの上限（分割を検討する境目）は limit × estimate_ratio（既定 90%）、統合の目安は limit × merge_ratio（既定 2/3）で求めます。",
+        "区切り（G8・実装開始前・レビュー前）の目安は、完了までの見込みを limit と比べる判定に置き換わりました。",
+        "split_above を変えていたなら limit = split_above ÷ 0.9 を目安に書き換え、ほかのキーは削除してください（docs/migration/v2-to-v3.md）。",
       ].join("\n"),
     ));
   }
@@ -1129,6 +1160,8 @@ function hasProviderFor(review: TomlTable): boolean {
 /** 廃止したキーを取り除く。閉じたサイクルの設定に残っていても、読むだけの操作は止めない */
 function stripRetiredKeys(table: TomlTable): void {
   for (const key of RETIRED_KEYS) delete table[key];
+  const context = table["context"];
+  if (isTable(context)) for (const key of RETIRED_CONTEXT_KEYS) delete context[key];
   const review = table["review"];
   if (isTable(review)) {
     delete review["provider_for"];
@@ -1483,6 +1516,7 @@ function finalize(
   };
 
   const reviewTable = requireTable(merged, "review", "config");
+  const contextLimits = readContextLimits(readTable(merged, "context"));
   const securityTable = readTable(reviewTable ?? {}, "security");
   const externalTable = readTable(merged, "external");
 
@@ -1518,8 +1552,8 @@ function finalize(
     boundaries: readBoundaries(requireTable(merged, "boundaries", "config")),
     consent: readConsent(requireTable(merged, "consent", "config")),
     diff: readDiffPatterns(readTable(merged, "diff")),
-    context: readContextBudget(readTable(merged, "context")),
-    peakBands: readPeakBands(readTable(merged, "context")),
+    context: contextLimits,
+    peakBands: peakBandsOf(contextLimits),
     rules: readRulesConfig(readTable(merged, "rules")),
     areas: readAreasConfig(readTable(merged, "areas")),
     metrics: readMetricsConfig(readTable(merged, "metrics")),

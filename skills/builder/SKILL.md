@@ -231,9 +231,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next build-{NN} {cycle}
 - 報告したら、成果物と `cycles/{cycle}/build-{NN}/progress.jsonl` をコミット & push する。
   指示ファイルにコミット・push の時機の定めがあれば（implement / verify / agreement-review / review / retrospective / pr）、そちらに従う
 - 迷ったら `step next` を呼び直す。同じ状態なら同じ1手が返る
-- `context` が付いた1手は、コンテキストの区切り（G8・実装開始前・レビュー前）。目安を超えていても
-  止まらず、継続するか分割するかを自分で判断する。継続するなら、次のゲートの報告でそのことを伝える
-  （詳しくは各ステップの指示）
+- `context` が付いた1手は、コンテキストの区切り（G8・実装開始前・レビュー前）。スクリプトが完了時点の
+  見込みを `[context] limit` と比べ、継続・切り替え・分割のどれかを推奨する。止まらずに推奨に従い、
+  違う手を選ぶなら次のゲートの報告で見込みの値と理由を伝える（詳しくは各ステップの指示）
 
 ### doc-reviewer の起動（plan-review / test-spec-review）
 

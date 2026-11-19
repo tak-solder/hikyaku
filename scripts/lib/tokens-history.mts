@@ -11,13 +11,12 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DEFAULT_CONTEXT_BUDGET, type ContextBudget } from "./config.mts";
 import { cycleDir, cycleDirName, type CycleRecord } from "./cycles.mts";
 import { DIFF_LABELS, DIFF_TABLE_HEADERS, parseSplitCount } from "./diff-stats.mts";
 import { parseTables, type MarkdownTable } from "./markdown.mts";
 import { readProgress } from "./progress.mts";
 import { SESSION_LABELS, SESSION_TABLE_HEADERS } from "./session.mts";
-import { checkpointsOf } from "./steps/checkpoints.mts";
+import { checkpointsOf, type CheckpointKey } from "./steps/checkpoints.mts";
 import { COMPONENTS, type ComponentKey, ESTIMATE_HEADERS, GUIDE_ROW_LABEL, parseTokenAmount } from "./tokens.mts";
 
 /** retrospective.md 内の節の見出し */
@@ -63,7 +62,7 @@ export interface PeakRecord {
   /** 差分の集計（tokens history build-NN の表）。無ければ各項目 undefined */
   diff: DiffSummary;
   /** 区切りでのコンテキスト（progress.jsonl から）。記録の無い区切りは含めない */
-  checkpoints: Partial<Record<keyof ContextBudget, number>>;
+  checkpoints: Partial<Record<CheckpointKey, number>>;
 }
 
 export function emptyContext(): SessionContext {
@@ -141,6 +140,26 @@ function diffSummary(table: MarkdownTable | undefined): DiffSummary {
   return diff;
 }
 
+/** 内訳表（tokens estimate --markdown）の成分ごとの値 */
+function componentsOf(table: MarkdownTable): Partial<Record<ComponentKey, number>> {
+  const components: Partial<Record<ComponentKey, number>> = {};
+  for (const row of table.rows) {
+    const component = COMPONENTS.find((c) => c.label === labelOf(row));
+    const value = tokenValue(row[1]);
+    if (component !== undefined && value !== undefined) components[component.key] = value;
+  }
+  return components;
+}
+
+/**
+ * 文書（plan.md・issue.md）に貼った内訳表の成分ごとの値。表が複数あれば最後の表（見積もり直した値）を読む。
+ * 表が無ければ undefined
+ */
+export function estimateComponentsIn(source: string): Partial<Record<ComponentKey, number>> | undefined {
+  const table = parseTables(source).filter((t) => hasHeaders(t, ESTIMATE_HEADERS)).at(-1);
+  return table === undefined ? undefined : componentsOf(table);
+}
+
 /** 「## 予測ピークの振り返り」から次の同レベル見出しまで */
 function peakSection(source: string): string | undefined {
   const lines = source.split("\n");
@@ -186,13 +205,9 @@ export function parsePeakRecord(source: string, meta: Pick<PeakRecord, "cycle" |
 
   const breakdown = tables.find((t) => hasHeaders(t, ESTIMATE_HEADERS));
   if (breakdown !== undefined) {
+    record.components = componentsOf(breakdown);
     for (const row of breakdown.rows) {
-      const label = labelOf(row);
-      const component = COMPONENTS.find((c) => c.label === label);
-      if (component !== undefined) {
-        const value = tokenValue(row[1]);
-        if (value !== undefined) record.components[component.key] = value;
-      } else if (label === GUIDE_ROW_LABEL) {
+      if (labelOf(row) === GUIDE_ROW_LABEL) {
         record.guide = textValue(row[1]);
         record.guideHash = textValue(row[2]);
       }
@@ -231,10 +246,10 @@ export function collectPeakRecords(hikyakuRoot: string, records: CycleRecord[]):
 }
 
 /** ビルドの progress.jsonl から区切りの値を読む。読めなければ欠けとして扱う */
-export function checkpointValues(buildDirectory: string): Partial<Record<keyof ContextBudget, number>> {
+export function checkpointValues(buildDirectory: string): Partial<Record<CheckpointKey, number>> {
   try {
-    const values: Partial<Record<keyof ContextBudget, number>> = {};
-    for (const entry of checkpointsOf(readProgress(buildDirectory), DEFAULT_CONTEXT_BUDGET)) {
+    const values: Partial<Record<CheckpointKey, number>> = {};
+    for (const entry of checkpointsOf(readProgress(buildDirectory))) {
       values[entry.checkpoint] = entry.tokens;
     }
     return values;

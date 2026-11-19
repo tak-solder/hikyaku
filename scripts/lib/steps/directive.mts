@@ -9,7 +9,6 @@ import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
 import { flagString, type ParsedArgs } from "../args.mts";
 import type { Phase } from "../branch.mts";
-import type { ContextBudget } from "../config.mts";
 import { HikyakuError } from "../errors.mts";
 import { docRef, loadGuide } from "../docs.mts";
 import { cycleTimeline, noticeLines, readLedger, summarize } from "../ledger.mts";
@@ -19,7 +18,8 @@ import { readProgress, type StepResult } from "../progress.mts";
 import { formatTokens, measureCurrent, type CurrentContext } from "../session.mts";
 import { requirePhase, scopeFor } from "../stack.mts";
 import type { CycleContext } from "../workspace.mts";
-import { checkpointsOf, CHECKPOINT_LABELS, type Overrun } from "./checkpoints.mts";
+import { CHECKPOINT_LABELS, type CheckpointKey } from "./checkpoints.mts";
+import { forecastFor, overrunsOf, type Forecast } from "../forecast.mts";
 import { allowedResults, consentOf, type Evaluation, type SkillSteps, type StepContext } from "./engine.mts";
 import { instructionPath, ownerOf, SKILL_STEPS, stepsOf } from "./index.mts";
 
@@ -111,12 +111,17 @@ export function legacyCycleMessage(cycle: CycleContext | undefined): string | un
 // ---------------------------------------------------------------------------
 // directive
 
+/**
+ * 区切りでのコンテキストと、完了までの見込み（forecast.mts）。計測できなければ forecast は null で、
+ * unavailable に理由が入る
+ */
 export interface ContextCheck {
-  checkpoint: keyof ContextBudget;
+  checkpoint: CheckpointKey;
   label: string;
-  budget: number;
+  /** [context] limit */
+  limit: number;
   tokens: number | null;
-  over: boolean;
+  forecast: Forecast | null;
   unavailable: string | null;
 }
 
@@ -147,8 +152,8 @@ export interface Directive {
   /** 呼ぶ内部スキルが step に移っていれば、そのスキルが最初に呼ぶコマンド */
   callNext?: string;
   context?: ContextCheck;
-  /** 目安を超えたまま継続した区切り。ゲートの報告・完了の案内で伝える */
-  overruns?: Overrun[];
+  /** 上限を超える見込みのまま継続した区切り。ゲートの報告・完了の案内で伝える */
+  overruns?: Forecast[];
   notices: string[];
   message?: string;
   progress: { complete: number; total: number };
@@ -207,7 +212,9 @@ function reportCommand(opened: Opened, step: string, result: StepResult): string
   const extra =
     result === "skipped" || result === "failed"
       ? ' --reason "<理由>"'
-      : result === "rejected"
+      : result === "handover"
+        ? ' --reason "<切り替える理由（区切りの見込みと推奨）>"'
+        : result === "rejected"
         ? ' --input "<ユーザーの答え>"'
         : result === "approved"
           ? ' --input "<ユーザーの答え>"'
@@ -239,14 +246,14 @@ function progressOf(evaluation: Evaluation): { complete: number; total: number }
   };
 }
 
-function checkContext(opened: Opened, checkpoint: keyof ContextBudget, measured: CurrentContext): ContextCheck {
-  const budget = opened.ctx.config.context[checkpoint];
+function checkContext(opened: Opened, checkpoint: CheckpointKey, measured: CurrentContext): ContextCheck {
+  const { ctx } = opened;
   return {
     checkpoint,
     label: CHECKPOINT_LABELS[checkpoint],
-    budget,
+    limit: ctx.config.context.limit,
     tokens: measured.tokens ?? null,
-    over: measured.tokens !== undefined && measured.tokens > budget,
+    forecast: measured.tokens === undefined ? null : forecastFor(ctx.config, ctx.unitDirectory, ctx.events, checkpoint, measured.tokens),
     unavailable: measured.tokens === undefined ? (measured.reason ?? "理由不明") : null,
   };
 }
@@ -303,10 +310,13 @@ export function buildDirective(opened: Opened, evaluation: Evaluation, options: 
       ...base,
       kind: "stop",
       message: [
-        `進捗の記録が欠けています。現在地は ${current} ですが、その後のステップの成果物があります: ${evaluation.orphans.map((step) => step.definition.id).join(", ")}`,
-        "推測で補わずに止まります。ユーザーに経緯を確認し、実施済みなら次のように記録してください:",
+        `現在地は ${current} ですが、その後のステップの成果物が先にあります: ${evaluation.orphans.map((step) => step.definition.id).join(", ")}`,
+        "推測で補わずに止まります。どちらに当たるかで続け方が変わります:",
+        `- このセッションが ${current} を終える前に、後ろの成果物を先に書いた（待ち時間に handoff.md を書いたなど）:`,
+        `  成果物は消さずにそのまま残し、${current} を終えて報告してから step next で続けてください。`,
+        "  後ろのステップに来たら、先に書いた成果物をそのステップの指示に照らして直します",
+        "- 手順の外で実施した（記録を付け忘れた）: ユーザーに経緯を確認し、実施済みなら現在地のステップから順に記録してください:",
         `  ${CLI} step report ${opened.phase} <ステップ>${cycleArg(ctx)}${skillArg(opened)} --result done --reason "手で実施"`,
-        "記録は現在地のステップから順に行います。",
       ].join("\n"),
     };
   }
@@ -319,10 +329,12 @@ export function buildDirective(opened: Opened, evaluation: Evaluation, options: 
     if (deferred !== undefined) base.notices.push(deferred);
   }
 
-  const overruns = checkpointsOf(ctx.events, ctx.config.context).filter((entry) => entry.over);
   const current = evaluation.current;
+  // 区切りは builder にしか無い。記録を読み集めるので、手順の位置だけを読む経路（measure: false）では求めない
+  const reportsOverruns = skill.skill === "builder" && options.measure !== false && (current === undefined || current.definition.id === "review");
+  const overruns = reportsOverruns ? overrunsOf(ctx.config, ctx.unitDirectory, ctx.events) : [];
   if (current === undefined) {
-    return { ...base, kind: "done", overruns };
+    return overruns.length > 0 ? { ...base, kind: "done", overruns } : { ...base, kind: "done" };
   }
 
   const definition = current.definition;
@@ -397,14 +409,7 @@ export function renderDirective(directive: Directive): string {
   }
   if (directive.note !== undefined) lines.push(`注意: ${directive.note}`);
   if (directive.revise !== undefined) lines.push(`差し戻しの答え: ${directive.revise === "" ? "（記録なし）" : directive.revise}`);
-  if (directive.context !== undefined) {
-    const c = directive.context;
-    lines.push(
-      c.tokens === null
-        ? `コンテキスト（${c.label}）: 計測不可（${c.unavailable}）。見積もりだけで進めてください`
-        : `コンテキスト（${c.label}）: ${formatTokens(c.tokens)} / 目安 ${formatTokens(c.budget)}${c.over ? " — 目安を超えています" : ""}`,
-    );
-  }
+  if (directive.context !== undefined) appendContext(lines, directive.context);
   appendOverruns(lines, directive.overruns, "レビュー結果の提示で伝えてください。指摘が0件なら完了の案内で伝えます");
   for (const notice of directive.notices) lines.push(`注意: ${notice}`);
   lines.push("", "報告:");
@@ -412,10 +417,37 @@ export function renderDirective(directive: Directive): string {
   return lines.join("\n");
 }
 
-function appendOverruns(lines: string[], overruns: Overrun[] | undefined, how: string): void {
+const RECOMMENDATION_LABELS: Record<Forecast["recommendation"], string> = {
+  continue: "継続",
+  switch: "切り替え（G8 の承認を記録したセッションを終え、新しいセッションで implement から続ける）",
+  split: "分割（build-manager。切り替えても上限に収まる見込みが無い）",
+};
+
+function appendContext(lines: string[], c: ContextCheck): void {
+  if (c.forecast === null) {
+    lines.push(`コンテキスト（${c.label}）: 計測不可（${c.unavailable}）。見積もりだけで進めてください`);
+    return;
+  }
+  const f = c.forecast;
+  const pct = (value: number): string => `${Math.round(value * 1000) / 10}%`;
+  const basis = f.model.samples === 0 ? "既定の係数" : `実績 ${f.model.samples} 件から求めた係数`;
+  lines.push(
+    `コンテキスト（${c.label}）: ${formatTokens(f.tokens)} / 上限 ${formatTokens(f.limit)}`,
+    `  続けた場合の完了時点の見込み: ${formatTokens(f.continueAt)}（誤差 ${pct(f.model.error)} を足して ${formatTokens(f.continueHigh)}）${f.over ? " — 上限を超える見込みです" : ""}`,
+  );
+  if (f.switchAt !== null && f.switchHigh !== null) {
+    lines.push(`  切り替えた場合の完了時点の見込み: ${formatTokens(f.switchAt)}（誤差を足して ${formatTokens(f.switchHigh)}）`);
+  }
+  lines.push(
+    `  残りの見込み ${formatTokens(f.remaining)}（予測ピーク ${formatTokens(f.peak)}${f.peakAssumed ? "。報告が無いので見積もりの上限で代えた" : ""}、${basis}）`,
+    `  推奨: ${RECOMMENDATION_LABELS[f.recommendation]}`,
+  );
+}
+
+function appendOverruns(lines: string[], overruns: Forecast[] | undefined, how: string): void {
   if (overruns === undefined || overruns.length === 0) return;
-  lines.push(`目安を超えたまま継続した区切り（${how}）:`);
+  lines.push(`上限を超える見込みのまま継続した区切り（${how}）:`);
   for (const entry of overruns) {
-    lines.push(`  ${entry.label}: ${formatTokens(entry.tokens)} / 目安 ${formatTokens(entry.budget)}`);
+    lines.push(`  ${entry.label}: ${formatTokens(entry.tokens)}（完了時点の見込み ${formatTokens(entry.continueHigh)} / 上限 ${formatTokens(entry.limit)}）`);
   }
 }

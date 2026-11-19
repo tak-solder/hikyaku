@@ -367,6 +367,11 @@ git push origin --delete {フェーズのブランチ}
 - `waiting` があれば（答えを待つ blocked。`--escalate` で記録させた問い）、ユーザーに上げずに conductor ブランチへ
   切り替えて Step 1 へ（問いは「待っている問いを尋ねる」でまとめて尋ねる）
 - `returned` があれば（builder からの差し戻し）→ Step 1 へ（architect が差し戻しを扱う）
+- `handover` があれば（子が区切りの推奨に従ってセッションを切り替えた）、ユーザーに上げずに、同じビルドを
+  **新しい session で**起動し直す（Step 3。`--resume` は付けない）。新しい子は `step next` で implement から続ける
+- 本文が PR の作成の代行を頼んでいれば（子が `gh` で PR を作れなかった）、子が書いた `.tmp/hikyaku-pr-{phase}.md` を
+  本文にして、子が push したブランチから PR を Draft で作る。作れたら同じ session-id で `--notice` で再開し、
+  「PR を作りました: {URL}。この URL で pr の done を報告して続けてください」と伝える。作れなければユーザーに上げる
 - それ以外は、`body` を示してユーザーに上げる。指示があればそれに従い、無ければ**終了**する
 
 #### violation
@@ -494,7 +499,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr ready close {cycle} --pr {CL
 | `G2` / `G4` / `G7` | 成果物を読み、承認観点（スキルが示すもの）に沿って承認するか差し戻す（`approved` / `rejected`。G4 の同意の回は答えない） |
 | `retrospective` | 実施する（`run`） |
 | `docs-link` | `--dry-run` の差分がマーカーで囲まれた索引ブロックの中だけなら承認する（`approved`） |
-| `G6` | 分割・依存が design-delta と矛盾せず、各ビルドの予測ピークが `split_above` 以下（超えるなら issue.md に許容する理由がある）なら承認する（`approved`）。「マージ時点で残る危険」を書いたビルドがあれば、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json` の `unsafeSplit.allowed` が true であることも確かめる |
+| `G6` | 分割・依存が design-delta と矛盾せず、各ビルドの予測ピークが見積もりの上限（`estimateLimit`）以下（超えるなら issue.md に許容する理由がある）なら承認する（`approved`）。「マージ時点で残る危険」を書いたビルドがあれば、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json` の `unsafeSplit.allowed` が true であることも確かめる |
 | `G8` | 「検証の義務」の G8 を行い、満たしていれば承認する（`approved`） |
 | `questions` | 成果物から導けるものだけ答える（`--choice` なし。リスクの申告が要る）。導けないものはユーザーに上げる |
 | `adr-status` | 既存の形式に欄を足さない（挙動を狭める側） |

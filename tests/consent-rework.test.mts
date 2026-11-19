@@ -22,13 +22,13 @@ delete process.env["HIKYAKU_CONDUCTOR_CHILD"];
 // ---------------------------------------------------------------------------
 // 単体
 
-function builderContext(t: TestContext, overrides: Partial<StepContext> = {}, splitAbove = 450_000): StepContext {
+function builderContext(t: TestContext, overrides: Partial<StepContext> = {}, estimateLimit = 450_000): StepContext {
   const cycleDirectory = temporaryDirectory(t);
   const unitDirectory = join(cycleDirectory, "build-01");
   mkdirSync(unitDirectory, { recursive: true });
   const config = {
     reviews: { plan: true, testSpec: true, retrospective: "auto" },
-    peakBands: { splitAbove },
+    peakBands: { estimateLimit },
     gates: { plan: false },
   } as unknown as StepContext["config"];
   return { config, cycle: { directory: cycleDirectory } as StepContext["cycle"], unit: "build-01", unitDirectory, events: [], ...overrides };
@@ -140,7 +140,7 @@ test("reworkStepOf: 内部スキルのステップは、それを呼ぶ call と
   const ctx = builderContext(t);
   assert.equal(reworkStepOf(ARCHITECT_STEPS, "G6", { ...ctx, unit: "architect" }), "build-split");
   assert.equal(reworkStepOf(BUILDER_STEPS, "analyze", ctx), "retrospective");
-  // split は予測ピークが split_above を超えたときだけ手順に入る
+  // split は予測ピークが見積もりの上限を超えたときだけ手順に入る
   const over = { ...ctx, events: [{ at: at(1), skill: "builder", step: "plan", result: "done" as const, peak: 500_000 }] };
   assert.equal(reworkStepOf(BUILDER_STEPS, "G6", over), "split");
   assert.equal(reworkStepOf(BUILDER_STEPS, "G6", ctx), "plan-review", "split が外れていれば前の run");

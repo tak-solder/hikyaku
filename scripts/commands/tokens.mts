@@ -117,7 +117,7 @@ register({
           `パス      ${guide.path}`,
           `ハッシュ  ${guide.actualHash}`,
           ...(guide.basedOn === undefined ? [] : [`元        ${guide.basedOn}`]),
-          `判定の帯  統合を検討 < ${formatK(config.peakBands.mergeBelow)} ≦ 狙い ≦ ${formatK(config.peakBands.splitAbove)} < 分割を検討`,
+          `判定の帯  統合を検討 < ${formatK(config.peakBands.mergeHint)} ≦ 狙い ≦ ${formatK(config.peakBands.estimateLimit)}（見積もりの上限） < 分割を検討（上限 ${formatK(config.context.limit)}）`,
           ...problems.map((p) => `問題      ${p}`),
         ].join("\n"),
     );
@@ -209,10 +209,10 @@ register({
     "値は整数（120000・120,000）か、k / m の単位（120k・1.2m）で渡します。5つすべてが必須で、",
     "該当しない成分は 0 を渡します。--<成分>-basis で根拠を添えると、表の「根拠」列に入ります。",
     "",
-    "判定は [context] の帯で決まります（hikyaku config --json の peakBands）。",
-    "  merge_below 未満     統合を検討（推奨のみ）",
-    "  merge_below〜split_above  狙いの帯",
-    "  split_above 超       分割を検討（原則として分割する）",
+    "判定は [context] の limit に割合を掛けた帯で決まります（hikyaku config --json の peakBands）。",
+    "  mergeHint（limit × merge_ratio）未満          統合を検討（推奨のみ）",
+    "  mergeHint〜estimateLimit                      狙いの帯",
+    "  estimateLimit（見積もりの上限。limit × estimate_ratio）超  分割を検討（原則として分割する）",
     "",
     "--markdown は issue.md / plan.md に貼る内訳表を出します。表の最後の行に、見積もりに使った",
     "ガイドの版とハッシュが入ります（tokens history が読みます）。",
@@ -371,7 +371,7 @@ async function buildHistory(args: ParsedArgs, operands: string[]): Promise<void>
   }
   const counted = stats === undefined ? undefined : summarizeDiff(stats.files, config.diff);
   const markdown = renderDiffMarkdown(counted, reason);
-  const checkpoints = buildDirectory !== undefined && existsSync(buildDirectory) ? checkpointsOf(readProgress(buildDirectory), config.context) : [];
+  const checkpoints = buildDirectory !== undefined && existsSync(buildDirectory) ? checkpointsOf(readProgress(buildDirectory)) : [];
 
   emit(
     {
@@ -415,7 +415,7 @@ async function buildHistory(args: ParsedArgs, operands: string[]): Promise<void>
       }
       lines.push("", "区切りでのコンテキスト:");
       if (checkpoints.length === 0) lines.push("  （記録なし）");
-      for (const c of checkpoints) lines.push(`  ${c.label}: ${formatTokens(c.tokens)} / 目安 ${formatTokens(c.budget)}${c.over ? " — 目安を超えていた" : ""}`);
+      for (const c of checkpoints) lines.push(`  ${c.label}: ${formatTokens(c.tokens)} / 上限 ${formatTokens(config.context.limit)}`);
       return lines.join("\n");
     },
   );

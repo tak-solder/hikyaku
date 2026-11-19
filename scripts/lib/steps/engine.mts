@@ -26,7 +26,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Phase } from "../branch.mts";
-import type { ContextBudget, ResolvedConfig } from "../config.mts";
+import type { ResolvedConfig } from "../config.mts";
+import type { CheckpointKey } from "./checkpoints.mts";
 import { RESTART, type ProgressEvent, type StepResult } from "../progress.mts";
 import type { CycleContext } from "../workspace.mts";
 
@@ -134,8 +135,13 @@ export interface StepDefinition {
    * 行き詰まりの報告の形式（escalation.mts）を満たさなければ受け付けない。gate は持てない
    */
   escalates?: boolean;
-  /** このステップに入るときに、コンテキストを目安と比べる区切り（#68） */
-  checkpoint?: keyof ContextBudget;
+  /** このステップに入るときに、完了までの見込みを [context] limit と比べる区切り（#68・forecast.mts） */
+  checkpoint?: CheckpointKey;
+  /**
+   * このステップに入る前に、セッションを切り替えられるか（handover を報告できる）。切り替えたら完了にせず、
+   * 新しいセッションが同じステップから続ける。run だけが持てる
+   */
+  handover?: boolean;
   /** 報告で予測ピークを添えるか。required なら done に --peak が必須、optional なら任意 */
   peak?: "required" | "optional";
   /**
@@ -230,7 +236,8 @@ const COMPLETING: Record<StepKind, ProgressEvent["result"][]> = {
 /** ステップに報告できる結果 */
 export function allowedResults(definition: StepDefinition): StepResult[] {
   if (definition.kind === "gate") return ["approved", "rejected"];
-  return definition.skippable === true ? ["done", "skipped", "failed"] : ["done", "failed"];
+  const results: StepResult[] = definition.skippable === true ? ["done", "skipped", "failed"] : ["done", "failed"];
+  return definition.handover === true ? [...results, "handover"] : results;
 }
 
 /** その回の同意の判定。consent が無い・false なら確認（false） */
@@ -389,7 +396,12 @@ export function evaluate(skill: SkillSteps, ctx: StepContext): Evaluation {
     } else {
       evaluated = {
         definition, status: "pending", event: latest.event,
-        note: latest.event.result === "failed" ? `前回は失敗しました: ${latest.event.reason ?? "理由なし"}` : undefined,
+        note:
+          latest.event.result === "failed"
+            ? `前回は失敗しました: ${latest.event.reason ?? "理由なし"}`
+            : latest.event.result === "handover"
+              ? `前のセッションが、このステップの前でセッションを切り替えました（${latest.event.reason ?? "理由なし"}）。このステップから続けます`
+              : undefined,
         revise: undefined,
       };
     }

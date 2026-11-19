@@ -9,8 +9,8 @@ test("設定: ルート・サイクル・profile の優先順でマージし、�
 profile = "economy"
 ask = ["branch.prefix", "pr.title"]
 [context]
-merge_below = "250k"
-split_above = 500000
+limit = 600000
+merge_ratio = "50%"
 [branch]
 prefix = "root"
 separator = "/"
@@ -22,7 +22,8 @@ github_repo = "example/repo"
   write(directory, cycleConfig, `[branch]\nprefix = "cycle"\n[external]\ntarget = "none"\n`);
   const config = JSON.parse(succeeds(directory, "config", "001", "--json"));
   assert.equal(config.profile, "standard");
-  assert.deepEqual(config.peakBands, { mergeBelow: 250_000, splitAbove: 500_000 });
+  assert.deepEqual(config.context, { limit: 600_000, estimateRatio: 0.9, mergeRatio: 0.5 });
+  assert.deepEqual(config.peakBands, { mergeHint: 300_000, estimateLimit: 540_000 });
   assert.deepEqual(config.branch, { prefix: "cycle", separator: "/" });
   assert.deepEqual(config.external, { target: "none", githubRepo: "example/repo" });
   assert.deepEqual(config.askAtCreate, ["pr.title"]);
@@ -76,7 +77,7 @@ test("設定: 作成前の profile 確認は既存サイクルを参照せず、
 test("設定: ブランチを栞より優先し、profile 単独の確認は両方を参照しない", (t) => {
   const directory = workspace(t, true);
   succeeds(directory, "cycle", "new", "other", "--profile", "standard");
-  write(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config", "[review]\nmax_rounds = 5\n[context]\nsplit_above = '600k'\n");
+  write(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config", "[review]\nmax_rounds = 5\n[context]\nlimit = '600k'\n");
   succeeds(directory, "cycle", "use", "002");
   write(directory, ".git/HEAD", "ref: refs/heads/hikyaku/001-test/plan\n");
   const config = JSON.parse(succeeds(directory, "config", "--json"));
@@ -84,8 +85,8 @@ test("設定: ブランチを栞より優先し、profile 単独の確認は両�
   assert.equal(config.cycleSource, "branch");
   assert.equal(config.review.code.maxRounds, 5);
   assert.equal(JSON.parse(succeeds(directory, "config", "--profile", "express", "--json")).review.code.maxRounds, 1);
-  assert.equal(JSON.parse(succeeds(directory, "tokens", "guide", "--json")).bands.splitAbove, 600_000);
-  assert.equal(JSON.parse(succeeds(directory, "tokens", "guide", "--profile", "express", "--json")).bands.splitAbove, 450_000);
+  assert.equal(JSON.parse(succeeds(directory, "tokens", "guide", "--json")).bands.estimateLimit, 540_000);
+  assert.equal(JSON.parse(succeeds(directory, "tokens", "guide", "--profile", "express", "--json")).bands.estimateLimit, 540_000);
 
   write(directory, ".git/HEAD", "ref: refs/heads/main\n");
   succeeds(directory, "cycle", "close", "002", "--summary", "test");
@@ -117,7 +118,7 @@ test("設定: ワークスペース直下に残った旧配置の設定を黙っ
 
 test("設定: 不正な型・profile を既定値に落とさずエラーにする", (t) => {
   const directory = workspace(t);
-  for (const content of ['profile = "typo"', 'plan_gate = "false"', '[context]\nsplit_above = "big"', '[context]\nmerge_below = "500k"\nsplit_above = "450k"']) {
+  for (const content of ['profile = "typo"', 'plan_gate = "false"', '[context]\nlimit = "big"', '[context]\nmerge_ratio = "90%"\nestimate_ratio = "80%"', '[context]\nestimate_ratio = "120%"']) {
     write(directory, ".hikyaku.config", `hikyaku_root = "docs/hikyaku"\n${content}\n`);
     const result = cli(directory, "config", "--json");
     assert.equal(result.status, 1, content);
@@ -200,21 +201,33 @@ test("設定: [rules] hit_threshold と [areas] dormant_days は既定 3 と 180
   }
 });
 
-test("設定: [context] の目安は整数か、k / m の単位を付けた文字列で書ける", (t) => {
+test("設定: [context] の limit は整数か、k / m の単位を付けた文字列で、割合は % か小数で書ける", (t) => {
   const directory = workspace(t, true);
-  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[context]\napproval = "250k"\nimplement = 320000\nreview = "0.4m"\n');
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[context]\nlimit = "0.4m"\nestimate_ratio = 0.8\nmerge_ratio = "50%"\n');
   const config = JSON.parse(succeeds(directory, "config", "--json"));
-  assert.deepEqual(config.context, { approval: 250_000, implement: 320_000, review: 400_000 });
+  assert.deepEqual(config.context, { limit: 400_000, estimateRatio: 0.8, mergeRatio: 0.5 });
+  assert.deepEqual(config.peakBands, { mergeHint: 200_000, estimateLimit: 320_000 });
 
-  for (const value of ['"250"', '"250x"', "0", '"0k"', '"1.5"', "-1"]) {
-    write(directory, ".hikyaku.config", `hikyaku_root = "docs/hikyaku"\n[context]\napproval = ${value}\n`);
+  for (const value of ['"500"', '"500x"', "0", '"0k"', '"1.5"', "-1"]) {
+    write(directory, ".hikyaku.config", `hikyaku_root = "docs/hikyaku"\n[context]\nlimit = ${value}\n`);
     const result = cli(directory, "config", "--json");
-    if (value === '"250"') {
+    if (value === '"500"') {
       assert.equal(result.status, 0, "単位の無い文字列は整数と同じ");
       continue;
     }
     assert.equal(result.status, 1, value);
-    assert.match(result.stderr, /\[context\]\.approval はトークン数で指定してください/);
+    assert.match(result.stderr, /\[context\]\.limit はトークン数で指定してください/);
+  }
+});
+
+test("設定: v3 で廃止した [context] の目安と帯のキーは、移行先を示して止める", (t) => {
+  const directory = workspace(t);
+  for (const key of ["split_above", "merge_below", "approval", "implement", "review"]) {
+    write(directory, ".hikyaku.config", `hikyaku_root = "docs/hikyaku"\n[context]\n${key} = "300k"\n`);
+    const result = cli(directory, "config", "--json");
+    assert.equal(result.status, 1, key);
+    assert.match(result.stderr, new RegExp(`\\[context\\] ${key} は v3 で廃止しました`));
+    assert.match(result.stderr, /limit/);
   }
 });
 
@@ -224,7 +237,7 @@ test("設定: v3 で廃止した bp_max と [bp_actual] は、移行先を示し
   let result = cli(directory, "config", "--json");
   assert.equal(result.status, 1);
   assert.match(result.stderr, /bp_max は v3 で廃止/);
-  assert.match(result.stderr, /split_above/);
+  assert.match(result.stderr, /\[context\] limit/);
 
   write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[bp_actual]\nexclude = []\n');
   result = cli(directory, "config", "--json");
@@ -233,7 +246,7 @@ test("設定: v3 で廃止した bp_max と [bp_actual] は、移行先を示し
 
   write(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config", "bp_max = 8\n");
   write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n');
-  assert.equal(JSON.parse(succeeds(directory, "config", "--json")).peakBands.splitAbove, 450_000);
+  assert.equal(JSON.parse(succeeds(directory, "config", "--json")).peakBands.estimateLimit, 540_000);
 });
 
 const ROOT = 'hikyaku_root = "docs/hikyaku"\n';

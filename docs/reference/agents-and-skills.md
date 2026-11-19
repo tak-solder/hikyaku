@@ -27,7 +27,7 @@ Hikyaku の手順そのものに穴があると思える場合も、このリポ
 
 実装フェーズ（`build-{NN}`）では、これに加えて予測ピークと実測を記録します。architect 段階・builder 段階の予測と、`hikyaku tokens session` で実測したセッションのコンテキスト（ピーク・開始時の固定分・呼び出し回数・コンパクション回数・モデル・ホスト・Hikyaku の版）、`hikyaku tokens history build-NN` が PR の base から数えた差分（新規ファイル数・追加行数とその実装とテストの内訳）を並べ、1セッションで完結したかと、乖離の要因を成分ごとに残します。永続化の候補ではなく、事実の記録です。この節の形は固定で、`hikyaku tokens history` が読みます。close-cycle はこの記録から見積もりのガイドの見直しが必要かを判定し、`/hikyaku:token-guide` がガイドを補正する素材にします。
 
-実装フェーズでは、G8 の提示・実装開始前・レビュー前の区切りで測ったコンテキスト（`progress.jsonl` の記録）も確かめます。目安を超えたまま継続した区切りがあれば、どこで膨らんだかを乖離の要因に書きます。値そのものは `retrospective.md` に書き写さず、`hikyaku tokens history` が `progress.jsonl` から読みます。
+実装フェーズでは、G8 の提示・実装開始前・レビュー前の区切りで測ったコンテキスト（`progress.jsonl` の記録）も確かめます。上限を超える見込みのまま継続した区切りがあれば、どこで膨らんだかを乖離の要因に書きます。値そのものは `retrospective.md` に書き写さず、`hikyaku tokens history` が `progress.jsonl` から読みます。
 
 各フェーズの末尾で呼ばれます。`economy` では `skip`、それ以外は `auto` です。呼び出し元の手順が `call` で振り返りを返し、retrospective は `hikyaku step next <phase> <cycle> --skill retrospective` で自分の手順を進めます。記録は呼び出し元と同じ `progress.jsonl` に入ります。`prompt` で実施しないと答えた場合は、残りの手順は対象外になってすぐに呼び出し元へ戻ります。PR レビュー対応で振り返るときは、builder が `hikyaku step restart` で区切ってから呼ぶので、既存の `retrospective.md` へ追記する形で手順が最初から回ります。
 

@@ -9,12 +9,12 @@
 
 | 予測ピーク | 判定 | すること |
 |----|------|------|
-| `mergeBelow` 未満（既定 300k） | 統合を検討 | 推奨のみ。依存の近いビルドとまとめられないかを見る。並行して進められるビルドが減る、PR が大きくなりすぎるなら分けたままでよい |
-| `mergeBelow`〜`splitAbove`（既定 300k〜450k） | 狙いの帯 | そのまま進める |
-| `splitAbove` 超（既定 450k） | 分割を検討 | 原則として分割する |
+| `mergeHint` 未満（既定 400k） | 統合を検討 | 推奨のみ。依存の近いビルドとまとめられないかを見る。並行して進められるビルドが減る、PR が大きくなりすぎるなら分けたままでよい |
+| `mergeHint`〜`estimateLimit`（既定 400k〜540k） | 狙いの帯 | そのまま進める |
+| `estimateLimit`（見積もりの上限）超（既定 540k） | 分割を検討 | 原則として分割する |
 
-帯は `.hikyaku.config` の `[context] merge_below` / `split_above`（`hikyaku config {cycle} --json` の
-`peakBands`）。directive の `値` にも `mergeBelow` / `splitAbove` として入っている。
+帯は `.hikyaku.config` の `[context] limit` に割合（`merge_ratio` / `estimate_ratio`）を掛けた値（`hikyaku config {cycle} --json` の
+`peakBands`）。directive の `値` にも `mergeHint` / `estimateLimit` として入っている。
 
 ## 分担
 
@@ -58,7 +58,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tokens estimate {cycle} \
 ビルドが複数のワークスペース（パッケージ）にまたがっても、セッションは1つなので1回で見積もる。
 ワークスペースごとの内訳は根拠に書く。
 
-## 分割の判断（予測ピークが `splitAbove` 超）
+## 分割の判断（予測ピークが `estimateLimit` 超）
 
 原則として分割する。分割せずに1ビルドのまま進めてよいのは、次のどちらかに当たるときだけで、
 当たる理由を issue.md の「予測ピーク」の下に書く。
@@ -77,7 +77,7 @@ build-manager の estimate の指示に従ってユーザーに尋ねる（`unsa
 4. 独立したドメインが3つ以上 → ドメイン単位で分割
 5. 外部連携が2つ以上 → 連携先ごとに分割
 
-分割後の各ビルドを `tokens estimate` で見積もり直し、全ビルドが `splitAbove` 以下になるまで繰り返す。
+分割後の各ビルドを `tokens estimate` で見積もり直し、全ビルドが `estimateLimit` 以下になるまで繰り返す。
 
 ## ガイドを直したくなったら
 

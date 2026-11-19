@@ -202,7 +202,7 @@ test("CLI: サイクルに属さない patch の手順は、合意・Draft PR・
   report(t, directory, "survey", "--result", "done");
   const fit = report(t, directory, "scope", "--result", "done", "--peak", "200k");
   assert.equal(fit.step, "fit");
-  assert.equal(fit.args.overSplit, false);
+  assert.equal(fit.args.overEstimate, false);
   assert.equal(report(t, directory, "fit", "--result", "done").step, "P1");
   assert.equal(report(t, directory, "P1", "--result", "approved", "--input", "OK").step, "pr");
   report(t, directory, "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1");
@@ -217,13 +217,13 @@ test("CLI: サイクルに属さない patch の手順は、合意・Draft PR・
   assert.equal(report(t, directory, "publish", "--result", "done").kind, "done");
 });
 
-test("CLI: patch は予測ピークが split_above を超えると fit で知らせ、すべて引き継いだら止まる", (t) => {
+test("CLI: patch は予測ピークが見積もりの上限を超えると fit で知らせ、すべて引き継いだら止まる", (t) => {
   const directory = committed(t);
   git(directory, "switch", "-q", "-c", `hikyaku/patch/${MONTH}/list-sort`);
   report(t, directory, "start", "--result", "done");
   report(t, directory, "survey", "--result", "done");
   const fit = report(t, directory, "scope", "--result", "done", "--peak", "900k");
-  assert.equal(fit.args.overSplit, true);
+  assert.equal(fit.args.overEstimate, true);
   const stopped = report(t, directory, "fit", "--result", "skipped", "--reason", "002-sort へ引き継いだ");
   assert.equal(stopped.kind, "stop");
   assert.match(stopped.message, /通常のサイクルへ引き継ぎました/);

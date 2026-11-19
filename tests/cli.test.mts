@@ -264,7 +264,7 @@ test("CLI: tokens estimate は5成分を必須にして合計し、帯で判定�
   const invalid = cli(directory, "tokens", "estimate", "001", ...all.slice(0, -1), "many");
   assert.equal(invalid.status, 1);
 
-  write(directory, ".hikyaku.config", `${readFileSync(join(directory, ".hikyaku.config"), "utf8")}\n[context]\nsplit_above = "350k"\n`);
+  write(directory, ".hikyaku.config", `${readFileSync(join(directory, ".hikyaku.config"), "utf8")}\n[context]\nlimit = "350k"\n`);
   assert.equal(JSON.parse(succeeds(directory, "tokens", "estimate", "001", ...all, "--json")).verdict, "split", "帯は設定に従う");
 });
 
@@ -298,7 +298,7 @@ test("CLI: 閉じたサイクルの設定に残った bp_max は履歴として�
   succeeds(directory, "cycle", "status", "001");
   const closedConfig = JSON.parse(succeeds(directory, "config", "001", "--json"));
   assert.equal(closedConfig.retired.length, 2);
-  assert.equal(closedConfig.peakBands.splitAbove, 450_000);
+  assert.equal(closedConfig.peakBands.estimateLimit, 540_000);
 
   // validate は進行中のサイクルの分だけを知らせる
   const validate = cli(directory, "validate", "--json");

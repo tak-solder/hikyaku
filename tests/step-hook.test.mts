@@ -71,7 +71,7 @@ test("step hook stop: 内部スキルを呼んでいる最中は、呼ばれた�
   const directory = built(t);
   write(directory, `${BUILD}/plan.md`);
   report(t, directory, "plan", "--result", "done", "--peak", "400k");
-  report(t, directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0", "--peak", "500k");
+  report(t, directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0", "--peak", "600k");
 
   const blocked = hook(directory, { session_id: SESSION });
   assert.equal(blocked?.decision, "block");
@@ -254,4 +254,33 @@ test("step hook stop: 手順を終えたあとに呼び直した振り返り（P
   const blocked = hook(directory, { session_id: SESSION });
   assert.equal(blocked?.decision, "block");
   assert.match(blocked?.reason ?? "", /retrospective plan/);
+});
+
+test("step hook stop: バックグラウンドの作業が残っているあいだは止めない", (t) => {
+  const directory = built(t);
+  write(directory, `${BUILD}/plan.md`);
+  report(t, directory, "plan", "--result", "done", "--peak", "350k");
+
+  const waiting = [{ id: "a1", type: "subagent", status: "running", description: "doc-reviewer", agent_type: "doc-reviewer" }];
+  assert.equal(hook(directory, { session_id: SESSION, background_tasks: waiting }), undefined, "完了の通知を待つのは正しい止まり方");
+  assert.equal(hook(directory, { session_id: SESSION, background_tasks: [] })?.decision, "block", "空なら従来どおり");
+  const finished = [{ id: "a1", type: "shell", status: "completed", description: "review" }];
+  assert.equal(hook(directory, { session_id: SESSION, background_tasks: finished })?.decision, "block", "終わった作業だけなら従来どおり");
+});
+
+test("step hook stop: セッションの切り替え（handover）を記録したセッションは止めない", (t) => {
+  const directory = built(t);
+  write(directory, `${BUILD}/plan.md`);
+  report(t, directory, "plan", "--result", "done", "--peak", "350k");
+  report(t, directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0");
+  write(directory, `${BUILD}/test-spec.md`);
+  report(t, directory, "test-spec", "--result", "done");
+  report(t, directory, "test-spec-review", "--result", "done", "--findings", "0", "--adopted", "0");
+  report(t, directory, "G8", "--result", "approved", "--input", "承認");
+  assert.equal(hook(directory, { session_id: SESSION })?.decision, "block", "implement の手前で終えようとすると引き止める");
+
+  report(t, directory, "implement", "--result", "handover", "--reason", "完了時点の見込みが上限を超える");
+  assert.equal(hook(directory, { session_id: SESSION }), undefined);
+  const message = "切り替えます。\n\n<hikyaku-blocked>\n見込みが上限を超えるため\nhandover: implement\n</hikyaku-blocked>";
+  assert.equal(hook(directory, { session_id: SESSION, last_assistant_message: message }), undefined, "handover の blocked は規約どおりの止まり方");
 });

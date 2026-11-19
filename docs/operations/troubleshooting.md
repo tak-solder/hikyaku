@@ -57,7 +57,7 @@ hikyaku validate
 
 ### bp_max は v3 で廃止しました / [bp_actual] は [diff] に改名しました
 
-`.hikyaku.config` に v2 の設定が残っています。ビルドの大きさは BP ではなく予測ピーク（トークン）で判定するようになり、境目は `[context]` の `merge_below` / `split_above` で決めます。`bp_max` を削除し、`[bp_actual]` はテーブル名を `[diff]` に変えてください（[設定](../configuration/config-file.md#context)）。黙って無視しないのは、「設定したのに効かない」が最も気づきにくい壊れ方だからです。
+`.hikyaku.config` に v2 の設定が残っています。ビルドの大きさは BP ではなく予測ピーク（トークン）で判定するようになり、境目は `[context]` の `limit` から求めます。`bp_max` を削除し、`[bp_actual]` はテーブル名を `[diff]` に変えてください（[設定](../configuration/config-file.md#context)）。黙って無視しないのは、「設定したのに効かない」が最も気づきにくい壊れ方だからです。
 
 リポジトリルートの設定に残っていると、すべてのコマンドが止まります。サイクルの設定に残っている場合は、そのサイクルで v3 の作業（`step`・`tokens estimate`・`tasklist` の書き込み）をしようとしたときだけ止まります。閉じたサイクルの設定は履歴として読み飛ばすので、`cycle list` や `validate` は止まりません。
 

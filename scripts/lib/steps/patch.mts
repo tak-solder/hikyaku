@@ -72,11 +72,11 @@ export const PATCH_STEPS: SkillSteps = {
       skippable: true,
       args: (ctx) => {
         const peak = latestPeak(ctx.events.filter((event) => event.skill === "patch"));
-        const splitAbove = ctx.config.peakBands.splitAbove;
+        const estimateLimit = ctx.config.peakBands.estimateLimit;
         return {
           peak: formatK(peak),
-          splitAbove: formatK(splitAbove),
-          overSplit: peak !== undefined && peak > splitAbove,
+          estimateLimit: formatK(estimateLimit),
+          overEstimate: peak !== undefined && peak > estimateLimit,
         };
       },
     },

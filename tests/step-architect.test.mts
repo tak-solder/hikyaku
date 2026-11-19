@@ -233,7 +233,7 @@ test("build-manager: builder の分割の検討から呼ぶと、ビルドの pr
   write(directory, `${build}/issue.md`);
   write(directory, `${build}/plan.md`);
   succeeds(directory, "step", "report", "build-01", "plan", "001", "--result", "done", "--peak", "400k");
-  const call = parse(succeeds(directory, "step", "report", "build-01", "plan-review", "001", "--result", "done", "--findings", "0", "--adopted", "0", "--peak", "500k", "--json"));
+  const call = parse(succeeds(directory, "step", "report", "build-01", "plan-review", "001", "--result", "done", "--findings", "0", "--adopted", "0", "--peak", "600k", "--json"));
   assert.equal(call.step, "split");
   assert.match(call.callNext ?? "", /step next build-01 001-test --skill build-manager/);
 
