@@ -49,7 +49,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review action doc build-{NN} {c
 （無ければ「なし」）
 ```
 
-「返した理由」の箇条書きは、pr で `diff facts --format pr` が PR 本文に並べる。事実そのものは写さない
+「返した理由」の箇条書きは、pr で `pr body`（差分の事実の節）が PR 本文に並べる。事実そのものは写さない
 （PR を作るときに、そのときの差分から作り直す）。
 
 - [ ] `done` を報告する。push はしない（直したコードと agreement.md・progress.jsonl のコミットは、review の
