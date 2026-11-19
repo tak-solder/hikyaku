@@ -160,7 +160,7 @@ build-manager や retrospective のような内部スキルは、`--skill` を�
 | `ledger consent-list <phase> [<cycle>]` | PR を作る直前の同意ゲートで、マージの前にユーザーが同意する項目（`merge@<phase>` の受け入れたリスク・異議）を1項目3行で示すとき。全文は `--full`。事後同意が有効なサイクルの conductor の最後のビルドの子では、サイクル全体の項目を並べる |
 | `ledger return-draft <phase> [<cycle>] --items <id,...>` | 同意ゲートで前のフェーズの判断を退け、builder が architect へ差し戻すとき。退けた項目と試したことをそろえた `return.md` の下書きを出す（書き込まない。問題を変える選択肢と推奨は builder が書く） |
 | `ledger answers [<cycle>]` | conductor の最後の PR の本文に、監督が答えた問い（答えとリスクの申告）の一覧を貼るとき（`--format pr`） |
-| `ledger pr-section <phase> [<cycle>]` | PR 本文に、受け入れたリスク（事後同意）・未解決の退け・マージの前に決める事項・期限を過ぎた事項の節を貼るとき（各フェーズの PR の手順が呼ぶ。中身が無ければ空）。conductor の最後の PR では `--all` でサイクル全体を出す |
+| `ledger pr-section <phase> [<cycle>]` | PR 本文に、受け入れたリスク（事後同意）・未解決の退け・マージの前に決める事項・期限を過ぎた事項の節を貼るとき（各フェーズの PR の手順は `pr body` を通して使う。中身が無ければ空）。conductor の最後の PR では `--all` でサイクル全体を出す |
 | `ledger show <id> [<cycle>]` | 1件の事項の前提・失うもの・決定の経緯を読みたいとき |
 | `ledger premises [--changed-from <ref>]` | アプリケーションの状況の宣言を変えたとき、それを拠り所にして受け入れたリスク（未決事項の記録と、ADR・`constraints` の「受け入れたこと」の行）を見直す対象として並べる。各フェーズの PR の手順が、宣言が変わっていれば `--format pr` の出力を PR 本文に貼る |
 
@@ -209,6 +209,7 @@ build-manager や retrospective のような内部スキルは、`--skill` を�
 | `pr title <phase> [<cycle>]` | PR タイトルを生成するとき |
 | `pr base <phase> [<cycle>]` | PR のマージ先を決めるとき。PR を作る直前。`--ref` でローカルに解決できる ref（レビューの差分基準）を返す |
 | `session title <phase> [<cycle>]` | セッション名を生成するとき |
+| `pr body <phase> [<cycle>]` | PR を作る直前（通常は各スキルが呼ぶ）。本文にそのまま貼る節（差分の事実・宣言の変更・未決事項・サイクルの issue への参照）をまとめて出す。マージの前にユーザーが同意する項目に決定が足りなければ、本文を出さずに終了コード 2 で止まる |
 | `pr ready` | 設定と実行元に従って Draft PR を公開するとき。conductor は取り込み前の公開にも使う。`gh` が使えなくても止めず、代わりに行うことを示す（取り込み前の `--for-merge` だけは止める） |
 | `pr request-reviewers <phase> [<cycle>] --pr <PR>` | PR を作った直後に、設定のレビュアーをアサインするとき（通常は各スキルが呼ぶ）。`gh` が使えなくても止めず、代わりに依頼するレビュアーを示す |
 

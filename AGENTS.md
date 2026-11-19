@@ -76,7 +76,7 @@
   - 基準の理由の行末 `（防ぐ: … / 立つ: … / 重要度: 高|中）` と「レビューの記録」の行は、`persistence.md`・テンプレート（builder の templates.md・retrospective の write.md）と、`promotions.mts` の `parseCriterionReasons`・`review-records.mts` の `parseReviewRecord` が組です
   - G10 の同意が要る変更の判定は `promotions.mts` の `consentChanges` だけに置き、G10 の consent・write の accepts・promotions の approval が同じ判定を使います
   - `（ask: delegation）`・`（ask: deferred-consent）` は consent の種別でユーザーに固定し、`[conductor] delegate` の対象にしません
-  - PR 本文の事実の節（`diff facts --format pr`・`ledger pr-section` など）は CLI の出力を貼り、スキルの指示文で書き写させません
+  - PR 本文の事実の節（`diff facts --format pr`・`ledger pr-section` など）は CLI の出力を貼り、スキルの指示文で書き写させません。各フェーズの PR の手順は `pr body`（`scripts/commands/pr-body.mts`）を通して貼るので、節を足すときは `pr body` に足してください
 - PR を作るスキルを足したら、PR を作った直後に `hikyaku pr request-reviewers <phase> [<cycle>] --pr <PR>` を呼ぶ手順を入れ、そのフェーズを `scripts/lib/config.mts` の `REVIEWER_SKIP_TARGETS` にも足してください（`[pr] reviewers_skip` でオフにできるようにするため）
 
 ## ドキュメント

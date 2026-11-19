@@ -744,7 +744,7 @@ register({
  * PR 本文に貼る節。中身のある節だけを出し、どれも無ければ空。consent は同意の対象（consentTargets か、--all なら
  * サイクル全体）。all なら、マージの前に決める事項も全作業単位の merge@ から拾う（conductor の最後の PR）
  */
-function prSection(ledger: Ledger, timeline: CycleTimeline, unit: string, consent: LedgerItem[], all: boolean) {
+export function prSection(ledger: Ledger, timeline: CycleTimeline, unit: string, consent: LedgerItem[], all: boolean) {
   const accepted = consent.filter(consentDecided);
   // 最新が rejected の項目は「未解決の退け」に出すので、ここでは重ねない
   const undecided = undecidedConsentItems(consent).filter((item) => item.latest?.decision !== "rejected");
