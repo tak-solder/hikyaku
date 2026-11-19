@@ -10,45 +10,12 @@ argument-hint: "[{cycle}]"
 全ビルドが完了したサイクルを締め、サイクルで得た知見を永続化する。足すだけでなく、
 役に立たなかった記述や古くなった記述を消し、置き換える。
 
-## なぜ独立したフェーズなのか
+## 書くもの
 
-永続ドキュメントは「実装済みの現実（as-is）」を表す。サイクルドキュメントは
-「これから作るもの（to-be）」を表す。この区別があるから、並行して走る別サイクルが
-未実装の設計を「現実」として読んでしまう事故が防げる。
-
-昇格は PR がマージされて初めて真になるので、実装が全部終わってから行う。
-
-ただし `completed`（全ビルド完了）と `closed`（昇格完了）の間には危険な空白がある。
-実装は main に入っているのに `overview` はまだ古い。この期間に他サイクルの architect が
-走ると、古い `overview` を現実として信じる。だから CLOSE は速やかに実行する。
-
-最終ビルドに混ぜないのは、builder のコンテキストが実装だけに集中できなくなるため。
-
-## 誰が何を書くか
-
-置き場は読み込まれ方で選ぶ（基準は [persistence.md](references/persistence.md)）。書く人は置き場で決まる。
-
-| 置き場 | 書く人 |
-|---|---|
-| コード（lint・テスト・ヘルパー・その場のコメント）、パス指定の rule | builder（見つけたビルドの PR）。後続のビルドに間に合わせるため |
-| 永続ドキュメント（overview / decisions / constraints / conventions / glossary） | close-cycle。ADR の追記は architect。サイクルに属さない patch は、コードと同じ PR で直す |
-| `{HIKYAKU_ROOT}/instructions.md`、スキル | close-cycle。サイクルに属さない patch は、コードと同じ PR で直す |
-| フック | close-cycle が別のブランチの PR にする |
-| 見積もりのガイド（`token-guide/guide.md`） | `/hikyaku:token-guide`。乖離が大きいサイクルでは close-cycle が呼ぶ |
-
-永続ドキュメントと `instructions.md` をサイクルの中では close-cycle だけが書くのは、走行中の他サイクルの
-planner / architect が読むため。フェーズ途中で書き換えると前提が途中で変わる。サイクルに属さない patch が
-書けるのは、コードと同じ PR でマージされ、マージした時点で実装済みの現実になるから。サイクルに属す patch
-（統合ブランチ宛て、またはマージ後・CLOSE 前）は書かずに `patches/{YYYYMM}/{slug}/handoff.md` に残し、
-あなたがビルドの handoff.md と同じく昇格させる（`hikyaku promotions` が集める）。
-
-あなたは追加だけでなく、削除と置き換えも提案できる。ただし範囲は、このサイクルの記録（handoff・
-振り返り）に根拠があるものと、このサイクルのビルドが書いた rule に限る。根拠の無い記述の正否は、
-このサイクルの知識では判断できない。
-
-見積もりのガイドの見直しは、走行中の他サイクルがあっても止めない。補正した版はその後に見積もる
-全ビルドに効き、各予測の表には見積もりに使ったガイドの版が残るので、補正の前と後は `tokens history --group-by guide` で分けて比べられる。
-止めて待つより、早く補正したほうが以降の見積もりの精度が上がる。
+永続ドキュメントと `{HIKYAKU_ROOT}/instructions.md` を、サイクルの中で書けるのはあなただけ（ADR の追記は architect）。
+走行中の他サイクルが読むので、昇格は全ビルドのマージ後にまとめて行う。コードとパス指定の rule は
+builder が書いている。サイクルに属す patch の `patches/{YYYYMM}/{slug}/handoff.md` も、ビルドの handoff.md と
+同じく昇格させる（`hikyaku promotions` が集める）。フックと見積もりのガイドの見直しは、別のブランチの PR にする（followups）。
 
 ## 作業ステップ
 

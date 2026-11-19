@@ -31,7 +31,7 @@ export interface RuleFile {
   paths: string[] | undefined;
   /** frontmatter を除いた本文の文字数 */
   characters: number;
-  /** frontmatter の prevents / basis / importance（基準の理由。persistence.md の「rule の書き方」） */
+  /** frontmatter の prevents / basis / importance（基準の理由。skills/close-cycle/references/rule-writing.md） */
   reasons?: RuleReasons;
   /** frontmatter の読めなかった値 */
   problems?: string[];

@@ -210,11 +210,10 @@ test("見出しと宛先の語: テンプレートと persistence.md と promoti
   assert.ok(reviewed.length > 0);
   for (const item of reviewed) assert.equal(typeof parseReviewRecord(item), "object", item);
 
-  // 置き場の表の最初の行が「なくす」で、doc-triager は順を写さず、builder の表の先頭も「なくす」
+  // 置き場の表の最初の行が「なくす」で、doc-triager と builder は順を写さない
   const firstRow = /## 2\. 置き場を選ぶ[\s\S]*?\|---[^\n]*\n(\|[^\n]*)/.exec(persistence)?.[1] ?? "";
   assert.match(firstRow, /なくす/);
   assert.match(firstRow, /`refactor`/);
   assert.doesNotMatch(read("agents/doc-triager.md"), /機械で防ぐ → パス指定の rule/);
-  const builderTable = /\| 知見 \| あなたがすること \|\n\|---\|---\|\n(\|[^\n]*)/.exec(read("skills/builder/SKILL.md"))?.[1] ?? "";
-  assert.match(builderTable, /なくす/);
+  assert.doesNotMatch(read("skills/builder/SKILL.md"), /\| 知見 \| あなたがすること \|/);
 });

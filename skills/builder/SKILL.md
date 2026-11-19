@@ -32,16 +32,8 @@ close-cycle がそれを素材として昇格させる。
 ### 実装で得た知見は、置き場を選んでその場で片づける
 
 落とし穴や失敗の回避策は、見つけたビルドが最もよく知っている。後続のビルドが同じものを踏まないよう、
-このビルドの PR の中で片づける。重要度と置き場の基準は
-`${CLAUDE_PLUGIN_ROOT}/skills/close-cycle/references/persistence.md`（[persistence.md](../close-cycle/references/persistence.md)）が正。
-
-| 知見 | あなたがすること |
-|---|---|
-| なくす（リファクタで知見そのものを不要にできる） | このビルドで直す。スコープを超えるなら handoff の「永続化すること」に宛先 `refactor` で書く |
-| 機械で防げる（lint・テスト・共通ヘルパー・設定・その場のコメント） | このビルドで直す。スコープを超えるなら rule に仮置きし、handoff の「残したこと」に書く |
-| 一部のファイル群を触るときだけ効く | パス指定の rule（`.claude/rules/`）をこのビルドの PR に含めて書く |
-| それ以外（スキル・`workflow`・`conventions`・`overview` / `decisions` / `constraints`・フック） | handoff の「永続化すること」に書く。close-cycle が反映する |
-| 重要度が低（すぐ失敗して、すぐ直せる） | どこにも書かない |
+このビルドの PR の中で片づける（機械で防ぐ・パス指定の rule を書く）。それ以外は handoff の「永続化すること」に
+書き、close-cycle が反映する。仕分けの基準は handoff のステップで読む。
 
 ### 守る原則: マージした時点で本番データを壊さない
 

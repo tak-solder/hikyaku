@@ -33,12 +33,8 @@ HIKYAKU_ROOT は受け取らない。`.hikyaku.config` から解決される。
 
 重要度と置き場の基準、行の書式は
 `${CLAUDE_PLUGIN_ROOT}/skills/close-cycle/references/persistence.md`（[persistence.md](../close-cycle/references/persistence.md)）が正。
-ここには写さない。要点だけ挙げる。
-
-- 重要度が低（すぐ失敗して、すぐ直せる）の知見は書かない。永続化の置き場は、読むたびにコンテキストを使う
-- 機械で防げるもの・パス指定の rule にするものは、builder がビルドの PR で片づけている。振り返りで
-  新たに気づいたものだけを書く
-- 「役に立たなかった記述」は使った本人にしか書けない証言。ただし「今回は使わなかった」だけでは書かない
+ここには写さない（analyze のステップで読む）。機械で防げるもの・パス指定の rule にするものは、
+builder がビルドの PR で片づけている。振り返りで新たに気づいたものだけを書く。
 
 retrospective.md はコミット対象。
 

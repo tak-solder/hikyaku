@@ -181,7 +181,7 @@ register({
         lines.push(`✗ ${m.path}: paths がどのファイルにも一致しません。もう読み込まれていません`);
       }
       for (const m of measures) {
-        for (const problem of m.problems ?? []) lines.push(`? ${m.path}: ${problem}（理由の欄。persistence.md の「rule の書き方」）`);
+        for (const problem of m.problems ?? []) lines.push(`? ${m.path}: ${problem}（理由の欄。close-cycle の rule-writing.md）`);
       }
       return lines.join("\n");
     });

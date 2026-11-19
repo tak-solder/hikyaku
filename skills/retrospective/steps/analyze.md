@@ -1,7 +1,8 @@
 # analyze: 会話履歴の分析と、知見の仕分け
 
 - [ ] 基準を読む: `${CLAUDE_PLUGIN_ROOT}/skills/close-cycle/references/persistence.md`
-  （[persistence.md](../../close-cycle/references/persistence.md)）。重要度・置き場・行の書式はここが正
+  （[persistence.md](../../close-cycle/references/persistence.md)）。重要度・置き場・行の書式はここが正。
+  このセッションで既に読んでいれば（builder の handoff など）読み直さない
 - [ ] 会話履歴を見直し、以下を洗い出す
   - スキルの手順に含まれていないが、ユーザーから受けた指示・修正・補足
   - スキルの手順通りに進めたが、うまくいかなかった点
