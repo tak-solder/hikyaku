@@ -507,6 +507,7 @@ export const ARCHITECT_STEPS: SkillSteps = {
       kind: "run",
       title: "doc-reviewer による設計のレビュー",
       when: (ctx) => designChanges(ctx) && ctx.config.reviews.architecture,
+      countsFindings: true,
     },
     {
       id: "G4",

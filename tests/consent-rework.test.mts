@@ -252,10 +252,10 @@ function report(directory: string, step: string, ...extra: string[]): Directive 
 function upToG8(directory: string): void {
   write(directory, `${BUILD}/plan.md`, "# plan\n");
   report(directory, "plan", "--result", "done", "--peak", "350k");
-  report(directory, "plan-review", "--result", "done");
+  report(directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0");
   write(directory, `${BUILD}/test-spec.md`, "# test-spec\n");
   report(directory, "test-spec", "--result", "done");
-  report(directory, "test-spec-review", "--result", "done");
+  report(directory, "test-spec-review", "--result", "done", "--findings", "0", "--adopted", "0");
 }
 
 function fromG8ToHandoff(directory: string): Directive {
@@ -298,9 +298,9 @@ test("CLI: 同じ単位の退けは reworkFrom を示し、戻り先を報告し
 
   // 戻り先を報告し直すと、後ろはやり直し。同意ゲートに戻ってくれば承認も pr も通る
   assert.equal(report(directory, "plan", "--result", "done", "--peak", "350k").step, "plan-review");
-  report(directory, "plan-review", "--result", "done");
+  report(directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0");
   report(directory, "test-spec", "--result", "done");
-  report(directory, "test-spec-review", "--result", "done");
+  report(directory, "test-spec-review", "--result", "done", "--findings", "0", "--adopted", "0");
   const again = fromG8ToHandoff(directory);
   assert.equal(again.step, "consent");
   assert.equal(again.args?.["reworkFrom"], undefined, "作り直したので戻り先は示さない");

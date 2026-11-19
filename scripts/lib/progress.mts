@@ -57,6 +57,12 @@ export interface ProgressEvent {
    * （LLM の引数では受け取らない）。提示のあとに書き換えた値は false（deferred-consent.mts の g1ConsentRecord）
    */
   deferredConsent?: boolean;
+  /**
+   * 中間レビューの指摘の件数と、そのうち成果物に反映した件数（countsFindings のステップの done）。
+   * 採らなかった指摘（主観的として無視したものも）は findings − adopted。集計は review findings が行う
+   */
+  findings?: number;
+  adopted?: number;
   /** 報告で添えた PR（URL か番号。pr ステップ） */
   pr?: string;
   /** 報告した時点のメインセッションのコンテキスト（#68）。計測できなければ記録しない */

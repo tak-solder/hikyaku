@@ -9,6 +9,7 @@ import {
   REVIEW_PROVIDER_ENV,
   assertCurrentConfig,
   cloudEnvLabel,
+  loadConfig,
   type ResolvedConfig,
   type ReviewKind,
   type ReviewProviderSource,
@@ -16,7 +17,9 @@ import {
 import { shellQuote } from "../lib/conductor.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { defaultBranch, gitPath } from "../lib/git.mts";
-import { emit } from "../lib/output.mts";
+import { emit, table } from "../lib/output.mts";
+import { cycleDirName, loadCycles } from "../lib/cycles.mts";
+import { collectFindingRuns, summarizeFindings } from "../lib/review-findings.mts";
 import { pluginRoot } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
 import {
@@ -433,3 +436,44 @@ function execute(
     });
   });
 }
+
+register({
+  name: "review findings",
+  summary: "中間レビューの指摘の件数と、反映した件数（採用率）をステップごとに集計する",
+  usage: "hikyaku review findings [<cycle>] [--root <path>] [--json]",
+  options: ["root"],
+  maxOperands: 1,
+  details: [
+    "全サイクル（引数があればそのサイクル）の progress.jsonl から、中間レビュー（planner の review・",
+    "architecture-review・tasklist-review・plan-review・test-spec-review）の done に添えた",
+    "--findings / --adopted を集め、ステップごとに回数・指摘の件数・反映した件数・採用率を返します。",
+    "",
+    "件数の無い done（記録を始める前の報告）は「件数なし」として回数にだけ数え、採用率には入れません。",
+    "指摘1件の数え方はレビューごとに揺れるので、比べるのは同じステップどうしです。",
+    "プロファイルでレビューを外すかは、この数字を材料にユーザーが決めます（このコマンドは決めません）。",
+    "builder の agreement-review はプロファイルで外せないので対象外です（指摘は agreement.md に残ります）。",
+  ].join("\n"),
+  run: ({ args, operands }) => {
+    const config = loadConfig({ root: flagString(args, "root") });
+    const all = loadCycles(config.hikyakuRoot);
+    const filter = operands[0];
+    const cycles = filter === undefined ? all : all.filter((r) => filter === r.id || filter === r.slug || filter === cycleDirName(r));
+    if (filter !== undefined && cycles.length === 0) {
+      throw new HikyakuError(`サイクルが見つかりません: ${filter}`, "hikyaku cycle list で一覧を確認してください。");
+    }
+    const runs = collectFindingRuns(config.hikyakuRoot, cycles);
+    const summary = summarizeFindings(runs);
+    emit({ summary, runs }, () => {
+      const rows = summary.map((s) => [
+        `${s.skill} ${s.step}`,
+        String(s.runs),
+        String(s.uncounted),
+        String(s.withFindings),
+        String(s.findings),
+        String(s.adopted),
+        s.rate === null ? "—" : `${Math.round(s.rate * 100)}%`,
+      ]);
+      return table(rows, ["レビュー", "回数", "件数なし", "指摘のあった回", "指摘", "反映", "採用率"]);
+    });
+  },
+});

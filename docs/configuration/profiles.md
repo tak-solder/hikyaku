@@ -67,7 +67,7 @@ express は「要件（G1）と実装直前（G8）だけユーザーが見て�
 
 `plan_review` と `test_spec_review` は既定値こそ同じプロファイルに従いますが、別々のキーです。plan.md だけレビューして test-spec.md は省く、といった組み合わせは個別キーの上書きで作れます。
 
-`code_review` はどのプロファイルでも行います。中間成果物（user-stories / 設計 / tasklist・issue / plan）のレビューはユーザーの承認で代替できますが、コードは差分が大きく、ユーザーの承認ゲートが拾える粒度を超えるためです。economy で省くのはこの中間成果物のレビューです。
+`code_review` はどのプロファイルでも行います。中間成果物（user-stories / 設計 / tasklist・issue / plan）のレビューはユーザーの承認で代替できますが、コードは差分が大きく、ユーザーの承認ゲートが拾える粒度を超えるためです。economy で省くのはこの中間成果物のレビューです。どのレビューを残すかは、`hikyaku review findings` が集計する採用率（指摘のうち成果物に反映した割合）を見て決められます（[CLI](../reference/cli.md#レビュー)）。
 
 `security_review` もどのプロファイルでも `off` にはしません。「承認を減らしたから」「実行コストを削ったから」で落としてよい観点ではないためです。既定は `recommended`（判定基準に該当したときだけ起動を確認）で、thorough だけが該当判定を挟まず `on` です。明示的に切りたい場合は `security_review = "off"` で上書きできます。
 
