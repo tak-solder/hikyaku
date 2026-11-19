@@ -77,10 +77,10 @@ function events(directory: string): Record<string, unknown>[] {
 function upToG8(directory: string): void {
   write(directory, `${BUILD}/plan.md`, "# plan\n");
   report(directory, "plan", "--result", "done", "--peak", "350k");
-  report(directory, "plan-review", "--result", "done");
+  report(directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0");
   write(directory, `${BUILD}/test-spec.md`, "# test-spec\n");
   report(directory, "test-spec", "--result", "done");
-  report(directory, "test-spec-review", "--result", "done");
+  report(directory, "test-spec-review", "--result", "done", "--findings", "0", "--adopted", "0");
 }
 
 test("step next: 最初の1手は plan で、指示ファイルと報告のコマンドが返る", (t) => {
@@ -134,7 +134,7 @@ test("step: 設定で無効なステップは返らない（plan_review = false�
   configure(directory, "plan_review = false");
   write(directory, `${BUILD}/plan.md`);
   assert.equal(report(directory, "plan", "--result", "done", "--peak", "350k").step, "test-spec");
-  const off = cli(directory, "step", "report", "build-01", "plan-review", "001", "--result", "done");
+  const off = cli(directory, "step", "report", "build-01", "plan-review", "001", "--result", "done", "--findings", "0", "--adopted", "0");
   assert.equal(off.status, 1);
   assert.match(off.stderr, /行わないステップ/);
 });
@@ -143,7 +143,7 @@ test("step: test-spec のスキップは理由が必須で、スキップする�
   const directory = built(t);
   write(directory, `${BUILD}/plan.md`);
   report(directory, "plan", "--result", "done", "--peak", "350k");
-  report(directory, "plan-review", "--result", "done");
+  report(directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0");
   const noReason = cli(directory, "step", "report", "build-01", "test-spec", "001", "--result", "skipped");
   assert.equal(noReason.status, 1);
   assert.match(noReason.stderr, /--reason/);
@@ -156,7 +156,7 @@ test("step: 見積もり直した予測ピークが split_above を超えたら 
   const directory = built(t);
   write(directory, `${BUILD}/plan.md`);
   report(directory, "plan", "--result", "done", "--peak", "400k");
-  const directive = report(directory, "plan-review", "--result", "done", "--peak", "500k");
+  const directive = report(directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0", "--peak", "500k");
   assert.equal(directive.kind, "call");
   assert.equal(directive.step, "split");
   assert.equal(directive.call, "build-manager");
@@ -174,7 +174,7 @@ test("step: split_above をわずかに超えた予測ピークも、表の値�
   assert.equal(shown, "450.4k", "表の予測ピークは丸めない");
   report(directory, "plan", "--result", "done", "--peak", shown ?? "");
   assert.equal(events(directory).at(-1)?.["peak"], 450_400);
-  assert.equal(report(directory, "plan-review", "--result", "done").step, "split");
+  assert.equal(report(directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0").step, "split");
 });
 
 test("step: G8 の承認は、差し戻しと報告し直しでだけ取り直しになる", (t) => {
@@ -323,6 +323,18 @@ test("step lint: gate に escalates を付けた定義を問題として返す",
   assert.deepEqual(problems, ["synthetic: ゲート G は escalates を持てません（failed を報告しないため）"]);
 });
 
+test("step lint: gate に countsFindings を付けた定義を問題として返す", () => {
+  const problems = lintApproval({ skill: "synthetic", steps: [{ id: "G", kind: "gate", title: "t", consent: false, countsFindings: true }] });
+  assert.deepEqual(problems, ["synthetic: ゲート G は countsFindings を持てません（done を報告しないため）"]);
+});
+
+test("step: 件数を数える中間レビューは、プロファイルで外せる doc-reviewer のステップだけ", () => {
+  const counted = ["planner", "architect", "build-manager", "builder", "patch"].flatMap((skill) =>
+    (stepsOf(skill)?.steps ?? []).filter((step) => step.countsFindings === true).map((step) => `${skill}/${step.id}`),
+  );
+  assert.deepEqual(counted, ["planner/review", "architect/architecture-review", "build-manager/tasklist-review", "builder/plan-review", "builder/test-spec-review"]);
+});
+
 test("step: plan の done には見積もり直した予測ピークが必須（分割の検討を報告の漏れで飛ばさない）", (t) => {
   const directory = built(t);
   write(directory, `${BUILD}/plan.md`);
@@ -338,7 +350,80 @@ test("step: plan の done には見積もり直した予測ピークが必須（
   const directive = report(directory, "plan", "--result", "done", "--peak", "350k");
   assert.equal(directive.step, "plan-review");
   assert.match(directive.report?.["done"] ?? "", /\[--peak <見積もり直した予測ピーク>\]/, "plan-review では任意");
-  assert.equal(report(directory, "plan-review", "--result", "done").step, "test-spec");
+  assert.equal(report(directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0").step, "test-spec");
+});
+
+test("step: 中間レビューの done には指摘の件数と反映した件数が必須で、記録に残る", (t) => {
+  const directory = built(t);
+  write(directory, `${BUILD}/plan.md`);
+  const directive = report(directory, "plan", "--result", "done", "--peak", "350k");
+  assert.match(directive.report?.["done"] ?? "", / --findings <指摘の件数> --adopted <反映した件数>/);
+  const reportPlanReview = (...extra: string[]) => cli(directory, "step", "report", "build-01", "plan-review", "001", "--result", "done", ...extra);
+
+  const missing = reportPlanReview();
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /--findings/);
+  const half = reportPlanReview("--findings", "2");
+  assert.equal(half.status, 1);
+  assert.match(half.stderr, /組で/);
+  const over = reportPlanReview("--findings", "2", "--adopted", "3");
+  assert.equal(over.status, 1);
+  assert.match(over.stderr, /超えています/);
+  assert.equal(reportPlanReview("--findings", "-1", "--adopted", "0").status, 1);
+  for (const invalid of ["1.5", "two"]) {
+    const result = reportPlanReview("--findings", invalid, "--adopted", "0");
+    assert.equal(result.status, 1, invalid);
+    assert.match(result.stderr, /0 以上の整数/);
+  }
+  const failed = cli(directory, "step", "report", "build-01", "plan-review", "001", "--result", "failed", "--reason", "起動できない", "--findings", "1", "--adopted", "0");
+  assert.equal(failed.status, 1);
+  assert.match(failed.stderr, /done の報告にだけ/);
+
+  assert.equal(report(directory, "plan-review", "--result", "done", "--findings", "4", "--adopted", "3").step, "test-spec");
+  const recorded = events(directory).find((event) => event["step"] === "plan-review" && event["result"] === "done");
+  assert.equal(recorded?.["findings"], 4);
+  assert.equal(recorded?.["adopted"], 3);
+});
+
+test("step: 中間レビューでないステップには --findings を添えられない", (t) => {
+  const directory = built(t);
+  write(directory, `${BUILD}/plan.md`);
+  const result = cli(directory, "step", "report", "build-01", "plan", "001", "--result", "done", "--peak", "350k", "--findings", "1", "--adopted", "1");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /plan には --findings/);
+  assert.doesNotMatch(next(directory).report?.["done"] ?? "", /--findings/);
+});
+
+test("review findings: 件数のある回だけから採用率を出し、件数の無い回は別に数える", (t) => {
+  const directory = built(t);
+  write(directory, `${BUILD}/plan.md`);
+  report(directory, "plan", "--result", "done", "--peak", "350k");
+  report(directory, "plan-review", "--result", "done", "--findings", "4", "--adopted", "3");
+  // 記録を始める前の報告（件数なし）と、指摘0件の回
+  const path = join(directory, BUILD, "progress.jsonl");
+  writeFileSync(path, `${readFileSync(path, "utf8")}${JSON.stringify({ at: "2026-11-01T00:00:00Z", skill: "builder", step: "plan-review", result: "done" })}\n`);
+  write(directory, `${BUILD}/test-spec.md`);
+  report(directory, "test-spec", "--result", "done");
+  report(directory, "test-spec-review", "--result", "done", "--findings", "0", "--adopted", "0");
+
+  const output = JSON.parse(succeeds(directory, "review", "findings", "001", "--json")) as {
+    summary: { skill: string; step: string; runs: number; uncounted: number; withFindings: number; findings: number; adopted: number; rate: number | null }[];
+  };
+  const of = (step: string) => output.summary.find((entry) => entry.step === step);
+  assert.deepEqual(
+    { ...of("plan-review") },
+    { skill: "builder", step: "plan-review", runs: 2, uncounted: 1, withFindings: 1, findings: 4, adopted: 3, rate: 0.75 },
+  );
+  assert.equal(of("test-spec-review")?.rate, null, "指摘が0件なら採用率は出さない");
+  assert.equal(of("test-spec-review")?.runs, 1);
+  assert.deepEqual(
+    output.summary.map((entry) => `${entry.skill}/${entry.step}`),
+    ["planner/review", "architect/architecture-review", "build-manager/tasklist-review", "builder/plan-review", "builder/test-spec-review"],
+    "回が無いステップも並ぶ",
+  );
+  const text = succeeds(directory, "review", "findings", "001");
+  assert.match(text, /builder plan-review\s+2\s+1\s+1\s+4\s+3\s+75%/);
+  assert.equal(cli(directory, "review", "findings", "999").status, 1);
 });
 
 test("step: 振り返りを PR 前に終え、PR 列と URL が揃うまで完了にしない", (t) => {

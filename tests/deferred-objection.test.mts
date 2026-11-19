@@ -181,10 +181,10 @@ function report(directory: string, step: string, ...extra: string[]): Directive 
 function upToG8(directory: string): void {
   write(directory, `${BUILD}/plan.md`, "# plan\n");
   report(directory, "plan", "--result", "done", "--peak", "350k");
-  report(directory, "plan-review", "--result", "done");
+  report(directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0");
   write(directory, `${BUILD}/test-spec.md`, "# test-spec\n");
   report(directory, "test-spec", "--result", "done");
-  report(directory, "test-spec-review", "--result", "done");
+  report(directory, "test-spec-review", "--result", "done", "--findings", "0", "--adopted", "0");
 }
 
 /** handoff を done にする手前まで進める */

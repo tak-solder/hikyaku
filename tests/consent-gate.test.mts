@@ -268,10 +268,10 @@ function report(directory: string, step: string, ...extra: string[]): Directive 
 function upToHandoff(directory: string): void {
   write(directory, `${BUILD}/plan.md`, "# plan\n");
   report(directory, "plan", "--result", "done", "--peak", "350k");
-  report(directory, "plan-review", "--result", "done");
+  report(directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0");
   write(directory, `${BUILD}/test-spec.md`, "# test-spec\n");
   report(directory, "test-spec", "--result", "done");
-  report(directory, "test-spec-review", "--result", "done");
+  report(directory, "test-spec-review", "--result", "done", "--findings", "0", "--adopted", "0");
   report(directory, "G8", "--result", "approved", "--input", "OK");
   report(directory, "implement", "--result", "done");
   report(directory, "verify", "--result", "done");

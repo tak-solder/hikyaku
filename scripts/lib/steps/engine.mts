@@ -156,6 +156,12 @@ export interface StepDefinition {
    * risk の事項（who=user、when=merge@<単位>）を書く。gate は持てない
    */
   defers?: (ctx: StepContext) => DeferredRisk | undefined;
+  /**
+   * done の報告に、中間レビューの指摘の件数と反映した件数（--findings / --adopted）を求めるか。
+   * プロファイルで外せるレビューを残すかを、採用率の実績で決めるための記録（review findings が集計する）。
+   * gate は持てない
+   */
+  countsFindings?: boolean;
   /** 設定から解決して指示に添える値 */
   args?: (ctx: StepContext) => Record<string, unknown>;
   /**
@@ -261,6 +267,9 @@ export function lintApproval(skill: Pick<SkillSteps, "skill" | "steps">): string
         problems.push(`${skill.skill}: ゲート ${definition.id} は escalates を持てません（failed を報告しないため）`);
       }
       // ゲートは done を報告しないので、申告を受け付けても記録されない
+      if (definition.countsFindings !== undefined) {
+        problems.push(`${skill.skill}: ゲート ${definition.id} は countsFindings を持てません（done を報告しないため）`);
+      }
       if (definition.declaresRisk !== undefined) {
         problems.push(`${skill.skill}: ゲート ${definition.id} は declaresRisk を持てません（done を報告しないため）`);
       }

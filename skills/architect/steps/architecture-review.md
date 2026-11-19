@@ -14,3 +14,5 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc architect {c
 - [ ] 渡す情報: `design-delta.md`, `codebase-survey.md`, 今回追記した ADR, `user-stories.md`
 - [ ] 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
 - [ ] 指摘と対処は G4 の提示で使うので、このセッションに残しておく
+- [ ] `done` に `--findings`（レビューが返した指摘の件数。`###` の項目の数で、確度が低い懸念も含む）と
+  `--adopted`（そのうち design-delta.md・ADR に反映した件数）を添える。主観的として無視した指摘も `--findings` には数える

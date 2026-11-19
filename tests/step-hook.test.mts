@@ -55,7 +55,7 @@ test("step hook stop: ゲートで止まるのと、非対話規約のブロッ�
   const directory = built(t);
   write(directory, `${BUILD}/plan.md`);
   report(t, directory, "plan", "--result", "done", "--peak", "350k");
-  report(t, directory, "plan-review", "--result", "done");
+  report(t, directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0");
 
   const message = 'test-spec を書く前に確認します。\n\n<hikyaku-gate id="questions">\n境界値はどれですか？\n</hikyaku-gate>';
   assert.equal(hook(directory, { session_id: SESSION, last_assistant_message: message }), undefined);
@@ -63,7 +63,7 @@ test("step hook stop: ゲートで止まるのと、非対話規約のブロッ�
 
   write(directory, `${BUILD}/test-spec.md`);
   report(t, directory, "test-spec", "--result", "done");
-  report(t, directory, "test-spec-review", "--result", "done");
+  report(t, directory, "test-spec-review", "--result", "done", "--findings", "0", "--adopted", "0");
   assert.equal(hook(directory, { session_id: SESSION }), undefined, "G8 は gate なので止まってよい");
 });
 
@@ -71,7 +71,7 @@ test("step hook stop: 内部スキルを呼んでいる最中は、呼ばれた�
   const directory = built(t);
   write(directory, `${BUILD}/plan.md`);
   report(t, directory, "plan", "--result", "done", "--peak", "400k");
-  report(t, directory, "plan-review", "--result", "done", "--peak", "500k");
+  report(t, directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0", "--peak", "500k");
 
   const blocked = hook(directory, { session_id: SESSION });
   assert.equal(blocked?.decision, "block");
@@ -129,10 +129,10 @@ test("conductor parse: 子の手順の位置を返し、ブロックとの食い
   const early = parse(directory, '<hikyaku-gate id="G8">\n承認しますか？\n</hikyaku-gate>');
   assert.match(early.stepProblems[0] ?? "", /G8 で止まりましたが/);
 
-  report(t, directory, "plan-review", "--result", "done");
+  report(t, directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0");
   write(directory, `${BUILD}/test-spec.md`);
   report(t, directory, "test-spec", "--result", "done");
-  report(t, directory, "test-spec-review", "--result", "done");
+  report(t, directory, "test-spec-review", "--result", "done", "--findings", "0", "--adopted", "0");
   const gate = parse(directory, '<hikyaku-gate id="G8">\n承認しますか？\n</hikyaku-gate>');
   assert.deepEqual(gate.stepProblems, []);
   assert.equal(gate.step?.["ask"], "G8");
@@ -197,14 +197,14 @@ test("conductor parse / step hook: run のステップの中から呼んだ buil
   const directory = built(t);
   write(directory, `${BUILD}/plan.md`);
   report(t, directory, "plan", "--result", "done", "--peak", "350k");
-  report(t, directory, "plan-review", "--result", "done");
+  report(t, directory, "plan-review", "--result", "done", "--findings", "0", "--adopted", "0");
   write(directory, `${BUILD}/test-spec.md`);
   report(t, directory, "test-spec", "--result", "done");
-  report(t, directory, "test-spec-review", "--result", "done");
+  report(t, directory, "test-spec-review", "--result", "done", "--findings", "0", "--adopted", "0");
   report(t, directory, "G8", "--result", "approved", "--input", "OK");
   // implement の途中で、想定外の依存が見つかって build-manager を呼んだ
   for (const step of ["load", "scope", "estimate", "dry-run", "tasklist-review"]) {
-    report(t, directory, step, "--skill", "build-manager", "--result", "done");
+    report(t, directory, step, "--skill", "build-manager", "--result", "done", ...(step === "tasklist-review" ? ["--findings", "0", "--adopted", "0"] : []));
   }
   assert.equal(hook(directory, { session_id: SESSION }), undefined, "G6 で止まるのは正しい");
   const gate = parse(directory, '<hikyaku-gate id="G6">\n承認しますか？\n</hikyaku-gate>');
@@ -241,7 +241,8 @@ test("step hook stop: 手順を終えたあとに呼び直した振り返り（P
   const directory = workspace(t, true);
   configure(directory, 'retrospective = "skip"');
   write(directory, "docs/hikyaku/cycles/001-test/planning/user-stories.md");
-  for (const step of ["inputs", "scope", "user-stories", "review"]) reportAs(t, directory, "plan", step, "--result", "done");
+  for (const step of ["inputs", "scope", "user-stories"]) reportAs(t, directory, "plan", step, "--result", "done");
+  reportAs(t, directory, "plan", "review", "--result", "done", "--findings", "0", "--adopted", "0");
   reportAs(t, directory, "plan", "G1", "--result", "approved", "--input", "OK");
   reportAs(t, directory, "plan", "pr", "--result", "done", ...PR);
   reportAs(t, directory, "plan", "publish", "--result", "done");

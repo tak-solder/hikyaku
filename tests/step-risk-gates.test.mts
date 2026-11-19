@@ -13,7 +13,7 @@ import { test, type TestContext } from "node:test";
 // steps/index.mts から読む（architect.mts を先に読み込むと、risk.mts 経由の循環で初期化前に参照される）
 import { lintApproval } from "../scripts/lib/steps/engine.mts";
 import { stepsOf } from "../scripts/lib/steps/index.mts";
-import { cli, repository, succeeds, temporaryDirectory, testEnvironment, write } from "./helpers.mts";
+import { cli, findingCounts, repository, succeeds, temporaryDirectory, testEnvironment, write } from "./helpers.mts";
 
 const CYCLE = "docs/hikyaku/cycles/001-test";
 const DESIGN = `${CYCLE}/design`;
@@ -146,14 +146,14 @@ function driveTo(directory: string, stop: string[], drive: Drive = {}): Directiv
     if (step === "options") {
       directive = drive.options === "skip"
         ? report(directory, step, "--result", "skipped", "--reason", "分岐なし")
-        : report(directory, step, "--result", "done", ...(drive.options ?? []));
+        : report(directory, step, "--result", "done", ...(drive.options ?? []), ...findingCounts(step));
       continue;
     }
     if (step === "design-delta") {
       for (const [path, content] of Object.entries(drive.files ?? {})) write(directory, path, content);
       write(directory, `${DESIGN}/design-delta.md`, drive.delta ?? "# 設計差分\n");
     }
-    directive = report(directory, step, "--result", "done");
+    directive = report(directory, step, "--result", "done", ...findingCounts(step));
   }
   throw new Error(`${stop.join("/")} に着きません（現在: ${directive.step}）`);
 }
@@ -426,7 +426,7 @@ test("G4: ADR の一覧を読めなければ同意に倒し、理由を notices 
   });
   // ADR の所在を引く document-guide.md を壊す
   writeFileSync(join(directory, "docs/hikyaku/document-guide.md"), "壊れたガイド\n");
-  const g4 = g4Before.step === "architecture-review" ? report(directory, "architecture-review", "--result", "done") : next(directory);
+  const g4 = g4Before.step === "architecture-review" ? report(directory, "architecture-review", "--result", "done", "--findings", "0", "--adopted", "0") : next(directory);
   assert.deepEqual([g4.step, g4.approval], ["G4", "consent"]);
   assert.match(g4.approvalReason ?? "", /裏取りできない/);
   assert.equal(g4.args?.["verified"], false);
@@ -526,7 +526,7 @@ test("G4: 境界を宣言していて ADR を読めなければ同意に倒し�
   const directory = workspace(t, { profile: "standard", committed: boundaries(["src/api/**"]) });
   const before = driveTo(directory, ["architecture-review", "G4"], { options: [], delta: "# 設計差分\n" });
   writeFileSync(join(directory, "docs/hikyaku/document-guide.md"), "壊れたガイド\n");
-  const g4 = before.step === "architecture-review" ? report(directory, "architecture-review", "--result", "done") : next(directory);
+  const g4 = before.step === "architecture-review" ? report(directory, "architecture-review", "--result", "done", "--findings", "0", "--adopted", "0") : next(directory);
   assert.deepEqual([g4.step, g4.approval], ["G4", "consent"]);
   assert.ok(g4.notices?.some((notice) => notice.includes("外との境界を照合できない")), JSON.stringify(g4.notices));
 });
@@ -535,7 +535,7 @@ test("G4: 境界を宣言していなければ、ADR を読めなくても境界
   const directory = workspace(t, { profile: "standard" });
   const before = driveTo(directory, ["architecture-review", "G4"], { options: [], delta: "# 設計差分\n" });
   writeFileSync(join(directory, "docs/hikyaku/document-guide.md"), "壊れたガイド\n");
-  const g4 = before.step === "architecture-review" ? report(directory, "architecture-review", "--result", "done") : next(directory);
+  const g4 = before.step === "architecture-review" ? report(directory, "architecture-review", "--result", "done", "--findings", "0", "--adopted", "0") : next(directory);
   assert.equal(g4.approval, "confirm");
   assert.doesNotMatch(`${g4.approvalReason ?? ""}${JSON.stringify(g4.notices)}`, /境界/);
 });

@@ -62,7 +62,7 @@ function upToG4(directory: string): void {
   report(directory, "adr", "--result", "done");
   write(directory, `${DESIGN}/design-delta.md`);
   report(directory, "design-delta", "--result", "done");
-  report(directory, "architecture-review", "--result", "done");
+  report(directory, "architecture-review", "--result", "done", "--findings", "0", "--adopted", "0");
 }
 
 /** build-manager を最初から書き込みまで進める（standard: tasklist-review あり） */
@@ -71,7 +71,7 @@ function runManager(directory: string, phase = "architect"): Directive {
   manager(directory, "scope", phase, "--result", "done");
   manager(directory, "estimate", phase, "--result", "done");
   manager(directory, "dry-run", phase, "--result", "done");
-  manager(directory, "tasklist-review", phase, "--result", "done");
+  manager(directory, "tasklist-review", phase, "--result", "done", "--findings", "0", "--adopted", "0");
   manager(directory, "G6", phase, "--result", "approved", "--input", "OK");
   return manager(directory, "write", phase, "--result", "done");
 }
@@ -133,7 +133,7 @@ test("architect: G3 と G4 を外すと（express）、設計案の値で推奨�
   write(directory, `${DESIGN}/design-delta.md`);
   report(directory, "adr", "--result", "done");
   assert.equal(report(directory, "design-delta", "--result", "done").step, "architecture-review");
-  assert.equal(report(directory, "architecture-review", "--result", "done").step, "build-split");
+  assert.equal(report(directory, "architecture-review", "--result", "done", "--findings", "0", "--adopted", "0").step, "build-split");
 });
 
 test("architect: G4 の差し戻しで design-delta を報告し直すと、レビューと G4 がやり直しになる", (t) => {
@@ -146,7 +146,7 @@ test("architect: G4 の差し戻しで design-delta を報告し直すと、レ�
 
   write(directory, `${DESIGN}/design-delta.md`, "# design-delta（移行の段階を追加）\n");
   assert.equal(report(directory, "design-delta", "--result", "done").step, "architecture-review", "古いレビューの完了は数えない");
-  assert.equal(report(directory, "architecture-review", "--result", "done").step, "G4");
+  assert.equal(report(directory, "architecture-review", "--result", "done", "--findings", "0", "--adopted", "0").step, "G4");
   assert.equal(report(directory, "G4", "--result", "approved", "--input", "OK").step, "build-split");
 });
 
@@ -179,12 +179,12 @@ test("architect: ビルド分割で build-manager を呼び、同じ design/prog
   manager(directory, "scope", "architect", "--result", "done");
   manager(directory, "estimate", "architect", "--result", "done");
   manager(directory, "dry-run", "architect", "--result", "done");
-  assert.equal(manager(directory, "tasklist-review", "architect", "--result", "done").step, "G6");
+  assert.equal(manager(directory, "tasklist-review", "architect", "--result", "done", "--findings", "0", "--adopted", "0").step, "G6");
   manager(directory, "G6", "architect", "--result", "rejected", "--input", "分け方を変えて");
   assert.equal(manager(directory, "scope", "architect", "--result", "done").step, "estimate");
   manager(directory, "estimate", "architect", "--result", "done");
   manager(directory, "dry-run", "architect", "--result", "done");
-  manager(directory, "tasklist-review", "architect", "--result", "done");
+  manager(directory, "tasklist-review", "architect", "--result", "done", "--findings", "0", "--adopted", "0");
   manager(directory, "G6", "architect", "--result", "approved", "--input", "OK");
   assert.equal(manager(directory, "write", "architect", "--result", "done").kind, "done");
 
@@ -233,7 +233,7 @@ test("build-manager: builder の分割の検討から呼ぶと、ビルドの pr
   write(directory, `${build}/issue.md`);
   write(directory, `${build}/plan.md`);
   succeeds(directory, "step", "report", "build-01", "plan", "001", "--result", "done", "--peak", "400k");
-  const call = parse(succeeds(directory, "step", "report", "build-01", "plan-review", "001", "--result", "done", "--peak", "500k", "--json"));
+  const call = parse(succeeds(directory, "step", "report", "build-01", "plan-review", "001", "--result", "done", "--findings", "0", "--adopted", "0", "--peak", "500k", "--json"));
   assert.equal(call.step, "split");
   assert.match(call.callNext ?? "", /step next build-01 001-test --skill build-manager/);
 
@@ -280,7 +280,7 @@ test("architect: 差し戻し中は、再設計の回を区切るまで止まる
   report(directory, "questions", "--result", "done");
   report(directory, "options", "--result", "skipped", "--reason", "分岐なし");
   report(directory, "design-delta", "--result", "done");
-  report(directory, "architecture-review", "--result", "done");
+  report(directory, "architecture-review", "--result", "done", "--findings", "0", "--adopted", "0");
   const call = report(directory, "G4", "--result", "approved", "--input", "OK");
   assert.equal(call.step, "build-split");
   assert.equal(call.args?.["round"], "return");

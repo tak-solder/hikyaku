@@ -204,7 +204,7 @@ function upToG1(t: TestContext, directory: string): Directive {
   step(t, directory, "report", "plan", "scope", "001", "--result", "done");
   write(directory, `${CYCLE}/planning/user-stories.md`);
   let directive = step(t, directory, "report", "plan", "user-stories", "001", "--result", "done");
-  if (directive.step === "review") directive = step(t, directory, "report", "plan", "review", "001", "--result", "done");
+  if (directive.step === "review") directive = step(t, directory, "report", "plan", "review", "001", "--result", "done", "--findings", "0", "--adopted", "0");
   return directive;
 }
 
@@ -280,7 +280,7 @@ test("architect: express の再設計の回は G3・G4 が同意として返り�
   step(t, directory, "report", "architect", "adr", "001", "--result", "done");
   write(directory, `${DESIGN}/design-delta.md`);
   step(t, directory, "report", "architect", "design-delta", "001", "--result", "done");
-  const g4 = step(t, directory, "report", "architect", "architecture-review", "001", "--result", "done");
+  const g4 = step(t, directory, "report", "architect", "architecture-review", "001", "--result", "done", "--findings", "0", "--adopted", "0");
   assert.deepEqual([g4.kind, g4.step, g4.approval], ["gate", "G4", "consent"]);
   assert.match(g4.approvalReason ?? "", /差し戻しからの再設計/);
 });
@@ -296,7 +296,7 @@ test("architect: 全ゲートを off にしても再設計の回は G3・G4 が�
   step(t, directory, "report", "architect", "adr", "001", "--result", "done");
   write(directory, `${DESIGN}/design-delta.md`);
   step(t, directory, "report", "architect", "design-delta", "001", "--result", "done");
-  assert.equal(step(t, directory, "report", "architect", "architecture-review", "001", "--result", "done").step, "G4");
+  assert.equal(step(t, directory, "report", "architect", "architecture-review", "001", "--result", "done", "--findings", "0", "--adopted", "0").step, "G4");
 
   const before = snapshot(directory);
   step(t, directory, "next", "architect", "001");
@@ -327,7 +327,7 @@ test("architect: express の通常の回は G3・G4 を外し、designChoiceGate
   write(express, `${DESIGN}/design-delta.md`);
   step(t, express, "report", "architect", "adr", "001", "--result", "done");
   step(t, express, "report", "architect", "design-delta", "001", "--result", "done");
-  assert.equal(step(t, express, "report", "architect", "architecture-review", "001", "--result", "done").step, "build-split");
+  assert.equal(step(t, express, "report", "architect", "architecture-review", "001", "--result", "done", "--findings", "0", "--adopted", "0").step, "build-split");
   const offs = statuses(express, "architect");
   assert.ok(offs.includes("G3:off") && offs.includes("G4:off"), offs.join(", "));
 
@@ -362,7 +362,7 @@ test("builder: G7 は plan_gate で確認として外せる", (t) => {
     write(directory, `${BUILD}/issue.md`);
     write(directory, `${BUILD}/plan.md`);
     step(t, directory, "report", "build-01", "plan", "001", "--result", "done", "--peak", "350k");
-    const next = step(t, directory, "report", "build-01", "plan-review", "001", "--result", "done");
+    const next = step(t, directory, "report", "build-01", "plan-review", "001", "--result", "done", "--findings", "0", "--adopted", "0");
     assert.equal(next.step, expected);
     if (expected === "G7") assert.equal(next.approval, "confirm");
     else assert.ok(statuses(directory, "build-01").includes("G7:off"));
@@ -376,7 +376,7 @@ test("build-manager と close-cycle: express でも G6 は確認、G10 は同意
   }
   const g6 = step(t, directory, "report", "architect", "dry-run", "001", "--skill", "build-manager", "--result", "done");
   const gateG6 = g6.step === "tasklist-review"
-    ? step(t, directory, "report", "architect", "tasklist-review", "001", "--skill", "build-manager", "--result", "done")
+    ? step(t, directory, "report", "architect", "tasklist-review", "001", "--skill", "build-manager", "--result", "done", "--findings", "0", "--adopted", "0")
     : g6;
   assert.deepEqual([gateG6.step, gateG6.approval, gateG6.approvalReason], ["G6", "confirm", null]);
 

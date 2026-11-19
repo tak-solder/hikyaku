@@ -154,9 +154,9 @@ function upTo(directory: string, env: NodeJS.ProcessEnv, unit: string, stop?: st
   const build = `${CYCLE}/${unit}`;
   const steps: [string, () => string[]][] = [
     ["plan", () => (write(directory, `${build}/plan.md`, "# plan\n"), ["--result", "done", "--peak", "350k"])],
-    ["plan-review", () => ["--result", "done"]],
+    ["plan-review", () => ["--result", "done", "--findings", "0", "--adopted", "0"]],
     ["test-spec", () => (write(directory, `${build}/test-spec.md`, "# test-spec\n"), ["--result", "done"])],
-    ["test-spec-review", () => ["--result", "done"]],
+    ["test-spec-review", () => ["--result", "done", "--findings", "0", "--adopted", "0"]],
     ["G8", () => ["--result", "approved", "--input", "OK"]],
     ["implement", () => ["--result", "done"]],
     ["verify", () => ["--result", "done"]],

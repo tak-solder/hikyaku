@@ -38,6 +38,7 @@ export const BUILD_MANAGER_STEPS: SkillSteps = {
       kind: "run",
       title: "doc-reviewer による tasklist のレビュー",
       when: (ctx) => ctx.config.reviews.tasklist,
+      countsFindings: true,
       args: (ctx) => ({ caller: ctx.unit }),
     },
     { id: "G6", kind: "gate", title: "tasklist と issue.md の変更の承認", consent: false, ask: "G6" },
