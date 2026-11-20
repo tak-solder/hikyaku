@@ -11,7 +11,7 @@ import { HikyakuError } from "../lib/errors.mts";
 import { emit, warn } from "../lib/output.mts";
 import { repoRelative } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
-import { formatRef, refNumber, refUrl } from "../lib/refs.mts";
+import { cycleRefLine, formatRef, refNumber } from "../lib/refs.mts";
 import { openCycle, type CycleContext } from "../lib/workspace.mts";
 import { originUrl } from "../lib/git.mts";
 import { githubRepositoryOf } from "../lib/github.mts";
@@ -237,17 +237,13 @@ register({
     const { config, context: ctx } = openCycle(args, operands[1]);
     assertCurrentConfig(config);
 
-    const reference = ctx.record.external;
-    const number = refNumber(reference);
-    const url = refUrl(reference);
     // ファイルへのローカルリンクのような、外部への参照でない値は出さない
-    const subject = number !== undefined ? `#${number}` : url !== undefined && /^https?:\/\//.test(url) ? url : undefined;
-    if (config.external.target === "none" || subject === undefined) {
+    const line = cycleRefLine(config.external.target, ctx.record.external, phase);
+    if (line === "") {
       emit({ line: "", target: config.external.target }, () => "");
       return;
     }
 
-    const line = `${phase === "close" ? "Closes" : "Refs"} ${subject}`;
     emit({ line, target: config.external.target, phase, cycle: ctx.name }, () => line);
   },
 });

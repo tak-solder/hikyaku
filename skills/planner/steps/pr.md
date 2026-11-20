@@ -10,7 +10,6 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify plan {cycle}
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external sync {cycle}
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref plan {cycle}
 ```
 
 サイクルの issue はここで1回だけ作る。この時点なら user-stories があって要約として成立し、
@@ -20,18 +19,17 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref plan {cycle}
 gh CLI が無い環境では投影内容だけが返る（`reason: "gh-not-found"`）。その場合は
 GitHub MCP ツールで起票し、`cycle link {cycle} --external {URL}` で記録する。
 
-- [ ] PR を作る前に、マージの前にユーザーが同意する項目に決定が足りないかを確かめる
-  （`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger consent-list plan {cycle}` の最後の行「決定が足りない項目」が「なし」か）。
-  足りなければ一覧をその場でユーザーに示し、項目ごとに
-  `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger decide plan <ID> {cycle} --decision <consented|decided|rejected> --by user --input "<ユーザーの答え>"`
-  で記録してから作る（ask: deferred-consent）。決定が足りないままでは `done` を受け付けない
+- [ ] 本文に貼る節を出す（差分の事実・宣言の変更・未決事項・issue への参照。中身の無い節は出ない）
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr body plan {cycle}
+```
+
+  終了コード 2 で止まったら、マージの前にユーザーが同意する項目に決定が足りない。出力の手順で一覧をユーザーに示し、
+  項目ごとの決定を記録してから（ask: deferred-consent）やり直す。
 - [ ] PR を Draft で作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title plan {cycle}` で生成）
-  - `external ref` が返した行（`Refs #12` など）を本文の末尾に入れる。空なら入れない
+  - `pr body` の出力を本文の末尾にそのまま貼る（手で書き直さない）
   - create-cycle を代行した場合は、cycles.md の変更もこの PR に含める
-  - 値 `declarationChanged` が `false` でなければ、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger premises --format pr`
-    の出力を本文にそのまま貼る（変わった宣言を拠り所にした受け入れを、ユーザーがマージの前に見直すため）
-  - `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger pr-section plan {cycle}` の出力を本文にそのまま貼る
-    （受け入れたリスク・未解決の退け・マージの前に決める事項・期限を過ぎた事項。空なら何も貼らない）
   - `gh pr create --draft` で作る。Draft に対応していないリポジトリで作成に失敗したら、`--draft` を外して作り直し、Ready への切り替えは飛ばす。完了の案内で Draft にできなかったことを伝える
 
 - [ ] `done` を報告し（`--pr` に PR の URL）、progress.jsonl をコミット & push する

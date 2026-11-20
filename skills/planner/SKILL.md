@@ -56,22 +56,15 @@ HIKYAKU_ROOT の外にある。 所在は `document-guide.md` が宣言する。
 
 ## 作業ステップ
 
-### Step 0: 設定の解決とサイクルの特定
+### Step 0: 準備
 
-- [ ] 設定と対象サイクルを解決する
+- [ ] 準備をまとめて行う（作業サイクルの記録・ブランチ・状態の確認・セッション名）。`$ARGUMENTS[0]` のサイクルを渡す（省略してよい）
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --require-cycle --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" start plan {cycle}
 ```
 
-`$ARGUMENTS[0]` のサイクルを渡す。省略時は CLI が現在のブランチ → `.hikyaku.local` →
-唯一の進行中サイクルの順で決め、決まらなければ候補を添えてエラーになる。そのときは推測せず
-ユーザーに尋ねて指定し直す（別サイクルへコミットする事故になる）。HIKYAKU_ROOT は
-`.hikyaku.config` から解決されるので、引数では受け取らない。
-
-出力の `cycle` と `cycleSource` を、作業対象としてユーザーに1行で示す。
-
-ここで次のエラーが出た場合は代行する。
+次のエラーが出た場合は代行してから、`start` をやり直す。
 
 - 未初期化（`.hikyaku.config` が無い / `document-guide.md` が無い）
   → `/hikyaku:init` を実行して初期化を代行する
@@ -79,12 +72,20 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --require-cycle 
   → `/hikyaku:create-cycle` を実行して代行する
   - 代行した場合、create-cycle は PR を作らない。成果物が cycles.md の1行だけなので、
     このスキルの PR に畳む
+- サイクルを決められずに候補が出たら、推測せずユーザーに尋ねて指定し直す（別サイクルへコミットする事故になる）
 
-- [ ] 対象サイクルを記録する（次回から尋ねられずに済む）
+出力の「次」に従う。
 
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {cycle}
-```
+- ブランチを尋ねるよう出たら、現在のブランチが実行環境に割り当てられたものだと分かっていても、
+  **自分で決めずに必ず尋ねる。** セッションの中からは、別の作業のブランチに紛れ込んだ状態と区別できない。
+  どれが妥当かの示唆を添えずに3つを示す: 1. 規則どおり期待する名前のブランチを作る（`git switch -c {期待する名前}`）
+  / 2. 現在のブランチで作業する（`--keep-branch` を付ける）/ 3. 別のブランチを指定する（切り替える）。
+  答えに従って `start` をやり直す
+- 止まると出たら、内容を伝えて終了する
+- サイクルを1行で示し、セッション名を設定する（設定する手段が無い環境ではスキップ）。中断からの再開で
+  既存の成果物があれば読み込んでおく（どのステップから続けるかは `step next` が決める）
+
+成果物をコミットする直前に `branch verify plan {cycle}` でブランチを確かめる。
 
 - [ ] 読むべきドキュメントの候補を取得する
 
@@ -104,56 +105,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context plan {cycle}
 
 → Step 1 へ。
 
-### Step 1: ブランチとセッション名
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify plan {cycle}
-```
-
-出力の `ok` と `onBaseBranch` で分岐する。自分で決めず、この表に従う。
-
-| 状況 | 対応 |
-|---|---|
-| `ok: true` | そのまま続ける |
-| `ok: false` かつ `onBaseBranch: true` | `expected` の名前でブランチを作成して続ける |
-| `ok: false` かつ `onBaseBranch` が `false` / `null` | ユーザーに尋ねる（下記） |
-
-3つ目は、現在のブランチが実行環境に割り当てられたものだと分かっていても、**自分で決めずに
-必ず尋ねる。** セッションの中からは、別の作業のブランチに紛れ込んだ状態と区別できない。
-尋ねる手段（`AskUserQuestion` など）で次の3つを、どれが妥当かの示唆を添えずに提示する。
-
-1. Hikyaku の規則に従う — `expected` の名前でブランチを作成する
-2. 現在のブランチで作業する
-3. 別のブランチを指定する
-
-ユーザーが 2 か 3 を選んだら、`next` の「着手中」検出が効かなくなることを伝える
-（ブランチ名から導出しているため）。ブランチを決めたら、成果物をコミットする直前にもう一度
-この確認を行う。
-
-- [ ] サイクルの状態を確認する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
-```
-
-中断からの再開の場合、このコマンドがどこまで進んだかを教えてくれる。
-既存の成果物があれば読み込んでおく。どのステップから続けるかは、次の `step next` が決める。
-
-ブランチを決めたあとに実行する。成果物の有無は作業ツリーを見て判定するため、
-デフォルトブランチに居るまま実行すると、別セッションが push 済みの成果物が見えない。
-中断からの再開なのに最初からやり直すことになる。
-
-- [ ] セッション名を設定する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title plan {cycle}
-```
-
-返った名前をセッション名に設定する。設定する手段が無い環境と、「変更しません」と返った場合はスキップする。
-
-→ Step 2 へ。
-
-### Step 2 以降: step に従って進める
+### Step 1 以降: step に従って進める
 
 ここから先の手順（インプットの読み込み → スコープのすり合わせ → user-stories → レビュー → G1 →
 振り返り → PR）は、`step next` が設定と進捗から1手ずつ返す。**手順を自分で組み立てない。**

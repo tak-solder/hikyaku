@@ -118,6 +118,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **`hikyaku ledger answers [<cycle>] [--format pr]`**: サイクル全体で監督が答えた問い（`by: supervisor` の決定）を、問い・答え・リスクの申告（`--no-risk` は「リスクなしと申告」）つきで並べる。conductor の最後の PR の本文の「監督が答えた問い」はこの出力を貼る
 - **document-guide.md のパスにアンカーを付けられる**（`docs/concepts.md#用語`）。`DocEntry` は `path`（アンカーを除く）と `anchor` を分けて持つ。`context`・`docs list`・AGENTS.md の索引・異議の照合先のポインタはアンカー付きで示し、存在の確認と自動読み込みの判定はアンカーを除いたパスで行う。`validate` / `docs validate` は、見出しから GitHub 式に作ったアンカーと照らして、節が消えたことを検出する
 
+- **`hikyaku start <plan|architect|build-NN|close> [<cycle>]`**: planner・architect・builder・close-cycle が冒頭で毎回行っていた準備（`cycle use`・`branch verify`・`cycle status`・ブランチを決めたあとの `next`・`session title`）を1回で行い、次にすること（`outcome`: `continue` / `ask` / `stop` / `return`）を返す。デフォルトブランチに居れば期待する名前のブランチを作って切り替える。待機中のビルドや企画の無い architect のように止まるときは作らない。デフォルトブランチではない作業ブランチに居れば何もせず終了コード 2 で返し、ユーザーが続けると決めたら `--keep-branch` で実行し直す。architect を差し戻し元のビルドのブランチで起動したら、ブランチに触らずに `return` を返す。`--dry-run` で書き込まない。build-NN では tasklist.md のタイトルをセッション名に入れる
+- **`hikyaku pr body <phase> [<cycle>]`（読み取り専用）**: PR 本文に貼る事実の節（`diff facts --format pr`・宣言が変わったときの `ledger premises --format pr`・`ledger pr-section`・`external ref`）をまとめて出す。マージの前にユーザーが同意する項目に決定が足りなければ、本文を出さずに、PR を作るステップの `done` と同じ判定と文面で終了コード 2 で止まる
+- `skills/close-cycle/references/rule-writing.md`: パス指定の rule の書き方を `persistence.md` から分けた
+
 ### Changed
 
 - **コーディングエージェントを操作する人を「ユーザー」と書く**: docs/・スキル（conductor の description・非対話規約を含む）・エージェント定義・CLI の出力（`conductor`・`cycle`・`branch verify` の help やエラー）とコメントで、操作する人を指していた「人間」を「ユーザー」に改めた。doc-reviewer と security-review の見出し「確度が低い懸念（要人間判断）」は「（要ユーザー判断）」になった。Bot と対比するレビュアー、Hikyaku が書いた部分と対比する手で書いた部分、人間可読の「人間」は改めていない
@@ -200,6 +204,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - builder: G8・implement・review の指示を、区切りの推奨（継続・切り替え・分割）に従う形に改めた。推奨と違う手を選ぶときは、次のゲートの報告で見込みの値と理由を伝える。review の `review run` は、conductor の子では1つずつ前景で実行する
 - build-manager・builder・patch・conductor・doc-reviewer の directive の値と指示の `mergeBelow` / `splitAbove` を `mergeHint` / `estimateLimit`（見積もりの上限）に、patch の fit の `overSplit` を `overEstimate` に改名した
 
+- **スキルの実行時に読む指示を減らした。** `persistence.md` から rule の書き方（`rule-writing.md` へ）と close-cycle での扱い（G10 の手順と重複していた）を外し、振り返り（retrospective）が毎フェーズ読む量を減らした。振り返りは、同じセッションで読んだ基準（builder の handoff など）を読み直さない。builder・retrospective・close-cycle の SKILL.md にあった基準の写しと、close-cycle の「なぜ独立したフェーズなのか」を消した
+- planner・architect・builder・close-cycle の Step 0 を `hikyaku start` に置き換えた。ブランチの3択の問い（ask: branch）は残し、答えに従って `start` をやり直す。コミットの直前の確かめは `branch verify` のまま
+- planner・architect・builder・close-cycle の pr と patch の publish は、本文の事実の節を `hikyaku pr body` の出力で貼る。PR を作る前の `ledger consent-list` による決定の不足の確かめは `pr body` に寄せた
+- conductor: 子に渡す非対話規約（`headless-protocol.md`）を、起動の場面ごとに組み立てて一時ディレクトリに書く。セッションの切り替え（builder の子）・ユーザーに上げる問い（`--escalate`）・ユーザーの答えの記録（`--from user`）・監督の判断の記録（`--from supervisor`）・事後同意（有効なサイクル）の節は、その場面の起動にだけ入る
+
 ### Removed
 
 - BP（ビルドポイント）と `bp_max` 設定。リポジトリルートの `.hikyaku.config` に `bp_max` があるとエラーになる。サイクルの設定では、v3 の作業に使うときだけエラーになる
@@ -258,6 +267,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `[app]` を宣言したワークスペースでは、上限を超える異議を `consented` で記録するのに、害が中でも `--accepts` と `--premises` が要る。`ledger open --type objection` に `--when merge…` を渡していたら、`ledger object --defer` に置き換える
 - `conductor launch --resume <id> --message <file>` は `--from user|supervisor` か `--notice` が無いと拒まれる。独自に監督を動かしているなら、答えには `--from`、中断からの再開などには `--notice` を添える。`decisions.jsonl` の決定に任意の欄（`from`・`ask`・`choice`・`risk`・`token`・`answers`）が増えたが、既存の記録はそのまま読める
 - 起票済みのビルドの issue（子 issue）は Hikyaku からは閉じなくなる。不要なら GitHub 側で閉じる。`tasklist.md` の `issue` 列は、次に `tasklist` のコマンドで書き込んだときに落ちる（`docs/migration/v2-to-v3.md#ビルドごとの外部起票の廃止`）
+- `start`・`pr body`・規約の組み立ての導入に対応は不要。進行中の作業単位はそのまま続けられる。`skills/close-cycle/references/persistence.md` の「rule の書き方」「close-cycle での扱い」の節を参照している独自の指示があれば、`rule-writing.md` と close-cycle の `steps/G10.md` を参照するよう直す
 
 ## [2.8.0]
 

@@ -1,7 +1,7 @@
 # 差し戻しからの再設計
 
-`$ARGUMENTS[1]` に `build-{NN}` が指定された場合、または `cycle status` が
-`building（差し戻し中: build-NN）` を返した場合は、builder から差し戻された設計の見直しとして
+`$ARGUMENTS[1]` に `build-{NN}` が指定された場合、または `start architect` が
+差し戻し（`return`）を返した場合は、builder から差し戻された設計の見直しとして
 進める。差し戻しの記録は `cycles/{cycle}/return.md` にあり、差し戻し元のビルドのブランチにだけ
 コミットされている。
 
@@ -10,8 +10,9 @@
 ここに書くのは、step に入る前の準備だけ。
 
 - ブランチ: 差し戻し元のビルドのブランチ上で作業する。 architect 用のブランチは切らない。
-  Step 0 のブランチ確認は `branch verify architect` ではなく `branch verify build-{NN} {cycle}` で行い、
+  `start architect` は使わない。ブランチ確認は `branch verify build-{NN} {cycle}` で行い、
   `ok: true` でなければブランチを作らずにユーザーに尋ねる（ask: branch）（差し戻し元のブランチに切り替えてもらう）。
+  セッション名は `session title architect {cycle}` で作る。
   設計の変更はそのビルドの PR に入るので、積んでいる場合も連鎖が一直線のまま保てる。
   コミット前のブランチ確認も `branch verify build-{NN} {cycle}` で行う
 - 入力: `return.md` と、差し戻し元のビルドの `questions.md` を必ず読む。何が崩れたか、

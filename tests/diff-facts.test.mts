@@ -646,7 +646,8 @@ test("review.md: スコープとデータ安全の自己確認が agreement-revi
   for (const label of ["合意に無いテストの後退", "スコープ外の変更", "計画に無い変更", "マージ時点のデータ安全の不備"]) {
     assert.match(agent.split("### context: agreement で報告する")[1] ?? "", new RegExp(label));
   }
-  assert.match(readFileSync(join(root, "skills/builder/steps/pr.md"), "utf8"), /diff facts build-\{NN\} \{cycle\} --format pr/);
+  // 差分の事実は pr body が diff facts --format pr と同じ中身で出す
+  assert.match(readFileSync(join(root, "skills/builder/steps/pr.md"), "utf8"), /pr body build-\{NN\} \{cycle\}/);
   const agreement = readFileSync(join(root, "skills/builder/steps/agreement-review.md"), "utf8");
   assert.match(agreement, /deferUncertain/);
   assert.match(agreement, /ledger open/);

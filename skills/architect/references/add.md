@@ -9,7 +9,7 @@
 要るときだけ設計を見直す・完了済みのビルドは更新せずビルドを足す）は、step が `round: add` として
 ステップを選び、各ステップの指示に書いてある。ここに書くのは、step に入る前の準備だけ。
 
-- 前提: `cycle status` が `building`（全ビルドが完了している）か `completed` であること。
+- 前提: `start architect` の「状態」が `building`（全ビルドが完了している）か `completed` であること。
   `closed` / `abandoned` なら何もせず終了する。完了していないビルドがあれば、指摘はそのビルドか、
   そのビルドの後に扱うよう案内して終了する
 - ブランチ: `branch verify architect {cycle}` の `expected`（architect のブランチ）で作業する。

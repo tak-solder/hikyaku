@@ -1,8 +1,9 @@
 # handoff: 申し送りの作成
 
 - [ ] 実装で得た知見を、重要度と置き場で仕分ける
-  - 基準は `${CLAUDE_PLUGIN_ROOT}/skills/close-cycle/references/persistence.md`（[persistence.md](../../close-cycle/references/persistence.md)）。
-    まだ読んでいなければここで読む
+  - 基準と記録の書式は `${CLAUDE_PLUGIN_ROOT}/skills/close-cycle/references/persistence.md`（[persistence.md](../../close-cycle/references/persistence.md)）。
+    このセッションでまだ読んでいなければここで読む。rule を書くときだけ、書き方の
+    `${CLAUDE_PLUGIN_ROOT}/skills/close-cycle/references/rule-writing.md`（[rule-writing.md](../../close-cycle/references/rule-writing.md)）も読む
   - 置き場は「なくす（リファクタ）」から考える。触った領域の rule の候補と最終変更からの日数（領域の開発頻度）を見る
 
 ```bash

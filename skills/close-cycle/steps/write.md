@@ -23,7 +23,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" rules check
 ```
 
   - rule は glob ごとにファイルを分け、frontmatter には `paths` と理由（`prevents` / `basis` / `importance`）を書く
-    （書き方は `${CLAUDE_PLUGIN_ROOT}/skills/close-cycle/references/persistence.md` の「rule の書き方」）
+    （書き方は `${CLAUDE_PLUGIN_ROOT}/skills/close-cycle/references/rule-writing.md`）
 - [ ] 文書に書く基準（`conventions`・`workflow`・`constraints` など）は、行末の理由 `（防ぐ: … / 立つ: … / 重要度: 高|中）` を
   残して書く（persistence.md の「記録の書式」）。候補に理由が無ければ、根拠の出どころから書けるものだけを書き、推測で埋めない
 - [ ] スキルが承認されていれば `.claude/skills/{名前}/SKILL.md` を作る

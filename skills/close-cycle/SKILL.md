@@ -10,122 +10,46 @@ argument-hint: "[{cycle}]"
 全ビルドが完了したサイクルを締め、サイクルで得た知見を永続化する。足すだけでなく、
 役に立たなかった記述や古くなった記述を消し、置き換える。
 
-## なぜ独立したフェーズなのか
+## 書くもの
 
-永続ドキュメントは「実装済みの現実（as-is）」を表す。サイクルドキュメントは
-「これから作るもの（to-be）」を表す。この区別があるから、並行して走る別サイクルが
-未実装の設計を「現実」として読んでしまう事故が防げる。
-
-昇格は PR がマージされて初めて真になるので、実装が全部終わってから行う。
-
-ただし `completed`（全ビルド完了）と `closed`（昇格完了）の間には危険な空白がある。
-実装は main に入っているのに `overview` はまだ古い。この期間に他サイクルの architect が
-走ると、古い `overview` を現実として信じる。だから CLOSE は速やかに実行する。
-
-最終ビルドに混ぜないのは、builder のコンテキストが実装だけに集中できなくなるため。
-
-## 誰が何を書くか
-
-置き場は読み込まれ方で選ぶ（基準は [persistence.md](references/persistence.md)）。書く人は置き場で決まる。
-
-| 置き場 | 書く人 |
-|---|---|
-| コード（lint・テスト・ヘルパー・その場のコメント）、パス指定の rule | builder（見つけたビルドの PR）。後続のビルドに間に合わせるため |
-| 永続ドキュメント（overview / decisions / constraints / conventions / glossary） | close-cycle。ADR の追記は architect。サイクルに属さない patch は、コードと同じ PR で直す |
-| `{HIKYAKU_ROOT}/instructions.md`、スキル | close-cycle。サイクルに属さない patch は、コードと同じ PR で直す |
-| フック | close-cycle が別のブランチの PR にする |
-| 見積もりのガイド（`token-guide/guide.md`） | `/hikyaku:token-guide`。乖離が大きいサイクルでは close-cycle が呼ぶ |
-
-永続ドキュメントと `instructions.md` をサイクルの中では close-cycle だけが書くのは、走行中の他サイクルの
-planner / architect が読むため。フェーズ途中で書き換えると前提が途中で変わる。サイクルに属さない patch が
-書けるのは、コードと同じ PR でマージされ、マージした時点で実装済みの現実になるから。サイクルに属す patch
-（統合ブランチ宛て、またはマージ後・CLOSE 前）は書かずに `patches/{YYYYMM}/{slug}/handoff.md` に残し、
-あなたがビルドの handoff.md と同じく昇格させる（`hikyaku promotions` が集める）。
-
-あなたは追加だけでなく、削除と置き換えも提案できる。ただし範囲は、このサイクルの記録（handoff・
-振り返り）に根拠があるものと、このサイクルのビルドが書いた rule に限る。根拠の無い記述の正否は、
-このサイクルの知識では判断できない。
-
-見積もりのガイドの見直しは、走行中の他サイクルがあっても止めない。補正した版はその後に見積もる
-全ビルドに効き、各予測の表には見積もりに使ったガイドの版が残るので、補正の前と後は `tokens history --group-by guide` で分けて比べられる。
-止めて待つより、早く補正したほうが以降の見積もりの精度が上がる。
+永続ドキュメントと `{HIKYAKU_ROOT}/instructions.md` を、サイクルの中で書けるのはあなただけ（ADR の追記は architect）。
+走行中の他サイクルが読むので、昇格は全ビルドのマージ後にまとめて行う。コードとパス指定の rule は
+builder が書いている。サイクルに属す patch の `patches/{YYYYMM}/{slug}/handoff.md` も、ビルドの handoff.md と
+同じく昇格させる（`hikyaku promotions` が集める）。フックと見積もりのガイドの見直しは、別のブランチの PR にする（followups）。
 
 ## 作業ステップ
 
-### Step 0: 読み込みと完了確認
+### Step 0: 準備と完了確認
 
-- [ ] 設定と document-guide を読み込む
+- [ ] 準備をまとめて行う（作業サイクルの記録・ブランチ・状態の確認・セッション名）
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --require-cycle --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" start close {cycle}
+```
+
+出力の「次」に従う。
+
+- サイクルを決められずに候補が出たら、推測せずユーザーに尋ねて（ask: cycle）指定し直す
+- ブランチを尋ねるよう出たら（ask: branch）、現在のブランチが実行環境に割り当てられたものだと分かっていても、
+  **自分で決めずに必ず尋ねる。** セッションの中からは、別の作業のブランチに紛れ込んだ状態と区別できない。
+  どれが妥当かの示唆を添えずに3つを示す: 1. 規則どおり期待する名前のブランチを作る（`git switch -c {期待する名前}`）
+  / 2. 現在のブランチで作業する（`--keep-branch` を付ける）/ 3. 別のブランチを指定する（切り替える）。
+  答えに従って `start` をやり直す
+- サイクルが completed でないと出たら、ユーザーに確認する（ask: abandon）。未完了のビルドを残したまま締めるのは、
+  サイクルを中止（abandoned）する場合に限る。中止すると答えたら、サイクルの終了で `--status abandoned` を付ける
+- 止まると出たら、内容を伝えて終了する
+- サイクルを1行で示し、セッション名を設定する（設定する手段が無い環境ではスキップ）
+
+成果物をコミットする直前に `branch verify close {cycle}` でブランチを確かめる。
+
+- [ ] 昇格先の所在を読み込む
+
+```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context close {cycle}
 ```
 
 `context` は昇格先の所在を返す。全文は読まない。読むのは、集めた候補が指す節だけ（collect の指示）。
 末尾の「未作成」は昇格先の候補で、そこへ昇格させるなら新規作成になるため、昇格の承認で併せて承認を得る。
-
-HIKYAKU_ROOT は `.hikyaku.config` から解決されるので、引数では受け取らない。
-`$ARGUMENTS[0]` でサイクルが指定されていなければ、現在のブランチ → `.hikyaku.local`
-→ 唯一の進行中サイクル の順で決まる。決められないときはユーザーに尋ねる（ask: cycle）。
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {cycle}
-```
-
-- [ ] ブランチを作成し、命名規則どおりか確認する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify close {cycle}
-```
-
-出力の `ok` と `onBaseBranch` で分岐する。自分で決めず、この表に従う。
-
-| 状況 | 対応 |
-|---|---|
-| `ok: true` | そのまま続ける |
-| `ok: false` かつ `onBaseBranch: true` | `expected` の名前でブランチを作成して続ける |
-| `ok: false` かつ `onBaseBranch` が `false` / `null` | ユーザーに尋ねる（下記）（ask: branch） |
-
-3つ目はユーザーの判断であって、あなたの判断ではない。現在のブランチが実行環境に
-割り当てられたものだと分かっていても、**自分で決めずに必ず尋ねる。**
-
-実行環境が割り当てたブランチと、別の作業のブランチに紛れ込んだ状態は、セッションの中からは
-区別できない。「今回は前者だから問題ない」という推測を一度でも通すと、後者もまったく
-同じ理屈で通る。 それを防ぐための確認なので、確認を省いた時点で意味が無くなる。
-
-尋ねる手段（`AskUserQuestion` など）があればそれを使い、次の3つを提示する。
-**どれが妥当かの示唆を添えない。選ぶのはユーザー。**
-
-1. Hikyaku の規則に従う — `expected` の名前でブランチを作成する
-2. 現在のブランチで作業する
-3. 別のブランチを指定する
-
-ユーザーが 2 または 3 を選んだあとで、`next` の「着手中」検出が効かなくなることを
-伝える（ブランチ名から導出しているため）。完了判定と中断検出には影響しない。
-
-ブランチを決めたら、成果物をコミットする直前にもう一度この確認を行う。
-
-- [ ] 対象サイクルの状態を確認する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
-```
-
-`completed` でない場合はユーザーに確認する（ask: abandon）。未完了のビルドを残したまま締めるのは、
-サイクルを中止（abandoned）する場合に限る。中止すると答えたら、サイクルの終了で
-`--status abandoned` を付ける。
-
-ブランチを決めたあとに実行する。成果物の有無は作業ツリーを見て判定するため、
-デフォルトブランチに居るまま実行すると、別セッションが push 済みの成果物が見えない。
-中断からの再開なのに最初からやり直すことになる。
-
-- [ ] セッション名を設定する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title close {cycle}
-```
-
-返ってきた名前をセッション名に設定する。設定する手段が無い環境ではスキップしてよい。
 
 → Step 1 へ。
 

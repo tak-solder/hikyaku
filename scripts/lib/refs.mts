@@ -47,3 +47,15 @@ export function refUrl(raw: string): string | undefined {
   if (link !== undefined) return link;
   return /^https?:\/\//.test(text) ? text : undefined;
 }
+
+/**
+ * PR 本文に入れるサイクルの issue への参照行（close は Closes、ほかは Refs）。参照が無い・外部への参照でない・
+ * target が none なら空。クローズキーワードは #12 か URL しか解釈しないので、Markdown リンクにしない
+ */
+export function cycleRefLine(target: string, reference: string, phase: string): string {
+  const number = refNumber(reference);
+  const url = refUrl(reference);
+  const subject = number !== undefined ? `#${number}` : url !== undefined && /^https?:\/\//.test(url) ? url : undefined;
+  if (target === "none" || subject === undefined) return "";
+  return `${phase === "close" ? "Closes" : "Refs"} ${subject}`;
+}

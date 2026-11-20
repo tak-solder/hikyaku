@@ -4,7 +4,7 @@
 あなたはファイルを読み回らない。
 
 - [ ] 判定の基準を読む: `${CLAUDE_PLUGIN_ROOT}/skills/close-cycle/references/persistence.md`
-  （[persistence.md](../references/persistence.md)）。重要度・置き場・削れる範囲はここが正
+  （[persistence.md](../references/persistence.md)）。重要度・置き場はここが正。削れる範囲は G10 の手順にある
 - [ ] 候補を集める
 
 ```bash
