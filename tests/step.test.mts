@@ -659,3 +659,20 @@ test("step: implement の手前でセッションを切り替えると、impleme
   assert.match(after.note ?? "", /セッションを切り替えました/);
   assert.equal(events(directory).at(-1)?.["result"], "handover");
 });
+
+test("build-manager: tasklist-review は反映して scope からやり直しても再び回らず、G6 へ進む", () => {
+  const at = "2026-11-20T00:00:00Z";
+  const report = (step: string): ProgressEvent => ({ at, skill: "build-manager", step, result: "done" });
+  const events: ProgressEvent[] = [
+    { at, skill: "architect", step: "build-split", result: "done" },
+    ...["load", "scope", "estimate", "dry-run"].map(report),
+    { ...report("tasklist-review"), findings: 5, adopted: 4 },
+    report("scope"), report("estimate"), report("dry-run"),
+  ];
+  const ctx = { config: { reviews: { tasklist: true } } as StepContext["config"], cycle: undefined,
+    unit: "design", unitDirectory: "/unused", events } as StepContext;
+  const skill = stepsOf("build-manager") as SkillSteps;
+  const review = evaluate(skill, ctx).steps.find((step) => step.definition.id === "tasklist-review");
+  assert.equal(review?.status, "off");
+  assert.equal(evaluate(skill, ctx).current?.definition.id, "G6");
+});

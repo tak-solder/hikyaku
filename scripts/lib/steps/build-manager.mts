@@ -8,11 +8,19 @@
  */
 
 import { formatK } from "../tokens.mts";
+import { currentEvents } from "./engine.mts";
 import type { SkillSteps, StepContext } from "./engine.mts";
 
 /** 予測ピークの判定の帯（[context] limit × merge_ratio / estimate_ratio） */
 function bands(ctx: StepContext): Record<string, string> {
   return { mergeHint: formatK(ctx.config.peakBands.mergeHint), estimateLimit: formatK(ctx.config.peakBands.estimateLimit) };
+}
+
+/** この呼び出しで tasklist-review を done にしたか */
+function reviewedInThisCall(ctx: StepContext): boolean {
+  return currentEvents(BUILD_MANAGER_STEPS, ctx.events).some(
+    (event) => event.skill === "build-manager" && event.step === "tasklist-review" && event.result === "done",
+  );
 }
 
 export const BUILD_MANAGER_STEPS: SkillSteps = {
@@ -37,7 +45,9 @@ export const BUILD_MANAGER_STEPS: SkillSteps = {
       id: "tasklist-review",
       kind: "run",
       title: "doc-reviewer による tasklist のレビュー",
-      when: (ctx) => ctx.config.reviews.tasklist,
+      // ドキュメントのレビューは1回だけ（max_rounds は doc に効かない）。反映して scope から
+      // やり直しても、この回で done 済みなら再び回さない。残りの指摘は G6 の提示に回す
+      when: (ctx) => ctx.config.reviews.tasklist && !reviewedInThisCall(ctx),
       countsFindings: true,
       args: (ctx) => ({ caller: ctx.unit }),
     },

@@ -124,6 +124,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **build-manager の `tasklist-review` を1回で止める**: 指摘を反映して `scope` から報告し直すたびにレビューが再実行され、`max_rounds` を超えて回っていた。ドキュメントのレビューは1回だけという仕様に合わせ、同じ呼び出しで `done` 済みなら `tasklist-review` を案内しない（`steps/build-manager.mts` の `when`）。残る指摘は G6 の提示に回す
 - **conductor の子を auto モードで起動するようにした。** `conductor launch` が組み立てるコマンドの `--permission-mode` を `acceptEdits` から `auto` にした（設定では変えられない）。既定の許可から `git` のサブコマンドと `gh pr create` / `gh pr view` を外し、許可の一覧に当たらない操作と同じく Claude Code の安全判定にかける。conductor の Step 0 は、テストのコマンドが許可されていなくても終了せず、判定にかかることを確認の提示に添える
 - **コーディングエージェントを操作する人を「ユーザー」と書く**: docs/・スキル（conductor の description・非対話規約を含む）・エージェント定義・CLI の出力（`conductor`・`cycle`・`branch verify` の help やエラー）とコメントで、操作する人を指していた「人間」を「ユーザー」に改めた。doc-reviewer と security-review の見出し「確度が低い懸念（要人間判断）」は「（要ユーザー判断）」になった。Bot と対比するレビュアー、Hikyaku が書いた部分と対比する手で書いた部分、人間可読の「人間」は改めていない
 - builder の review から、スコープ準拠とマージ時点のデータ安全の自己確認を削った（agreement-review に移した）。pr は `diff facts build-NN --format pr` の出力を PR 本文に貼る
