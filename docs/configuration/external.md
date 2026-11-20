@@ -31,7 +31,7 @@ PLAN の PR を作る直前に、planner が1回だけ起票します。その�
 
 GitHub のクローズキーワードは `#12` か URL しか解釈しないため、Markdown リンクではなく素の番号で出します（リンクだけ張られて issue が閉じない事故を防ぐため）。
 
-**issue が閉じても完了判定には使いません。** ビルドの完了は常に `tasklist.md` の `PR` 列、サイクルの完了は `cycles.md` の `status` で判定します。
+**issue が閉じても完了判定には使いません。** ビルドの完了は常に各ビルドの完了の記録（`build-NN/progress.jsonl`）、サイクルの完了は `cycles.md` の `status` で判定します。
 
 ## gh CLI が無い環境
 

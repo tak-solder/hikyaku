@@ -96,7 +96,7 @@ export interface StepDefinition {
   interrupt?: (ctx: StepContext) => string | undefined;
   /** 完了に要る成果物（作業単位のディレクトリからの相対パス） */
   produces?: string[];
-  /** 成果物で判定できない完了の条件（tasklist の PR 列など）。成果物と同じ扱い */
+  /** 成果物で判定できない完了の条件（architect の分割の記録など）。成果物と同じ扱い */
   evidence?: (ctx: StepContext) => boolean;
   /**
    * 完了に要る条件のうち、記録の欠けの判定には使わないもの。前から存在しうるファイルの

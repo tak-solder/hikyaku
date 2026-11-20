@@ -322,6 +322,8 @@ test("renderFactsPr: 調べきれなかったときは「該当なし」と書�
 
 const CYCLE = "docs/hikyaku/cycles/001-test";
 const BUILD = `${CYCLE}/build-01`;
+// ビルドの記録はどのコマンドも読む（完了の判定）ので、正しい形で書く
+const PROGRESS_LINE = `${JSON.stringify({ at: "2026-11-20T00:00:00.000Z", skill: "builder", step: "load", result: "done" })}\n`;
 
 function git(directory: string, args: string[], env: NodeJS.ProcessEnv = {}): string {
   const result = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", ...args], {
@@ -383,7 +385,8 @@ test("diff facts: 変更ファイルと種類を並べ、スコープの内外�
 
 test("diff facts: ビルドの正当な成果物は一覧から除き、issue.md とほかのビルドは残す", (t) => {
   const directory = branched(t, (d) => write(d, `${CYCLE}/build-02/plan.md`));
-  for (const name of ["progress.jsonl", "handoff.md", "agreement.md"]) write(directory, `${BUILD}/${name}`, "x\n");
+  for (const name of ["handoff.md", "agreement.md"]) write(directory, `${BUILD}/${name}`, "x\n");
+  write(directory, `${BUILD}/progress.jsonl`, PROGRESS_LINE);
   write(directory, `${BUILD}/issue.md`, "# 書き換えた\n");
   write(directory, `${CYCLE}/build-02/plan.md`, "# 書き換えた\n");
   const result = facts(directory);
@@ -415,7 +418,7 @@ test("diff facts: 新しく足したテストのアサーションは並べず�
 test("diff facts: 0 を足したビルド ID でも同じビルドのディレクトリを見る", (t) => {
   const directory = branched(t);
   write(directory, `${BUILD}/issue.md`, "# 書き換えた\n");
-  write(directory, `${BUILD}/progress.jsonl`, "x\n");
+  write(directory, `${BUILD}/progress.jsonl`, PROGRESS_LINE);
   const result = JSON.parse(succeeds(directory, "diff", "facts", "build-001", "001", "--format", "json", "--no-fetch")) as DiffFacts;
   assert.equal(result.issueChanged, true);
   assert.equal(result.phase, "build-01");

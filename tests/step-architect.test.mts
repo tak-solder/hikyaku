@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { cli, returnRecord, succeeds, workspace, write } from "./helpers.mts";
+import { cli, recordBuildPr, returnRecord, succeeds, workspace, write } from "./helpers.mts";
 
 const CYCLE = "docs/hikyaku/cycles/001-test";
 const DESIGN = `${CYCLE}/design`;
@@ -311,7 +311,7 @@ test("architect: 差し戻し中は、再設計の回を区切るまで止まる
 
 test("architect: 追加設計の回は調査を行わず、設計を変えなければビルドの追加へ進む", (t) => {
   const directory = designed(t);
-  succeeds(directory, "tasklist", "done", "001", "--id", "1", "--pr", "https://github.com/o/r/pull/1");
+  recordBuildPr(directory, 1, "https://github.com/o/r/pull/1");
   const first = restart(directory, "add", "エラー表示の文言");
   assert.equal(first.step, "design-change");
   const call = report(directory, "design-change", "--result", "skipped", "--reason", "設計の変更は不要");
@@ -328,7 +328,7 @@ test("architect: 追加設計の回は調査を行わず、設計を変えなけ
   report(directory, "build-split", "--result", "done");
   assert.equal(report(directory, "validate", "--result", "done").step, "pr");
   // 足したビルドが PR まで進んでも、完了した build-split に巻き戻らない
-  succeeds(directory, "tasklist", "done", "001", "--id", "2", "--pr", "https://github.com/o/r/pull/2");
+  recordBuildPr(directory, 2, "https://github.com/o/r/pull/2");
   assert.equal(next(directory).step, "pr");
   report(directory, "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/3");
   report(directory, "publish", "--result", "done");
@@ -341,7 +341,7 @@ test("architect: 追加設計の回は調査を行わず、設計を変えなけ
 
 test("architect: 追加設計で設計を変えるなら、質問から G4 まで通常どおり返る", (t) => {
   const directory = designed(t);
-  succeeds(directory, "tasklist", "done", "001", "--id", "1", "--pr", "https://github.com/o/r/pull/1");
+  recordBuildPr(directory, 1, "https://github.com/o/r/pull/1");
   restart(directory, "add", "認可の抜け");
   assert.equal(report(directory, "design-change", "--result", "done").step, "questions");
 });

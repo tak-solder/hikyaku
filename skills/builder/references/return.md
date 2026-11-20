@@ -25,8 +25,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger open build-{NN} {cycle} 
 - [ ] コミット & push する
 - [ ] `/hikyaku:architect {cycle} build-{NN}` を案内して終了する
 
-差し戻すときは、handoff.md・retrospective・PR・`tasklist done` のどれも行わない。
-handoff.md はビルドの完了の印として読まれ、`tasklist done` は完了の記録そのものだからだ。
+差し戻すときは、handoff.md・retrospective・PR・pr の `done` のどれも行わない。
+handoff.md はビルドの完了の印として読まれ、pr の `done`（`--pr`）は完了の記録そのものだからだ。
 
 再設計はこのビルドのブランチ上で行われる。 architect は別のブランチを切らず、設計の変更は
 このビルドの PR に入る。積んでいる場合も連鎖が一直線のまま保てる。architect は再設計の最後に
@@ -49,7 +49,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger return-draft build-{NN} 
   「退けた項目」の節は消さない（architect が再設計で決め直す事項の ID）
 - [ ] `build-{NN}/handoff.md` を削除する。同意ゲートは handoff の後ろにあるので、古い設計の上で書いた handoff.md が
   もうある。完了の印として読まれるため残さない（振り返りの記録は事実の記録なので残す）
-- [ ] コミット & push し、`/hikyaku:architect {cycle} build-{NN}` を案内して終了する（PR・`tasklist done` は行わない）
+- [ ] コミット & push し、`/hikyaku:architect {cycle} build-{NN}` を案内して終了する（PR・pr の `done` は行わない）
 
 再設計のあと builder を起動し直すと plan.md から作り直し、同意ゲートに戻る。退けた項目は、作り直しが済んだと
 ユーザーが認めて `resolved` を記録するまで、ゲートも PR も受け付けない。

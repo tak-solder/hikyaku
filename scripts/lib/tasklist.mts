@@ -1,16 +1,22 @@
 /**
  * tasklist.md の読み書きと依存グラフ。
  *
- * ビルドの完了判定は PR 列が非空かどうかだけで行う。status 列は持たない。
- * PR 列の更新は当該ビルドの PR に同梱されるため、main 上で PR 列が埋まって
- * いること自体が「マージ済み = 完了」を意味する。status 列を別に持つと
- * 「status は done だが PR 列が空」という嘘の状態が作れてしまう。
+ * ビルドの完了は、そのビルドの完了の記録（build-NN/progress.jsonl の builder の pr の done。
+ * --pr に作った PR が添えてある）から導く。status 列は持たない。記録は当該ビルドの PR に同梱されるため、
+ * main 上に記録が在ること自体が「マージ済み = 完了」を意味する。
+ *
+ * PR 列は close-cycle（cycle close）がまとめて埋める、サイクルを締めたあとの一覧。サイクルの途中は書かない。
+ * 表は行のあいだに空行を挟めないので、並行するビルドの PR が隣り合う行の PR 列を埋めると、
+ * Git は必ずコンフリクトにする。記録はビルドごとのファイルにあるので、並行してもぶつからない。
+ * PR 列が埋まっていれば（close-cycle の後や、この形より前のサイクル）、それも完了として読む。
  */
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { HikyakuError } from "./errors.mts";
 import { findTableByHeaders, renderTable } from "./markdown.mts";
+import { PROGRESS_FILE, readProgress, type ProgressEvent } from "./progress.mts";
+import { formatRef } from "./refs.mts";
 import { formatK, parseTokenAmount } from "./tokens.mts";
 
 export const TASKLIST_HEADERS = ["buildID", "title", "予測ピーク", "dependencies", "PR"];
@@ -33,7 +39,13 @@ export interface BuildRecord {
   /** architect 段階の予測ピーク（トークン） */
   peak: number | undefined;
   dependsOn: string[];
+  /** 完了したビルドの PR（PR 列か完了の記録）。空なら未完了 */
   pr: string;
+  /**
+   * pr を完了の記録（progress.jsonl）から読んだ。PR 列には書かない（並行するビルドの PR がコンフリクトしないよう、
+   * PR 列は close-cycle がまとめて埋める）。無ければ PR 列から読んだか未完了
+   */
+  prSource?: "record";
 }
 
 const EMPTY_CELLS = new Set(["", "—", "-"]);
@@ -96,13 +108,46 @@ export function parseTasklist(source: string): BuildRecord[] {
     .filter((record) => record.id !== "");
 }
 
+/** 作業ツリーの tasklist.md と、各ビルドの完了の記録を読む */
 export function loadTasklist(cycleDirectory: string): BuildRecord[] {
   const path = tasklistPath(cycleDirectory);
   if (!existsSync(path)) return [];
-  return parseTasklist(readFileSync(path, "utf8"));
+  return withRecordedPrs(parseTasklist(readFileSync(path, "utf8")), (id) => readProgress(join(cycleDirectory, buildDirName(id))));
 }
 
-/** ビルドが完了しているか。判定は PR 列が非空かどうかの一点 */
+/** ビルドの完了の記録（progress.jsonl）のサイクルのディレクトリからの相対パス */
+export function completionRecordPath(id: string): string {
+  return `${buildDirName(id)}/${PROGRESS_FILE}`;
+}
+
+/**
+ * 完了の記録から読んだ PR（`[#12](URL)` の形）。builder の pr の done のうち、--pr を添えた最後のもの。
+ * step restart より前の記録も数える（PR 列と同じく、一度作った PR は完了のまま）。無ければ undefined
+ */
+export function recordedPr(events: ProgressEvent[]): string | undefined {
+  const done = events.findLast((event) => event.skill === "builder" && event.step === "pr" && event.result === "done" && event.pr !== undefined);
+  return done?.pr === undefined ? undefined : formatRef(done.pr, "PR");
+}
+
+/** PR 列が空のビルドに、完了の記録の PR を補う。eventsOf はそのビルドの記録を返す（読めなければ投げる） */
+export function withRecordedPrs(builds: BuildRecord[], eventsOf: (id: string) => ProgressEvent[]): BuildRecord[] {
+  return builds.map((build) => {
+    if (build.pr !== "") return build;
+    const pr = recordedPr(eventsOf(build.id));
+    return pr === undefined ? build : { ...build, pr, prSource: "record" };
+  });
+}
+
+/** 完了の記録から読んだ PR を PR 列に書く形にする（cycle close がサイクルを締めるときに使う） */
+export function fillPrColumn(builds: BuildRecord[]): BuildRecord[] {
+  return builds.map((build) => {
+    if (build.prSource !== "record") return build;
+    const { prSource: _recorded, ...rest } = build;
+    return rest;
+  });
+}
+
+/** ビルドが完了しているか。判定は PR（PR 列か完了の記録）が非空かどうかの一点 */
 export function isComplete(build: BuildRecord): boolean {
   return build.pr !== "";
 }
@@ -118,7 +163,8 @@ function toRow(build: BuildRecord): string[] {
     build.title,
     formatK(build.peak),
     build.dependsOn.length > 0 ? build.dependsOn.join(", ") : "—",
-    dash(build.pr),
+    // 完了の記録から読んだ PR は書かない（PR 列は close-cycle がまとめて埋める）
+    dash(build.prSource === "record" ? "" : build.pr),
   ];
 }
 
@@ -228,11 +274,12 @@ export function renderTasklistFile(cycle: string, builds: BuildRecord[]): string
   return [
     `# ビルド一覧 — ${cycle}`,
     "",
-    "ビルドの完了判定は `PR` 列が非空かどうかで行います。",
-    "`PR` 列の更新は当該ビルドの PR に同梱されるため、デフォルトブランチ上で",
-    "`PR` 列が埋まっていること自体がマージ済みを意味します。",
+    "ビルドの完了は、各ビルドの完了の記録（`build-NN/progress.jsonl`）から判定します。",
+    "記録は当該ビルドの PR に同梱されるため、デフォルトブランチ上に記録が在ること自体が",
+    "マージ済みを意味します。依存グラフの色は記録から描き直されます。",
+    "`PR` 列はサイクルを締めるときにまとめて埋まります（並行するビルドの PR がコンフリクトしないよう、途中では書きません）。",
     "",
-    "依存関係のあるビルドは、先行ビルドがデフォルトブランチにマージ済みであることが必須です。",
+    "依存関係のあるビルドは、先行ビルドの成果がこのブランチの履歴に在ることが着手の条件です。",
     "依存関係がないビルドは並行実行できます。",
     "",
     renderTable(TASKLIST_HEADERS, sorted.map(toRow), { raggedLastColumn: true }),

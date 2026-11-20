@@ -132,22 +132,6 @@ test("CLI: tasklist は不明なオプションと余分な引数を拒否し、
   assert.match(succeeds(directory, "tasklist", "add", "001", "--title", "API", "--deps=1", "--dry-run"), /build-02 を追加します（予測ピーク: なし \/ 依存: build-01）/);
 });
 
-test("CLI: tasklist done は URL を検証し、PR を記録すると完了済みの更新を拒否する", (t) => {
-  const directory = workspace(t, true);
-  succeeds(directory, "tasklist", "add", "001", "--title", "基盤");
-  const before = snapshot(directory);
-  assert.equal(cli(directory, "tasklist", "done", "001", "--id", "1", "--pr", "typo").status, 1);
-  assert.deepEqual(snapshot(directory), before);
-  succeeds(directory, "tasklist", "done", "001", "--id", "build-01", "--pr", "https://example.com/pull/42", "--dry-run");
-  assert.deepEqual(snapshot(directory), before);
-  succeeds(directory, "tasklist", "done", "001", "--id", "1", "--pr", "https://example.com/pull/42");
-  const output = JSON.parse(succeeds(directory, "tasklist", "read", "001", "--json"));
-  assert.equal(output.builds[0].pr, "[#42](https://example.com/pull/42)");
-  const completed = snapshot(directory);
-  assert.equal(cli(directory, "tasklist", "update", "001", "--id", "1", "--title", "変更").status, 1);
-  assert.deepEqual(snapshot(directory), completed);
-});
-
 test("CLI: validate は正常時 0、不整合は JSON と終了コード 2、対象の誤指定は 1", (t) => {
   const directory = workspace(t, true);
   assert.equal(JSON.parse(succeeds(directory, "validate", "--json")).ok, true);

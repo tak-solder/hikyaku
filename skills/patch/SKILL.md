@@ -68,7 +68,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" patch resolve {slug} [--cycle {
     推測せずユーザーに確かめ、属すなら `--cycle {cycle}` を付けて解決し直す
   - `conflict` があれば別の slug で解決し直す。`remoteUnavailable` があれば、origin のブランチとの重複を
     確かめられなかったことを伝える
-  - `pendingBuilds` が空でなければ、PR 列が空のビルドが残っていることを伝え、patch で進めるかを確かめる。
+  - `pendingBuilds` が空でなければ、完了していないビルドが残っていることを伝え、patch で進めるかを確かめる。
     残りのビルドで扱うべき内容なら `/hikyaku:builder {cycle}` を案内して終える
   - 出力の `phase`（`patch-YYYYMM-slug`）を以降の `{phase}` に使う
 

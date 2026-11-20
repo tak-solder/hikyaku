@@ -350,7 +350,6 @@ test("ledger object --defer: 積んだ異議は同意ゲートに載り、決定
   assert.equal(cli(directory, "step", "report", "build-01", "consent", "001", "--result", "approved", "--input", "OK").status, 1, "受け入れの言葉が無い");
   succeeds(directory, "ledger", "decide", "build-01", recorded.record.id, "001", "--decision", "consented", "--by", "user", "--input", "同意する", "--accepts", "検証が遅れることを受け入れる");
   assert.equal(report(directory, "consent", "--result", "approved", "--input", "OK").step, "pr");
-  succeeds(directory, "tasklist", "done", "001", "--id", "1", "--pr", PR);
   report(directory, "pr", "--result", "done", "--pr", PR);
   const after = cli(directory, ...OBJECT, "--harm", "中", "--defer", "--premises", "app.exposure");
   assert.equal(after.status, 1);

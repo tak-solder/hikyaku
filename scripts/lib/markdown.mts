@@ -103,7 +103,7 @@ export function escapeCell(text: string): string {
  */
 export interface RenderTableOptions {
   /**
-   * 最後の列を空白で埋めない。行ごとに別のブランチが書き換える列（tasklist.md の PR 列）で使う。
+   * 最後の列を空白で埋めない。行ごとに書き換える列（tasklist.md の PR 列。close-cycle が埋める）で使う。
    * 列幅をそろえると、1つのセルが伸びただけで全行が変わり、並行するブランチ同士がコンフリクトする
    */
   raggedLastColumn?: boolean;

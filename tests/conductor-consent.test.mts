@@ -25,7 +25,7 @@ import "../scripts/lib/steps/index.mts";
 import { ARCHITECT_STEPS } from "../scripts/lib/steps/architect.mts";
 import { conductorConsentMode, consentGateSlot, consentProblem, consentTargets, isLastBuild } from "../scripts/lib/steps/consent.mts";
 import type { StepContext } from "../scripts/lib/steps/engine.mts";
-import { cli, cliWith, repository, snapshot, succeeds, temporaryDirectory, testEnvironment, write } from "./helpers.mts";
+import { cli, cliWith, recordBuildPr, repository, snapshot, succeeds, temporaryDirectory, testEnvironment, write } from "./helpers.mts";
 
 // 単体テストはこのプロセスの環境で評価する。conductor の子の中で npm test を走らせても持ち込まない
 delete process.env["HIKYAKU_CONDUCTOR_CHILD"];
@@ -86,9 +86,9 @@ function cycleWorkspace(t: TestContext, setup: Setup = {}): string {
   return directory;
 }
 
-/** tasklist の PR 列を埋める（作業ツリー） */
+/** ビルドの完了の記録を書く（作業ツリー） */
 function prDone(directory: string, ...ids: number[]): void {
-  for (const id of ids) succeeds(directory, "tasklist", "done", "001", "--id", String(id), "--pr", PR(10 + id));
+  for (const id of ids) recordBuildPr(directory, id, PR(10 + id));
 }
 
 function open(id: string, unit: string, overrides: Partial<OpenRecord> = {}): OpenRecord {

@@ -40,7 +40,7 @@ register({
     "                  ブランチ、無ければサイクルの base_branch）、属さなければ base_branch",
     "  startPointRef   切る元の、ローカルで解決できる ref（追跡参照しか無ければ origin/<name>）",
     "  unitDirectory   記録（progress.jsonl）を置くディレクトリ（リポジトリルートからの相対）",
-    "  pendingBuilds   サイクルに属すとき、作業ツリーの tasklist.md で PR 列が空のビルド",
+    "  pendingBuilds   サイクルに属すとき、作業ツリーで完了していないビルド",
     "  conflict        新しく始めるとき、同じ名前の記録かブランチ（ローカル・追跡参照・origin）があればその説明",
     "  remoteUnavailable  origin のブランチを確かめられなかったときの理由（重複の確認が不完全）",
   ].join("\n"),
@@ -118,7 +118,7 @@ register({
         if (recordMissing) {
           lines.push("", "! 記録がまだありません（start を記録する前に中断した）。サイクルに属すかを確かめ、属すなら --cycle を付けてください。");
         }
-        if (pendingBuilds.length > 0) lines.push("", `PR 列が空のビルドがあります: ${pendingBuilds.join(", ")}`);
+        if (pendingBuilds.length > 0) lines.push("", `完了していないビルドがあります: ${pendingBuilds.join(", ")}`);
         if (conflict !== null) lines.push("", `! ${conflict}`, "  別の slug を指定してください。");
         if (remoteUnavailable !== null) lines.push("", `! origin のブランチを確かめられませんでした: ${remoteUnavailable}`);
         return lines.join("\n");

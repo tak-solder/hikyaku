@@ -203,3 +203,15 @@ export function findingCounts(step: string | undefined): string[] {
     ? ["--findings", "0", "--adopted", "0"]
     : [];
 }
+
+/**
+ * ビルドの完了の記録（builder の pr の done）を、そのビルドの progress.jsonl に書く（作業ツリー）。
+ * ほかのビルドを完了にしておく準備に使う。PR 列は close-cycle まで書かれない
+ */
+export function recordBuildPr(directory: string, id: number | string, pr: string, cycleDirectory = "docs/hikyaku/cycles/001-test"): void {
+  const path = join(directory, cycleDirectory, `build-${String(id).padStart(2, "0")}`, "progress.jsonl");
+  mkdirSync(dirname(path), { recursive: true });
+  const previous = existsSync(path) ? readFileSync(path, "utf8") : "";
+  const event = { at: new Date().toISOString(), skill: "builder", step: "pr", result: "done", pr };
+  writeFileSync(path, `${previous}${JSON.stringify(event)}\n`, "utf8");
+}

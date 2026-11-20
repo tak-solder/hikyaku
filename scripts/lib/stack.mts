@@ -24,8 +24,8 @@ import {
   readFileAtRef,
   type KnownBranch,
 } from "./git.mts";
-import { normalizeBuildId, parseTasklist } from "./tasklist.mts";
-import { resolveViews, type TasklistViews } from "./views.mts";
+import { normalizeBuildId } from "./tasklist.mts";
+import { buildsAtRef, resolveViews, type TasklistViews } from "./views.mts";
 import { openCycle, type CycleContext } from "./workspace.mts";
 
 export function requirePhase(raw: string | undefined): Phase {
@@ -116,7 +116,7 @@ function patchScope(args: ParsedArgs, phase: Phase, operand: string | undefined)
  * 取り込み済みの判定は2つ併用する。
  *
  *   祖先関係      git merge-base --is-ancestor で base に含まれるか
- *   base の PR 列  そのビルドの PR 列がデフォルトブランチで非空か
+ *   base の完了の記録  そのビルドの完了の記録がデフォルトブランチに在るか
  *
  * 後者が要るのは、**squash merge / rebase merge ではマージ済みでも
  * ブランチの先端が base の祖先にならない**ため。どれだけ fetch しても
@@ -128,8 +128,8 @@ function patchScope(args: ParsedArgs, phase: Phase, operand: string | undefined)
  * conductor ブランチは統合の終点で、サイクルの最後までデフォルトブランチにマージされない。
  * ところが最新の base から切った直後は先端が base 上のコミットになり（その後 base が
  * 進めば祖先になり）、祖先関係だけで判定すると取り込み済みに見える。そこで conductor
- * ブランチは、base の祖先であることに加えて、base の PR 列にビルドが1つ以上あるとき
- * （conductor の PR がマージされ、ビルドの PR 列がデフォルトブランチに届いたあと）だけ
+ * ブランチは、base の祖先であることに加えて、base で完了したビルドが1つ以上あるとき
+ * （conductor の PR がマージされ、ビルドの完了の記録がデフォルトブランチに届いたあと）だけ
  * 取り込み済みとみなす。未マージの plan のブランチから切ったときのように、取り込む前の
  * フェーズのブランチと先端が同じなら、conductor ブランチを選ぶ。
  * conductor ブランチ自身の PR は常にデフォルトブランチへ向ける（統合の終点なので）。
@@ -240,13 +240,13 @@ export interface IntegrationBranch {
  * stackParent が同じ conductor ブランチを導く（pr base と食い違わない）。
  *
  * 取り込み済みかは stackParent と別の規則で決める。stackParent は「切ったばかりの conductor」を
- * 取り込み済みと読まないことが要るので、祖先関係と base の PR 列の両方を条件にしている。
+ * 取り込み済みと読まないことが要るので、祖先関係と base の完了の記録の両方を条件にしている。
  * それだけだと squash merge で取り込んだ conductor（先端が base の祖先にならない）を、
  * 未マージと読む。patch が知りたいのは「統合ブランチにまだ base に無い成果があるか」なので、
  * conductor の先端の tasklist で完了しているのに base で完了していないビルドがあるかで決める。
  * conductor を building の途中から始めたサイクル（先に main へ入ったビルドがある）でも、
  * conductor で完了したビルドが base に無いうちは未マージと読める。conductor でまだビルドを
- * 1つも終えていなければ、取り込む成果が無いので base を返す。base の PR 列を読めないときは、
+ * 1つも終えていなければ、取り込む成果が無いので base を返す。base の完了の記録を読めないときは、
  * 取り込み済みと言えないので conductor ブランチを返す。
  */
 export async function integrationBranch(
@@ -266,7 +266,14 @@ export async function integrationBranch(
   const merged = inputs.views.mergedIds;
   if (merged !== undefined) {
     const atTip = await readFileAtRef(config.repoRoot, conductor.ref, inputs.views.relativePath);
-    const done = atTip.content === undefined ? [] : parseTasklist(atTip.content).filter((build) => build.pr.trim() !== "");
+    // 先端の記録を読めなければ、取り込んでいない成果があるとみなす（conductor ブランチを返す向き）
+    const done =
+      atTip.state !== "found"
+        ? []
+        : await buildsAtRef(config.repoRoot, { ...atTip, state: "found" }, inputs.views.relativePath)
+            .then((builds) => builds.filter((build) => build.pr.trim() !== ""))
+            .catch(() => undefined);
+    if (done === undefined) return { name: conductor.name, ref: conductor.ref };
     if (!done.some((build) => !merged.has(build.id))) return fallback();
   }
   return { name: conductor.name, ref: conductor.ref };
@@ -274,7 +281,7 @@ export async function integrationBranch(
 
 /**
  * conductor ブランチが HEAD の祖先で、まだ base に取り込まれていないか。
- * base の祖先でも、base の PR 列にビルドが無ければ（切った直後や、base だけが進んだとき）
+ * base の祖先でも、base で完了したビルドが無ければ（切った直後や、base だけが進んだとき）
  * 取り込み済みにしない
  */
 async function isUnmergedConductor(

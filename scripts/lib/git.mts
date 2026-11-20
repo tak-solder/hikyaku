@@ -2,16 +2,16 @@
  * git への問い合わせ。
  *
  * 着手可能・待機の判定の入力は **HEAD の tasklist.md**（readFileAtRef で読む）。
- * PR 列の更新は実装と同じコミットに同梱されるため、HEAD で PR 列が非空である
+ * 完了の記録は実装と同じブランチにコミットされるため、HEAD に記録が在る
  * ことがそのまま実装が履歴に在ることを意味する。**作業ツリーは読まない**
- * （未コミットの PR 列を「実装が在る」と数えてしまう）。
+ * （未コミットの完了の記録を「実装が在る」と数えてしまう）。
  *
  * リモートを見るのは「マージ済みかどうかのラベル付け」「着手中の検出」
  * 「スタック元の導出」だけ。リモートに到達できなくてもワークフローは止まらず、
  * 到達できないことで着手可否が変わることもない。
  */
 
-import { execFile, execFileSync } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -261,6 +261,54 @@ export async function readFileAtRef(
     committedAt: meta?.committedAt,
     unavailable: undefined,
   };
+}
+
+/**
+ * 1つの ref の tree から複数のファイルをまとめて読む（git cat-file --batch を1回）。
+ * 在ったファイルだけを返す。ref に無いファイルは含めない（「無い」は確定情報）。
+ * git を実行できない・出力を解釈できないときは undefined（本当に不明）
+ */
+export async function readFilesAtRef(
+  cwd: string,
+  ref: string,
+  repoRelativePaths: string[],
+): Promise<Map<string, string> | undefined> {
+  if (repoRelativePaths.length === 0) return new Map();
+  const output = await new Promise<Buffer | undefined>((resolvePromise) => {
+    const child = spawn("git", ["cat-file", "--batch"], { cwd, stdio: ["pipe", "pipe", "ignore"] });
+    const chunks: Buffer[] = [];
+    const timer = setTimeout(() => child.kill(), 15_000);
+    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+    child.on("error", () => {
+      clearTimeout(timer);
+      resolvePromise(undefined);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolvePromise(code === 0 ? Buffer.concat(chunks) : undefined);
+    });
+    child.stdin.end(repoRelativePaths.map((path) => `${ref}:${path}\n`).join(""));
+  });
+  if (output === undefined) return undefined;
+
+  // 応答は入力の順に「<sha> blob <size>\n<内容>\n」か「<入力> missing\n」
+  const files = new Map<string, string>();
+  let offset = 0;
+  for (const path of repoRelativePaths) {
+    const end = output.indexOf(0x0a, offset);
+    if (end === -1) return undefined;
+    const header = output.subarray(offset, end).toString("utf8");
+    offset = end + 1;
+    const found = /^[0-9a-f]+ (\w+) (\d+)$/.exec(header);
+    if (found === null) {
+      if (header.endsWith(" missing") || header.endsWith(" ambiguous")) continue;
+      return undefined;
+    }
+    const size = Number(found[2]);
+    if (found[1] === "blob") files.set(path, output.subarray(offset, offset + size).toString("utf8"));
+    offset += size + 1;
+  }
+  return files;
 }
 
 /**

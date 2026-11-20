@@ -14,7 +14,6 @@ import {
   type BuildRecord,
 } from "../lib/tasklist.mts";
 import { assertCurrentConfig } from "../lib/config.mts";
-import { formatRef } from "../lib/refs.mts";
 import { formatK, parseTokenAmount } from "../lib/tokens.mts";
 import { openCycle, writeTasklist, type CycleContext } from "../lib/workspace.mts";
 
@@ -82,7 +81,7 @@ register({
   maxOperands: 1,
   details: [
     "サイクルを省略した場合、進行中のサイクルが1つだけならそれを対象にします。",
-    "完了判定は PR 列が非空かどうかの一点です。",
+    "完了判定は、PR 列か各ビルドの完了の記録（build-NN/progress.jsonl の pr の done）が在るかの一点です。",
   ].join("\n"),
   run: ({ args, operands }) => {
     const ctx = context(args, operands[0]);
@@ -151,7 +150,7 @@ register({
     "ビルドの分割は「元ビルドの update + 新ビルドの add」で表現します。",
     "専用の split コマンドは持ちません（既存コマンドの組み合わせで足りるため）。",
     "",
-    "完了済み（PR 列が非空）のビルドは更新できません。依存グラフの整合性が崩れるためです。",
+    "完了済み（PR 列か完了の記録が在る）のビルドは更新できません。依存グラフの整合性が崩れるためです。",
     "",
     "不明なオプションと余分な引数は、書き込まずに終了コード 1 で終了します。",
   ].join("\n"),
@@ -186,45 +185,43 @@ register({
 
 register({
   name: "tasklist done",
-  summary: "ビルドの完了を記録する（PR 列を埋める）",
-  usage: "hikyaku tasklist done [<cycle>] --id <n> --pr <url> [--dry-run]",
+  summary: "完了したビルドの依存グラフを、完了の記録から描き直す",
+  usage: "hikyaku tasklist done [<cycle>] --id <n> [--dry-run]",
   writes: true,
-  options: ["id", "pr"],
+  options: ["id", "pr"], // pr は廃止の案内を返すため受け付ける
   maxOperands: 1,
   details: [
-    "PR 列を埋めることがビルドの完了記録そのものです。status 列は持ちません。",
+    "ビルドの完了の記録は、builder の pr の done（step report の --pr）です。このコマンドは",
+    "その記録を読み、tasklist.md の依存グラフを描き直します。PR 列には書きません。",
     "",
-    "URL は `[#12](URL)` の形に整えて記録します。番号を判別できない",
-    "場合は `[PR](URL)` になります。完了判定は「非空かどうか」の一点なので、",
-    "表記の違いが判定に影響することはありません。",
+    "表は行のあいだに空行を挟めないため、並行するビルドの PR が隣り合う行の PR 列を埋めると、",
+    "Git は必ずコンフリクトにします。依存グラフはビルドごとのブロックに分かれているので、",
+    "このコマンドで変わるのは完了したビルドのブロックだけです。PR 列は cycle close がまとめて埋めます。",
     "",
-    "この変更は当該ビルドの PR に同梱してください。そうすることで、デフォルト",
-    "ブランチ上で PR 列が埋まっていること自体が「マージ済み = 完了」を意味します。",
-    "先にデフォルトブランチへ入れてしまうと、未マージのビルドを完了と誤判定します。",
+    "完了の記録が無ければ、書き込まずに終了コード 1 で終了します。",
+    "結果は当該ビルドの PR に同梱してください（記録と同じく、デフォルトブランチへ先に入れない）。",
   ].join("\n"),
   run: ({ args, operands }) => {
+    if (args.flags.has("pr")) {
+      throw new HikyakuError(
+        "tasklist done の --pr は廃止しました",
+        "完了は step report の pr の done（--pr <PR の URL>）で記録します。記録してから --id だけで実行し直してください。",
+      );
+    }
     const ctx = writableContext(args, operands[0]);
     const rawId = flagString(args, "id");
     const id = rawId === undefined ? undefined : normalizeBuildId(rawId);
-    const pr = flagString(args, "pr");
     if (id === undefined) throw new HikyakuError("--id を指定してください");
-    if (pr === undefined) throw new HikyakuError("--pr に PR の URL を指定してください");
-    // PR 列は「非空かどうか」だけで完了判定される。typo をそのまま入れると、
-    // 未マージのビルドが完了扱いになり、依存ビルドが着手可能になってしまう
-    if (!/^https?:\/\/\S+$/.test(pr.trim())) {
-      throw new HikyakuError(
-        `--pr は PR の URL を指定してください: ${JSON.stringify(pr)}`,
-        "PR 列が非空であること自体が完了を意味するため、URL 以外は受け付けません。",
-      );
-    }
 
     const target = ctx.builds.find((build) => build.id === id);
     if (!target) throw new HikyakuError(`${buildDirName(id)} が見つかりません`);
-
-    // `[#12](URL)` 形式に揃える。生の URL のままだと表が横に伸びる
-    const updated: BuildRecord = { ...target, pr: formatRef(pr, "PR") };
-    const next = ctx.builds.map((build) => (build.id === id ? updated : build));
-    finish(ctx, next, args, `${buildDirName(id)} を完了として記録します`, updated);
+    if (!isComplete(target)) {
+      throw new HikyakuError(
+        `${buildDirName(id)} の完了の記録がありません`,
+        `PR を作ったら、先に step report ${buildDirName(id)} pr --result done --pr <PR の URL> で記録してください。`,
+      );
+    }
+    finish(ctx, ctx.builds, args, `${buildDirName(id)} の完了を依存グラフに描きます（PR: ${target.pr}）`, target);
   },
 });
 
