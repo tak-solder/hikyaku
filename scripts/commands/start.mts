@@ -212,7 +212,7 @@ function outcomeFor(phase: Phase, state: CycleState, cycle: string, builds: Buil
     return { kind: "stop", message: `${phase} は tasklist.md にありません。next で着手可能なビルドを確かめる` };
   }
   if (isComplete(build)) {
-    return { kind: "stop", message: `${buildDirName(build.id)} は完了しています（PR 列: ${build.pr}）` };
+    return { kind: "stop", message: `${buildDirName(build.id)} は完了しています（PR: ${build.pr}）` };
   }
   if (!readyBuilds(builds).some((ready) => ready.id === build.id)) {
     const waiting = build.dependsOn.filter((dep) => !builds.some((other) => other.id === dep && isComplete(other)));

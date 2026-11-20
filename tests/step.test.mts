@@ -431,7 +431,7 @@ test("review findings: 件数のある回だけから採用率を出し、件数
   assert.equal(cli(directory, "review", "findings", "999").status, 1);
 });
 
-test("step: 振り返りを PR 前に終え、PR 列と URL が揃うまで完了にしない", (t) => {
+test("step: 振り返りを PR 前に終え、PR の URL を添えるまで完了にしない", (t) => {
   const directory = built(t);
   configure(directory, 'retrospective = "auto"');
   upToG8(directory);
@@ -451,9 +451,6 @@ test("step: 振り返りを PR 前に終え、PR 列と URL が揃うまで完�
   write(directory, `${BUILD}/retrospective.md`, "# 振り返り\n");
   assert.equal(report(directory, "write", "--skill", "retrospective", "--result", "done").kind, "done");
   assert.equal(report(directory, "retrospective", "--result", "done").step, "pr");
-  const early = cli(directory, "step", "report", "build-01", "pr", "001", "--result", "done", "--pr", "https://github.com/o/r/pull/1");
-  assert.equal(early.status, 1);
-  succeeds(directory, "tasklist", "done", "001", "--id", "1", "--pr", "https://github.com/o/r/pull/1");
   assert.match(next(directory).report?.["done"] ?? "", / --pr <PR の URL>$/);
   const noPr = cli(directory, "step", "report", "build-01", "pr", "001", "--result", "done");
   assert.equal(noPr.status, 1, "PR を添えない done は受け付けない");

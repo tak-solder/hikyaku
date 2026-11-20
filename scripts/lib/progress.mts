@@ -11,7 +11,7 @@
  */
 
 import { join } from "node:path";
-import { appendJsonl, readJsonl } from "./jsonl.mts";
+import { appendJsonl, parseJsonl, readJsonl } from "./jsonl.mts";
 
 export const PROGRESS_FILE = "progress.jsonl";
 
@@ -88,11 +88,18 @@ export function progressPath(unitDirectory: string): string {
  * 1行の欠けが「そのステップは未実施」と読まれ、手順が巻き戻るため
  */
 export function readProgress(unitDirectory: string): ProgressEvent[] {
-  return readJsonl(progressPath(unitDirectory), isEvent, {
-    writer: "progress.jsonl は hikyaku step report だけが追記します。",
-    shape: "進捗のイベント",
-  });
+  return readJsonl(progressPath(unitDirectory), isEvent, PROGRESS_LABELS);
 }
+
+/** git show などで読んだログの中身を読む（readProgress と同じく、壊れた行はエラー） */
+export function parseProgress(text: string, source: string): ProgressEvent[] {
+  return parseJsonl(text, source, isEvent, PROGRESS_LABELS);
+}
+
+const PROGRESS_LABELS = {
+  writer: "progress.jsonl は hikyaku step report だけが追記します。",
+  shape: "進捗のイベント",
+};
 
 function isEvent(value: unknown): value is ProgressEvent {
   if (typeof value !== "object" || value === null) return false;

@@ -305,7 +305,6 @@ test("CLI: 同じ単位の退けは reworkFrom を示し、戻り先を報告し
   assert.equal(again.step, "consent");
   assert.equal(again.args?.["reworkFrom"], undefined, "作り直したので戻り先は示さない");
   assert.equal(report(directory, "consent", "--result", "approved", "--input", "作り直しを確認").step, "pr");
-  succeeds(directory, "tasklist", "done", "001", "--id", "1", "--pr", PR);
   assert.equal(report(directory, "pr", "--result", "done", "--pr", PR).step, "publish");
 
   const section = JSON.parse(succeeds(directory, "ledger", "pr-section", "build-01", "001", "--json")) as { section: string; rejected: string[] };

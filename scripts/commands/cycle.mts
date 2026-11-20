@@ -1,6 +1,6 @@
 /** cycle new / list / status / close — サイクルのライフサイクル操作 */
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { flagBoolean, flagList, flagString, type ParsedArgs } from "../lib/args.mts";
 import { branchName } from "../lib/branch.mts";
@@ -34,7 +34,7 @@ import { pluginVersion } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
 import { formatRef } from "../lib/refs.mts";
 import { cycleTimeline, itemJson, itemLine, readLedger, summarize, type LedgerSummary } from "../lib/ledger.mts";
-import { buildDirName, isComplete, loadTasklist, normalizeBuildId } from "../lib/tasklist.mts";
+import { buildDirName, fillPrColumn, isComplete, isLegacyTasklist, loadTasklist, normalizeBuildId, renderTasklistFile, tasklistPath } from "../lib/tasklist.mts";
 import { resolveViews, sectionNote } from "../lib/views.mts";
 import { openCycle, type CycleContext } from "../lib/workspace.mts";
 
@@ -410,7 +410,7 @@ register({
     "記録するので、このコマンドを直接使うのは GitHub MCP でスキル側が起票した場合です。",
     "",
     "参照は `[#12](URL)` に整えて記録します。表記が揃っていないと表が横に伸びて",
-    "読めなくなるためで、判定に使う値ではありません（完了判定は常に PR 列）。",
+    "読めなくなるためで、判定に使う値ではありません（完了判定は常に各ビルドの完了の記録）。",
     "",
     "外部システムはあくまで可視化のためのビューです。ここに記録された参照を",
     "読み取りや完了判定に使うことはありません。",
@@ -677,8 +677,8 @@ register({
 
         lines.push(
           "",
-          `  ${sectionNote("判定", views.head, " の PR 列（未コミットの変更は数えません）")}`,
-          `  ${sectionNote("マージ状況", views.base, " の PR 列")}`,
+          `  ${sectionNote("判定", views.head, " の完了の記録（未コミットの変更は数えません）")}`,
+          `  ${sectionNote("マージ状況", views.base, " の完了の記録")}`,
         );
         if (views.fetched) lines.push(`    origin/${views.baseBranch} を更新しました`);
 
@@ -715,6 +715,9 @@ register({
     "",
     "全ビルドが完了していない場合は警告しますが、中止（abandoned）にする場合も",
     "あるため実行は止めません。--status abandoned で中止として記録できます。",
+    "",
+    "tasklist.md の PR 列も、各ビルドの完了の記録（build-NN/progress.jsonl の pr の done）から",
+    "まとめて埋めます。サイクルの途中は、並行するビルドの PR がコンフリクトしないよう PR 列を書きません。",
   ].join("\n"),
   run: ({ args, operands }) => {
     const config = loadConfig({ root: flagString(args, "root") });
@@ -728,8 +731,13 @@ register({
       throw new HikyakuError(`--status は closed か abandoned を指定してください`);
     }
 
-    const builds = loadTasklist(cycleDir(config.hikyakuRoot, record));
+    const directory = cycleDir(config.hikyakuRoot, record);
+    const builds = loadTasklist(directory);
     const incomplete = builds.filter((build) => !isComplete(build));
+    // 完了の記録から読んだ PR を、締めるときに PR 列へ書く（v2 の形式は書き換えない）
+    const listPath = tasklistPath(directory);
+    const filled = builds.filter((build) => build.prSource === "record");
+    const fillsPrColumn = filled.length > 0 && !isLegacyTasklist(readFileSync(listPath, "utf8"));
 
     const updated: CycleRecord = {
       ...record,
@@ -739,9 +747,11 @@ register({
     };
     const dryRun = flagBoolean(args, "dry-run");
 
-    emit({ cycle: updated, incomplete: incomplete.map((b) => b.id), dryRun }, () => {
+    const prColumn = fillsPrColumn ? filled.map((b) => b.id) : [];
+    emit({ cycle: updated, incomplete: incomplete.map((b) => b.id), prColumn, dryRun }, () => {
       const lines = [`サイクル ${cycleDirName(record)} を ${status} にします`, `  完了日  ${updated.finished}`];
       if (updated.summary !== "") lines.push(`  要約    ${updated.summary}`);
+      if (prColumn.length > 0) lines.push(`  PR 列   ${prColumn.map(buildDirName).join(", ")} を完了の記録から埋めます（tasklist.md）`);
       if (incomplete.length > 0 && status === "closed") {
         lines.push(
           "",
@@ -756,6 +766,7 @@ register({
 
     const next = records.map((r) => (r.id === record.id ? updated : r));
     writeFileSync(cyclesPath(config.hikyakuRoot), renderCyclesFile(next), "utf8");
+    if (fillsPrColumn) writeFileSync(listPath, renderTasklistFile(cycleDirName(record), fillPrColumn(builds)), "utf8");
   },
 });
 

@@ -192,13 +192,13 @@ export function asConductorChild<T>(run: () => T): T {
 /** 同意ゲートを手順に置くスキル。それ以外（planner・close-cycle）は pr の accepts だけを持つ */
 const GATED = new Set(["architect", "builder", "patch"]);
 
-/** 作業ツリーの tasklist の PR 列から見た、その作業単位の位置。読めなければ undefined */
+/** 作業ツリーの tasklist と完了の記録から見た、その作業単位の位置。読めなければ undefined */
 interface TasklistState {
   /** その作業単位のビルドの行（build-NN でない・行が無ければ undefined） */
   own: BuildRecord | undefined;
   /** ビルドの行が1つ以上ある */
   hasBuilds: boolean;
-  /** その作業単位以外の全ビルドの PR 列が埋まっている */
+  /** その作業単位以外の全ビルドが完了している */
   othersComplete: boolean;
 }
 
@@ -217,7 +217,7 @@ function tasklistState(cycleDirectory: string, unit: string): TasklistState | un
 }
 
 /**
- * 作業ツリーの tasklist で、このビルド以外の全ビルドの PR 列が埋まっているか（conductor の最後のビルド）。
+ * 作業ツリーの tasklist で、このビルド以外の全ビルドが完了しているか（conductor の最後のビルド）。
  * build-NN でなければ false。tasklist を読めない・そのビルドの行が無ければ true（同意ゲートを置いて止める向き）
  */
 export function isLastBuild(cycleDirectory: string, unit: string): boolean {
@@ -233,7 +233,7 @@ export function isLastBuild(cycleDirectory: string, unit: string): boolean {
  *   deferred  architect の子と、最後以外のビルドの子。同意ゲートを手順に入れず、pr の accepts も決定の無い項目で
  *             止めない（最後のビルドの同意ゲートへ回す）。ledger object --defer は PR を作る前なら受け付ける
  *   none      子でない、architect・ビルド以外の子（close-cycle・patch）、または事後同意が有効でないサイクルの子。従来どおり。
- *             全ビルドの PR 列が埋まった後（最後のビルドの同意ゲートを過ぎた後）の architect の子（指摘からの追加設計など）と、
+ *             全ビルドが完了した後（最後のビルドの同意ゲートを過ぎた後）の architect の子（指摘からの追加設計など）と、
  *             tasklist を読めない architect の子も none（後ろに拾う同意ゲートが無いので、その場で止める。コードレビューの指摘）
  *
  * last と deferred は、事後同意が有効なサイクルの子だけ（選んでいない・有効でないサイクルで同意を後ろへ回さない。原則11）。
@@ -365,7 +365,7 @@ interface ConsentStepDefinition extends StepDefinition {
   open: (ctx: StepContext) => boolean;
 }
 
-/** そのビルドの PR 列が作業ツリーの tasklist で埋まっているか（読めなければ true＝置き場が無い向き） */
+/** そのビルドが作業ツリーで完了しているか（読めなければ true＝置き場が無い向き） */
 function buildCompleted(cycleDirectory: string, unit: string): boolean {
   const state = tasklistState(cycleDirectory, unit);
   return state === undefined || (state.own !== undefined && isComplete(state.own));
@@ -377,15 +377,15 @@ function buildCompleted(cycleDirectory: string, unit: string): boolean {
  * 同意ゲートを持たないスキル（planner・close-cycle・create-cycle）、architect の差し戻しの回、
  * この回で PR を作るステップを done にした後は、置き場が無い（積んでもこの回のゲートに載らない）。
  * conductor の最後以外の子（deferred）は、自分の同意ゲートは無いが、最後のビルドの同意ゲートが拾うので置き場とみなす
- * （記録は when=merge@<その単位> のまま）。ただし差し戻しの回・この回で PR を作った後・自分の PR 列が埋まった後は
- * 置き場が無い（PR 列が埋まると、ほかのビルドが最後になって同意ゲートを過ぎているかもしれない。コードレビューの指摘）
+ * （記録は when=merge@<その単位> のまま）。ただし差し戻しの回・この回で PR を作った後・自分の完了を記録した後は
+ * 置き場が無い（完了を記録すると、ほかのビルドが最後になって同意ゲートを過ぎているかもしれない。コードレビューの指摘）
  */
 export function consentGateSlot(skill: SkillSteps, ctx: StepContext): string | undefined {
   const definition = skill.steps.find((step) => step.id === "consent") as ConsentStepDefinition | undefined;
   if (definition === undefined) return `${ctx.unit} の手順には同意ゲートがありません（同意ゲートは architect・ビルド・サイクルに属す patch の PR の前に置かれます）`;
   if (conductorConsentMode(skill.skill, ctx) === "deferred") {
     if (!definition.open(ctx) || (ctx.cycle !== undefined && buildCompleted(ctx.cycle.directory, ctx.unit))) {
-      return `${ctx.unit} の今の回からは、最後のビルドの同意ゲートへ回せません（差し戻しからの再設計の回か、この回で PR を作るステップをもう終えた、または PR 列が埋まった）`;
+      return `${ctx.unit} の今の回からは、最後のビルドの同意ゲートへ回せません（差し戻しからの再設計の回か、この回で PR を作るステップをもう終えた、または完了を記録した）`;
     }
     return undefined;
   }

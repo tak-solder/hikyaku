@@ -7,7 +7,7 @@ import { branchName, parseBranch } from "../scripts/lib/branch.mts";
 import { currentMonth } from "../scripts/lib/patch.mts";
 import { collectPromotions } from "../scripts/lib/promotions.mts";
 import { skipTargetOf } from "../scripts/lib/reviewers.mts";
-import { cli, cliInput, cliWith, succeeds, temporaryDirectory, testEnvironment, workspace, write } from "./helpers.mts";
+import { cli, cliInput, cliWith, recordBuildPr, succeeds, temporaryDirectory, testEnvironment, workspace, write } from "./helpers.mts";
 
 const MONTH = currentMonth();
 const PHASE = `patch-${MONTH}-list-sort`;
@@ -92,13 +92,13 @@ test("CLI: patch resolve は同じ月の同じ slug の記録があれば confli
   assert.equal(resumed["conflict"], null);
 });
 
-/** conductor ブランチで build-01 を完了させる（PR 列を埋めてコミットする） */
+/** conductor ブランチで build-01 を完了させる（完了の記録を書いてコミットする） */
 function conductorWithBuild(directory: string): void {
   succeeds(directory, "tasklist", "add", "001", "--title", "export", "--peak", "350k");
   git(directory, "add", "-A");
   git(directory, "commit", "-q", "-m", "architect");
   git(directory, "switch", "-q", "-c", "hikyaku/001-test/conductor");
-  succeeds(directory, "tasklist", "done", "001", "--id", "1", "--pr", "https://github.com/o/r/pull/9");
+  recordBuildPr(directory, 1, "https://github.com/o/r/pull/9");
   git(directory, "add", "-A");
   git(directory, "commit", "-q", "-m", "build-01");
   git(directory, "switch", "-q", "main");

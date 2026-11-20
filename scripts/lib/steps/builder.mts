@@ -13,7 +13,7 @@ import { consentProblem, consentStep } from "./consent.mts";
 import { declarationArgs } from "../premises.mts";
 import { describeEscalationProblems } from "../escalation.mts";
 import { readReturn, RETURN_FILE } from "../phase.mts";
-import { buildDirName, loadTasklist, normalizeBuildId } from "../tasklist.mts";
+import { buildDirName, normalizeBuildId } from "../tasklist.mts";
 import { formatK } from "../tokens.mts";
 import { currentEvents, latestPeak, type SkillSteps, type StepContext } from "./engine.mts";
 
@@ -31,13 +31,6 @@ function reportedPeak(ctx: StepContext): number | undefined {
 function needsSplit(ctx: StepContext): boolean {
   const peak = reportedPeak(ctx);
   return peak !== undefined && peak > ctx.config.peakBands.estimateLimit;
-}
-
-/** tasklist.md（作業ツリー）の PR 列が埋まっているか */
-function prRecorded(ctx: StepContext): boolean {
-  if (ctx.cycle === undefined) return false;
-  const id = normalizeBuildId(ctx.unit);
-  return loadTasklist(ctx.cycle.directory).some((build) => build.id === id && build.pr.trim() !== "");
 }
 
 /** このビルドで最後に記録した設計と要件の衝突（ask: design-conflict）の時刻 */
@@ -165,7 +158,6 @@ export const BUILDER_STEPS: SkillSteps = {
       id: "pr",
       kind: "run",
       title: "PR の作成と完了の記録",
-      evidence: prRecorded,
       recordsPr: true,
       accepts: consentProblem("builder"),
       args: declarationArgs,

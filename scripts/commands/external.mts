@@ -47,7 +47,7 @@ function cycleLocation(config: ResolvedConfig, cycleName: string, filesRepositor
  * サイクルの issue の本文。
  *
  * ビルドの一覧と進捗は載せない。ビルドごとに同期しないので、載せると古い表示が残り続ける。
- * 進捗の正は tasklist.md の PR 列で、ここからはサイクルのディレクトリへのリンクだけを張る。
+ * 進捗の正は各ビルドの完了の記録で、ここからはサイクルのディレクトリへのリンクだけを張る。
  */
 function renderBody(config: ResolvedConfig, ctx: CycleContext, filesRepository: string | undefined): string {
   return [
@@ -100,7 +100,7 @@ register({
     "",
     "起票するのはサイクルに1つの issue だけです。ビルドごとには起票しません。",
     "本文は要約・profile・チケット・サイクルのディレクトリへのリンクで、ビルドの進捗は",
-    "載せません（進捗の正は tasklist.md の PR 列）。通常は PLAN の PR を作る直前に",
+    "載せません（進捗の正は各ビルドの完了の記録）。通常は PLAN の PR を作る直前に",
     "planner が1回だけ呼び、以降のすべての PR がこの issue を参照します。",
     "",
     "参照は作成後に cycles.md の外部列へ自動で記録します。既に記録があれば、その issue の",
@@ -223,7 +223,7 @@ register({
     "参照がまだ記録されていない、または target が none の場合は空を返します。",
     "PR 本文にリンクが無いこと自体は問題ではないので、エラーにはしません。",
     "",
-    "**issue が閉じても完了判定には使いません。** 判定は常に tasklist.md の PR 列です。",
+    "**issue が閉じても完了判定には使いません。** 判定は常に各ビルドの完了の記録（build-NN/progress.jsonl）です。",
   ].join("\n"),
   run: ({ args, operands }) => {
     const phaseRaw = operands[0];

@@ -300,7 +300,6 @@ test("CLI: 対象が無ければ同意ゲートは現れず、従来どおり pr
   upToHandoff(directory);
   succeeds(directory, "ledger", "open", "build-01", "001", "--type", "question", "--when", "merge", "--who", "user", "--summary", "文言");
   assert.equal(report(directory, "handoff", "--result", "done").step, "pr");
-  succeeds(directory, "tasklist", "done", "001", "--id", "1", "--pr", PR);
   assert.equal(report(directory, "pr", "--result", "done", "--pr", PR).step, "publish");
   // PR を作ったあとに対象が足されても、承認の無いゲートを PR の前に戻さない（終えた pr をやり直しにしない）
   openRisk(directory);
@@ -330,7 +329,6 @@ test("CLI: 対象があると pr の前に同意ゲートが現れ、全項目�
   assert.equal(cli(directory, "step", "report", "build-01", "consent", "001", "--result", "approved", "--input", "OK").status, 1);
   decideByUser(directory, id, "resolved");
   assert.equal(report(directory, "consent", "--result", "approved", "--input", "同意した").step, "pr");
-  succeeds(directory, "tasklist", "done", "001", "--id", "1", "--pr", PR);
   assert.equal(report(directory, "pr", "--result", "done", "--pr", PR).step, "publish");
 });
 
@@ -373,7 +371,6 @@ test("CLI: conductor の子では同意ゲートが現れないが、決定の�
   const done = cliWith(directory, CHILD, "step", "report", "build-01", "handoff", "001", "--result", "done", "--json");
   assert.equal(done.status, 0, done.stderr);
   assert.equal(next(directory, CHILD).step, "pr");
-  succeeds(directory, "tasklist", "done", "001", "--id", "1", "--pr", PR);
   const refused = cliWith(directory, CHILD, "step", "report", "build-01", "pr", "001", "--result", "done", "--pr", PR);
   assert.equal(refused.status, 1);
   assert.match(refused.stderr, /pr の完了の条件を満たしていません/);
@@ -393,7 +390,6 @@ test("CLI: 別の単位で記録した merge@build-01 の事項はゲートを�
   upToHandoff(directory);
   const id = openRisk(directory, "build-02", "merge@build-01");
   assert.equal(report(directory, "handoff", "--result", "done").step, "pr");
-  succeeds(directory, "tasklist", "done", "001", "--id", "1", "--pr", PR);
   const refused = cli(directory, "step", "report", "build-01", "pr", "001", "--result", "done", "--pr", PR);
   assert.equal(refused.status, 1);
   assert.match(refused.stderr, new RegExp(id.replace(".", "\\.")));

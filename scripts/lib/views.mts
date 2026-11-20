@@ -1,14 +1,15 @@
 /**
- * tasklist.md の3つの断面。
+ * tasklist.md と完了の記録の3つの断面。
  *
  * 同じファイルを3つの断面で読み、buildID で突き合わせる。どれを読むかは
- * 「ファイルの中身が何についての主張か」で決まる。
+ * 「ファイルの中身が何についての主張か」で決まる。完了は、PR 列と各ビルドの
+ * 完了の記録（build-NN/progress.jsonl の builder の pr の done）のどちらかで読む（tasklist.mts）。
  *
- *   一覧・依存グラフ   作業ツリー   これから作るものなので、新しいほど良い
- *   PR 列（着手判定）  HEAD         「実装が自分の履歴に在る」という主張。
- *                                  PR 列の更新は実装と同じコミットに同梱されるため、
- *                                  HEAD に在ることがそのまま実装が在ることを意味する
- *   PR 列（マージ済み） origin/base 「リポジトリ全体に取り込まれた」という主張
+ *   一覧・依存グラフ         作業ツリー   これから作るものなので、新しいほど良い
+ *   完了の記録（着手判定）   HEAD         「実装が自分の履歴に在る」という主張。
+ *                                        記録は実装と同じブランチにコミットされるため、
+ *                                        HEAD に在ることがそのまま実装が在ることを意味する
+ *   完了の記録（マージ済み） origin/base  「リポジトリ全体に取り込まれた」という主張
  *
  * 着手判定と中断点は HEAD までで閉じるので、ネットワークにもリモート追跡参照にも
  * 依存しない。**先行ビルドのブランチから積んでいても（スタックしていても）、
@@ -17,17 +18,20 @@
  */
 
 import type { ResolvedConfig } from "./config.mts";
+import { posix } from "node:path";
 import {
   baseFreshness,
   defaultBranch,
   fetchBaseRef,
   readFileAtDefaultBranch,
   readFileAtRef,
+  readFilesAtRef,
   type BaseFreshness,
   type FileAtRef,
 } from "./git.mts";
 import { repoRelative } from "./paths.mts";
-import { parseTasklist, tasklistPath, type BuildRecord } from "./tasklist.mts";
+import { parseProgress } from "./progress.mts";
+import { completionRecordPath, parseTasklist, tasklistPath, withRecordedPrs, type BuildRecord } from "./tasklist.mts";
 import type { CycleContext } from "./workspace.mts";
 
 /** ある断面をどう読めたか */
@@ -45,11 +49,11 @@ export interface Section {
 }
 
 export interface TasklistViews {
-  /** 一覧は作業ツリー、PR 列は HEAD。着手判定と中断点はこれを使う */
+  /** 一覧は作業ツリー、完了は HEAD。着手判定と中断点はこれを使う */
   builds: BuildRecord[];
   head: Section;
   base: Section;
-  /** base で PR 列が非空のビルド。**base が不明なら undefined**（空集合ではない） */
+  /** base で完了しているビルド。**base が不明なら undefined**（空集合ではない） */
   mergedIds: Set<string> | undefined;
   baseBranch: string | undefined;
   freshness: BaseFreshness;
@@ -77,11 +81,11 @@ export async function resolveViews(
   const relativePath = repoRelative(config.repoRoot, tasklistPath(ctx.directory));
   const base = config.baseBranch ?? defaultBranch(config.repoRoot);
 
-  const head = toSection(await readFileAtRef(config.repoRoot, "HEAD", relativePath));
+  const head = await toSection(config.repoRoot, await readFileAtRef(config.repoRoot, "HEAD", relativePath), relativePath);
   const builds =
     head.prs === undefined
       ? ctx.builds
-      : ctx.builds.map((build) => ({ ...build, pr: head.prs?.get(build.id) ?? "" }));
+      : ctx.builds.map((build) => withPr(build, head.prs?.get(build.id)));
 
   if (base === undefined) {
     return {
@@ -113,11 +117,11 @@ export async function resolveViews(
     }
   }
 
-  const merged = toSection(await readFileAtDefaultBranch(config.repoRoot, base, relativePath));
+  const merged = await toSection(config.repoRoot, await readFileAtDefaultBranch(config.repoRoot, base, relativePath), relativePath);
   const mergedIds =
     merged.prs === undefined
       ? undefined
-      : new Set([...merged.prs].filter(([, pr]) => pr !== "").map(([id]) => id));
+      : new Set([...merged.prs].filter(([, read]) => read.pr !== "").map(([id]) => id));
 
   return {
     builds,
@@ -131,14 +135,43 @@ export async function resolveViews(
   };
 }
 
+/** 作業ツリーの一覧に、ある断面で読んだ完了を重ねる */
+function withPr(build: BuildRecord, read: { pr: string; prSource: "record" | undefined } | undefined): BuildRecord {
+  const { prSource: _worktree, ...rest } = build;
+  if (read === undefined || read.pr === "") return { ...rest, pr: "" };
+  return read.prSource === undefined ? { ...rest, pr: read.pr } : { ...rest, pr: read.pr, prSource: read.prSource };
+}
+
 /**
- * 読み取り結果を「PR 列の対応表」と「出所」に分ける。
+ * ref の tasklist.md（読んだ結果）に、同じ ref の各ビルドの完了の記録を重ねる。
+ * 記録を読めない（git を実行できない・壊れた行がある）ときは投げる
+ */
+export async function buildsAtRef(repoRoot: string, file: FileAtRef & { state: "found" }, tasklistRelativePath: string): Promise<BuildRecord[]> {
+  const builds = parseTasklist(file.content ?? "");
+  const cycleRelative = posix.dirname(tasklistRelativePath);
+  const pending = builds.filter((build) => build.pr === "");
+  const paths = pending.map((build) => posix.join(cycleRelative, completionRecordPath(build.id)));
+  const files = await readFilesAtRef(repoRoot, file.ref ?? "HEAD", paths);
+  if (files === undefined) throw new Error(`${file.ref ?? "HEAD"} の完了の記録を読めません`);
+  return withRecordedPrs(builds, (id) => {
+    const path = posix.join(cycleRelative, completionRecordPath(id));
+    const text = files.get(path);
+    return text === undefined ? [] : parseProgress(text, `${file.ref ?? "HEAD"}:${path}`);
+  });
+}
+
+/**
+ * 読み取り結果を「完了の対応表」と「出所」に分ける。
  *
  * prs が undefined なのは**本当に不明なときだけ**。ファイルが無い（absent）は
  * 「1件も無い」という確定情報なので空の対応表を返す。ここを undefined にすると
- * 呼び出し元が作業ツリーへ縮退し、ビルドブランチ上の自分の PR 列を拾ってしまう。
+ * 呼び出し元が作業ツリーへ縮退し、ビルドブランチ上の自分の完了の記録を拾ってしまう。
  */
-function toSection(file: FileAtRef): { prs: Map<string, string> | undefined; section: Section } {
+async function toSection(
+  repoRoot: string,
+  file: FileAtRef,
+  relativePath: string,
+): Promise<{ prs: Map<string, { pr: string; prSource: "record" | undefined }> | undefined; section: Section }> {
   const at = { ref: file.ref, sha: file.sha, committedAt: file.committedAt };
 
   if (file.state === "absent") {
@@ -147,7 +180,8 @@ function toSection(file: FileAtRef): { prs: Map<string, string> | undefined; sec
 
   if (file.state === "found") {
     try {
-      const prs = new Map(parseTasklist(file.content ?? "").map((build) => [build.id, build.pr]));
+      const builds = await buildsAtRef(repoRoot, { ...file, state: "found" }, relativePath);
+      const prs = new Map(builds.map((build) => [build.id, { pr: build.pr, prSource: build.prSource }]));
       return { prs, section: { source: "ref", ...at, unavailable: undefined } };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

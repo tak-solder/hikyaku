@@ -31,18 +31,18 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr body build-{NN} {cycle}
     ユーザーが `/hikyaku:builder` を実行した時点で PR 作成まで依頼されている
   - `gh pr create --draft` で作る。Draft に対応していないリポジトリで作成に失敗したら、`--draft` を外して作り直し、Ready への切り替えは飛ばす。完了の案内で Draft にできなかったことを伝える
 
-- [ ] tasklist.md の PR 列を更新する
+- [ ] `done` を報告する（`--pr` に PR の URL）。この記録がビルドの完了の記録になる
+- [ ] 依存グラフを描き直す
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist done {cycle} \
-  --id {buildID} --pr {PR の URL}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" tasklist done {cycle} --id {buildID}
 ```
 
-PR を作ってからでないと URL が無い。だから PR 作成が先で、PR 列の更新は後になる。
+完了の記録（`build-{NN}/progress.jsonl` の pr の done）を読み、このビルドのブロックだけを描き直す。PR 列には
+書かない（並行するビルドの PR が隣り合う行を埋めてコンフリクトするため、PR 列は close-cycle がまとめて埋める）。
 
-- [ ] `done` を報告する（`--pr` に PR の URL）
-- [ ] 同じブランチへコミット & push する（tasklist.md と progress.jsonl）
+- [ ] 同じブランチへコミット & push する（progress.jsonl と tasklist.md）
 
-**この変更は必ずこのビルドの PR に同梱する。** 先にデフォルトブランチへ入れると、
-未マージのビルドを完了と誤判定する。PR 列が非空であること自体が「マージ済み = 完了」を
+**この記録は必ずこのビルドの PR に同梱する。** 先にデフォルトブランチへ入れると、
+未マージのビルドを完了と誤判定する。デフォルトブランチ上に完了の記録が在ること自体が「マージ済み = 完了」を
 意味するのは、この同梱が守られているからこそ成立する。
