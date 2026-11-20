@@ -420,6 +420,7 @@ window = 2
 escalate = []        # 既定では監督が答える問いのうち、ユーザーに上げるものの ID
 delegate = []        # 既定ではユーザーに上げる問いのうち、監督に任せるものの ID
 allowed_tools = []   # 子セッションに許可するツール（既定に追加される）
+permission_mode = "auto"  # 子の権限モード。auto か acceptEdits
 budget_per_run = 0   # 子の呼び出し1回ごとの費用の上限（USD）。0 なら上限なし
 require_approval = false  # true なら、PR を conductor ブランチに取り込む条件に承認（Approve）を加える
 phase_reviewers = []      # conductor ブランチ向けのフェーズの PR にアサインするレビュアー
@@ -437,6 +438,8 @@ review_timeout = 15       # レビューの依頼や CI を待つ上限（分）
 `escalate` と `delegate` には問いの ID（`G8`、`review-findings` など）を並べます。使える ID と現在の振り分けは `hikyaku conductor asks <cycle>` で確認できます。表に無い ID や、同じ ID を両方に書いた場合はエラーになります。同意ゲート（`G10`）、サイクルの中止（`abandon`）、ID の無い問い（`other`）は常にユーザーに上げるので、`delegate` には書けません（`escalate` に `G10` を書いても、もとからユーザーに上がるので何も変わりません）。確認のゲートでも、差し戻しからの再設計の回や `[app]` の上限を超える回の `G3` / `G4` のように、その回が同意になるときは `delegate` に書いてあってもユーザーに上がります。
 
 `allowed_tools` は `--allowedTools` に渡す書式で書きます（`"Bash(npm test:*)"` など）。子はこの設定を起動のたびに読むので、作業ツリーで一時的に足すのではなくコミットしておいてください。
+
+`permission_mode` は、子を起動するときの `--permission-mode` です。既定の `auto` では、`allowed_tools` と既定の許可に当たらない操作を Claude Code の安全判定にかけます。`acceptEdits` にすると、作業ディレクトリの中の編集だけを自動で許可し、ほかは許可の一覧で決めます（判定は入りません）。`bypassPermissions` などほかの値はエラーになります。auto モードを使えない環境での挙動は [conductor](../workflow/conductor.md) にあります。
 
 `phase_reviewers` には、conductor ブランチに向かうフェーズの PR にアサインするレビュアーを書きます。Copilot のような Bot を入れておくと、取り込みの前にレビューが付くのを待てます。人間のレビュアーを入れると、レビューが付くまで取り込みが止まるので、フェーズごとの確認が重くなります。`review_timeout` を超えても依頼が残っていれば、監督はユーザーに確認します。
 

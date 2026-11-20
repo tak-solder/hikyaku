@@ -93,6 +93,7 @@ planning/user-stories.md を承認済みの要件として扱います。
 監督が判断する問い: {asks の出力}
 ユーザーに上げる問い: {asks の出力（同意ゲートを含む）}、回によって同意になるゲート（consentWhen）、およびスコープを広げる回答が要る問い
 子のモデル: {asks の出力の models。null は「既定」と書く}
+子の権限モード: {asks の出力の permissionMode}
 フェーズの PR のレビュアーと、待つ上限: {asks の出力の review}
 最後の PR のレビュアー: {asks の出力の review.finalReviewers}
 問いの扱い: {asks の出力の queueing}

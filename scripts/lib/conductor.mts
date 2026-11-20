@@ -147,6 +147,14 @@ export function lintTags(tagsByFile: Map<string, string[]>): string[] {
 export const CONDUCTOR_PHASES = ["architect", "builder", "close-cycle"] as const;
 export type ConductorPhase = (typeof CONDUCTOR_PHASES)[number];
 
+/**
+ * 子の権限モード。auto は許可ルールに当たらない操作を Claude Code の安全判定にかけ、
+ * acceptEdits は作業ディレクトリ内の編集だけを自動で許可して、ほかは許可ルールで決める。
+ * bypassPermissions は選べない（監督の目が届かないところで何でもできる状態を作らないため）
+ */
+export const CONDUCTOR_PERMISSION_MODES = ["auto", "acceptEdits"] as const;
+export type ConductorPermissionMode = (typeof CONDUCTOR_PERMISSION_MODES)[number];
+
 export interface ConductorConfig {
   /** 既定では監督が答える問いのうち、ユーザーに上げるもの */
   escalate: string[];
@@ -154,6 +162,8 @@ export interface ConductorConfig {
   delegate: string[];
   /** 子に許可するツール（既定に追加される） */
   allowedTools: string[];
+  /** 子の権限モード（--permission-mode） */
+  permissionMode: ConductorPermissionMode;
   /** 呼び出し1回ごとの費用の上限（USD）。0 なら上限を渡さない */
   budgetPerRun: number;
   /** フェーズの PR を取り込む条件に、レビュアーの承認（Approve）を加える */
@@ -172,6 +182,7 @@ export const DEFAULT_CONDUCTOR: ConductorConfig = {
   escalate: [],
   delegate: [],
   allowedTools: [],
+  permissionMode: "auto",
   budgetPerRun: 0,
   requireApproval: false,
   phaseReviewers: [],
