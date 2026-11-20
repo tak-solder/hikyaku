@@ -80,10 +80,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" conductor asks {cycle} --json
 - [ ] 子がテストを実行できるかを確認する
   - テストのコマンドを AGENTS.md / README / package.json などから引く
   - `asks` の `allowedTools` で許可されているかを照合する
-    （既定は `git` のサブコマンドと Hikyaku CLI の実行などだけで、`npm test` / `node --test` や
-    環境変数を前置きしたコマンドは含まない）
-  - 許可されていなければ、`.hikyaku.config` の `[conductor] allowed_tools` に足してコミットするようユーザーに
-    案内して**終了**する。許可が無いと builder はローカル検証で blocked になる
+    （既定はファイル操作と Hikyaku CLI の実行などだけで、`git`・`gh`・`npm test` / `node --test` は含まない）
+  - 許可されていなければ、下の確認に「テストのコマンドは auto モードの安全判定にかかり、止められると builder は
+    ローカル検証で blocked になる。判定を通さずに許可するなら `[conductor] allowed_tools` に足してコミットする」と添える
 
 - [ ] **ユーザーに1回だけ確認する**（`AskUserQuestion`）。次を示し、進めてよいかを尋ねる
 

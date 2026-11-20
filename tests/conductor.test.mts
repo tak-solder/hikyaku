@@ -227,12 +227,10 @@ for (const raw of ["null", "[]", '"text"', "1"]) {
   });
 }
 
-test("conductor: 既定の許可は node を Hikyaku CLI の実行だけに、git を列挙したサブコマンドだけに絞る", () => {
+test("conductor: 既定の許可は node を Hikyaku CLI の実行だけに絞り、git・gh は許可せず安全判定にかける", () => {
   const tools = defaultAllowedTools("/plugins/hikyaku");
   assert.equal(tools.includes("Bash(node:*)"), false);
-  assert.equal(tools.includes("Bash(git:*)"), false);
-  assert.ok(tools.includes("Bash(git commit:*)"));
-  assert.equal(tools.some((tool) => /^Bash\(git (-c|config)/.test(tool)), false);
+  assert.equal(tools.some((tool) => /^Bash\((git|gh)\b/.test(tool)), false);
   assert.ok(tools.includes("Bash(node /plugins/hikyaku/scripts/hikyaku.mts:*)"));
   assert.ok(tools.includes('Bash(node "/plugins/hikyaku/scripts/hikyaku.mts":*)'));
   assert.equal(tools.some((tool) => /^Bash\(node(?! .*hikyaku\.mts)/.test(tool)), false);
@@ -311,6 +309,7 @@ budget_per_run = 2.5
   const disallowed = output.argv.indexOf("--disallowedTools");
   assert.deepEqual(output.argv.slice(disallowed + 1, disallowed + 4), ["AskUserQuestion", "ScheduleWakeup", "CronCreate"]);
   assert.equal(output.argv[output.argv.indexOf("--max-budget-usd") + 1], "2.5");
+  assert.equal(output.argv[output.argv.indexOf("--permission-mode") + 1], "auto", "子は常に auto モード");
   assert.ok(output.command.endsWith("< /dev/null > r.json"));
   assert.match(output.command, /^HIKYAKU_CONDUCTOR_CHILD=1 CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1 /, "子ではバックグラウンドの実行を無効にする");
   assert.deepEqual(snapshot(directory), before);

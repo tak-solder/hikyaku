@@ -124,6 +124,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **conductor の子を auto モードで起動するようにした。** `conductor launch` が組み立てるコマンドの `--permission-mode` を `acceptEdits` から `auto` にした（設定では変えられない）。既定の許可から `git` のサブコマンドと `gh pr create` / `gh pr view` を外し、許可の一覧に当たらない操作と同じく Claude Code の安全判定にかける。conductor の Step 0 は、テストのコマンドが許可されていなくても終了せず、判定にかかることを確認の提示に添える
 - **コーディングエージェントを操作する人を「ユーザー」と書く**: docs/・スキル（conductor の description・非対話規約を含む）・エージェント定義・CLI の出力（`conductor`・`cycle`・`branch verify` の help やエラー）とコメントで、操作する人を指していた「人間」を「ユーザー」に改めた。doc-reviewer と security-review の見出し「確度が低い懸念（要人間判断）」は「（要ユーザー判断）」になった。Bot と対比するレビュアー、Hikyaku が書いた部分と対比する手で書いた部分、人間可読の「人間」は改めていない
 - builder の review から、スコープ準拠とマージ時点のデータ安全の自己確認を削った（agreement-review に移した）。pr は `diff facts build-NN --format pr` の出力を PR 本文に貼る
 - doc-triager: 重要度と置き場の要点の写しを消し、`persistence.md` だけを読んで判定する。出力の置き場に「なくす」を加えた
@@ -231,6 +232,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Migration
 
+- conductor には auto モードを使える環境が要る（Anthropic API なら Opus 4.6 以上・Sonnet 4.6 以上などのモデルと、auto モードを無効にしていない組織の設定）。使えない環境では Claude Code が子を Manual で起動し、子は `git` も `gh` も実行できずに止まる。判定のぶんトークンと待ち時間が増える。`[conductor] allowed_tools` に `git` や `gh` を足すと、その操作は判定を通らなくなる
 - 中間レビューの件数の記録に伴い、進行中の作業単位で planner の review・architecture-review・tasklist-review・plan-review・test-spec-review を `done` で報告するときは `--findings` と `--adopted` が要る（足りなければ `step report` がエラーで案内する。`step next` の報告のコマンドにも出る）。既存の `progress.jsonl` はそのまま読める。この版より前の報告は `review findings` で「件数なし」として数える
 - agreement-review の導入に対応は不要。進行中のビルドで verify を終えていれば、次の1手が agreement-review になる。`[diff]` の印のキーは省略すれば既定を使う。テストの書き方が既定の印で拾えない枠組みなら、`[diff]` の `test_declarations` / `skip_markers` / `assertion_markers` に足す
 - 既存の `tasklist.md` は、次に `tasklist` のコマンドで書き込んだときに新しい形へ書き直される。進行中のサイクルで並行するビルドがあると、最初の `tasklist done` 同士が一度だけコンフリクトしうる。ベースブランチ側の `tasklist.md` を採ってから `hikyaku tasklist done --id <n>` を実行し直せば解消する（`docs/operations/troubleshooting.md#tasklistmd-がコンフリクトする`）
