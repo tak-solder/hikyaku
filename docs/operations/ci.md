@@ -4,7 +4,7 @@
 
 ```yaml
 - run: |
-    git clone --depth 1 --branch v2.0.0 https://github.com/tak-solder/hikyaku /tmp/hikyaku
+    git clone --depth 1 --branch v3.0.0 https://github.com/tak-solder/hikyaku /tmp/hikyaku
     node /tmp/hikyaku/scripts/hikyaku.mts validate
 ```
 

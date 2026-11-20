@@ -48,6 +48,7 @@ hikyaku cycle list --active
 | `building` | 未完了のビルドがある |
 | `completed` | 全ビルドが完了。だが永続ドキュメントへの昇格がまだ |
 | `closed` | `cycles.md` に記録された status |
+| `abandoned` | `cycles.md` に記録された status（中止） |
 
 **`completed` のまま放置しないでください。** 実装は main に入っているのに `overview` は古いままなので、この期間に他サイクルの architect が走ると古い現実を信じて設計します。`create-cycle` はこの状態を検出して警告します（ブロックはしません）。
 

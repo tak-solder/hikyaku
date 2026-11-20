@@ -240,6 +240,7 @@ cycles/{NNN}-{slug}/build-{NN}/
 ├── questions.md      質問が発生した場合のみ
 ├── plan.md
 ├── test-spec.md      テスト対象があるビルドのみ
+├── agreement.md      合意との突き合わせの結果（指摘が0件でも書く）
 ├── handoff.md
 ├── progress.jsonl    手順の進捗（hikyaku step report が追記する）
 └── retrospective.md
