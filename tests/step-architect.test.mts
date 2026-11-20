@@ -179,12 +179,16 @@ test("architect: ビルド分割で build-manager を呼び、同じ design/prog
   manager(directory, "scope", "architect", "--result", "done");
   manager(directory, "estimate", "architect", "--result", "done");
   manager(directory, "dry-run", "architect", "--result", "done");
-  assert.equal(manager(directory, "tasklist-review", "architect", "--result", "done", "--findings", "0", "--adopted", "0").step, "G6");
+  const firstG6 = manager(directory, "tasklist-review", "architect", "--result", "done", "--findings", "0", "--adopted", "0");
+  assert.equal(firstG6.step, "G6");
+  assert.equal(firstG6.args?.["revisedAfterReview"], false);
   manager(directory, "G6", "architect", "--result", "rejected", "--input", "分け方を変えて");
   assert.equal(manager(directory, "scope", "architect", "--result", "done").step, "estimate");
   manager(directory, "estimate", "architect", "--result", "done");
-  manager(directory, "dry-run", "architect", "--result", "done");
-  manager(directory, "tasklist-review", "architect", "--result", "done", "--findings", "0", "--adopted", "0");
+  // レビューは1回の呼び出しで1回だけ。やり直しても G6 へ進み、レビューのあとの変更を示す（#139）
+  const secondG6 = manager(directory, "dry-run", "architect", "--result", "done");
+  assert.equal(secondG6.step, "G6");
+  assert.equal(secondG6.args?.["revisedAfterReview"], true);
   manager(directory, "G6", "architect", "--result", "approved", "--input", "OK");
   assert.equal(manager(directory, "write", "architect", "--result", "done").kind, "done");
 
@@ -198,6 +202,37 @@ test("architect: ビルド分割で build-manager を呼び、同じ design/prog
 
   // 検証のあとに呼び直すと、build-manager は最初の手順から始まる
   assert.equal(next(directory, "architect", "--skill", "build-manager").step, "load");
+});
+
+test("build-manager: tasklist-review の指摘を反映して scope からやり直しても、レビューは回し直さない（#139）", (t) => {
+  const directory = workspace(t, true);
+  upToG4(directory);
+  report(directory, "G4", "--result", "approved", "--input", "OK");
+
+  manager(directory, "load", "architect", "--result", "done");
+  manager(directory, "scope", "architect", "--result", "done");
+  manager(directory, "estimate", "architect", "--result", "done");
+  manager(directory, "dry-run", "architect", "--result", "done");
+  manager(directory, "tasklist-review", "architect", "--result", "done", "--findings", "5", "--adopted", "4");
+  // 反映のために scope を報告し直すと、見積もりと差分を取り直して G6 へ進む
+  assert.equal(manager(directory, "scope", "architect", "--result", "done").step, "estimate");
+  manager(directory, "estimate", "architect", "--result", "done");
+  const gate = manager(directory, "dry-run", "architect", "--result", "done");
+  assert.equal(gate.step, "G6");
+  assert.equal(gate.args?.["revisedAfterReview"], true);
+  const again = cli(directory, "step", "report", "architect", "tasklist-review", "001", "--skill", "build-manager", "--result", "done", "--findings", "0", "--adopted", "0");
+  assert.equal(again.status, 1, "外れたレビューの報告は受け付けない");
+  assert.match(succeeds(directory, "step", "next", "architect", "001", "--skill", "build-manager"), /revisedAfterReview=true/);
+
+  // 回を区切って呼び直せば、レビューはもう一度回る
+  succeeds(directory, "step", "restart", "architect", "001", "--skill", "build-manager", "--reason", "レビューの指摘が手元に無い");
+  manager(directory, "load", "architect", "--result", "done");
+  manager(directory, "scope", "architect", "--result", "done");
+  manager(directory, "estimate", "architect", "--result", "done");
+  assert.equal(manager(directory, "dry-run", "architect", "--result", "done").step, "tasklist-review");
+  const fresh = manager(directory, "tasklist-review", "architect", "--result", "done", "--findings", "0", "--adopted", "0");
+  assert.equal(fresh.step, "G6");
+  assert.equal(fresh.args?.["revisedAfterReview"], false);
 });
 
 test("architect: 振り返りと PR まで進むと done", (t) => {

@@ -8,11 +8,33 @@
  */
 
 import { formatK } from "../tokens.mts";
-import type { SkillSteps, StepContext } from "./engine.mts";
+import { currentEvents, type SkillSteps, type StepContext } from "./engine.mts";
 
 /** 予測ピークの判定の帯（[context] limit × merge_ratio / estimate_ratio） */
 function bands(ctx: StepContext): Record<string, string> {
   return { mergeHint: formatK(ctx.config.peakBands.mergeHint), estimateLimit: formatK(ctx.config.peakBands.estimateLimit) };
+}
+
+/**
+ * 今回の呼び出しで tasklist-review を done で終えた位置（今回の記録の中の添字）。終えていなければ -1。
+ * doc のレビューは1回だけなので（config.mts の doc の maxRounds）、指摘を反映して scope から
+ * やり直しても、同じ呼び出しの中では回し直さない（#139）。呼び直し（step restart）で回が変われば数え直す
+ */
+function reviewedAt(ctx: StepContext): number {
+  const events = currentEvents({ skill: "build-manager", internal: true }, ctx.events);
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const event = events[i];
+    if (event?.skill === "build-manager" && event.step === "tasklist-review" && event.result === "done") return i;
+  }
+  return -1;
+}
+
+/** レビューを終えたあとに scope から整理し直したか（G6 で、レビューを経ていない変更を分けて示すため） */
+function revisedAfterReview(ctx: StepContext): boolean {
+  const at = reviewedAt(ctx);
+  if (at === -1) return false;
+  const events = currentEvents({ skill: "build-manager", internal: true }, ctx.events);
+  return events.slice(at + 1).some((event) => event.skill === "build-manager" && event.step === "scope" && event.result === "done");
 }
 
 export const BUILD_MANAGER_STEPS: SkillSteps = {
@@ -37,11 +59,19 @@ export const BUILD_MANAGER_STEPS: SkillSteps = {
       id: "tasklist-review",
       kind: "run",
       title: "doc-reviewer による tasklist のレビュー",
-      when: (ctx) => ctx.config.reviews.tasklist,
+      // 終えたあとは手順から外す（off）。scope からやり直しても、レビューを待たずに G6 へ進む
+      when: (ctx) => ctx.config.reviews.tasklist && !revisedAfterReview(ctx),
       countsFindings: true,
       args: (ctx) => ({ caller: ctx.unit }),
     },
-    { id: "G6", kind: "gate", title: "tasklist と issue.md の変更の承認", consent: false, ask: "G6" },
+    {
+      id: "G6",
+      kind: "gate",
+      title: "tasklist と issue.md の変更の承認",
+      consent: false,
+      ask: "G6",
+      args: (ctx) => ({ revisedAfterReview: revisedAfterReview(ctx) }),
+    },
     { id: "write", kind: "run", title: "tasklist と issue.md の書き込み" },
   ],
 };
