@@ -16,11 +16,14 @@ function bands(ctx: StepContext): Record<string, string> {
   return { mergeHint: formatK(ctx.config.peakBands.mergeHint), estimateLimit: formatK(ctx.config.peakBands.estimateLimit) };
 }
 
-/** この呼び出しで tasklist-review を done にしたか */
+/**
+ * tasklist-review を done にしたか（今回の呼び出しで、最後の G6 の差し戻しより後）。
+ * G6 の差し戻しはユーザーの判断なので、そのあとの再レビューは数えない
+ */
 function reviewedInThisCall(ctx: StepContext): boolean {
-  return currentEvents(BUILD_MANAGER_STEPS, ctx.events).some(
-    (event) => event.skill === "build-manager" && event.step === "tasklist-review" && event.result === "done",
-  );
+  const events = currentEvents(BUILD_MANAGER_STEPS, ctx.events).filter((event) => event.skill === "build-manager");
+  const rejected = events.map((event) => event.step === "G6" && event.result === "rejected").lastIndexOf(true);
+  return events.slice(rejected + 1).some((event) => event.step === "tasklist-review" && event.result === "done");
 }
 
 export const BUILD_MANAGER_STEPS: SkillSteps = {
