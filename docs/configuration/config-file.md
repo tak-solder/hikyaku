@@ -369,8 +369,6 @@ assertion_markers = ["check("]
 
 ## [context]
 
-## [context]
-
 ```toml
 [context]
 merge_below = "300k"
