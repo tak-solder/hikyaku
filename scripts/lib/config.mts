@@ -36,11 +36,9 @@ import type { PeakBands } from "./tokens.mts";
 import type { BranchNaming } from "./branch.mts";
 import {
   checkConductorAsks,
-  CONDUCTOR_PERMISSION_MODES,
   CONDUCTOR_PHASES,
   DEFAULT_CONDUCTOR,
   type ConductorConfig,
-  type ConductorPermissionMode,
   type ConductorPhase,
 } from "./conductor.mts";
 import { HikyakuError } from "./errors.mts";
@@ -593,7 +591,6 @@ function readConductor(table: TomlTable | undefined): ConductorConfig {
     escalate: readStringArray(table, "escalate", where) ?? DEFAULT_CONDUCTOR.escalate,
     delegate: readStringArray(table, "delegate", where) ?? DEFAULT_CONDUCTOR.delegate,
     allowedTools: readStringArray(table, "allowed_tools", where) ?? DEFAULT_CONDUCTOR.allowedTools,
-    permissionMode: readPermissionMode(table, where),
     budgetPerRun: budget,
     requireApproval: readBoolean(table, "require_approval", where) ?? DEFAULT_CONDUCTOR.requireApproval,
     phaseReviewers: readReviewers(table, "phase_reviewers", where),
@@ -634,18 +631,6 @@ function readReviewerSkip(table: TomlTable | undefined): ReviewerSkipTarget[] {
     }
   }
   return values as ReviewerSkipTarget[];
-}
-
-function readPermissionMode(table: TomlTable | undefined, where: string): ConductorPermissionMode {
-  const value = readString(table, "permission_mode", where);
-  if (value === undefined) return DEFAULT_CONDUCTOR.permissionMode;
-  if (!(CONDUCTOR_PERMISSION_MODES as readonly string[]).includes(value)) {
-    throw new HikyakuError(
-      `${where}.permission_mode に指定できない値があります: ${value}`,
-      `使用できる値: ${CONDUCTOR_PERMISSION_MODES.join(" | ")}`,
-    );
-  }
-  return value as ConductorPermissionMode;
 }
 
 function readTimeout(table: TomlTable | undefined, where: string): number {

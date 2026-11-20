@@ -147,14 +147,6 @@ export function lintTags(tagsByFile: Map<string, string[]>): string[] {
 export const CONDUCTOR_PHASES = ["architect", "builder", "close-cycle"] as const;
 export type ConductorPhase = (typeof CONDUCTOR_PHASES)[number];
 
-/**
- * 子の権限モード。auto は許可ルールに当たらない操作を Claude Code の安全判定にかけ、
- * acceptEdits は作業ディレクトリ内の編集だけを自動で許可して、ほかは許可ルールで決める。
- * bypassPermissions は選べない（監督の目が届かないところで何でもできる状態を作らないため）
- */
-export const CONDUCTOR_PERMISSION_MODES = ["auto", "acceptEdits"] as const;
-export type ConductorPermissionMode = (typeof CONDUCTOR_PERMISSION_MODES)[number];
-
 export interface ConductorConfig {
   /** 既定では監督が答える問いのうち、ユーザーに上げるもの */
   escalate: string[];
@@ -162,8 +154,6 @@ export interface ConductorConfig {
   delegate: string[];
   /** 子に許可するツール（既定に追加される） */
   allowedTools: string[];
-  /** 子の権限モード（--permission-mode） */
-  permissionMode: ConductorPermissionMode;
   /** 呼び出し1回ごとの費用の上限（USD）。0 なら上限を渡さない */
   budgetPerRun: number;
   /** フェーズの PR を取り込む条件に、レビュアーの承認（Approve）を加える */
@@ -182,7 +172,6 @@ export const DEFAULT_CONDUCTOR: ConductorConfig = {
   escalate: [],
   delegate: [],
   allowedTools: [],
-  permissionMode: "auto",
   budgetPerRun: 0,
   requireApproval: false,
   phaseReviewers: [],
@@ -604,40 +593,31 @@ export function parseResultJson(raw: string, options: ParseOptions = {}): Parsed
 // 起動コマンドの組み立て
 
 /**
+ * 子の権限モード。設定では変えない。
+ *
+ * auto は、許可ルールに当たらない操作を Claude Code の安全判定にかける。bypassPermissions は
+ * 監督の目が届かないところで何でもできる状態を作り、acceptEdits は許可ルールに当たる操作を
+ * 判定なしで通す。auto を使えない環境では Claude Code が Manual で起動し、許可ルールに
+ * 当たらない操作（git・gh を含む）は拒否されるので、子はコミットも push もできずに止まる
+ */
+export const CHILD_PERMISSION_MODE = "auto";
+
+/**
  * 子に既定で許可するツール。
  *
- * bypassPermissions は渡さず、ここに列挙したものだけを許可する。監督の目が
- * 届かないところで何でもできる状態を作らないため。PR の作成に gh が要るが、
- * マージなどはさせないので pr create / pr view に絞る。
+ * 許可ルールは安全判定より先に解決され、当たった操作は判定を通らない。そのため、外へ
+ * 持ち出せる git（push・fetch）と gh（pr create）は許可せず、すべて判定にかける。
+ * 判定は既定で作業ディレクトリと設定済みのリモートだけを信頼するので、origin への push や
+ * PR の作成は通り、ほかの宛先への送信は止まりやすい。
  *
  * node は Hikyaku CLI の実行だけを許す。Bash(node:*) にすると node -e で
  * 任意のコマンドを実行でき、他の許可をすべて迂回できる。スキルはパスを
  * 二重引用符でくくって呼ぶので、くくった形とくくらない形の両方を許可する。
+ * Hikyaku CLI が内部で呼ぶ git・gh は判定にかからない。
  *
- * git もサブコマンドを列挙する。Bash(git:*) にすると git -c alias.x='!…' x の形で
- * 任意のコマンドを実行できる。ただし、子は .git/hooks を書けて git commit で
- * 実行されるので、ツールの許可だけでは完全には隔離できない
+ * 子は .git/hooks を書けて git commit で実行されるので、ツールの許可と判定だけでは
+ * 完全には隔離できない
  */
-/** スキルが子の中で使う git のサブコマンド */
-const GIT_SUBCOMMANDS = [
-  "status",
-  "diff",
-  "log",
-  "show",
-  "add",
-  "commit",
-  "push",
-  "fetch",
-  "switch",
-  "checkout",
-  "branch",
-  "mv",
-  "rm",
-  "merge-base",
-  "rev-parse",
-  "ls-files",
-];
-
 export function defaultAllowedTools(pluginRootPath: string): string[] {
   const cli = `${pluginRootPath}/scripts/hikyaku.mts`;
   return [
@@ -648,13 +628,10 @@ export function defaultAllowedTools(pluginRootPath: string): string[] {
     "Grep",
     "Agent",
     "Skill",
-    ...GIT_SUBCOMMANDS.map((command) => `Bash(git ${command}:*)`),
     `Bash(node ${cli}:*)`,
     `Bash(node "${cli}":*)`,
     "Bash(ls:*)",
     "Bash(cat:*)",
-    "Bash(gh pr create:*)",
-    "Bash(gh pr view:*)",
   ];
 }
 

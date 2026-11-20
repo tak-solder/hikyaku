@@ -227,12 +227,10 @@ for (const raw of ["null", "[]", '"text"', "1"]) {
   });
 }
 
-test("conductor: 既定の許可は node を Hikyaku CLI の実行だけに、git を列挙したサブコマンドだけに絞る", () => {
+test("conductor: 既定の許可は node を Hikyaku CLI の実行だけに絞り、git・gh は許可せず安全判定にかける", () => {
   const tools = defaultAllowedTools("/plugins/hikyaku");
   assert.equal(tools.includes("Bash(node:*)"), false);
-  assert.equal(tools.includes("Bash(git:*)"), false);
-  assert.ok(tools.includes("Bash(git commit:*)"));
-  assert.equal(tools.some((tool) => /^Bash\(git (-c|config)/.test(tool)), false);
+  assert.equal(tools.some((tool) => /^Bash\((git|gh)\b/.test(tool)), false);
   assert.ok(tools.includes("Bash(node /plugins/hikyaku/scripts/hikyaku.mts:*)"));
   assert.ok(tools.includes('Bash(node "/plugins/hikyaku/scripts/hikyaku.mts":*)'));
   assert.equal(tools.some((tool) => /^Bash\(node(?! .*hikyaku\.mts)/.test(tool)), false);
@@ -282,7 +280,6 @@ test("CLI: conductor asks はサイクルの profile を反映し、設定の誤
   assert.equal(g2.enabled, false);
   assert.match(output.digest, /^[0-9a-f]{12}$/);
   assert.deepEqual(output.allowedTools, defaultAllowedTools(pluginRoot()));
-  assert.equal(output.permissionMode, "auto");
 
   write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[conductor]\ndelegate = ["abandon"]\n');
   const rejected = cli(directory, "conductor", "asks", "001");
@@ -312,7 +309,7 @@ budget_per_run = 2.5
   const disallowed = output.argv.indexOf("--disallowedTools");
   assert.deepEqual(output.argv.slice(disallowed + 1, disallowed + 4), ["AskUserQuestion", "ScheduleWakeup", "CronCreate"]);
   assert.equal(output.argv[output.argv.indexOf("--max-budget-usd") + 1], "2.5");
-  assert.equal(output.argv[output.argv.indexOf("--permission-mode") + 1], "auto", "既定は auto モード");
+  assert.equal(output.argv[output.argv.indexOf("--permission-mode") + 1], "auto", "子は常に auto モード");
   assert.ok(output.command.endsWith("< /dev/null > r.json"));
   assert.match(output.command, /^HIKYAKU_CONDUCTOR_CHILD=1 CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1 /, "子ではバックグラウンドの実行を無効にする");
   assert.deepEqual(snapshot(directory), before);
@@ -493,22 +490,6 @@ architect = "opus"
   assert.equal(modelOf("builder", "001", "1"), "sonnet");
   const asks = JSON.parse(succeeds(directory, "conductor", "asks", "001", "--json"));
   assert.deepEqual(asks.models, { architect: "opus", builder: "sonnet", "close-cycle": "sonnet" });
-});
-
-test("CLI: [conductor] permission_mode を --permission-mode で渡し、bypassPermissions は受け付けない", (t) => {
-  const directory = workspace(t, true);
-  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--peak", "350k");
-  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[conductor]\npermission_mode = "acceptEdits"\n');
-  const output = JSON.parse(succeeds(
-    directory, "conductor", "launch", "builder", "001", "1", "--expect-digest", digest(directory), "--json",
-  ));
-  assert.equal(output.argv[output.argv.indexOf("--permission-mode") + 1], "acceptEdits");
-  assert.equal(JSON.parse(succeeds(directory, "conductor", "asks", "001", "--json")).permissionMode, "acceptEdits");
-
-  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[conductor]\npermission_mode = "bypassPermissions"\n');
-  const rejected = cli(directory, "conductor", "asks", "001");
-  assert.equal(rejected.status, 1);
-  assert.match(rejected.stderr, /permission_mode に指定できない値/);
 });
 
 for (const [name, content, pattern] of [

@@ -20,6 +20,7 @@ import {
   CONDUCTOR_PHASES,
   CONSENT_WHEN,
   type ConductorPhase,
+  CHILD_PERMISSION_MODE,
   defaultAllowedTools,
   judgePr,
   lintTags,
@@ -91,7 +92,7 @@ register({
     "同意としてユーザーに上がります（consentWhen）。",
     "回ごとの判定は conductor parse が子の手順の位置から行います。",
     "",
-    "JSON 出力には、子に許可するツールの一覧（allowedTools）、子の権限モード（permissionMode）と、委任の範囲を決める",
+    "JSON 出力には、子に許可するツールの一覧（allowedTools）と、委任の範囲を決める",
     "設定のダイジェスト（digest）も含みます。監督はユーザーと合意したときの digest を、",
     "以後の conductor launch / parse に --expect-digest で渡します。",
     "各問いには、監督が選べる答えの表（safe。自由文で答える問いは null）と、リスクの申告が要りうるか（declaresRisk）、",
@@ -123,8 +124,7 @@ register({
       : judged.effective
         ? "有効（上限を超える受け入れは、最後のビルドの同意ゲートで一覧にしてユーザーに尋ねる）"
         : `無効（${judged.reason}）`;
-    const permissionMode = config.conductor.permissionMode;
-    emit({ cycle: context.name, profile: config.profile, digest, allowedTools, permissionMode, models, review, asks, consentWhen: CONSENT_WHEN, queueing: QUEUEING, deferredConsent: deferred }, () => {
+    emit({ cycle: context.name, profile: config.profile, digest, allowedTools, models, review, asks, consentWhen: CONSENT_WHEN, queueing: QUEUEING, deferredConsent: deferred }, () => {
       // profile で出ない問いでも、回によって同意になるゲートは条件を添える（その回は出てユーザーに上がる）
       const ids = (filter: (ask: ResolvedAsk) => boolean): string =>
         asks
@@ -142,7 +142,6 @@ register({
         `この profile では出ない問い: ${ids((a) => !a.enabled)}`,
         `問いの扱い: ${QUEUEING}`,
         `事後同意: ${deferredLine}`,
-        `子の権限モード: ${permissionMode}`,
         `子に許可するツール: ${allowedTools.join(" ")}`,
         `子のモデル: ${CONDUCTOR_PHASES.map((phase) => `${phase}=${models[phase] ?? "既定"}`).join(" / ")}`,
         `フェーズの PR のレビュアー: ${review.phaseReviewers.length === 0 ? "なし" : review.phaseReviewers.join(", ")}（待つ上限 ${review.timeoutMinutes} 分、承認${review.requireApproval ? "必須" : "不問"}）`,
@@ -222,13 +221,13 @@ register({
     `  --disallowedTools             ${DISALLOWED_TOOLS.join(" ")}`,
     "                                子は回答を同じプロセスで待たず、ブロックを出して終了する。",
     "                                タイマーで待つと結果ファイルが書かれず、監督に完了が届かない",
-    "  --permission-mode             [conductor] permission_mode（既定 auto。acceptEdits も選べる）",
-    "                                auto は許可ルールに当たらない操作を Claude Code の安全判定にかける。",
-    "                                auto を使えない環境（モデル・組織の設定）では Claude Code が Manual で起動し、",
-    "                                許可ルールに当たらない操作は拒否される",
+    "  --permission-mode auto        許可ルールに当たらない操作（git・gh を含む）を Claude Code の安全判定に",
+    "                                かける。設定では変えられない。auto を使えない環境（モデル・組織の設定）では",
+    "                                Claude Code が Manual で起動し、子はコミットも push もできずに止まる",
     "  --permission-prompts none     確認が要る操作は、人に尋ねずに拒否する",
     "  --allowedTools                既定に [conductor] allowed_tools を足したもの。既定の node は",
-    "                                Hikyaku CLI の実行だけで、node -e などは許可しない",
+    "                                Hikyaku CLI の実行だけで、node -e などは許可しない。git・gh は",
+    "                                判定を通すために既定では許可しない",
     "  --output-format json          結果を --out のファイルに書く（conductor parse の入力）",
     "  < /dev/null                   バックグラウンド起動で stdin を待たないため",
     "",
@@ -399,7 +398,7 @@ register({
       "--disallowedTools",
       ...DISALLOWED_TOOLS,
       "--permission-mode",
-      config.conductor.permissionMode,
+      CHILD_PERMISSION_MODE,
       "--permission-prompts",
       "none",
       "--allowedTools",
