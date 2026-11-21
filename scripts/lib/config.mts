@@ -577,12 +577,40 @@ function readStringArray(table: TomlTable | undefined, key: string, where: strin
   return value as string[];
 }
 
+/** [conductor] に書けるキー。タイプミスを黙って捨てると、設定したつもりの値が効かない */
+const CONDUCTOR_KEYS = [
+  "escalate",
+  "delegate",
+  "allowed_tools",
+  "budget_per_run",
+  "require_approval",
+  "phase_reviewers",
+  "review_timeout",
+  "model",
+  "models",
+];
+
+/**
+ * v2 の [conductor] にあって、v3 で廃止したキー。プロバイダごとに分けていたモデルの設定
+ * （[conductor.claude] / [conductor.codex]）と、プロバイダの指定。メインのセッションが常に Claude Code
+ * になったので、claude の設定は [conductor] の model / [conductor.models] に統合し、codex の分は使い道が無い
+ */
+export const RETIRED_CONDUCTOR_KEYS = ["provider", "claude", "codex"] as const;
+
+/** table に残っている、v2 の [conductor] の廃止キー */
+export function retiredConductorKeys(table: TomlTable): string[] {
+  const conductor = table["conductor"];
+  if (!isTable(conductor)) return [];
+  return RETIRED_CONDUCTOR_KEYS.filter((key) => conductor[key] !== undefined);
+}
+
 /**
  * [conductor] を読む。配列はキー単位のマージなので、サイクル設定に書くと
  * ルート設定の配列を置き換える（足し合わせない）
  */
 function readConductor(table: TomlTable | undefined): ConductorConfig {
   const where = "[conductor]";
+  assertKnownKeys(table, CONDUCTOR_KEYS, where);
   const budget = readNumber(table, "budget_per_run", where) ?? DEFAULT_CONDUCTOR.budgetPerRun;
   if (budget < 0) {
     throw new HikyakuError(`${where}.budget_per_run は 0 以上で指定してください（0 は上限なし）`);
@@ -1142,6 +1170,19 @@ function retiredKeyErrors(table: TomlTable, where: string): HikyakuError[] {
       ].join("\n"),
     ));
   }
+  const retiredConductor = retiredConductorKeys(table);
+  if (retiredConductor.length > 0) {
+    errors.push(new HikyakuError(
+      `${where}: [conductor] ${retiredConductor.join(" / ")} は v3 で廃止しました`,
+      [
+        "メインのセッションは常に Claude Code になったので、conductor のモデルの設定はプロバイダごとに分けません。",
+        "[conductor.claude] model は [conductor] model に、[conductor.claude.models] は [conductor.models] に移します。",
+        "provider と [conductor.codex]（model / models）は削除してください（Codex はレビューの実行先としてだけ使います）。",
+        "ルートの .hikyaku.config なら、hikyaku config migrate --dry-run で変換案を確かめ、hikyaku config migrate で移せます",
+        "（取り込まずに旧キーを消すだけなら hikyaku config migrate --drop）。/hikyaku:init の移行の回でも案内します（docs/migration/v2-to-v3.md）。",
+      ].join("\n"),
+    ));
+  }
   return errors;
 }
 
@@ -1170,6 +1211,8 @@ function stripRetiredKeys(table: TomlTable): void {
       if (isTable(kindTable)) delete kindTable["provider_for"];
     }
   }
+  const conductor = table["conductor"];
+  if (isTable(conductor)) for (const key of RETIRED_CONDUCTOR_KEYS) delete conductor[key];
   const external = table["external"];
   if (isTable(external)) {
     if (external["target"] === "asana") delete external["target"];

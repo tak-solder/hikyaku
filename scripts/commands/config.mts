@@ -1,6 +1,10 @@
 /** config — 解決済みの設定を出力する */
 
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { flagBoolean, flagString } from "../lib/args.mts";
+import { migrateConductor } from "../lib/config-migrate.mts";
+import { repoRoot } from "../lib/paths.mts";
 import { describeProvider, loadConfig, type AppDeclaration, type ResolvedConfig } from "../lib/config.mts";
 import { ceilingOf, effectiveDeclaration } from "../lib/risk.mts";
 import { deferredConsent } from "../lib/deferred-consent.mts";
@@ -155,6 +159,53 @@ register({
         "",
         `読み込んだ設定: ${config.sources.length > 0 ? config.sources.join(", ") : "(なし・既定値のみ)"}`,
       );
+      return lines.join("\n");
+    });
+  },
+});
+
+register({
+  name: "config migrate",
+  summary: "リポジトリルートの .hikyaku.config にある v2 の conductor の設定を、v3 の形に移す",
+  usage: "hikyaku config migrate [--drop] [--dry-run] [--json]",
+  writes: true,
+  options: ["drop"],
+  details: [
+    "v2 の [conductor] はプロバイダごとにモデルを分けていました。v3 は [conductor] model と [conductor.models] だけです。",
+    "  [conductor.claude] model          → [conductor] model",
+    "  [conductor.claude.models]         → [conductor.models]",
+    "  [conductor] provider・[conductor.codex]（model / models）→ 削除（移し先が無い）",
+    "",
+    "--drop は、変換せずに旧キーを消すだけにします（claude の値も取り込まない）。取り込まないと決めたときに使います。",
+    "旧キーが残っていると、ルートの設定を読む全てのコマンドが止まります。",
+    "",
+    "移し先（[conductor] model、[conductor.models] のキー）に別の値が既にあるときは、上書きせずに止めて衝突を示します。",
+    "何も書き込みません。どちらを残すか決めて片方を手で消すか、--drop を使ってください。",
+    "書き換えは行単位の最小限で、旧キーの行・テーブルを消し、移す値を足すだけです（コメントや他のテーブルは変えません）。",
+    "書き換えたあとの内容を解析し直し、旧キーが残っていないことと、移した値が合っていることを確かめてから書きます。",
+    "",
+    "対象はリポジトリルートの .hikyaku.config だけです。サイクルの .hikyaku.config に残った旧キーは、",
+    "閉じたサイクルなら読み飛ばされます。進行中のサイクルに残っていれば、同じ形に手で書き換えてください。",
+    "--dry-run は書かずに、変換の前後（どのキーをどうするか）だけを表示します。",
+  ].join("\n"),
+  run: ({ args }) => {
+    const path = join(repoRoot(), ".hikyaku.config");
+    if (!existsSync(path)) {
+      throw new HikyakuError(`リポジトリルートに .hikyaku.config がありません: ${path}`, "/hikyaku:init を実行して生成してください。");
+    }
+    const drop = flagBoolean(args, "drop");
+    const dryRun = flagBoolean(args, "dry-run");
+    const result = migrateConductor(readFileSync(path, "utf8"), { drop });
+    if (result.changed && !dryRun) writeFileSync(path, result.content, "utf8");
+    for (const note of result.notes) warn(note);
+    emit({ path, drop, changed: result.changed, written: result.changed && !dryRun, changes: result.changes, notes: result.notes }, () => {
+      if (!result.changed) return `${path} に、v2 の [conductor] の設定（provider / [conductor.claude] / [conductor.codex]）はありません。`;
+      const lines = [path, drop ? "旧キーを消します（取り込まない）:" : "v2 の [conductor] の設定を移します:"];
+      for (const change of result.changes) {
+        const value = change.value === undefined ? "" : ` = ${change.value}`;
+        lines.push(change.action === "move" ? `  ${change.from}${value} → ${change.to}` : `  ${change.from}${value} → 削除`);
+      }
+      lines.push(dryRun ? "(--dry-run のため書き込んでいません)" : "書き換えました。差分を確認してコミットしてください。");
       return lines.join("\n");
     });
   },

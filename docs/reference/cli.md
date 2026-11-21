@@ -58,6 +58,7 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | `cycle list [--active]` | 走行中のサイクルを見渡したいとき。ビルド列は「マージ済み / 全体」で、手元で完了しマージ待ちのものは (+n) が付く |
 | `cycle status <cycle>` | 中断からの再開点を知りたいとき。ブランチを切り替えてから実行する。中断点は `HEAD` 基準。作業ツリーに `return.md` があれば「差し戻し中」と表示し、architect を案内する。期限が来た・過ぎた未決事項と未解決の退けも示す |
 | `tasklist read [<cycle>]` | ビルドの一覧と完了状況を見たいとき |
+| `config migrate` | v2 の conductor の設定（`provider`・`[conductor.claude]`・`[conductor.codex]`）をルートの `.hikyaku.config` から v3 の形（`[conductor] model`・`[conductor.models]`）へ移すとき。`--dry-run` で変換案だけ見られ、`--drop` は取り込まずに旧キーを消す。移し先に別の値があれば止まる |
 | `config [<cycle>]` | 設定のマージ結果とプロファイルの展開結果を確認したいとき。`--no-cycle` で、選択済みのサイクルを参照せずルート設定だけを返す（サイクルに属さない patch 用） |
 
 ## 検証する
