@@ -34,7 +34,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve security build-{
 | `recommended`（express / economy / standard） | 判定基準に該当する場合のみ、起動するか確認する |
 
 `recommended` の場合、対象ビルドの `issue.md` と実際の diff が、`config --json` の
-`security.triggers` の基準に該当するか判定する。該当する場合は判定根拠を一行で示して確認する。
+`security.triggers` の基準に該当するか判定する。該当する場合は判定根拠を一行で示して確認する（ask: security-review）。
 外れることがあるので、ユーザーが上書きできる形にする。
 
 ```

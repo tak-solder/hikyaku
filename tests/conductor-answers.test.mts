@@ -103,7 +103,7 @@ test("SAFE_ANSWERS: G3 は推奨以外の案が safe に入らない", () => {
 });
 
 test("SAFE_ANSWERS: design-conflict・unsafe-split・retrospective は安全側の1つだけが safe、review-findings は3つとも", () => {
-  const cases: [string, string, string[]][] = [["design-conflict", "return", ["conform", "adjust"]], ["unsafe-split", "merge", ["redesign", "unsafe"]], ["retrospective", "run", ["skip"]]];
+  const cases: [string, string, string[]][] = [["design-conflict", "return", ["conform", "adjust"]], ["unsafe-split", "merge", ["redesign", "unsafe"]], ["retrospective", "run", ["skip"]], ["security-review", "run", ["skip"]]];
   for (const [id, safe, unsafe] of cases) {
     const answer = safeAnswerOf(id);
     assert.deepEqual(answer?.safe, [safe], id);
