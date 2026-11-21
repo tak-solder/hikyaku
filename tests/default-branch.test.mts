@@ -19,6 +19,9 @@ function withOriginWithoutHead(directory: string, bare: string): void {
   git(directory, "remote", "add", "origin", bare);
   git(directory, "push", "--quiet", "origin", "HEAD:trunk");
   git(directory, "fetch", "--quiet", "origin");
+  // git 2.48 以降の fetch は origin/HEAD を作る（remote.<name>.followRemoteHEAD）。参照が無いクローンを作るため消す
+  git(directory, "config", "remote.origin.followRemoteHEAD", "never");
+  git(directory, "update-ref", "-d", "refs/remotes/origin/HEAD");
 }
 
 test("branch verify: origin/HEAD の参照が無ければ origin に問い合わせてデフォルトブランチを決め、参照は書かない", (t) => {
