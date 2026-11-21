@@ -148,3 +148,17 @@ test("start: plan / architect / build-NN / close 以外は受け付けない", (
   assert.equal(result.status, 1);
   assert.match(result.stderr, /start が扱うのは/);
 });
+
+test("pr title / session title: conductor は --build-title が無ければサイクルの要約が {title} に入る", (t) => {
+  const directory = workspace(t);
+  succeeds(directory, "cycle", "new", "test", "--profile", "standard", "--summary", "請求機能");
+  assert.equal(succeeds(directory, "pr", "title", "conductor", "001").trim(), "[hikyaku] 001-test: conductor 請求機能");
+  assert.equal(succeeds(directory, "session", "title", "conductor", "001").trim(), "001-test conductor 請求機能");
+  assert.equal(succeeds(directory, "pr", "title", "conductor", "001", "--build-title", "別の題").trim(), "[hikyaku] 001-test: conductor 別の題");
+  assert.equal(succeeds(directory, "pr", "title", "close", "001").trim(), "[hikyaku] 001-test: close");
+});
+
+test("pr title: conductor でサイクルの要約が空なら区切りごと詰める", (t) => {
+  const directory = workspace(t, true);
+  assert.equal(succeeds(directory, "pr", "title", "conductor", "001").trim(), "[hikyaku] 001-test: conductor");
+});

@@ -124,6 +124,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **`pr title conductor` と `session title conductor` の `{title}` にサイクルの要約が入るようにした（[#142](https://github.com/tak-solder/hikyaku/issues/142)）。** `--build-title` が無い conductor は、これまで `{title}` が空で `[hikyaku] 001-test: conductor` のようになっていた。`--build-title` を渡せばそちらが優先で、要約が空なら従来どおり区切りごと詰める。他のフェーズには入れない。Migration: 不要。
 - **build-manager の tasklist-review を1回の呼び出しで1回だけにした（[#139](https://github.com/tak-solder/hikyaku/issues/139)）。** 指摘を反映して `scope` を報告し直すと、指摘が無くなるまでレビューが回り続けていた。ほかのドキュメントのレビューと同じく1回だけにする。終えたあとに `scope` からやり直すと、tasklist-review は手順から外れ（`off`）、見積もりと `--dry-run` を取り直して G6 へ進む。G6 の directive に `args.revisedAfterReview` を足し、true の回はレビューのあとに変えたところを、レビューを経ていない変更として分けて示す。呼び直し（`step restart`）で回を区切れば、レビューはもう一度回る。`[review] max_rounds` はコードとセキュリティのレビューだけに効き、doc には効かないことを `docs/configuration/config-file.md` の例に書いた
 - **conductor の子を auto モードで起動するようにした。** `conductor launch` が組み立てるコマンドの `--permission-mode` を `acceptEdits` から `auto` にした（設定では変えられない）。既定の許可から `git` のサブコマンドと `gh pr create` / `gh pr view` を外し、許可の一覧に当たらない操作と同じく Claude Code の安全判定にかける。conductor の Step 0 は、テストのコマンドが許可されていなくても終了せず、判定にかかることを確認の提示に添える
 - **コーディングエージェントを操作する人を「ユーザー」と書く**: docs/・スキル（conductor の description・非対話規約を含む）・エージェント定義・CLI の出力（`conductor`・`cycle`・`branch verify` の help やエラー）とコメントで、操作する人を指していた「人間」を「ユーザー」に改めた。doc-reviewer と security-review の見出し「確度が低い懸念（要人間判断）」は「（要ユーザー判断）」になった。Bot と対比するレビュアー、Hikyaku が書いた部分と対比する手で書いた部分、人間可読の「人間」は改めていない

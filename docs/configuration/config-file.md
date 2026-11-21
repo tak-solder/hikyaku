@@ -170,7 +170,7 @@ PR タイトルは表示専用で解析されないため、テンプレート�
 | `{cycle_name}` | `billing` |
 | `{phase}` | `init` / `create` / `plan` / `architect` / `build-01` / `close` |
 | `{build_id}` | `01`（builder のみ） |
-| `{title}` | ビルドのタイトル（他フェーズでは空） |
+| `{title}` | ビルドのタイトル。conductor はサイクルの要約（他フェーズでは空） |
 
 空になった変数は前後の区切り文字ごと詰められます。サイクルを持たない `init` で `[hikyaku] : init` のような出力にならないようにするためです。
 

@@ -223,6 +223,8 @@ build-manager や retrospective のような内部スキルは、`--skill` を�
 
 patch（`patch-YYYYMM-slug`）は、サイクルに属さなければ `<cycle>` を省き、ルートの設定でテンプレートを展開します。サイクルを渡しても推測はせず、渡されなければ記録（`patches/{YYYYMM}/{slug}/`）のある進行中のサイクルに属すとみなします。ブランチは `{prefix}/patch/{YYYYMM}/{slug}` です。サイクルに属す patch を統合ブランチから切っていれば、`pr base` は conductor ブランチを返します。PR タイトルとセッション名の `{phase}` は `patch` になり、`--build-title` が `{title}` に入ります。
 
+conductor（`pr title conductor`・`session title conductor`）は `--build-title` が無ければ、`{title}` にサイクルの要約（`cycles.md` の要約）が入ります。要約が空なら、空の変数として前後の区切りごと詰められます。`--build-title` を渡せばそちらが優先です。他のフェーズは、ユーザーが題を判断していないため要約を入れません。
+
 `branch verify` / `pr title` / `session title` は対象サイクルの設定でテンプレートを展開します。`[branch]` / `[pr]` / `[session]` は[サイクルごとに変えられる](../configuration/config-file.md#サイクルごとに変える)ため、サイクルに属さない `init` と `token-guide` を除いてサイクルの特定が必要です。ID や slug で渡してもディレクトリ名に解決されるので、`002` からも `hikyaku/002-billing/plan` が返ります。
 
 ## レビュー
