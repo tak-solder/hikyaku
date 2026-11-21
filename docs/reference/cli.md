@@ -212,8 +212,10 @@ build-manager や retrospective のような内部スキルは、`--skill` を�
 | `pr base <phase> [<cycle>]` | PR のマージ先を決めるとき。PR を作る直前。`--ref` でローカルに解決できる ref（レビューの差分基準）を返す |
 | `session title <phase> [<cycle>]` | セッション名を生成するとき |
 | `pr body <phase> [<cycle>]` | PR を作る直前（通常は各スキルが呼ぶ）。本文にそのまま貼る節（差分の事実・宣言の変更・未決事項・サイクルの issue への参照）をまとめて出す。マージの前にユーザーが同意する項目に決定が足りなければ、本文を出さずに終了コード 2 で止まる |
-| `pr ready` | 設定と実行元に従って Draft PR を公開するとき。conductor は取り込み前の公開にも使う。`gh` が使えなくても止めず、代わりに行うことを示す（取り込み前の `--for-merge` だけは止める） |
-| `pr request-reviewers <phase> [<cycle>] --pr <PR>` | PR を作った直後に、設定のレビュアーをアサインするとき（通常は各スキルが呼ぶ）。`gh` が使えなくても止めず、代わりに依頼するレビュアーを示す |
+| `pr create <phase> [<cycle>] --base <branch> --body-file <path>` | フェーズの Draft PR を作るとき（通常は各スキルが呼ぶ）。タイトルは `pr title` と同じ規則で付く。同じ向きで開いている PR があれば作らずに返す。Draft に対応していないリポジトリでは Draft を外して作る。REST だけを使うので、GraphQL が使えない環境でも動く |
+| `pr update-body --pr <PR> --body-file <path>` | PR の本文を丸ごと差し替えるとき（conductor の最後の PR の一覧への追記など）。REST だけを使う |
+| `pr ready` | 設定と実行元に従って Draft PR を公開するとき。conductor は取り込み前の公開にも使う。`gh` が使えなくても止めず、代わりに行うことを示す（取り込み前の `--for-merge` だけは止める）（GraphQL が使えない環境では REST に切り替える。[トラブルシューティング](../operations/troubleshooting.md#github-の-graphql-が使えないclaude-code-のクラウドのセッションなど)） |
+| `pr request-reviewers <phase> [<cycle>] --pr <PR>` | PR を作った直後に、設定のレビュアーをアサインするとき（通常は各スキルが呼ぶ）。`gh` が使えなくても止めず、代わりに依頼するレビュアーを示す（GraphQL が使えない環境では REST に切り替える。[トラブルシューティング](../operations/troubleshooting.md#github-の-graphql-が使えないclaude-code-のクラウドのセッションなど)） |
 
 `branch verify` は生成と検証を兼ねています。名前を生成するだけのコマンドを別に持つと、生成しただけで確認しないまま作業する余地が残るためです。
 
@@ -260,7 +262,7 @@ conductor（`pr title conductor`・`session title conductor`）は `--build-titl
 | コマンド | いつ使うか |
 |---|---|
 | `conductor asks [<cycle>]` | 子の問いのうち、どれを監督が答え、どれをユーザーに上げるかを確認するとき |
-| `conductor launch <phase> [<cycle>] [<build>\|add]` | 子セッションの起動・再開コマンドを組み立てるとき（通常は `/hikyaku:conductor` が呼ぶ） |
+| `conductor launch <phase> [<cycle>] [<build>\|add]` | 子セッションの起動・再開コマンドを組み立てるとき（通常は `/hikyaku:conductor` が呼ぶ）（GraphQL が使えない環境では REST に切り替える。[トラブルシューティング](../operations/troubleshooting.md#github-の-graphql-が使えないclaude-code-のクラウドのセッションなど)） |
 | `conductor parse <result.json> [<cycle>]` | 子の結果から gate / done / blocked を取り出すとき（同上） |
 | `conductor waiting [<cycle>]` | ユーザーの答えを待っている問いと、それを待っているビルドを確かめるとき（監督が、着手できるビルドが無くなったときに呼ぶ） |
 | `conductor check-pr <pr> [<cycle>]` | フェーズの PR を conductor ブランチに取り込む前に、マージ先・Draft・レビューの依頼・未解決の指摘・CI（と、設定すれば承認）を確かめるとき。`--wait` で待てる問題が解消するまで確かめ直す（通常は `/hikyaku:conductor` が呼ぶ） |

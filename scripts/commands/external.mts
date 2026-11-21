@@ -14,7 +14,7 @@ import { register } from "../lib/registry.mts";
 import { cycleRefLine, formatRef, refNumber } from "../lib/refs.mts";
 import { openCycle, type CycleContext } from "../lib/workspace.mts";
 import { originUrl } from "../lib/git.mts";
-import { githubRepositoryOf } from "../lib/github.mts";
+import { ghRest, githubRepositoryOf, isGraphqlUnavailable } from "../lib/github.mts";
 
 const run = promisify(execFile);
 
@@ -168,20 +168,34 @@ register({
     let ref = projection.existing;
     try {
       const number = refNumber(projection.existing);
+      // gh issue は GraphQL を使う。GraphQL が使えない環境（Claude Code のセッションなど）では REST で書く
+      const repo = config.external.githubRepo ?? "{owner}/{repo}";
+      const fields = { title: projection.title, body: projection.body };
       if (number === undefined) {
-        const { stdout } = await run(
-          "gh",
-          ["issue", "create", "--title", projection.title, "--body", projection.body, ...repoArgs(config.external.githubRepo)],
-          { cwd: config.repoRoot, timeout: 30_000 },
-        );
-        ref = formatRef(stdout.trim().split("\n").pop() ?? "", "issue");
+        try {
+          const { stdout } = await run(
+            "gh",
+            ["issue", "create", "--title", projection.title, "--body", projection.body, ...repoArgs(config.external.githubRepo)],
+            { cwd: config.repoRoot, timeout: 30_000 },
+          );
+          ref = formatRef(stdout.trim().split("\n").pop() ?? "", "issue");
+        } catch (error) {
+          if (!isGraphqlUnavailable(error)) throw error;
+          const created = await ghRest(config.repoRoot, `repos/${repo}/issues`, { method: "POST", fields });
+          ref = formatRef(String(created?.html_url ?? ""), "issue");
+        }
         action = "created";
       } else {
-        await run(
-          "gh",
-          ["issue", "edit", number, "--title", projection.title, "--body", projection.body, ...repoArgs(config.external.githubRepo)],
-          { cwd: config.repoRoot, timeout: 30_000 },
-        );
+        try {
+          await run(
+            "gh",
+            ["issue", "edit", number, "--title", projection.title, "--body", projection.body, ...repoArgs(config.external.githubRepo)],
+            { cwd: config.repoRoot, timeout: 30_000 },
+          );
+        } catch (error) {
+          if (!isGraphqlUnavailable(error)) throw error;
+          await ghRest(config.repoRoot, `repos/${repo}/issues/${number}`, { method: "PATCH", fields });
+        }
         action = "updated";
       }
     } catch (error) {

@@ -712,6 +712,11 @@ export interface PrView {
   reviews: unknown[];
   /** 未解決のレビュースレッド。取得していなければ undefined（確かめない） */
   reviewThreads?: { unresolved: ReviewThread[]; truncated: boolean };
+  /**
+   * 依頼が残っているかを確かめられない依頼先（GraphQL が使えず REST で読んだとき、設定で依頼する Bot のうち、
+   * まだ Bot のレビューが付いていないもの）。レビューが付くまで待つ
+   */
+  unverifiedRequests?: string[];
 }
 
 export interface ReviewThread {
@@ -851,6 +856,7 @@ export function judgePr(
   const readyOk = view.isDraft === false;
   const requested = view.reviewRequests.map(reviewerName);
   const requestsOk = requested.length === 0;
+  const unverified = view.unverifiedRequests ?? [];
   const opinions = [...latestOpinions(view.reviews)];
   const approvedBy = opinions.filter(([, state]) => state === "APPROVED").map(([name]) => name);
   const changesRequestedBy = opinions.filter(([, state]) => state === "CHANGES_REQUESTED").map(([name]) => name);
@@ -881,9 +887,12 @@ export function judgePr(
     blocks.push(`変更が要求されています: ${changesRequestedBy.join(", ")}`);
   } else if (!approvalOk) {
     // 依頼が残っているあいだは、レビューが付けば承認されうるので待てる。依頼が無いなら待っても付かない
-    (requestsOk ? blocks : waits).push("承認（Approve）がありません");
+    (requestsOk && unverified.length === 0 ? blocks : waits).push("承認（Approve）がありません");
   }
   if (!requestsOk) waits.push(`レビューの依頼が残っています: ${requested.join(", ")}`);
+  if (unverified.length > 0) {
+    waits.push(`Bot への依頼が残っているかを REST では確かめられないので、レビューが付くまで待ちます: ${unverified.join(", ")}`);
+  }
   if (status === "pending") waits.push(`CI がまだ終わっていません: ${pending.join(", ")}`);
   if (awaitingChecks) waits.push("CI のチェックがまだ登録されていません");
   const problems = [...blocks, ...waits];

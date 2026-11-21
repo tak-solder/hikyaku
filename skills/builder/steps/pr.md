@@ -22,14 +22,20 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr body build-{NN} {cycle}
   同意ゲートに出ないので、ここで見つかる）。出力の手順で一覧をユーザーに示し、項目ごとの決定を記録してから
   （ask: deferred-consent）やり直す。conductor の子なら、PR を作らずに blocked でユーザーに上げる
 - [ ] ここまでのコミットをすべて push する
-- [ ] PR を Draft で作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title build-{NN} {cycle} --build-title "{title}"` で生成）
+- [ ] PR を Draft で作成する（タイトルは `pr create` が `pr title` と同じ規則で付ける）
   - マージ先は上で取得した base
   - `pr body` の出力を本文の末尾にそのまま貼る（手で書き直さない）
   - 「確度: 要確認」の懸念が残る場合は、未決事項の ID と要点を本文に入れる。懸念の本文は未決事項の記録
     （`hikyaku ledger show <ID>`）に置き、PR に重複して転記しない
   - PR 作成前の承認は取らない。PR はレビューのための提案であって不可逆ではなく、
     ユーザーが `/hikyaku:builder` を実行した時点で PR 作成まで依頼されている
-  - `gh pr create --draft` で作る。Draft に対応していないリポジトリで作成に失敗したら、`--draft` を外して作り直し、Ready への切り替えは飛ばす。完了の案内で Draft にできなかったことを伝える
+  - 本文を `.tmp/hikyaku-pr-build-{NN}.md` に書き（コミットしない）、`pr create` で作る。`--base` は `pr base build-{NN} {cycle}` の値。
+    同じ向きで開いている PR があれば作らずにそれを返す（`created: false`）。Draft に対応していないリポジトリでは
+    スクリプトが Draft を外して作る（`draft: false`）ので、Ready への切り替えは飛ばし、完了の案内で Draft にできなかったことを伝える
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr create build-{NN} {cycle} --base {base} --body-file .tmp/hikyaku-pr-build-{NN}.md --build-title "{title}" --json
+```
 
 - [ ] `done` を報告する（`--pr` に PR の URL）。この記録がビルドの完了の記録になる
 - [ ] 依存グラフを描き直す

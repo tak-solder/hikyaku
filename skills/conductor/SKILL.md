@@ -368,8 +368,8 @@ git push origin --delete {フェーズのブランチ}
 - `returned` があれば（builder からの差し戻し）→ Step 1 へ（architect が差し戻しを扱う）
 - `handover` があれば（子が区切りの推奨に従ってセッションを切り替えた）、ユーザーに上げずに、同じビルドを
   **新しい session で**起動し直す（Step 3。`--resume` は付けない）。新しい子は `step next` で implement から続ける
-- 本文が PR の作成の代行を頼んでいれば（子が `gh` で PR を作れなかった）、子が書いた `.tmp/hikyaku-pr-{phase}.md` を
-  本文にして、子が push したブランチから PR を Draft で作る。作れたら同じ session-id で `--notice` で再開し、
+- 本文が PR の作成の代行を頼んでいれば（子が `pr create` で PR を作れなかった）、子が書いた `.tmp/hikyaku-pr-{phase}.md` を
+  本文にして、子が push したブランチから PR を Draft で作る（`pr create` を子のブランチで実行するか、GitHub の MCP ツールで作る）。作れたら同じ session-id で `--notice` で再開し、
   「PR を作りました: {URL}。この URL で pr の done を報告して続けてください」と伝える。作れなければユーザーに上げる
 - それ以外は、`body` を示してユーザーに上げる。指示があればそれに従い、無ければ**終了**する
 
@@ -405,14 +405,15 @@ git push origin --delete {フェーズのブランチ}
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify conductor {cycle} --json   # baseBranch がデフォルトブランチ
-gh pr list --head {conductor ブランチ} --base {baseBranch} --state open --json number,url
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr create conductor {cycle} --base {baseBranch} --dry-run --json
 ```
 
-  - **見つかったら、PR を作らない。** 「最後の PR が既にあるとき」へ進む
-  - 見つからなければ、次の手順で作る（閉じられた PR や、マージ済みの PR は対象にしない）
+  - **出力の `pr` が null でなければ（開いている PR がある）、PR を作らない。** 「最後の PR が既にあるとき」へ進む
+  - null なら、次の手順で作る（閉じられた PR や、マージ済みの PR は対象にしない）
 - [ ] conductor ブランチ → デフォルトブランチの PR を作る
-  - タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title conductor {cycle}` で生成する
-  - `gh pr create --draft` で作る。Draft に対応していない場合だけ通常の PR で作り、その旨を案内する
+  - 本文を `.tmp/hikyaku-pr-conductor.md` に書き（コミットしない）、`pr create conductor {cycle} --base {baseBranch}
+    --body-file .tmp/hikyaku-pr-conductor.md` で作る（タイトルは `pr title conductor` と同じ規則で付く）。
+    Draft に対応していないリポジトリでは Draft を外して作られる（`draft: false`）ので、その旨を案内する
   - 本文に、取り込んだフェーズの PR を順に並べ、それぞれで子が解釈で決めた振る舞いを1行ずつ示す
     （ユーザーがレビューで確認するため）
   - `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger answers {cycle} --format pr` の出力（「監督が答えた問い」の節）を、
@@ -451,7 +452,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr ready conductor {cycle} --pr
 監督が落ちて再実行された場合と、最後の PR に付いた指摘へビルドを足して対応する場合に来る。
 
 - [ ] 最後の PR の本文に無い、conductor ブランチに取り込んだフェーズの PR があれば（指摘を受けて足した
-  architect とビルドの PR）、本文の一覧に追記する（`gh pr edit {PR} --body-file {ファイル}`）。
+  architect とビルドの PR）、本文の一覧に追記する（追記した本文をファイルに書き、`pr update-body --pr {PR} --body-file {ファイル}`）。
   レビュアーのアサイン（上の手順。依頼済みの相手には重ねて依頼しない）を行い、PR の URL を示して
   **終了**する
 - [ ] 追記するものが無ければ、PR の URL を示し、最後の PR の指摘にビルドを足して対応するかをユーザーに

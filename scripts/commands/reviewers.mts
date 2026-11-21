@@ -4,7 +4,7 @@ import { flagBoolean, flagString } from "../lib/args.mts";
 import { branchName } from "../lib/branch.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { ghFailure, type GhFailure } from "../lib/gh-failure.mts";
-import { fetchPrGraphql, parsePrReviewState, reviewerLogin, run } from "../lib/github.mts";
+import { fetchPrGraphql, ghRest, isGraphqlUnavailable, parsePrReviewState, parseRestPull, prRef, reviewerLogin, run } from "../lib/github.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { planReviewers, planWithoutPr, type ReviewerPlan } from "../lib/reviewers.mts";
@@ -41,6 +41,10 @@ register({
     "レビュアーの依頼が通らないことは、PR の後の手順を止める理由にならないためです。",
     "gh pr view の応答の形が想定外のときだけは、推測で進めずに終了コード 1 で止めます",
     "（gh api graphql の失敗は、応答の形によるものも含めて gh-failed として返します）。",
+    "",
+    "gh の GraphQL が「GraphQL is not available」で拒まれる環境（Claude Code のクラウドのセッションなど）では、",
+    "REST（pulls/{n}・requested_reviewers）で読み書きします。REST には Bot（@copilot）の依頼が現れず、依頼もできないので、",
+    "@copilot は依頼せずに applied: false・reason: graphql-unavailable と manual で返します（人とチームには依頼します）。",
     "",
     "--dry-run では、依頼する予定のレビュアーだけを返し、GitHub には何も書き込みません。",
   ].join("\n"),
@@ -89,56 +93,104 @@ register({
       );
     };
 
-    let stdout: string;
+    // GraphQL が使えない環境（Claude Code のセッションなど）では REST で読み書きする。REST では Bot（Copilot など）
+    // への依頼が見えず、依頼もできないので、Bot は依頼せずに manual で返す
+    let rest = false;
+    let state: ReturnType<typeof parsePrReviewState>;
+    let requestedLogins: string[];
     try {
-      ({ stdout } = await run("gh", ["pr", "view", pr, "--json", "number,baseRefName,author,latestReviews"], {
+      const { stdout } = await run("gh", ["pr", "view", pr, "--json", "number,baseRefName,author,latestReviews"], {
         cwd: config.repoRoot,
         timeout: 30_000,
-      }));
+      });
+      // gh は動いたのに応答の形が想定外なら、推測で進めずに止める（pr ready と同じ）
+      let raw: unknown;
+      try {
+        raw = JSON.parse(stdout);
+      } catch {
+        throw new HikyakuError("gh pr view の応答を JSON として読めません", stdout.slice(0, 200));
+      }
+      state = parsePrReviewState(raw);
     } catch (error) {
-      fail(ghFailure("gh pr view", error));
-      return;
+      if (error instanceof HikyakuError) throw error;
+      if (!isGraphqlUnavailable(error)) {
+        fail(ghFailure("gh pr view", error));
+        return;
+      }
+      rest = true;
+      try {
+        const ref = prRef(pr);
+        const pull = parseRestPull(await ghRest(config.repoRoot, `repos/${ref.repo}/pulls/${ref.number}`));
+        const reviews = await ghRest(config.repoRoot, `repos/${ref.repo}/pulls/${ref.number}/reviews?per_page=100`);
+        state = {
+          number: pull["number"],
+          baseRefName: pull["base"]["ref"],
+          author: pull["user"]["login"],
+          latestReviews: (Array.isArray(reviews) ? reviews : []).map((review: any) => ({ author: { login: review?.user?.login } })),
+        };
+        requestedLogins = [
+          ...(Array.isArray(pull["requested_reviewers"]) ? pull["requested_reviewers"] : []).map((user: any) => user?.login),
+          ...(Array.isArray(pull["requested_teams"]) ? pull["requested_teams"] : []).map((team: any) => team?.slug),
+        ].filter((name): name is string => typeof name === "string");
+      } catch (restError) {
+        if (restError instanceof HikyakuError) throw restError;
+        fail(ghFailure("gh api pulls", restError));
+        return;
+      }
     }
-    // gh は動いたのに応答の形が想定外なら、推測で進めずに止める（pr ready と同じ）
-    let raw: unknown;
-    try {
-      raw = JSON.parse(stdout);
-    } catch {
-      throw new HikyakuError("gh pr view の応答を JSON として読めません", stdout.slice(0, 200));
-    }
-    const state = parsePrReviewState(raw);
 
     // 依頼済みは GraphQL から取る。gh pr view には Bot（Copilot など）の依頼が現れず、
     // リポジトリの設定などで既に Copilot が依頼されている場合に、重ねて再依頼してしまう
-    let graphql: Awaited<ReturnType<typeof fetchPrGraphql>>;
-    try {
-      graphql = await fetchPrGraphql(config.repoRoot, state.number);
-    } catch (error) {
-      // マージ先は分かっているので、依頼済みを除けないだけの一覧を示す
-      fail(ghFailure("gh api graphql", error), planReviewers({ ...settings, baseRefName: state.baseRefName, author: state.author, requested: [], reviewed: names(state.latestReviews) }), state.number);
-      return;
+    if (!rest) {
+      try {
+        requestedLogins = names((await fetchPrGraphql(config.repoRoot, state.number)).reviewRequests);
+      } catch (error) {
+        // マージ先は分かっているので、依頼済みを除けないだけの一覧を示す
+        fail(ghFailure("gh api graphql", error), planReviewers({ ...settings, baseRefName: state.baseRefName, author: state.author, requested: [], reviewed: names(state.latestReviews) }), state.number);
+        return;
+      }
     }
 
     const plan = planReviewers({
       ...settings,
       baseRefName: state.baseRefName,
       author: state.author,
-      requested: names(graphql.reviewRequests),
+      requested: requestedLogins!,
       reviewed: names(state.latestReviews),
     });
 
     let requested = false;
-    if (plan.request.length > 0 && !dryRun) {
+    // REST では Bot に依頼できないので、ユーザーに代わりに依頼してもらう
+    const bots = rest ? plan.request.filter((reviewer) => reviewer.toLowerCase() === "@copilot") : [];
+    const humans = plan.request.filter((reviewer) => !bots.includes(reviewer));
+    if (humans.length > 0 && !dryRun) {
       try {
-        await run("gh", ["pr", "edit", String(state.number), "--add-reviewer", plan.request.join(",")], {
-          cwd: config.repoRoot,
-          timeout: 30_000,
-        });
+        if (rest) {
+          const ref = prRef(pr);
+          const teams = humans.filter((reviewer) => reviewer.includes("/")).map((reviewer) => reviewer.split("/").pop() as string);
+          await ghRest(config.repoRoot, `repos/${ref.repo}/pulls/${state.number}/requested_reviewers`, {
+            method: "POST",
+            arrays: { reviewers: humans.filter((reviewer) => !reviewer.includes("/")), team_reviewers: teams },
+          });
+        } else {
+          await run("gh", ["pr", "edit", String(state.number), "--add-reviewer", humans.join(",")], {
+            cwd: config.repoRoot,
+            timeout: 30_000,
+          });
+        }
         requested = true;
       } catch (error) {
-        fail(ghFailure("gh pr edit", error), plan, state.number);
+        fail(ghFailure(rest ? "gh api requested_reviewers" : "gh pr edit", error), plan, state.number);
         return;
       }
+    }
+    if (bots.length > 0) {
+      const manual = `GitHub の PR #${state.number} の画面で、次のレビュアーに依頼してください（GraphQL が使えないため、Bot には依頼できませんでした）:\n  ${bots.join(", ")}`;
+      emit(
+        { phase, pr: state.number, base: state.baseRefName, dryRun, requested, applied: false, reason: "graphql-unavailable", stage: "gh api requested_reviewers", manual, ...plan },
+        () => [`${requested ? `依頼しました: ${humans.join(", ")}` : "人への依頼はありません"}${dryRun ? "（--dry-run）" : ""}`, manual].join("\n"),
+      );
+      return;
     }
 
     emitPlan({ phase, pr: state.number, base: state.baseRefName, dryRun, requested, applied: true, ...plan });
