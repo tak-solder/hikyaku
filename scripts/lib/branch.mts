@@ -202,6 +202,16 @@ export function renderPrTitle(
     .trim();
 }
 
+/**
+ * {title} の既定値。--build-title（builder・patch の依頼の要約）が優先で、無ければ conductor に限り
+ * サイクルの要約（cycles.md の summary）を使う。conductor の最後の PR はサイクル全体を表し、
+ * ビルドのような個別の題を持たないため。ほかのフェーズには入れない
+ */
+export function defaultTitleFor(phase: Phase, cycleSummary: string | undefined, buildTitle: string | undefined): string | undefined {
+  if (buildTitle !== undefined) return buildTitle;
+  return phase === "conductor" && cycleSummary !== undefined && cycleSummary !== "" ? cycleSummary : undefined;
+}
+
 /** タイトルに出すフェーズ名。patch は年月と slug を落とす（{title} に依頼の要約が入るため） */
 export function phaseTitleLabel(phase: Phase): string {
   return isPatchPhase(phase) ? "patch" : phase;

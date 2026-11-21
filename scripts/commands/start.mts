@@ -1,7 +1,7 @@
 /** start — フェーズの冒頭の準備（作業サイクルの記録・ブランチ・状態・セッション名）をまとめて行う */
 
 import { flagBoolean, flagString } from "../lib/args.mts";
-import { renderSessionTitle, type Phase } from "../lib/branch.mts";
+import { defaultTitleFor, renderSessionTitle, type Phase } from "../lib/branch.mts";
 import { HikyakuError, ValidationError } from "../lib/errors.mts";
 import { gitSync, listRemoteBranches } from "../lib/git.mts";
 import { resolveUnsafeSplit } from "../lib/integrity.mts";
@@ -131,7 +131,7 @@ register({
       );
     }
 
-    const sessionTitle = renderSessionTitle(config.session.title, phase, cycle, flagString(args, "build-title") ?? build?.title);
+    const sessionTitle = renderSessionTitle(config.session.title, phase, cycle, defaultTitleFor(phase, context.record.summary, flagString(args, "build-title") ?? build?.title));
     const unsafeSplit = phase === "architect" ? resolveUnsafeSplit(config) : undefined;
 
     emit(

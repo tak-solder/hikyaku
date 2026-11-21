@@ -1,7 +1,7 @@
 /** branch name / branch verify / pr title / session title — 命名規則の適用 */
 
 import { flagBoolean, flagString } from "../lib/args.mts";
-import { isPatchPhase, phaseTitleLabel, renderPrTitle, renderSessionTitle } from "../lib/branch.mts";
+import { defaultTitleFor, isPatchPhase, phaseTitleLabel, renderPrTitle, renderSessionTitle } from "../lib/branch.mts";
 import { ValidationError } from "../lib/errors.mts";
 import { listRemoteBranches } from "../lib/git.mts";
 import { emit } from "../lib/output.mts";
@@ -156,7 +156,8 @@ register({
     "  {cycle_name}  billing",
     "  {phase}       init / token-guide / create / plan / architect / build-01 / close / patch",
     "  {build_id}    01（builder のみ）",
-    "  {title}       --build-title の値（builder と patch。他フェーズでは空）",
+    "  {title}       --build-title の値（builder と patch）。conductor は未指定ならサイクルの",
+    "                要約（cycles.md の要約）。他フェーズでは空",
     "",
     "空になった変数は前後の区切り文字ごと詰めます。init のようにサイクルを持たない",
     "フェーズで \"[hikyaku] : init\" のような出力にならないようにするためです。",
@@ -165,12 +166,12 @@ register({
   ].join("\n"),
   run: ({ args, operands }) => {
     const phase = requirePhase(operands[0]);
-    const { config, cycle } = scopeFor(args, phase, operands[1]);
+    const { config, cycle, context } = scopeFor(args, phase, operands[1]);
     const title = renderPrTitle(config.pr.title, {
       cycle,
       phase: phaseTitleLabel(phase),
       buildId: /^build-(\d+)$/.exec(phase)?.[1],
-      title: flagString(args, "build-title"),
+      title: defaultTitleFor(phase, context?.record.summary, flagString(args, "build-title")),
     });
     emit({ title, phase, cycle }, () => title);
   },
@@ -279,7 +280,7 @@ register({
   ].join("\n"),
   run: ({ args, operands }) => {
     const phase = requirePhase(operands[0]);
-    const { config, cycle } = scopeFor(args, phase, operands[1]);
+    const { config, cycle, context } = scopeFor(args, phase, operands[1]);
 
     if (config.session.title === "") {
       emit({ title: undefined, phase, cycle, disabled: true }, () =>
@@ -288,7 +289,7 @@ register({
       return;
     }
 
-    const title = renderSessionTitle(config.session.title, phase, cycle, flagString(args, "build-title")) as string;
+    const title = renderSessionTitle(config.session.title, phase, cycle, defaultTitleFor(phase, context?.record.summary, flagString(args, "build-title"))) as string;
     emit({ title, phase, cycle }, () => title);
   },
 });
