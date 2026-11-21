@@ -41,6 +41,7 @@ import "./commands/conductor.mts";
 import "./commands/reviewers.mts";
 import "./commands/pr-ready.mts";
 import "./commands/pr-body.mts";
+import "./commands/pr-create.mts";
 import "./commands/review.mts";
 import "./commands/step.mts";
 import "./commands/patch.mts";

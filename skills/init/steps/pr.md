@@ -12,9 +12,16 @@ Hikyaku の規則に従う / 現在のブランチで作業する / 別のブラ
 どれが妥当かは示唆しない。実行環境が割り当てたブランチだと分かっていても自分で決めない
 （別の作業のブランチに紛れ込んだ状態と、セッションの中からは区別できないため）。
 
-- [ ] コミットして PR を作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title init` で生成）
+- [ ] コミットする
   - コミットには `{HIKYAKU_ROOT}/progress.jsonl` も含める
   - コミットメッセージの形式はリポジトリの規約に従う。Hikyaku は関与しない
+- [ ] push してから、本文を `.tmp/hikyaku-pr-init.md` に書き（コミットしない）、`pr create` で作る（`--base` は
+  `pr base init` の値。タイトルは `pr title` と同じ規則で付く。同じ向きで開いている PR があれば作らずに返す）
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr create init --base {base} --body-file .tmp/hikyaku-pr-init.md --json
+```
+
 - [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
 
 ```bash

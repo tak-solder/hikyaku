@@ -4,7 +4,7 @@ import { branchName } from "../lib/branch.mts";
 import { shellQuote } from "../lib/conductor.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { ghFailure, type GhFailure } from "../lib/gh-failure.mts";
-import { run } from "../lib/github.mts";
+import { ghRest, isGraphqlUnavailable, markReadyRest, parseRestPull, prRef, run } from "../lib/github.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { requirePhase, scopeFor } from "../lib/stack.mts";
@@ -26,6 +26,10 @@ register({
     "**gh が使えなくても手順を止めません。** gh pr view か gh pr ready が失敗したら、applied が false、",
     "reason（gh-unavailable / gh-failed）、stage、manual（ユーザーが代わりに行うこと）を返し、終了コード 0 で終わります。",
     "--for-merge だけは、取り込みの判定に使うので終了コード 1 で止めます。応答の形が想定外のときも 1 です。",
+    "",
+    "gh の GraphQL が「GraphQL is not available」で拒まれる環境（Claude Code のクラウドのセッションなど）では、",
+    "PR の状態を REST（pulls/{n}）で読み、Ready への切り替えを CCR のルート（pulls/{n}/ccr/ready_for_review）で行います。",
+    "出力の via が rest になります。",
   ].join("\n"),
   run: async ({ args, operands }) => {
     const phase = requirePhase(operands[0]);
@@ -62,18 +66,32 @@ register({
         () => [`Ready への切り替えをできませんでした（${failure.stage}: ${failure.error}）。`, manual].join("\n"),
       );
     };
-    let stdout: string;
-    try {
-      ({ stdout } = await run("gh", ["pr", "view", pr, "--json", "number,state,isDraft,baseRefName"], { cwd: config.repoRoot, timeout: 30_000 }));
-    } catch (error) {
-      unavailable(ghFailure("gh pr view", error));
-      return;
-    }
+    // GraphQL が使えない環境（Claude Code のセッションなど）では、REST と CCR のルートで読み書きする
+    let rest = false;
     let view: unknown;
     try {
-      view = JSON.parse(stdout);
-    } catch {
-      view = undefined;
+      const { stdout } = await run("gh", ["pr", "view", pr, "--json", "number,state,isDraft,baseRefName"], { cwd: config.repoRoot, timeout: 30_000 });
+      try {
+        view = JSON.parse(stdout);
+      } catch {
+        view = undefined;
+      }
+    } catch (error) {
+      if (!isGraphqlUnavailable(error)) {
+        unavailable(ghFailure("gh pr view", error));
+        return;
+      }
+      rest = true;
+      let pull: Record<string, any>;
+      try {
+        const ref = prRef(pr);
+        pull = parseRestPull(await ghRest(config.repoRoot, `repos/${ref.repo}/pulls/${ref.number}`));
+      } catch (restError) {
+        if (restError instanceof HikyakuError) throw restError;
+        unavailable(ghFailure("gh api pulls", restError));
+        return;
+      }
+      view = { number: pull["number"], state: pull["normalizedState"], isDraft: pull["draft"], baseRefName: pull["base"]["ref"] };
     }
     if (typeof view !== "object" || view === null || !Number.isInteger((view as any).number) ||
         (view as any).state !== "OPEN" || typeof (view as any).isDraft !== "boolean" || typeof (view as any).baseRefName !== "string") {
@@ -87,13 +105,23 @@ register({
     const ready = reason === "ready";
     if (ready && !dryRun) {
       try {
-        await run("gh", ["pr", "ready", pr], { cwd: config.repoRoot, timeout: 30_000 });
+        if (rest) await markReadyRest(config.repoRoot, pr);
+        else await run("gh", ["pr", "ready", pr], { cwd: config.repoRoot, timeout: 30_000 });
       } catch (error) {
-        unavailable(ghFailure("gh pr ready", error));
-        return;
+        if (rest || !isGraphqlUnavailable(error)) {
+          unavailable(ghFailure(rest ? "gh api ccr/ready_for_review" : "gh pr ready", error));
+          return;
+        }
+        try {
+          rest = true;
+          await markReadyRest(config.repoRoot, pr);
+        } catch (restError) {
+          unavailable(ghFailure("gh api ccr/ready_for_review", restError));
+          return;
+        }
       }
     }
-    emit({ pr: state.number, ready, applied: true, reason, dryRun }, () => {
+    emit({ pr: state.number, ready, applied: true, reason, via: rest ? "rest" : "graphql", dryRun }, () => {
       if (reason === "auto-ready-off") return `Draft のまま残します。確認後に gh pr ready ${shellQuote(pr)} を実行してください`;
       if (reason === "already-ready") return "既に Ready for Review です";
       return dryRun ? `PR #${state.number} を Ready にします（--dry-run）` : `PR #${state.number} を Ready にしました`;

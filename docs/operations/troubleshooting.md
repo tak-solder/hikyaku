@@ -224,6 +224,12 @@ v2 の BP 基準表です。v3 は読みません。`bp-guide/README.md` にリ�
 
 `gh` が無い（`reason: "gh-unavailable"`）か、認証・権限・応答の問題で失敗した（`reason: "gh-failed"`）とき、`hikyaku pr request-reviewers` と `hikyaku pr ready` は手順を止めずに終了コード 0 で終わります。PR は作成済みなので、付随する処理が通らないことは先へ進めない理由にならないためです。出力の `stage` がどの `gh` の呼び出しで失敗したかを、`manual` が代わりに行うことを示します。GitHub の PR の画面で、示されたレビュアーに依頼するか、Ready for review にしてください。設定のレビュアーが空か、そのフェーズのアサインがオフなら、`gh` は呼ばれません。conductor の監督が取り込む直前に使う `pr ready --for-merge` だけは、向き先を確かめられないまま取り込まないよう、終了コード 1 で止まります。
 
+### GitHub の GraphQL が使えない（Claude Code のクラウドのセッションなど）
+
+Claude Code のクラウドのセッションでは、`gh` の GraphQL が「GitHub GraphQL is not available」で拒まれます。`gh pr create`・`gh pr view`・`gh pr ready`・`gh pr edit`・`gh issue` は GraphQL を使うので、そのままでは動きません。Hikyaku の CLI はこの応答を見たときだけ REST（`gh api`）と、その応答が案内する CCR のルート（`pulls/{n}/ccr/...`）に切り替えます。PR の作成と本文の差し替えは、もともと REST だけで行う `hikyaku pr create` と `hikyaku pr update-body` が担います。
+
+切り替えても、REST では確かめられないことが残ります。REST には Copilot などの Bot へのレビューの依頼が現れないので、`conductor check-pr` は `[conductor] phase_reviewers` の `@copilot` について、Bot のレビューが付くまで待ちます。`pr request-reviewers` は人とチームには依頼しますが、`@copilot` には依頼できないので、`applied: false`・`reason: "graphql-unavailable"` と `manual` を返します。GitHub の PR の画面で依頼してください。コミットのステータス（commit status）を権限で読めないときは、`check-pr` は check-runs だけで CI を判定し、`warnings` に残します。レビュースレッドの応答の形を読めないときは、未解決なしとは扱わずに終了コード 1 で止まります。
+
 ## 環境
 
 ### Node.js のバージョンが足りない

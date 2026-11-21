@@ -122,6 +122,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **`hikyaku pr body <phase> [<cycle>]`（読み取り専用）**: PR 本文に貼る事実の節（`diff facts --format pr`・宣言が変わったときの `ledger premises --format pr`・`ledger pr-section`・`external ref`）をまとめて出す。マージの前にユーザーが同意する項目に決定が足りなければ、本文を出さずに、PR を作るステップの `done` と同じ判定と文面で終了コード 2 で止まる
 - **`hikyaku ledger conductor-answer <phase> [<cycle>] --input`**: 監督の答えで再開された conductor の子が、その答えを暫定の決定と監督の決定の2行で decisions.jsonl に記録する（同じ起動の答えは二重に書かない。事後同意に回る答えは `--loses` が必要で、受け入れたリスクの事項も同時に書く）。`conductor launch --from supervisor` が回答の先頭に完成したコマンドを置き、監督の答えで再開された子の `step report <gate> approved|rejected` は、記録が無ければ拒まれる。G8 のように `step report` だけで完了するゲートでも監督の答えが記録に残る
 - `skills/close-cycle/references/rule-writing.md`: パス指定の rule の書き方を `persistence.md` から分けた
+- **`hikyaku pr create` と `hikyaku pr update-body`**: フェーズの Draft PR の作成と本文の差し替えを、GitHub の REST（`gh api`）だけで行う。`pr create` はタイトルを `pr title` と同じ規則で付け、同じ向きで開いている PR があれば作らずに返し、Draft に対応していないリポジトリでは Draft を外して作る。planner・architect・builder・close-cycle・patch・init・create-cycle・token-guide の PR の手順と、conductor の最後の PR（開いている PR の確かめ・本文への追記）は `gh pr create`・`gh pr list`・`gh pr edit` の代わりにこれを使う（#142）
 
 ### Changed
 
@@ -217,6 +218,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - planner・architect・builder・close-cycle の pr と patch の publish は、本文の事実の節を `hikyaku pr body` の出力で貼る。PR を作る前の `ledger consent-list` による決定の不足の確かめは `pr body` に寄せた
 - conductor: 子に渡す非対話規約（`headless-protocol.md`）を、起動の場面ごとに組み立てて一時ディレクトリに書く。セッションの切り替え（builder の子）・ユーザーに上げる問い（`--escalate`）・ユーザーの答えの記録（`--from user`）・監督の判断の記録（`--from supervisor`）・事後同意（有効なサイクル）の節は、その場面の起動にだけ入る
 - builder: セキュリティレビューを起動するかの問い（recommended で判定基準に該当したとき）に `（ask: security-review）` を付け、conductor の問いの表（ASKS）と監督の答えの表（`run` のみ安全側）に足した。conductor の子では監督が答える
+- GitHub の GraphQL が使えない環境（Claude Code のクラウドのセッションなど）: `gh` が「GraphQL is not available」で拒まれたときだけ、`conductor check-pr`・`pr ready`・`pr request-reviewers`・`external sync` が REST と CCR のルート（`pulls/{n}/ccr/review_threads`・`ccr/ready_for_review`）に切り替える。`check-pr` は出力に `source`（`graphql` / `rest`）と `warnings` を足し、REST で見えない `@copilot` の依頼は Bot のレビューが付くまで待ち、コミットのステータスを読めなければ check-runs だけで判定する。`pr request-reviewers` は `@copilot` に依頼できないので `reason: graphql-unavailable` と `manual` で返す（#142）
 
 ### Removed
 

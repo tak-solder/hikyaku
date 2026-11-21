@@ -36,7 +36,7 @@ import {
   type ResolvedAsk,
 } from "../lib/conductor.mts";
 import { branchName } from "../lib/branch.mts";
-import { fetchPrGraphql, parsePrView, PR_VIEW_FIELDS, run } from "../lib/github.mts";
+import { fetchPrGraphql, fetchPrViewRest, isGraphqlUnavailable, parsePrView, PR_VIEW_FIELDS, run } from "../lib/github.mts";
 import { HikyakuError, ValidationError } from "../lib/errors.mts";
 import { emit, table } from "../lib/output.mts";
 import { writeProtocol } from "../lib/headless.mts";
@@ -772,7 +772,10 @@ function deferProblem(
 /** --wait のとき、CI のチェックが1つも無くても none と判定せずに待つ時間（PR を作った直後の猶予） */
 const CHECKS_GRACE_SECONDS = 60;
 
-async function fetchPrView(cwd: string, pr: string): Promise<PrView> {
+/** check-pr が読んだ PR の状態と、どの経路で読んだか（GraphQL が使えなければ REST） */
+type FetchedPr = PrView & { source: "graphql" | "rest"; warnings: string[] };
+
+async function fetchPrView(cwd: string, pr: string, botReviewers: string[]): Promise<FetchedPr> {
   let stdout: string;
   try {
     ({ stdout } = await run(
@@ -781,6 +784,8 @@ async function fetchPrView(cwd: string, pr: string): Promise<PrView> {
       { cwd, timeout: 30_000 },
     ));
   } catch (error) {
+    // Claude Code のセッションなど GraphQL が拒まれる環境では、REST と CCR のルートで読む
+    if (isGraphqlUnavailable(error)) return { ...(await fetchPrViewRest(cwd, pr, botReviewers)), source: "rest" };
     throw new HikyakuError(
       `PR ${pr} の状態を gh pr view で取得できませんでした`,
       error instanceof Error ? error.message : String(error),
@@ -794,8 +799,14 @@ async function fetchPrView(cwd: string, pr: string): Promise<PrView> {
   }
   const view = parsePrView(raw);
   // レビューの依頼は gh pr view に Bot（Copilot など）が現れないので、GraphQL から取る
-  const graphql = await fetchPrGraphql(cwd, view.number);
-  return { ...view, reviewRequests: graphql.reviewRequests, reviewThreads: graphql.threads };
+  let graphql: Awaited<ReturnType<typeof fetchPrGraphql>>;
+  try {
+    graphql = await fetchPrGraphql(cwd, view.number);
+  } catch (error) {
+    if (isGraphqlUnavailable(error)) return { ...(await fetchPrViewRest(cwd, pr, botReviewers)), source: "rest" };
+    throw error;
+  }
+  return { ...view, reviewRequests: graphql.reviewRequests, reviewThreads: graphql.threads, source: "graphql", warnings: [] };
 }
 
 register({
@@ -812,6 +823,7 @@ register({
     "  Draft        Draft でなく、Ready for Review になっていること",
     "  レビュー依頼 まだレビューしていないレビュアー（人・チーム・Copilot などの Bot）への依頼が残っていないこと",
     "               Bot への依頼は gh pr view にも REST にも現れないので、GraphQL から取得する",
+    "               （GraphQL が使えないときは下の REST の経路で、設定で依頼する Bot のレビューが付くまで待つ）",
     "  レビュー指摘 未解決のレビュースレッドが無いこと",
     "  CI           失敗しているチェックも、まだ終わっていないチェックも無いこと",
     "  承認         既定では不問。[conductor] require_approval = true のときは、1人以上の承認があり、",
@@ -825,6 +837,14 @@ register({
     "満たしていなければ終了コード 2 で、理由を problems に返します。gh の応答に必須の",
     "フィールドが無い、型が違うなど、状態を取得できなかったときは判定せず、終了コード 1 で",
     "止まります（取得できなかった状態を、CI なし・依頼なし・Ready として合格させないため）。",
+    "",
+    "**GraphQL が使えない環境では REST で読みます。** Claude Code のクラウドのセッションのように gh の",
+    "GraphQL が「GraphQL is not available」で拒まれたときだけ、REST と、その応答が案内する CCR のルートに",
+    "切り替えます（PR・レビュー・check-runs・コミットのステータスは REST、レビュースレッドは",
+    "pulls/{n}/ccr/review_threads）。出力の source が rest になります。REST に現れない Bot への依頼は、",
+    "[conductor] phase_reviewers の @copilot について、Bot のレビューが付くまで待ちます。コミットの",
+    "ステータスを権限で読めなければ check-runs だけで判定し、warnings に残します。スレッドの応答の形を",
+    "読めないときは判定せず、終了コード 1 で止まります。",
     "",
     "監督は PR を GitHub の機能ではなく、ローカルの git merge と push で取り込みます。",
     "そのためブランチ保護の必須チェックが働きません。このコマンドがその代わりです。",
@@ -868,7 +888,9 @@ register({
         awaitChecks: wait && Date.now() - started < graceMs,
       });
     let timedOut = false;
-    let view = await fetchPrView(config.repoRoot, pr);
+    // REST では Bot の依頼が見えないので、設定で依頼する Bot を渡して、レビューが付くまで待たせる
+    const botReviewers = config.conductor.phaseReviewers.filter((reviewer) => reviewer.toLowerCase() === "@copilot");
+    let view = await fetchPrView(config.repoRoot, pr, botReviewers);
     let verdict = judge(view);
     while (wait && !verdict.ok && verdict.waiting) {
       if (Date.now() - started >= timeoutMinutes * 60_000) {
@@ -877,7 +899,7 @@ register({
         break;
       }
       await new Promise((resolve) => setTimeout(resolve, intervalSeconds * 1000));
-      view = await fetchPrView(config.repoRoot, pr);
+      view = await fetchPrView(config.repoRoot, pr, botReviewers);
       verdict = judge(view);
     }
     const waitedSeconds = Math.round((Date.now() - started) / 1000);
@@ -885,7 +907,7 @@ register({
     emit(
       {
         cycle: context.name, pr: view.number, base: view.baseRefName, head: view.headRefName,
-        headSha: view.headRefOid, conductorBranch, waitedSeconds, timedOut, ...verdict,
+        headSha: view.headRefOid, conductorBranch, waitedSeconds, timedOut, source: view.source, warnings: view.warnings, ...verdict,
       },
       () =>
         [
@@ -901,6 +923,8 @@ register({
           }`,
           `CI: ${verdict.checks.status}（${verdict.checks.total} 件）`,
           ...(wait ? [`待機: ${waitedSeconds} 秒${timedOut ? "（上限に達した）" : ""}`] : []),
+          ...(view.source === "rest" ? ["読み取り: REST（GraphQL が使えないため）"] : []),
+          ...view.warnings.map((warning) => `  注意: ${warning}`),
           ...verdict.problems.map((problem) => `  ! ${problem}`),
         ].join("\n"),
     );

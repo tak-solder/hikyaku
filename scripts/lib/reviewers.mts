@@ -51,7 +51,7 @@ export interface ReviewerPlan {
 }
 
 /** @copilot は Copilot の login（copilot-pull-request-reviewer など）として現れる */
-function same(reviewer: string, login: string): boolean {
+export function sameReviewer(reviewer: string, login: string): boolean {
   const a = reviewer.toLowerCase();
   const b = login.toLowerCase();
   if (a === "@copilot") return b.includes("copilot");
@@ -92,11 +92,11 @@ export function planReviewers(input: ReviewerInput): ReviewerPlan {
     if (request.includes(reviewer)) continue;
     // GitHub は PR の作成者本人をレビュアーにできない。依頼が失敗すると PR の作成後の
     // 手順が止まるので、先に外す
-    if (same(reviewer, input.author)) {
+    if (sameReviewer(reviewer, input.author)) {
       excluded.push({ reviewer, reason: "PR の作成者本人" });
-    } else if (input.requested.some((login) => same(reviewer, login))) {
+    } else if (input.requested.some((login) => sameReviewer(reviewer, login))) {
       excluded.push({ reviewer, reason: "依頼済み" });
-    } else if (input.reviewed.some((login) => same(reviewer, login))) {
+    } else if (input.reviewed.some((login) => sameReviewer(reviewer, login))) {
       // gh pr edit --add-reviewer はレビュー済みの人にも再依頼してしまう
       excluded.push({ reviewer, reason: "レビュー済み" });
     } else {
