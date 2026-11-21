@@ -16,7 +16,7 @@ import {
 } from "../lib/config.mts";
 import { shellQuote } from "../lib/conductor.mts";
 import { HikyakuError } from "../lib/errors.mts";
-import { defaultBranch, gitPath } from "../lib/git.mts";
+import { gitPath, originHeadRef } from "../lib/git.mts";
 import { emit, table } from "../lib/output.mts";
 import { cycleDirName, loadCycles } from "../lib/cycles.mts";
 import { collectFindingRuns, summarizeFindings } from "../lib/review-findings.mts";
@@ -89,7 +89,8 @@ async function resolve(args: ParsedArgs, operands: string[]): Promise<Resolved &
     base = { name: prBase.base, ref: prBase.ref, stacked: prBase.stacked?.name };
     if (kind === "security") {
       security = nativeSecurityReason({
-        originHead: defaultBranch(config.repoRoot),
+        // /security-review は origin/HEAD の参照を読むので、問い合わせで補った値では判定しない
+        originHead: originHeadRef(config.repoRoot),
         prBase: prBase.base,
         stacked: prBase.stacked !== undefined,
       });

@@ -8,6 +8,11 @@ import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { requirePhase, resolvePrBase, scopeFor, verifyBranch } from "../lib/stack.mts";
 
+/** デフォルトブランチ（PR のマージ先の基準）を決められないときの案内 */
+const BASE_UNRESOLVED =
+  "デフォルトブランチを決められないので、PR のマージ先（prBase）が分かりません。[branch] base_branch を設定するか、" +
+  "git remote set-head origin --auto で origin/HEAD を設定してください（origin に届けば自動で問い合わせます）";
+
 register({
   name: "branch verify",
   summary: "今いるブランチを命名規則と突き合わせ、期待するブランチ名を返す",
@@ -46,7 +51,11 @@ register({
     "同じ理屈で通ります。区別できないからこそユーザーに尋ねる場面です。",
     "",
     "デフォルトブランチは base_branch の設定が正で、未設定なら origin/HEAD から",
-    "導出します。どちらも無ければ null にします（\"main\" と推測しません）。",
+    "導出します。origin/HEAD の参照が無いクローン（新しく clone したクラウドのセッションなど）では、",
+    "git ls-remote --symref origin HEAD で origin に問い合わせます（書き込みはしません）。",
+    "それでも分からなければ null にします（\"main\" と推測しません）。サイクルのフェーズでは、",
+    "ブランチ名が合っていても（ok: true）、baseResolved: false を返して終了コード 2 で止まります",
+    "（PR のマージ先を決められないまま先へ進まないため）。",
     "",
     "ブランチ名は着手状態の導出に解析されるため、構造は固定です。",
     "prefix と separator は [branch] で設定できますが、separator に空文字は指定できません",
@@ -61,7 +70,7 @@ register({
     "使うため、フェーズのサイクルが分かっている場合は明示してください。",
     "",
     "stackedOn / prBase は「先行フェーズのブランチの上に積んでいるか」の**目安**です。",
-    "このコマンドはネットワークへ行かないため、リモートで先行 PR がマージされた直後は",
+    "このコマンドは fetch しないため（origin/HEAD の参照が無いときの問い合わせを除く）、リモートで先行 PR がマージされた直後は",
     "まだスタック中と見えることがあります。**PR の base として正なのは pr base** で、",
     "そちらは必要ならリモート追跡参照を更新します。",
   ].join("\n"),
@@ -69,6 +78,9 @@ register({
     const phase = requirePhase(operands[0]);
     const { config, cycle, context } = scopeFor(args, phase, operands[1]);
     const { ok, expected, actual, parsed, base, start, startPoint, onBaseBranch, stacked, prBase } = await verifyBranch(config, phase, cycle, context);
+    // サイクルのフェーズで PR のマージ先を決められないなら、ブランチ名が合っていても先へ進ませない
+    // （ok だけを見て進むと、マージ先の無いまま PR を作ろうとする。conductor の Step 2 など）
+    const baseResolved = context === undefined || base !== undefined;
 
     emit(
       {
@@ -84,8 +96,12 @@ register({
         onBaseBranch,
         stackedOn: stacked?.name ?? null,
         prBase: prBase ?? null,
+        baseResolved,
       },
       () => {
+      if (ok && !baseResolved) {
+        return [`✓ ${actual}`, `! ${BASE_UNRESOLVED}`].join("\n");
+      }
       if (ok) {
         return stacked === undefined
           ? `✓ ${actual}`
@@ -141,6 +157,7 @@ register({
         `ブランチが一致しません（期待: ${expected} / 現在: ${actual ?? "detached HEAD"}）`,
       ]);
     }
+    if (!baseResolved) throw new ValidationError([BASE_UNRESOLVED]);
   },
 });
 

@@ -100,7 +100,7 @@ base_branch = "main"            # 未設定ならデフォルトブランチを�
 |---|---|---|
 | `hikyaku_root` | なし（必須） | HIKYAKU_ROOT のパス。リポジトリルートからの相対または絶対。リポジトリルート自身（`.`）は指定できません |
 | `profile` | `standard` | `create-cycle` が提示する既定値。express / economy / standard / thorough |
-| `base_branch` | 自動検出 | そのサイクルが向かうブランチ。未設定なら `origin/HEAD` から導出し、それも無ければ `null`（`main` と推測しない） |
+| `base_branch` | 自動検出 | そのサイクルが向かうブランチ。未設定なら `origin/HEAD` から導出する。その参照が無いクローンでは origin に問い合わせ（`git ls-remote --symref origin HEAD`）、それでも分からなければ `null`（`main` と推測しない） |
 
 `profile` は推奨値の提示にすぎません。`create-cycle` は必ず明示的な選択を求めます。毎回意識して選ぶことを担保するためです。
 
@@ -288,7 +288,7 @@ allow_unsafe_split = false        # 安全でない分割を許すか。サイ�
 
 どのブランチがリリースされるかはリポジトリのブランチ運用次第なので、Hikyaku はブランチ名から推測しません。`release_branches` に書いたパターンと、デフォルトブランチ（`origin/HEAD` が指す先）がリリースされるブランチです。デフォルトブランチは書かなくても常に含まれるので、base_branch を設定していないサイクルは緩和されません。パターンは GitHub のブランチ保護と同じ glob で、`*` は `/` をまたがず、`**` はまたぎます。
 
-`release_branches` をルート設定でしか書けないようにしているのは、サイクル側の宣言が古くなっても事故にならないようにするためです。`allow_unsafe_split = true` のサイクルが途中で base_branch を `main` に変えても、緩和は効かなくなります。`origin/HEAD` が無いクローンでも、判定できないので緩和しません。どちらの場合も黙って無視はせず、`hikyaku config` の出力に効いていない理由が出ます。`origin/HEAD` は `git remote set-head origin --auto` で設定できます。
+`release_branches` をルート設定でしか書けないようにしているのは、サイクル側の宣言が古くなっても事故にならないようにするためです。`allow_unsafe_split = true` のサイクルが途中で base_branch を `main` に変えても、緩和は効かなくなります。デフォルトブランチを決められないとき（`origin/HEAD` の参照が無く、origin にも問い合わせられない）も、判定できないので緩和しません。どちらの場合も黙って無視はせず、`hikyaku config` の出力に効いていない理由が出ます。`origin/HEAD` は `git remote set-head origin --auto` で設定できます。
 
 判定は `hikyaku config --json` の `unsafeSplit` に出ます。スタックや conductor で PR の向き先が先行ビルドや conductor のブランチになっていても、最終的に入るのは base_branch なので、判定は常にサイクルの base_branch で行います。
 

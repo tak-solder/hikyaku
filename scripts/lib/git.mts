@@ -79,18 +79,51 @@ export function currentBranch(repoRootPath: string): string | undefined {
  * デフォルトブランチ。origin/HEAD が指す先から導出する。
  *
  * 設定の base_branch が正だが、未設定のときの自動検出をスクリプト側で持つ。
- * origin/HEAD が無いクローンもあるので、分からなければ undefined を返す。
+ * origin/HEAD の参照が無いクローンでは origin に問い合わせ、それでも分からなければ undefined を返す。
  * 「分からない」を "main" と推測すると、main 以外を使うリポジトリで
  * 「デフォルトブランチ上ではない」と誤判定する。
  */
 export function defaultBranch(repoRootPath: string): string | undefined {
+  if (resolveGitDir(repoRootPath) === undefined) return undefined;
+  return originHeadRef(repoRootPath) ?? remoteDefaultBranch(repoRootPath);
+}
+
+/**
+ * ローカルの origin/HEAD の参照が指すブランチ（問い合わせない）。Claude の /security-review のように、
+ * 参照そのものを読む外のツールが使えるかを判定するときはこちらを使う
+ */
+export function originHeadRef(repoRootPath: string): string | undefined {
   const gitDir = resolveGitDir(repoRootPath);
   if (gitDir === undefined) return undefined;
-
   const head = join(commonGitDir(gitDir), "refs", "remotes", "origin", "HEAD");
   if (!existsSync(head)) return undefined;
-
   return /^ref:\s*refs\/remotes\/origin\/(.+)$/m.exec(readFileSync(head, "utf8").trim())?.[1];
+}
+
+/** プロセスの中で引いたリモートのデフォルトブランチ（保存しない。1回の実行で何度も問い合わせないため） */
+const remoteHeads = new Map<string, string | undefined>();
+
+/**
+ * origin/HEAD の参照が無いクローン（新しく clone したクラウドのセッションなど）で、origin に
+ * デフォルトブランチを問い合わせる（git ls-remote --symref origin HEAD）。origin/HEAD は clone のときに
+ * この値から作られるので、意味は同じ。git remote set-head などの書き込みはしない（ユーザーのリポジトリの
+ * 設定を黙って変えない）。origin が無い・届かないときは undefined（推測しない）
+ */
+function remoteDefaultBranch(repoRootPath: string): string | undefined {
+  if (remoteHeads.has(repoRootPath)) return remoteHeads.get(repoRootPath);
+  let name: string | undefined;
+  try {
+    const stdout = execFileSync("git", ["ls-remote", "--symref", "origin", "HEAD"], {
+      cwd: repoRootPath, encoding: "utf8", timeout: 10_000, stdio: ["ignore", "pipe", "ignore"],
+      // 認証のプロンプトで止まらない（届かなければ分からないとする）
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    });
+    name = /^ref:\s*refs\/heads\/(\S+)\s+HEAD$/m.exec(stdout)?.[1];
+  } catch {
+    name = undefined;
+  }
+  remoteHeads.set(repoRootPath, name);
+  return name;
 }
 
 /** worktree では refs は共有される（HEAD だけが worktree 固有） */

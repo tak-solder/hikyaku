@@ -207,7 +207,7 @@ build-manager や retrospective のような内部スキルは、`--skill` を�
 | コマンド | いつ使うか |
 |---|---|
 | `start <plan\|architect\|build-NN\|close> [<cycle>]` | フェーズの冒頭（通常は各スキルが呼ぶ）。作業サイクルの記録・ブランチの確認と作成・状態の確認・セッション名をまとめて行い、次にすることを返す |
-| `branch verify <phase> [<cycle>]` | 今いるブランチが規則どおりか確認するとき。コミットの直前 |
+| `branch verify <phase> [<cycle>]` | 今いるブランチが規則どおりか確認するとき。コミットの直前。サイクルのフェーズでデフォルトブランチを決められなければ（`baseResolved: false`）、ブランチ名が合っていても終了コード 2 で止まる |
 | `pr title <phase> [<cycle>]` | PR タイトルを生成するとき |
 | `pr base <phase> [<cycle>]` | PR のマージ先を決めるとき。PR を作る直前。`--ref` でローカルに解決できる ref（レビューの差分基準）を返す |
 | `session title <phase> [<cycle>]` | セッション名を生成するとき |
