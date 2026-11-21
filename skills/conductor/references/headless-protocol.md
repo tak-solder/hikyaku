@@ -171,9 +171,8 @@ waiting: build-03.2-a3f9
 `when=merge@…` の項目があっても PR を作れます。上限を超える異議の `ledger object --defer` も、PR を作る前なら受け付けます。
 最後のビルドの同意ゲートには、サイクル全体の項目が並びます。同意ゲートは同意なので、止まってユーザーに上げます。
 
-監督の答えの先頭に「最後のビルドの同意ゲート（事後同意）へ回します」とあれば、その答えを
-`ledger decide … --by supervisor` で記録するときに `--loses`（退けた安全側の案で失う利点）を添えます。
-受け入れたリスクの事項は、決定と同時にスクリプトが書きます。
+監督の答えの先頭に「最後のビルドの同意ゲート（事後同意）へ回します」とあれば、先頭のコマンドの `--loses` に
+退けた安全側の案で失う利点を書きます。受け入れたリスクの事項は、決定と同時にスクリプトが書きます。
 
 事後同意が有効でないサイクルと close-cycle では、同意ゲートは手順に現れず、決定の無い項目があれば PR の作成が
 拒まれます。そのときは PR を完了にせず、問いとしてユーザーに上げます。
@@ -182,16 +181,9 @@ waiting: build-03.2-a3f9
 
 監督の回答に「委任された判断」とあれば、それはユーザーではなく監督が下した判断です。
 確認ゲート（G6 / G8 など）の判断も含まれます。同意ゲート（decisions・constraints の変更を含む回の G10 など）は監督に委任されません。
-後から誰が何を根拠に決めたかを追えるよう、回答と根拠を、その作業単位の未決事項の記録
-（`decisions.jsonl`）に残してください。書けるのは `hikyaku ledger` だけです。`{unit}` は子が進めている
-作業単位（`architect` / `build-NN` / `close`。build-manager は呼び出し元の作業単位）です。
 
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger open {unit} {cycle} --type provisional --who supervisor --when now --summary "<問いと監督の回答>" [--ask <問いの ID>]
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" ledger decide {unit} <ID> {cycle} --decision decided --by supervisor --reason "<監督の根拠>"
-```
-
-`--by supervisor` は、監督の答えで再開されたとき（`HIKYAKU_ANSWER_FROM=supervisor`）だけ記録できます。
-問い・答えの値・リスクの申告は、起動の環境変数から決定に自動で残ります（引数では渡さず、省けません）。
-監督の答えで再開されたら、続きに進む前に必ずこの記録を行ってください。記録が無いと、監督の検査で
-手順の食い違いとして扱われます。
+回答の先頭に `hikyaku ledger conductor-answer … --input='<監督の答え>'` のコマンドが書かれているので、
+続きに進む前にそのまま実行してください。答えは書き換えず、引数を足したり減らしたりもしません
+（事後同意の答えは `--loses` だけを書きます）。スクリプトが、問い・答えの値・リスクの申告・起動の印を環境変数から
+決定に残します（`HIKYAKU_ANSWER_FROM=supervisor` の起動だけが使えます）。記録が無いと、ゲートの結果の報告
+（`step report`）が拒まれ、監督の検査でも手順の食い違いとして扱われます。

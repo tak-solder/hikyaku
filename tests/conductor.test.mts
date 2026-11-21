@@ -346,7 +346,7 @@ test("CLI: conductor launch の architect add は指摘のファイルを必須�
     "--message", join(directory, "answer.md"), "--from", "supervisor", "--ask", "G6", "--choice", "approved",
     "--expect-digest", expected, "--json",
   ));
-  assert.equal(resumed.argv[2], "回答（委任された判断）: 承認");
+  assert.match(resumed.argv[2] ?? "", /^続きに進む前に.*\n- hikyaku ledger conductor-answer architect 001-test --input=.回答（委任された判断）: 承認.\n[\s\S]*監督の答え:\n回答（委任された判断）: 承認$/);
   assert.ok(resumed.argv.includes("--resume"));
 });
 
@@ -361,7 +361,7 @@ test("CLI: conductor launch は再開時に回答ファイルを渡し、組で�
   ));
   assert.equal(output.resumed, true);
   assert.equal(output.sessionId, "s-1");
-  assert.equal(output.argv[2], "回答（委任された判断）: 承認する");
+  assert.match(output.argv[2] ?? "", /conductor-answer build-01 001-test --input=.回答（委任された判断）: 承認する.\n[\s\S]*監督の答え:\n回答（委任された判断）: 承認する$/);
   assert.ok(output.argv.includes("--resume"));
   assert.equal(output.argv.includes("--max-budget-usd"), false);
 

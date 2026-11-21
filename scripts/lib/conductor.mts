@@ -383,15 +383,26 @@ export function closesMessage(
 }
 
 /**
- * 監督の上限を超える受け入れを事後同意へ回すときに、子への回答の先頭に置く固定文（HIKYAKU_ANSWER_DEFER=1）。
- * risk の事項は ledger decide --by supervisor が決定と同時に書くので、子に求めるのは --loses だけ
+ * 監督の答え（conductor launch --from supervisor）を記録させる固定文。子が ledger の引数を組み立てずに済むよう、
+ * 完成したコマンドを回答の先頭に置く（closesMessage と同じ型）。defer は、監督の上限を超える受け入れを事後同意へ回す
+ * 答え（HIKYAKU_ANSWER_DEFER=1）で、risk の事項は ledger conductor-answer が決定と同時に書くので、子に求めるのは --loses だけ
  */
-export function deferNotice(unit: string, cycle: string): string {
-  return [
-    "この監督の答えは、AI に任せてよい上限を超える受け入れを、最後のビルドの同意ゲート（事後同意）へ回します。",
-    `答えを hikyaku ledger decide ${unit} <ID> ${cycle} --by supervisor で記録するときは、--loses に退けた安全側の案で失う利点を添えてください。`,
-    "決定と同時に、受け入れたリスクが risk の事項（ユーザーがマージの前に決める）として記録されます。",
-  ].join("\n");
+export function supervisorMessage(unit: string, cycle: string, answer: string, defer: boolean): string {
+  // 答えは単一引用符でくくる（closesMessage と同じ理由）
+  const input = `'${answer.replace(/'/g, `'\\''`)}'`;
+  const lines = [
+    "続きに進む前に、この監督の答えを記録してください（答えは書き換えずにそのまま渡す）。",
+    `- hikyaku ledger conductor-answer ${unit} ${cycle} --input=${input}${defer ? ' --loses "<退けた安全側の案で失う利点>"' : ""}`,
+  ];
+  if (defer) {
+    lines.push(
+      "",
+      "この監督の答えは、AI に任せてよい上限を超える受け入れを、最後のビルドの同意ゲート（事後同意）へ回します。",
+      "--loses には、退けた安全側の案で失う利点を書いてください。決定と同時に、受け入れたリスクが risk の事項",
+      "（ユーザーがマージの前に決める）として記録されます。",
+    );
+  }
+  return [...lines, "", "監督の答え:", answer].join("\n");
 }
 
 export interface ResolvedAsk {
