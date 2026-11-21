@@ -220,6 +220,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - builder: セキュリティレビューを起動するかの問い（recommended で判定基準に該当したとき）に `（ask: security-review）` を付け、conductor の問いの表（ASKS）と監督の答えの表（`run` のみ安全側）に足した。conductor の子では監督が答える
 - GitHub の GraphQL が使えない環境（Claude Code のクラウドのセッションなど）: `gh` が「GraphQL is not available」で拒まれたときだけ、`conductor check-pr`・`pr ready`・`pr request-reviewers`・`external sync` が REST と CCR のルート（`pulls/{n}/ccr/review_threads`・`ccr/ready_for_review`）に切り替える。`check-pr` は出力に `source`（`graphql` / `rest`）と `warnings` を足し、REST で見えない `@copilot` の依頼は Bot のレビューが付くまで待ち、コミットのステータスを読めなければ check-runs だけで判定する。`pr request-reviewers` は `@copilot` に依頼できないので `reason: graphql-unavailable` と `manual` で返す（#142）
 
+- デフォルトブランチの自動検出: ローカルに `origin/HEAD` の参照が無いクローン（新しく clone したクラウドのセッションなど）では、`git ls-remote --symref origin HEAD` で origin に問い合わせる（参照は書かない）。サイクルのフェーズの `branch verify` は、それでもデフォルトブランチを決められなければ、ブランチ名が合っていても `baseResolved: false` を返して終了コード 2 で止まる（`prBase` が null のまま `ok: true` で先へ進まないため）。`/security-review` を使えるかの判定は、従来どおりローカルの参照だけで行う（#142）
 ### Removed
 
 - BP（ビルドポイント）と `bp_max` 設定。リポジトリルートの `.hikyaku.config` に `bp_max` があるとエラーになる。サイクルの設定では、v3 の作業に使うときだけエラーになる

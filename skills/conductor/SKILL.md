@@ -204,6 +204,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify {phase} {cycle} -
 
 切り替えたあと、もう一度 `branch verify` を実行して `ok: true` を確認する。architect / build では
 出力の `prBase` が conductor ブランチになっていることも確認する（子が作る PR の向き先になる）。
+`baseResolved: false`（終了コード 2）なら、デフォルトブランチを決められず `prBase` が分からないので、
+子を起動せずに出力の案内（`base_branch` の設定か `git remote set-head origin --auto`）をユーザーに示して上げる。
 
 **差し戻しの再設計（`returned` あり）ではブランチを切らない。** 差し戻されたビルドのブランチに居ることを
 `branch verify build-NN {cycle}` で確認する。

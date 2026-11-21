@@ -152,9 +152,11 @@ v2 の BP 基準表です。v3 は読みません。`bp-guide/README.md` にリ�
 
 規則から外れたブランチで作業すると、`next` の「着手中」表示と `hikyaku pr base` のスタック元の導出が効かなくなります。どちらもブランチ名から導出しているためです。着手可能・待機の判定と中断検出には影響しません。
 
-### デフォルトブランチを特定できない（`onBaseBranch: null`）
+### デフォルトブランチを特定できない（`onBaseBranch: null`・`baseResolved: false`）
 
-`base_branch` が未設定で、`origin/HEAD` からも導出できない状態です。`.hikyaku.config` に `base_branch = "main"` を設定してください。`main` と推測することはしません。
+`base_branch` が未設定で、デフォルトブランチを導出できない状態です。Hikyaku はローカルの `origin/HEAD` の参照を読み、それが無いクローン（新しく clone したクラウドのセッションなど）では `git ls-remote --symref origin HEAD` で origin に問い合わせます。origin が無いか、届かないときに、この状態になります。`main` と推測することはしません。
+
+サイクルのフェーズの `branch verify` は、ブランチ名が合っていても `baseResolved: false` を返して終了コード 2 で止まります。PR のマージ先（`prBase`）を決められないまま先へ進まないためです。`.hikyaku.config` に `base_branch = "main"` を設定するか、`git remote set-head origin --auto` で `origin/HEAD` を設定してください。Hikyaku は `origin/HEAD` を自分では書きません。
 
 ## 進行状況
 
