@@ -81,6 +81,12 @@ export const ASKS: AskDefinition[] = [
     where: "retrospective: 振り返りを実施するか",
     enabledWhen: (s) => s.reviews.retrospective === "prompt",
   },
+  {
+    id: "security-review",
+    category: "confirm",
+    where: "builder: セキュリティレビューを起動するか（recommended で判定基準に該当したとき）",
+    enabledWhen: (s) => s.reviews.security === "recommended",
+  },
   { id: "docs-link", category: "confirm", where: "close-cycle: AGENTS.md の索引の更新" },
   { id: "G6", category: "confirm", where: "build-manager: tasklist / issue の変更" },
   { id: "G8", category: "confirm", where: "builder: plan + test-spec の承認" },
@@ -262,6 +268,11 @@ export const SAFE_ANSWERS: Record<string, SafeAnswer> = {
   },
   retrospective: {
     choices: { run: "振り返りを実施する", skip: "振り返りを省く" },
+    safe: ["run"],
+    default: "run",
+  },
+  "security-review": {
+    choices: { run: "起動する", skip: "起動しない" },
     safe: ["run"],
     default: "run",
   },

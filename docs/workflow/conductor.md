@@ -69,7 +69,7 @@ PLAN を終えたら、サイクルを指定して起動します。
 
 | 種別 | 例 | 既定 |
 |---|---|---|
-| 確認ゲート・経路の判断 | G3 / G4 / G6 / G8、`branch`、`overlap` | 監督 |
+| 確認ゲート・経路の判断 | G3 / G4 / G6 / G8、`branch`、`overlap`、`security-review`（セキュリティレビューを起動するか） | 監督 |
 | 同意ゲート | `decisions`・`constraints` の変更を含む回の G10、差し戻しからの再設計の回の G3 / G4、`[app]` の宣言で上限を超える回の G3 / G4、`delegation`（差し戻しや設計と要件の衝突のあと、委任を続けるか） | 常にユーザー |
 | 仕様の確認 | `questions`、`design-conflict`、`unsafe-split`、`review-findings` | 監督 |
 | 障害 | `retry-limit` | ユーザー |

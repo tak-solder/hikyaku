@@ -132,6 +132,9 @@ test("conductor: profile と振り返りの設定で出ない問いを enabled: 
   assert.equal(enabled["retrospective"], false);
   const prompt = { ...settings, reviews: { ...settings.reviews, retrospective: "prompt" as const } };
   assert.equal(resolveAsk("retrospective", conductor(), prompt).enabled, true);
+  assert.equal(enabled["security-review"], true);
+  const secOn = { ...settings, reviews: { ...settings.reviews, security: "on" as const } };
+  assert.equal(resolveAsk("security-review", conductor(), secOn).enabled, false);
 });
 
 for (const [name, config, pattern] of [

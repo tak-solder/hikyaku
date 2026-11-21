@@ -497,6 +497,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr ready close {cycle} --pr {CL
 | `G3` | 推奨案が user-stories と `constraints` に反していなければ推奨案を選ぶ（`--choice recommended`）。反していれば差し戻す（`rejected`）。推奨以外の案（`other`）は選べない。同意の回は `handler` が `user` になり、答えない |
 | `G2` / `G4` / `G7` | 成果物を読み、承認観点（スキルが示すもの）に沿って承認するか差し戻す（`approved` / `rejected`。G4 の同意の回は答えない） |
 | `retrospective` | 実施する（`run`） |
+| `security-review` | 起動する（`run`）。起動しない（`skip`）は選べない |
 | `docs-link` | `--dry-run` の差分がマーカーで囲まれた索引ブロックの中だけなら承認する（`approved`） |
 | `G6` | 分割・依存が design-delta と矛盾せず、各ビルドの予測ピークが見積もりの上限（`estimateLimit`）以下（超えるなら issue.md に許容する理由がある）なら承認する（`approved`）。「マージ時点で残る危険」を書いたビルドがあれば、`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json` の `unsafeSplit.allowed` が true であることも確かめる |
 | `G8` | 「検証の義務」の G8 を行い、満たしていれば承認する（`approved`） |

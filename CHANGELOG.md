@@ -214,6 +214,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - planner・architect・builder・close-cycle の Step 0 を `hikyaku start` に置き換えた。ブランチの3択の問い（ask: branch）は残し、答えに従って `start` をやり直す。コミットの直前の確かめは `branch verify` のまま
 - planner・architect・builder・close-cycle の pr と patch の publish は、本文の事実の節を `hikyaku pr body` の出力で貼る。PR を作る前の `ledger consent-list` による決定の不足の確かめは `pr body` に寄せた
 - conductor: 子に渡す非対話規約（`headless-protocol.md`）を、起動の場面ごとに組み立てて一時ディレクトリに書く。セッションの切り替え（builder の子）・ユーザーに上げる問い（`--escalate`）・ユーザーの答えの記録（`--from user`）・監督の判断の記録（`--from supervisor`）・事後同意（有効なサイクル）の節は、その場面の起動にだけ入る
+- builder: セキュリティレビューを起動するかの問い（recommended で判定基準に該当したとき）に `（ask: security-review）` を付け、conductor の問いの表（ASKS）と監督の答えの表（`run` のみ安全側）に足した。conductor の子では監督が答える
 
 ### Removed
 
