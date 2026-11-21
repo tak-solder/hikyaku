@@ -232,6 +232,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **ビルドごとの外部起票を廃止した。** 子 issue の作成・更新、build-manager の `external-sync` ステップ、builder の PR 作成後の同期、`hikyaku tasklist link`、`tasklist add --issue` を削除した
 - **Asana への投影を廃止した。** `[external] target` は `none` / `github` だけになり、`asana_project_gid` と `cycle new --external-project` も無くなった
 - `user_stories_gate`。G1 は常に同意で外せない。`hikyaku config --json` の `gates.userStories` も無くなった
+- v2 の `[conductor]` の `provider`・`[conductor.claude]`・`[conductor.codex]`（`model` / `models`）。ルートの `.hikyaku.config` に残っていると移行先を示してエラーになり、サイクルの設定では v3 の作業に使うときだけエラーになる。`[conductor]` の知らないキーもエラーになる。移行は `hikyaku config migrate`（`--dry-run` / `--drop`）と `/hikyaku:init` が行う
 
 ### Migration
 
@@ -279,6 +280,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `conductor launch --resume <id> --message <file>` は `--from user|supervisor` か `--notice` が無いと拒まれる。独自に監督を動かしているなら、答えには `--from`、中断からの再開などには `--notice` を添える。`decisions.jsonl` の決定に任意の欄（`from`・`ask`・`choice`・`risk`・`token`・`answers`）が増えたが、既存の記録はそのまま読める
 - 起票済みのビルドの issue（子 issue）は Hikyaku からは閉じなくなる。不要なら GitHub 側で閉じる。`tasklist.md` の `issue` 列は、次に `tasklist` のコマンドで書き込んだときに落ちる（`docs/migration/v2-to-v3.md#ビルドごとの外部起票の廃止`）
 - `start`・`pr body`・規約の組み立ての導入に対応は不要。進行中の作業単位はそのまま続けられる。`skills/close-cycle/references/persistence.md` の「rule の書き方」「close-cycle での扱い」の節を参照している独自の指示があれば、`rule-writing.md` と close-cycle の `steps/G10.md` を参照するよう直す
+- v2 の conductor の設定（`[conductor] provider`・`[conductor.claude]`・`[conductor.codex]`）を書いていたら、`/hikyaku:init` の移行の回か `hikyaku config migrate` で移す（`[conductor.claude] model` は `[conductor] model` に、`[conductor.claude.models]` は `[conductor.models]` に。codex の分と `provider` は消える）。取り込まないなら `hikyaku config migrate --drop`。残っていると設定を読むコマンドが止まる（`docs/migration/v2-to-v3.md#conductor-のモデル設定`）
 
 ## [2.8.0]
 

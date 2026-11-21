@@ -444,6 +444,8 @@ review_timeout = 15       # レビューの依頼や CI を待つ上限（分）
 
 `model` と `[conductor.models]` の値は、`claude --model` に渡すモデル名（`opus` / `sonnet` のような別名か、正式なモデル名）です。`[conductor.models]` のキーは `architect` / `builder` / `close-cycle` だけで、それ以外はエラーになります。`models = "opus"` のようにテーブル以外で書いた場合もエラーになります。効くのは子のセッション本体だけです。子の中で起動されるサブエージェントは、環境変数 `CLAUDE_CODE_SUBAGENT_MODEL` を設定していればそのモデルで、していなければ子のセッションと同じモデルで動きます。ただし cycle-scanner だけは haiku に固定しています。
 
+`[conductor]` に書けるのは上のキーだけで、知らないキーはエラーになります。v2 の `provider`・`[conductor.claude]`・`[conductor.codex]` は廃止したので、書いてあると移行先を示して止まります。`hikyaku config migrate` で移せます（[v2 → v3 移行ガイド](../migration/v2-to-v3.md#conductor-のモデル設定)）。
+
 配列はキー単位で上書きされます。サイクル設定に `escalate` を書くと、ルートの `escalate` に足されるのではなく置き換わります。
 
 ## 確認する

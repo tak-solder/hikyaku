@@ -93,6 +93,28 @@ v3 では、永続ドキュメントの論理名を `overview` / `decisions` / `
 | `security-model` | 設計を縛る条件は `constraints`、構造は `overview` |
 | `tech-stack` / `db-schema` / `interfaces` | 正はコード側。`overview` にポインタを書く。ファイルは残してもよいが、Hikyaku は読まない |
 
+## conductor のモデル設定
+
+v2 の conductor は、モデルをプロバイダ（claude / codex）ごとに分けて設定できました。v3 では子のセッションが常に Claude Code なので、`[conductor] model` と `[conductor.models]` の1組だけです。
+
+| v2 | v3 |
+|---|---|
+| `[conductor.claude] model` | `[conductor] model` |
+| `[conductor.claude.models]` | `[conductor.models]` |
+| `[conductor] provider`、`[conductor.codex]`（`model` / `models`） | 削除（移し先は無い） |
+
+v2 の設定が残っていると、リポジトリルートの `.hikyaku.config` を読むコマンドは、移行先を示して止まります。黙って無視すると、指定したモデルが効かないまま既定のモデルで動くためです。`[conductor]` に知らないキーを書いたときも同様にエラーになります。閉じたサイクルの `.hikyaku.config` に残っているものは読み飛ばし、進行中のサイクルに残っていれば、そのサイクルの v3 の作業が止まります。
+
+移行は `hikyaku config migrate` が行います。まず `--dry-run` で変換の前後を確かめてください。`/hikyaku:init` も、同じ変換案を示して取り込むかを尋ねます。
+
+```
+hikyaku config migrate --dry-run   # 変換案だけ表示する
+hikyaku config migrate             # 取り込む
+hikyaku config migrate --drop      # 取り込まず、旧キーを消すだけ
+```
+
+移し先に別の値が既にあるときは、上書きせずに止めて衝突を示します。どちらを残すか決めて片方を消してから実行し直してください。サイクルの `.hikyaku.config` は対象外なので、進行中のサイクルに残っていれば同じ形に手で書き換えます。
+
 ## handoff と振り返りの形式
 
 v3 で作るサイクルでは、`handoff.md` と `retrospective.md` の形式が変わります。`handoff.md` は「後続ビルドが前提にすること」「残したこと」「永続化すること」の3節になり、`retrospective.md` は改善提案（R-N）とリポジトリ固有の学び（L-N）の代わりに、「永続化すること」と「役に立たなかった記述」を1件1行で書きます。close-cycle は `hikyaku promotions` でこれらを集めます。
