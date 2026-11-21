@@ -154,6 +154,7 @@ build-manager や retrospective のような内部スキルは、`--skill` を�
 |---|---|
 | `ledger open <phase> [<cycle>] --type --when --who --summary` | 決めずに先へ進めること・暫定で決めたこと・異議・受け入れたリスクを、いつ・誰が決めるかとともに残すとき（各スキルの手順が呼ぶ） |
 | `ledger decide <phase> <id> [<cycle>] --decision --by` | 未決事項への決定を残すとき。`<phase>` は決めた作業単位 |
+| `ledger conductor-answer <phase> [<cycle>] --input` | 監督の答えで再開された conductor の子が、その答えを暫定の決定と監督の決定の2行で残すとき。`conductor launch --from supervisor` が回答の先頭にこのコマンドを置くので、子は実行するだけ。同じ起動の答えは二重に書かない。事後同意に回る答えは `--loses` が要り、受け入れたリスクの事項も同時に書く |
 | `ledger object <phase> [<cycle>] --summary --basis --loses --harm --decision --input` | ゲートで、ユーザーの選択がその人自身の宣言・記録と食い違うと異を唱えたとき、異議とユーザーの決定を対で残す（ゲートの指示に呼び方が載る）。上限を超える異議は、害が中でも高と同じく受け入れの言葉を残す |
 | `ledger object <phase> [<cycle>] --defer` | 事後同意が有効なサイクルで、上限を超える異議の同意を、ユーザーの選択でマージの前の同意ゲートへ回すとき |
 | `ledger list [<cycle>]` | 未決事項と、期限が来た・過ぎたもの、未解決の退けを見渡したいとき |

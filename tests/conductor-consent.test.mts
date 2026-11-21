@@ -662,6 +662,70 @@ test("CLI: DEFER でない監督の答えには risk の事項を書かず、--l
   assert.equal(ledgerOf(directory, "build-02").filter((entry) => entry["type"] === "risk").length, 0);
 });
 
+test("CLI: ledger conductor-answer は DEFER で --loses を求め、provisional と decide と risk の事項を書く。同じ token は二重に書かない", (t) => {
+  const directory = cycleWorkspace(t);
+  const env = { ...supervisorEnv(true), HIKYAKU_ANSWER_CHOICE: undefined };
+  const args = ["ledger", "conductor-answer", "build-02", "001", "--input=ログの保持を延ばす", "--json"];
+  const before = ledgerOf(directory, "build-02").length;
+  const refused = cliWith(directory, env, ...args);
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /--loses/);
+  assert.equal(ledgerOf(directory, "build-02").length, before);
+
+  const dry = cliWith(directory, env, ...args, "--loses", "短い保持の利点", "--dry-run");
+  assert.equal(dry.status, 0, dry.stderr);
+  assert.equal(ledgerOf(directory, "build-02").length, before);
+
+  const written = cliWith(directory, env, ...args, "--loses", "短い保持の利点");
+  assert.equal(written.status, 0, written.stderr);
+  const records = ledgerOf(directory, "build-02");
+  const provisional = records.find((entry) => entry["record"] === "open" && entry["type"] === "provisional");
+  assert.ok(provisional, JSON.stringify(records));
+  assert.deepEqual([provisional["who"], provisional["when"], provisional["ask"], provisional["summary"]], ["supervisor", "now", "questions", "監督の答え: questions"]);
+  assert.equal(provisional["source"], undefined);
+  const decision = records.find((entry) => entry["record"] === "decide");
+  assert.deepEqual([decision?.["by"], decision?.["input"], decision?.["token"], decision?.["id"]], ["supervisor", "ログの保持を延ばす", "t-001", provisional["id"]]);
+  const risk = records.find((entry) => entry["type"] === "risk");
+  assert.deepEqual([risk?.["source"], risk?.["token"], risk?.["loses"]], ["supervisor-answer", "t-001", "短い保持の利点"]);
+
+  const again = cliWith(directory, env, ...args, "--loses", "短い保持の利点");
+  assert.equal(again.status, 0, again.stderr);
+  assert.equal(JSON.parse(again.stdout).id, provisional["id"]);
+  assert.equal(ledgerOf(directory, "build-02").length, records.length);
+});
+
+test("CLI: ledger conductor-answer は監督の答えで再開された子以外を拒む", (t) => {
+  const directory = cycleWorkspace(t);
+  const args = ["ledger", "conductor-answer", "build-02", "001", "--input=x"];
+  assert.equal(cli(directory, ...args).status, 1);
+  assert.equal(cliWith(directory, CHILD, ...args).status, 1);
+  assert.equal(cliWith(directory, { ...CHILD, HIKYAKU_ANSWER_FROM: "user", HIKYAKU_ANSWER_ASK: "G8" }, ...args).status, 1);
+  assert.equal(ledgerOf(directory, "build-02").length, 0);
+});
+
+test("CLI: G8 の監督の答えは conductor-answer の記録の後で --expect-answer が通り、step report は記録なしで拒む", (t) => {
+  const directory = cycleWorkspace(t);
+  const env = { ...childEnv(t, "s-g8"), HIKYAKU_ANSWER_FROM: "supervisor", HIKYAKU_ANSWER_ASK: "G8", HIKYAKU_ANSWER_CHOICE: "approved", HIKYAKU_ANSWER_TOKEN: "t-g8" };
+  upTo(directory, env, "build-02", "G8");
+  const refused = reportOf(directory, env, "build-02", "G8", "--result", "approved", "--input", "OK");
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /ledger conductor-answer build-02/);
+  // step report は decisions.jsonl に書かない
+  assert.equal(ledgerOf(directory, "build-02").length, 0);
+
+  const answered = cliWith(directory, env, "ledger", "conductor-answer", "build-02", "001", "--input=承認");
+  assert.equal(answered.status, 0, answered.stderr);
+  const decision = ledgerOf(directory, "build-02").find((entry) => entry["record"] === "decide");
+  assert.deepEqual([decision?.["by"], decision?.["ask"], decision?.["choice"], decision?.["token"]], ["supervisor", "G8", "approved", "t-g8"]);
+  const approved = reportOf(directory, env, "build-02", "G8", "--result", "approved", "--input", "OK");
+  assert.equal(approved.status, 0, approved.stderr);
+
+  write(directory, "r.json", JSON.stringify({ type: "result", subtype: "success", is_error: false, result: '<hikyaku-done next="">\n終えました\n</hikyaku-done>', session_id: "s-g8", total_cost_usd: 1 }));
+  const parsed = cli(directory, "conductor", "parse", "r.json", "001", "--expect-digest", digestOf(directory), "--expect-answer", "t-g8", "--json");
+  const problems = (JSON.parse(parsed.stdout) as { stepProblems: string[] }).stepProblems;
+  assert.equal(problems.filter((problem) => /監督の答え/.test(problem)).length, 0);
+});
+
 // ---------------------------------------------------------------------------
 // CLI: conductor launch
 
@@ -685,8 +749,9 @@ test("CLI: launch は事後同意が有効で、子に同意ゲートの置き�
   const output = JSON.parse(accepted.stdout) as { command: string; argv: string[] };
   assert.ok(output.command.includes("HIKYAKU_ANSWER_DEFER=1"));
   assert.ok(output.command.includes("HIKYAKU_ANSWER_RISK='高:app.exposure'"));
-  assert.match(output.argv[2] ?? "", /^この監督の答えは、AI に任せてよい上限を超える受け入れを/);
-  assert.match(output.argv[2] ?? "", /--loses/);
+  assert.match(output.argv[2] ?? "", /^続きに進む前に、この監督の答えを記録してください/);
+  assert.match(output.argv[2] ?? "", /^- hikyaku ledger conductor-answer build-02 001-test --input='保持を延ばす' --loses "/m);
+  assert.match(output.argv[2] ?? "", /AI に任せてよい上限を超える受け入れを、最後のビルドの同意ゲート（事後同意）へ回します/);
 
   // 宣言にある area は害が中でも上限を超え、受け付ける
   const area = supervisor("--harm", "中", "--premises", "area:billing");

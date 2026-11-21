@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import {
@@ -290,6 +290,41 @@ test("CLI: conductor launch --from user は --closes の未決の事項だけを
     assert.equal(refused.status, 1);
     assert.match(refused.stderr, closes === `${q3},${q4}` ? new RegExp(q4.replace(".", "\\.")) : /build-01\.9-ffff/);
   }
+});
+
+test("CLI: conductor launch --from supervisor は回答の先頭に完成した conductor-answer のコマンドを置き、答えを単一引用符でくくる", (t) => {
+  const directory = built(t);
+  write(directory, "answer.txt", "既存の API は残す。it's -x $HOME\n");
+  const out = launched(directory, ...RESUME, "--from", "supervisor", "--ask", "G8", "--choice", "approved");
+  const message = out.argv[2] ?? "";
+  assert.match(message, /^続きに進む前に、この監督の答えを記録してください/);
+  assert.ok(message.includes("- hikyaku ledger conductor-answer build-01 001-test --input='既存の API は残す。it'\\''s -x $HOME'\n"), message);
+  assert.ok(message.endsWith("監督の答え:\n既存の API は残す。it's -x $HOME"));
+  assert.ok(!message.includes("--loses"));
+});
+
+test("CLI: ledger conductor-answer は open と decide を書き、同じ token では二重に書かない。by supervisor の決定は --expect-answer が読む", (t) => {
+  const directory = built(t);
+  const env = { ...CHILD, HIKYAKU_ANSWER_FROM: "supervisor", HIKYAKU_ANSWER_ASK: "G8", HIKYAKU_ANSWER_CHOICE: "approved", HIKYAKU_ANSWER_TOKEN: "t-9" };
+  const run = (extra: string[] = []) => cliWith(directory, env, "ledger", "conductor-answer", "build-01", "001", "--input=承認する", ...extra, "--json");
+  const dry = run(["--dry-run"]);
+  assert.equal(dry.status, 0, dry.stderr);
+  assert.equal(existsSync(join(directory, LEDGER)), false);
+  const first = run();
+  assert.equal(first.status, 0, first.stderr);
+  const [open, decide] = lines(directory).slice(-2);
+  assert.deepEqual([open?.["type"], open?.["who"], open?.["when"], open?.["ask"], open?.["summary"]], ["provisional", "supervisor", "now", "G8", "監督の答え: G8 / 承認する"]);
+  assert.deepEqual([decide?.["decision"], decide?.["by"], decide?.["id"], decide?.["token"], decide?.["from"]], ["decided", "supervisor", open?.["id"], "t-9", "supervisor"]);
+  const count = lines(directory).length;
+  assert.equal(run().status, 0);
+  assert.equal(lines(directory).length, count);
+  write(directory, "r.json", result("<hikyaku-done next=\"\">\n終えました\n</hikyaku-done>"));
+  const problems = JSON.parse(succeeds(directory, "conductor", "parse", "r.json", "001", "--expect-digest", digest(directory), "--expect-answer", "t-9", "--json")).stepProblems as string[];
+  assert.equal(problems.filter((problem) => /監督の答え/.test(problem)).length, 0);
+  // ユーザーの答えで再開された子は使えない
+  assert.equal(cliWith(directory, { ...env, HIKYAKU_ANSWER_FROM: "user" }, "ledger", "conductor-answer", "build-01", "001", "--input=x").status, 1);
+  // リスクの申告が要る答えは、申告の無い起動を拒む
+  assert.equal(cliWith(directory, { ...env, HIKYAKU_ANSWER_ASK: "questions", HIKYAKU_ANSWER_TOKEN: "t-10" }, "ledger", "conductor-answer", "build-01", "001", "--input=x").status, 1);
 });
 
 test("CLI: conductor launch は初回の起動でも --from を添えれば --message を渡せる", (t) => {

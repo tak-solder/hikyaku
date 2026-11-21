@@ -10,7 +10,7 @@ import {
   type Approval,
   ASK_IDS,
   closesMessage,
-  deferNotice,
+  supervisorMessage,
   escalateMessage,
   escalateUnit,
   needsRiskDeclaration,
@@ -370,10 +370,8 @@ register({
       if (checked.choice !== undefined) answerEnv.push([ANSWER_ENV.choice, checked.choice]);
       if (checked.risk !== undefined) answerEnv.push([ANSWER_ENV.risk, formatRiskDeclaration(checked.risk)]);
       answerEnv.push([ANSWER_ENV.token, answerToken]);
-      if (checked.defer) {
-        answerEnv.push([ANSWER_ENV.defer, "1"]);
-        message = `${deferNotice(unit, context.name)}\n\n${message as string}`;
-      }
+      if (checked.defer) answerEnv.push([ANSWER_ENV.defer, "1"]);
+      message = supervisorMessage(unit, context.name, message as string, checked.defer);
     }
 
     const sessionId = resume ?? randomUUID();

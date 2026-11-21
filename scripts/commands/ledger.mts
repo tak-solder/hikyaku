@@ -1,7 +1,7 @@
 /** ledger open / decide / object / list / show / consent-list / pr-section / answers / return-draft —未決事項と決定の記録（decisions.jsonl） */
 
 import { flagString, type ParsedArgs } from "../lib/args.mts";
-import { ASK_IDS } from "../lib/conductor.mts";
+import { ASK_IDS, safeAnswerOf } from "../lib/conductor.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { relative } from "node:path";
 import {
@@ -9,6 +9,7 @@ import {
   answerProblem,
   assertDecider,
   childAnswer,
+  type ChildAnswer,
   consentDecided,
   cycleConsentItems,
   cycleTimeline,
@@ -98,6 +99,63 @@ function currentStep(args: ParsedArgs, opened: Opened & { cycle: CycleContext })
 function meta(): { session?: string; hikyaku: string } {
   const session = process.env["CLAUDE_CODE_SESSION_ID"];
   return { ...(session === undefined || session === "" ? {} : { session }), hikyaku: pluginVersion() };
+}
+
+/**
+ * 監督の答えが事後同意へ回る（HIKYAKU_ANSWER_DEFER=1）かを判定し、そのとき --loses とリスクの申告を検査する。
+ * 同じ起動（token）の監督の答えで risk の事項を書き済みなら、もう書かない（1つの答えで複数の事項を閉じる、
+ * 失敗のあとの記録し直し。受け入れは1つなので、同意の項目を重ねない）。ledger decide と conductor-answer が共有する
+ */
+function checkDeferring(answer: ChildAnswer | undefined, by: string, ledger: Ledger, loses: string | undefined): boolean {
+  const alreadyDeferred = answer?.token !== undefined &&
+    ledger.items.some((item) => item.open.source === "supervisor-answer" && item.open.token === answer.token);
+  const deferring = by === "supervisor" && answer?.defer === true && !alreadyDeferred;
+  if (loses !== undefined && !deferring && !(alreadyDeferred && by === "supervisor")) {
+    throw new HikyakuError("--loses は、事後同意へ回す監督の答え（HIKYAKU_ANSWER_DEFER=1）を --by supervisor で記録するときだけ渡せます");
+  }
+  if (deferring && (loses === undefined || loses.trim() === "")) {
+    throw new HikyakuError(
+      "この監督の答えは上限を超える受け入れを事後同意へ回すので、--loses に退けた安全側の案で失う利点を添えてください",
+      "決定と同時に、その受け入れを risk の事項として記録します。最後のビルドの同意ゲートでユーザーが決めます。",
+    );
+  }
+  if (deferring && answer?.risk?.kind !== "declared") {
+    throw new HikyakuError("事後同意へ回す監督の答えに、リスクの申告（HIKYAKU_ANSWER_RISK）がありません", "監督に申告つきで再開してもらってください。");
+  }
+  return deferring;
+}
+
+/** 事後同意へ回す監督の答えの、受け入れたリスクの事項（risk）。決定と同時にスクリプトが書く（LLM に開かせない） */
+function deferredRiskOpen(input: {
+  answer: ChildAnswer;
+  ledger: Ledger;
+  unit: string;
+  step: string | undefined;
+  at: string;
+  loses: string;
+  itemSummary: string;
+}): OpenRecord {
+  const { answer } = input;
+  if (answer.risk?.kind !== "declared") throw new HikyakuError("事後同意へ回す監督の答えに、リスクの申告（HIKYAKU_ANSWER_RISK）がありません");
+  const asked = [answer.ask, answer.choice].filter((part) => part !== undefined).join(" / ");
+  return {
+    record: "open",
+    at: input.at,
+    id: nextItemId(input.ledger, input.unit),
+    unit: input.unit,
+    ...(input.step === undefined ? {} : { step: input.step }),
+    type: "risk",
+    summary: `監督の答え（${asked === "" ? "問い不明" : asked}）で受け入れたリスク: ${input.itemSummary}`,
+    when: `merge@${input.unit}`,
+    who: "user",
+    premises: answer.risk.premises,
+    loses: input.loses.trim(),
+    harm: answer.risk.harm,
+    ...(answer.ask === undefined ? {} : { ask: answer.ask }),
+    source: "supervisor-answer",
+    ...(answer.token === undefined ? {} : { token: answer.token }),
+    ...meta(),
+  };
 }
 
 const WHEN_DETAILS = [
@@ -266,23 +324,7 @@ register({
     const problem = answerProblem(by, id, answer, itemAsk);
     if (problem !== undefined) throw new HikyakuError(problem);
     const loses = flagString(args, "loses");
-    // 同じ起動（token）の監督の答えで risk の事項を書き済みなら、もう書かない（1つの答えで複数の事項を閉じる、
-    // 失敗のあとの記録し直し。受け入れは1つなので、同意の項目を重ねない。コードレビューの指摘）
-    const alreadyDeferred = answer?.token !== undefined &&
-      ledger.items.some((item) => item.open.source === "supervisor-answer" && item.open.token === answer.token);
-    const deferring = by === "supervisor" && answer?.defer === true && !alreadyDeferred;
-    if (loses !== undefined && !deferring && !(alreadyDeferred && by === "supervisor")) {
-      throw new HikyakuError("--loses は、事後同意へ回す監督の答え（HIKYAKU_ANSWER_DEFER=1）を --by supervisor で記録するときだけ渡せます");
-    }
-    if (deferring && (loses === undefined || loses.trim() === "")) {
-      throw new HikyakuError(
-        "この監督の答えは上限を超える受け入れを事後同意へ回すので、--loses に退けた安全側の案で失う利点を添えてください",
-        "決定と同時に、その受け入れを risk の事項として記録します。最後のビルドの同意ゲートでユーザーが決めます。",
-      );
-    }
-    if (deferring && answer?.risk?.kind !== "declared") {
-      throw new HikyakuError("事後同意へ回す監督の答えに、リスクの申告（HIKYAKU_ANSWER_RISK）がありません", "監督に申告つきで再開してもらってください。");
-    }
+    const deferring = checkDeferring(answer, by, ledger, loses);
     const record: DecideRecord = {
       record: "decide",
       at: new Date().toISOString(),
@@ -297,28 +339,12 @@ register({
       ...meta(),
     };
     // 事後同意へ回す監督の答え: 受け入れたリスクを、決定と同時にスクリプトが risk の事項として書く（LLM に開かせない）
-    const deferred: OpenRecord | undefined = !deferring || answer?.risk?.kind !== "declared" ? undefined : (() => {
-      const asked = [answer.ask, answer.choice].filter((part) => part !== undefined).join(" / ");
-      const { step } = currentStep(args, opened);
-      return {
-        record: "open",
-        at: record.at,
-        id: nextItemId(ledger, opened.phase),
-        unit: opened.phase,
-        ...(step === undefined ? {} : { step }),
-        type: "risk",
-        summary: `監督の答え（${asked === "" ? "問い不明" : asked}）で受け入れたリスク: ${findItem(ledger, id).open.summary}`,
-        when: `merge@${opened.phase}`,
-        who: "user",
-        premises: answer.risk.premises,
-        loses: (loses as string).trim(),
-        harm: answer.risk.harm,
-        ...(answer.ask === undefined ? {} : { ask: answer.ask }),
-        source: "supervisor-answer",
-        ...(answer.token === undefined ? {} : { token: answer.token }),
-        ...meta(),
-      } satisfies OpenRecord;
-    })();
+    const deferred: OpenRecord | undefined = !deferring || answer === undefined
+      ? undefined
+      : deferredRiskOpen({
+        answer, ledger, unit: opened.phase, step: currentStep(args, opened).step, at: record.at,
+        loses: loses as string, itemSummary: findItem(ledger, id).open.summary,
+      });
     const dryRun = args.flags.get("dry-run") === true;
     if (dryRun) {
       // 書き込まずに decideItem と同じ検査を行う
@@ -335,6 +361,96 @@ register({
       [
         `${dryRun ? "記録します（--dry-run のため書き込みません）" : "記録しました"}: ${id} ${decision}`,
         `  決めた人  ${whoLabel(by)}`,
+        ...(deferred === undefined ? [] : [`  事後同意  ${deferred.id}（受け入れたリスク。最後のビルドの同意ゲートでユーザーが決める）`]),
+        `  記録先    ${path}`,
+      ].join("\n"),
+    );
+  },
+});
+
+register({
+  name: "ledger conductor-answer",
+  summary: "監督の答えを、暫定の決定（open）と監督の決定（decide）の2行で記録する",
+  usage: "hikyaku ledger conductor-answer <phase> [<cycle>] --input=<監督の答え> [--loses <text>] [--dry-run] [--json]",
+  details: [
+    "監督の答えで再開された conductor の子（HIKYAKU_ANSWER_FROM=supervisor）だけが使えます。launch が回答の先頭に",
+    "このコマンドを置くので、答えは書き換えずにそのまま --input に渡してください。",
+    "",
+    "その作業単位の decisions.jsonl に、次の2行を書きます（問い・答えの値・リスクの申告・起動の印は環境変数から残します）。",
+    "  open     type=provisional・who=supervisor・when=now・ask=監督が答えた問い・summary=`監督の答え: <問い> / <答えの値>`",
+    "  decide   decision=decided・by=supervisor・input=--input の値",
+    "同じ起動（token）の監督の決定が既にあれば何も書かず、その ID を返します（再試行で二重に記録しません）。",
+    "",
+    "事後同意（HIKYAKU_ANSWER_DEFER=1）の答えは、--loses（退けた安全側の案で失う利点）が必須です。",
+    "決定と同時に、受け入れたリスクを risk の事項（ユーザーがマージの前に決める）として書きます。",
+    "--dry-run は書き込まずに同じ検査を行います。",
+  ].join("\n"),
+  writes: true,
+  options: ["input", "loses"],
+  maxOperands: 2,
+  run: ({ args, operands }) => {
+    const opened = openUnit(args, operands[0], operands[1]);
+    const answer = childAnswer();
+    if (answer === undefined || answer.from !== "supervisor" || answer.ask === undefined) {
+      throw new HikyakuError(
+        "ledger conductor-answer は、監督の答えで再開された conductor の子（HIKYAKU_ANSWER_FROM=supervisor）だけが使えます",
+        "ユーザーの答えは ledger decide --by user で、ユーザーに上げる問いは ledger open で記録します。",
+      );
+    }
+    const input = required(args, "input");
+    const problem = answerProblem("supervisor", "", answer);
+    if (problem !== undefined) throw new HikyakuError(problem);
+    const ledger = readLedger(opened.cycle.directory);
+    const path = relative(opened.ctx.config.repoRoot, ledgerPath(opened.cycle.directory, opened.phase));
+    const dryRun = args.flags.get("dry-run") === true;
+    const existing = answer.token === undefined ? undefined : [...ledger.items.flatMap((item) => item.decisions), ...ledger.orphans]
+      .find((record) => record.by === "supervisor" && record.token === answer.token);
+    if (existing !== undefined) {
+      emit({ id: existing.id, recorded: false, existing: true, path, dryRun }, () => `すでに記録されています: ${existing.id}（この起動の監督の答え。何も書きません）`);
+      return;
+    }
+    const loses = flagString(args, "loses");
+    const deferring = checkDeferring(answer, "supervisor", ledger, loses);
+    const at = new Date().toISOString();
+    const choiceLabel = answer.choice === undefined ? undefined : safeAnswerOf(answer.ask)?.choices[answer.choice] ?? answer.choice;
+    const { step } = currentStep(args, opened);
+    const item: OpenRecord = {
+      record: "open",
+      at,
+      id: nextItemId(ledger, opened.phase),
+      unit: opened.phase,
+      ...(step === undefined ? {} : { step }),
+      type: "provisional",
+      summary: `監督の答え: ${answer.ask}${choiceLabel === undefined ? "" : ` / ${choiceLabel}`}`,
+      when: "now",
+      who: "supervisor",
+      ask: answer.ask,
+      ...meta(),
+    };
+    const decide: DecideRecord = {
+      record: "decide",
+      at,
+      id: item.id,
+      unit: opened.phase,
+      decision: "decided",
+      by: "supervisor",
+      input,
+      ...answerFields("supervisor", answer),
+      ...meta(),
+    };
+    const deferred = !deferring
+      ? undefined
+      : deferredRiskOpen({ answer, ledger, unit: opened.phase, step: item.step, at, loses: loses as string, itemSummary: item.summary });
+    if (!dryRun) {
+      // risk の事項を先に書く（決定のあとで書き損じると、受け入れの同意を取る項目が無いまま決定だけが残る）
+      if (deferred !== undefined) openItem(opened.cycle.directory, deferred, ledger);
+      openItem(opened.cycle.directory, item, ledger);
+      decideItem(opened.cycle.directory, decide, readLedger(opened.cycle.directory));
+    }
+    emit({ id: item.id, recorded: !dryRun, existing: false, open: item, decide, deferred: deferred ?? null, path, dryRun }, () =>
+      [
+        `${dryRun ? "記録します（--dry-run のため書き込みません）" : "記録しました"}: ${item.id} decided`,
+        `  要約      ${item.summary}`,
         ...(deferred === undefined ? [] : [`  事後同意  ${deferred.id}（受け入れたリスク。最後のビルドの同意ゲートでユーザーが決める）`]),
         `  記録先    ${path}`,
       ].join("\n"),

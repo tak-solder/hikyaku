@@ -45,6 +45,7 @@ import {
 } from "../lib/steps/engine.mts";
 import { checkpointsOf, CHECKPOINT_STEPS } from "../lib/steps/checkpoints.mts";
 import {
+  childAnswer,
   nextItemId,
   openItem,
   readLedger,
@@ -326,6 +327,7 @@ function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: Evaluated
   const refused = completing ? definition.accepts?.(opened.ctx) : undefined;
   if (refused !== undefined) throw new HikyakuError(`${definition.id} の完了の条件を満たしていません: ${refused}`);
   if (definition.kind === "gate" && result === "approved") assertObjectionsSettled(opened, definition.id);
+  if (definition.kind === "gate" && (result === "approved" || result === "rejected")) assertSupervisorAnswerRecorded(opened, definition.id);
   if (result === "done" && !hasEvidence(definition, opened.ctx)) {
     const missing = missingRequirement(definition, opened.ctx);
     throw new HikyakuError(
@@ -443,6 +445,38 @@ function readRiskDeclaration(definition: EvaluatedStep["definition"], result: St
     }
     event.paths = list;
   }
+}
+
+/**
+ * 監督の答えで再開された子が、そのゲートの結果を報告する前に、答えを記録しているか。
+ * 記録（ledger conductor-answer）が無いと、G8 のように step report だけで完了するゲートでは、子が記録を省いて進めてしまう。
+ * 読むだけで、decisions.jsonl には書かない
+ */
+function assertSupervisorAnswerRecorded(opened: Opened, gate: string): void {
+  const answer = childAnswer();
+  if (answer === undefined || answer.from !== "supervisor" || answer.ask !== gate || answer.token === undefined) return;
+  const cycle = opened.ctx.cycle;
+  if (cycle === undefined) return;
+  let recorded: boolean;
+  try {
+    const ledger = readLedger(cycle.directory);
+    recorded = [...ledger.items.flatMap((item) => item.decisions), ...ledger.orphans].some(
+      (record) => record.by === "supervisor" && record.token === answer.token,
+    );
+  } catch (error) {
+    throw new HikyakuError(
+      `${gate} の結果を受け付けません: 未決事項の記録を読めず、監督の答えが記録されたかを確かめられません`,
+      `${error instanceof Error ? error.message : String(error)}（hikyaku ledger list で確かめてください）`,
+    );
+  }
+  if (recorded) return;
+  throw new HikyakuError(
+    `${gate} の結果を受け付けません: 監督の答えがまだ記録されていません`,
+    [
+      "監督の答えで再開されたので、先に答えを記録してください（答えは回答の先頭のコマンドにそのまま渡す）:",
+      `  ${CLI} ledger conductor-answer ${opened.phase}${cycleArg(opened.ctx)} --input='<監督の答えの全文>'`,
+    ].join("\n"),
+  );
 }
 
 /**

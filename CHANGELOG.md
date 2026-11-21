@@ -120,6 +120,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - **`hikyaku start <plan|architect|build-NN|close> [<cycle>]`**: planner・architect・builder・close-cycle が冒頭で毎回行っていた準備（`cycle use`・`branch verify`・`cycle status`・ブランチを決めたあとの `next`・`session title`）を1回で行い、次にすること（`outcome`: `continue` / `ask` / `stop` / `return`）を返す。デフォルトブランチに居れば期待する名前のブランチを作って切り替える。待機中のビルドや企画の無い architect のように止まるときは作らない。デフォルトブランチではない作業ブランチに居れば何もせず終了コード 2 で返し、ユーザーが続けると決めたら `--keep-branch` で実行し直す。architect を差し戻し元のビルドのブランチで起動したら、ブランチに触らずに `return` を返す。`--dry-run` で書き込まない。build-NN では tasklist.md のタイトルをセッション名に入れる
 - **`hikyaku pr body <phase> [<cycle>]`（読み取り専用）**: PR 本文に貼る事実の節（`diff facts --format pr`・宣言が変わったときの `ledger premises --format pr`・`ledger pr-section`・`external ref`）をまとめて出す。マージの前にユーザーが同意する項目に決定が足りなければ、本文を出さずに、PR を作るステップの `done` と同じ判定と文面で終了コード 2 で止まる
+- **`hikyaku ledger conductor-answer <phase> [<cycle>] --input`**: 監督の答えで再開された conductor の子が、その答えを暫定の決定と監督の決定の2行で decisions.jsonl に記録する（同じ起動の答えは二重に書かない。事後同意に回る答えは `--loses` が必要で、受け入れたリスクの事項も同時に書く）。`conductor launch --from supervisor` が回答の先頭に完成したコマンドを置き、監督の答えで再開された子の `step report <gate> approved|rejected` は、記録が無ければ拒まれる。G8 のように `step report` だけで完了するゲートでも監督の答えが記録に残る
 - `skills/close-cycle/references/rule-writing.md`: パス指定の rule の書き方を `persistence.md` から分けた
 
 ### Changed
@@ -276,6 +277,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - `[app]` を宣言したワークスペースでは、上限を超える異議を `consented` で記録するのに、害が中でも `--accepts` と `--premises` が要る。`ledger open --type objection` に `--when merge…` を渡していたら、`ledger object --defer` に置き換える
 - `conductor launch --resume <id> --message <file>` は `--from user|supervisor` か `--notice` が無いと拒まれる。独自に監督を動かしているなら、答えには `--from`、中断からの再開などには `--notice` を添える。`decisions.jsonl` の決定に任意の欄（`from`・`ask`・`choice`・`risk`・`token`・`answers`）が増えたが、既存の記録はそのまま読める
 - 起票済みのビルドの issue（子 issue）は Hikyaku からは閉じなくなる。不要なら GitHub 側で閉じる。`tasklist.md` の `issue` 列は、次に `tasklist` のコマンドで書き込んだときに落ちる（`docs/migration/v2-to-v3.md#ビルドごとの外部起票の廃止`）
+- 監督の答えの記録は `ledger conductor-answer` に一本化した。対応は不要（進行中の子は、再開時に回答の先頭に置かれるコマンドを実行する）
 - `start`・`pr body`・規約の組み立ての導入に対応は不要。進行中の作業単位はそのまま続けられる。`skills/close-cycle/references/persistence.md` の「rule の書き方」「close-cycle での扱い」の節を参照している独自の指示があれば、`rule-writing.md` と close-cycle の `steps/G10.md` を参照するよう直す
 
 ## [2.8.0]
