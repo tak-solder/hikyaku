@@ -9,7 +9,7 @@
  *   3. AGENTS.md から参照させれば Hikyaku 以外のセッションからも使える
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { HikyakuError } from "./errors.mts";
 import { findTableByHeaders } from "./markdown.mts";
@@ -37,9 +37,10 @@ export interface DocDefinition {
 /**
  * 永続ドキュメントの定義。
  *
- * tech-stack / db-schema / interfaces が optional なのは、これらの正がコード側
- * （lockfile / マイグレーション / OpenAPI）にあるため。Hikyaku は作らないが、
- * リポジトリにあれば俯瞰の手がかりとして読む。
+ * ここに並べるのは「選んで読む文書」だけ。置き場は読み込まれ方で決める:
+ * 一部のファイルにしか効かない知見はパス指定の rule、決まった手順はスキル、
+ * 機械で防げるものはコード（lint・テスト・ヘルパー・その場のコメント）に置く。
+ * 判定の基準は skills/close-cycle/references/persistence.md が正。
  */
 export const DOC_DEFINITIONS: DocDefinition[] = [
   {
@@ -57,19 +58,13 @@ export const DOC_DEFINITIONS: DocDefinition[] = [
   {
     name: "constraints",
     level: "required",
-    purpose: "性能・可用性・セキュリティ・互換性などの制約",
+    purpose: "設計を縛る条件（性能・可用性・セキュリティ・互換性・外部サービスの上限）",
     suggestedPath: "docs/constraints.md",
-  },
-  {
-    name: "learnings",
-    level: "required",
-    purpose: "再現条件が明確な落とし穴と回避策",
-    suggestedPath: "docs/learnings.md",
   },
   {
     name: "conventions",
     level: "required",
-    purpose: "コーディング規約。AI が自動で読む AGENTS.md が既定のマップ先",
+    purpose: "リポジトリ全体に効く取り決め。AI が自動で読む AGENTS.md が既定のマップ先",
     suggestedPath: "AGENTS.md",
   },
   {
@@ -78,46 +73,47 @@ export const DOC_DEFINITIONS: DocDefinition[] = [
     purpose: "ドメイン用語集。人間が権威を持って定義したものだけが価値を持つ",
     suggestedPath: "docs/glossary.md",
   },
-  {
-    name: "test-strategy",
-    level: "optional",
-    purpose: "テスト方針。conventions に含めても成立する",
-    suggestedPath: "docs/test-strategy.md",
-  },
-  {
-    name: "security-model",
-    level: "optional",
-    purpose: "認証認可方式・信頼境界。原則は constraints に統合し、肥大化時のみ分離",
-    suggestedPath: "docs/security-model.md",
-  },
-  {
-    name: "tech-stack",
-    level: "optional",
-    purpose: "参考。正は lockfile / マニフェスト",
-    suggestedPath: "docs/tech-stack.md",
-  },
-  {
-    name: "db-schema",
-    level: "optional",
-    purpose: "参考。正はマイグレーション",
-    suggestedPath: "docs/db-schema.md",
-  },
-  {
-    name: "interfaces",
-    level: "optional",
-    purpose: "参考。正は OpenAPI / 型定義",
-    suggestedPath: "docs/interfaces.md",
-  },
 ];
+
+/**
+ * v3 で廃止した論理名と、中身の行き先。
+ *
+ * 黙って無視すると、登録済みの文書が読む候補からも昇格先からも静かに消える。
+ * 未知の論理名と同じくエラーにし、行き先を添える。
+ */
+export const RETIRED_DOCS: Record<string, string> = {
+  learnings:
+    "落とし穴は重要度で振り分けます（機械で防ぐ / パス指定の rule / constraints / 書かない）",
+  "test-strategy": "全体に効く方針は conventions へ、テストのファイルだけに効く注意はパス指定の rule へ",
+  "security-model": "設計を縛る条件は constraints へ、構造は overview へ",
+  "tech-stack": "正は lockfile / マニフェスト。overview にポインタを1行書けば足ります",
+  "db-schema": "正はマイグレーション。overview にポインタを1行書けば足ります",
+  interfaces: "正は OpenAPI / 型定義。overview にポインタを1行書けば足ります",
+};
+
+/** 廃止した論理名が残っているときの案内 */
+export const RETIRED_HINT =
+  "行を消すだけにせず、/hikyaku:init を実行して中身を振り分けてください（再発しても気づけない知見が混ざっていることがあります）";
 
 export interface DocEntry {
   name: string;
   ownership: DocOwnership;
-  /** リポジトリルートからの相対パス。ownership が 未作成/対象外 のときは undefined */
+  /**
+   * リポジトリルートからの相対パス（アンカーを除く）。ownership が 未作成/対象外 のときは undefined。
+   * ファイルを開く・差分を取る呼び出し元はこれを使う。読む節を示すときは docRef で表示する
+   */
   path: string | undefined;
+  /** 節のアンカー（`#` の後ろ。デコード済み）。登録がファイル全体を指すなら undefined */
+  anchor: string | undefined;
   summary: string;
   definition: DocDefinition | undefined;
 }
+
+/** AGENTS.md の索引ブロックのマーカー（docs link が書き込む） */
+export const INDEX_MARKER = "hikyaku:docs";
+
+/** HIKYAKU_ROOT 直下で改名したファイル。[旧名, 新名]。validate と init の step が残存を検出する */
+export const RENAMED_FILES: [string, string][] = [["instruction.md", "instructions.md"]];
 
 export const GUIDE_HEADERS = ["論理名", "管理", "パス", "概要"];
 
@@ -134,6 +130,99 @@ function extractPath(cell: string): string | undefined {
   const code = /`([^`]+)`/.exec(trimmed);
   if (code?.[1]) return code[1];
   return trimmed;
+}
+
+/** `docs/concepts.md#用語` をパスとアンカーに分ける。パーセントエンコードされたアンカーはデコードする */
+function splitAnchor(raw: string | undefined): { path: string | undefined; anchor: string | undefined } {
+  if (raw === undefined) return { path: undefined, anchor: undefined };
+  const at = raw.indexOf("#");
+  if (at === -1) return { path: raw, anchor: undefined };
+  const path = raw.slice(0, at);
+  const fragment = raw.slice(at + 1);
+  let anchor = fragment;
+  try {
+    anchor = decodeURIComponent(fragment);
+  } catch {
+    // 読めないエンコードはそのまま比べる（validate が節の不一致として知らせる）
+  }
+  return { path: path === "" ? undefined : path, anchor: anchor === "" ? undefined : anchor };
+}
+
+/** 読む場所の表示（アンカー付き）。パスが無ければ undefined */
+export function docRef(entry: Pick<DocEntry, "path" | "anchor">): string | undefined {
+  if (entry.path === undefined) return undefined;
+  return entry.anchor === undefined ? entry.path : `${entry.path}#${entry.anchor}`;
+}
+
+/**
+ * 見出しから GitHub 式のアンカーを作る。小文字にし、文字・数字・`-`・`_`・空白以外を除き、空白を `-` にする。
+ * 日本語などの文字はそのまま残る（GitHub と同じ）
+ */
+export function githubAnchor(heading: string): string {
+  return heading
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}\p{Pc}\- ]/gu, "")
+    .replace(/ /g, "-");
+}
+
+/**
+ * Markdown の見出しのアンカーの集合。ATX（`## 用語`。字下げ 3 つまで）と setext（下線の `===` / `---`）の
+ * 見出しを読む。コードブロックの中は除き、同じアンカーには `-1` `-2` を付ける（GitHub と同じ）
+ */
+export function markdownAnchors(source: string): Set<string> {
+  const anchors = new Set<string>();
+  const seen = new Map<string, number>();
+  const add = (raw: string): void => {
+    const text = raw.replace(/`([^`]*)`/g, "$1").replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+    const base = githubAnchor(text);
+    const count = seen.get(base) ?? 0;
+    seen.set(base, count + 1);
+    anchors.add(count === 0 ? base : `${base}-${count}`);
+  };
+  const lines = source.split("\n");
+  // 先頭の YAML frontmatter（`---` で囲む）は読まない。閉じの `---` を setext の見出しと取り違えないため
+  let start = 0;
+  if (lines[0]?.trim() === "---") {
+    const close = lines.findIndex((line, index) => index > 0 && line.trim() === "---");
+    if (close !== -1) start = close + 1;
+  }
+  // 閉じるのは、開いたのと同じ文字で、同じ長さ以上の囲み（``` の中の ~~~ では閉じない）
+  let fence: { char: string; length: number } | undefined;
+  // setext の見出しになりうる段落の行（下線の直前まで続く行をつなげる）
+  let paragraph: string[] = [];
+  for (const line of lines.slice(start)) {
+    const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (fence !== undefined) {
+      if (marker && (marker[1] as string)[0] === fence.char && (marker[1] as string).length >= fence.length && (marker[2] as string).trim() === "") {
+        fence = undefined;
+      }
+      continue;
+    }
+    if (marker) {
+      fence = { char: (marker[1] as string)[0] as string, length: (marker[1] as string).length };
+      paragraph = [];
+      continue;
+    }
+    const atx = /^ {0,3}#{1,6}(?:\s+(.*?))?\s*$/.exec(line);
+    if (atx) {
+      add((atx[1] ?? "").replace(/\s+#+$/, ""));
+      paragraph = [];
+      continue;
+    }
+    // setext: 段落の直後の下線。箇条書き・表・引用で始まる段落は見出しにしない
+    if (/^ {0,3}(=+|-+)\s*$/.test(line) && paragraph.length > 0) {
+      add(paragraph.map((part) => part.trim()).join(" "));
+      paragraph = [];
+      continue;
+    }
+    if (line.trim() === "" || (paragraph.length === 0 && /^\s*([-*+>|]|\d+[.)])/.test(line))) {
+      paragraph = [];
+      continue;
+    }
+    paragraph.push(line);
+  }
+  return anchors;
 }
 
 export function parseGuide(source: string): DocEntry[] {
@@ -159,10 +248,12 @@ export function parseGuide(source: string): DocEntry[] {
         );
       }
       const ownership = rawOwnership as DocOwnership;
+      const located = ownership === "hikyaku" || ownership === "repo" ? splitAnchor(extractPath(row[2] ?? "")) : undefined;
       return {
         name,
         ownership,
-        path: ownership === "hikyaku" || ownership === "repo" ? extractPath(row[2] ?? "") : undefined,
+        path: located?.path,
+        anchor: located?.anchor,
         summary: (row[3] ?? "").trim(),
         definition: DOC_DEFINITIONS.find((d) => d.name === name),
       };
@@ -185,11 +276,6 @@ export interface GuideProblem {
   message: string;
 }
 
-/** 既定に無い論理名で、repo 管理として登録されたリポジトリ固有の永続ドキュメントか */
-export function isCustomEntry(entry: DocEntry): boolean {
-  return entry.definition === undefined && entry.ownership === "repo";
-}
-
 /** guide の内容を検証する。ポインタの陳腐化を機械検出できるのがこの仕組みの利点 */
 export function validateGuide(entries: DocEntry[], repoRoot: string): GuideProblem[] {
   const problems: GuideProblem[] = [];
@@ -205,13 +291,14 @@ export function validateGuide(entries: DocEntry[], repoRoot: string): GuideProbl
     }
     seen.add(entry.name);
 
-    // 既定に無い論理名は、リポジトリ固有の永続ドキュメント（手順書・PRD など）として
-    // repo 管理でだけ許す。hikyaku / 未作成 は Hikyaku が形式を決めて作る前提で、
-    // 既定の定義が無いと作れない。対象外は既定の論理名を持たない宣言にしか意味が無い
-    if (!entry.definition && entry.ownership !== "repo") {
+    if (!entry.definition) {
+      const retired = RETIRED_DOCS[entry.name];
       problems.push({
         entry: entry.name,
-        message: `既定に無い論理名は管理を repo にしてください（現在: ${entry.ownership}）。既定の論理名: ${DOC_DEFINITIONS.map((d) => d.name).join(", ")}`,
+        message:
+          retired === undefined
+            ? `未知の論理名です。使用できるのは: ${DOC_DEFINITIONS.map((d) => d.name).join(", ")}`
+            : `v3 で廃止した論理名です。${retired}。${RETIRED_HINT}`,
       });
       continue;
     }
@@ -224,6 +311,13 @@ export function validateGuide(entries: DocEntry[], repoRoot: string): GuideProbl
       const absolute = isAbsolute(entry.path) ? entry.path : resolve(repoRoot, entry.path);
       if (!existsSync(absolute)) {
         problems.push({ entry: entry.name, message: `パスが存在しません: ${entry.path}` });
+      } else if (entry.anchor !== undefined) {
+        // 節を指す登録は、見出しが改名・削除されると読む場所を失う。ファイルの存在だけでは気づけない
+        if (!statSync(absolute).isFile()) {
+          problems.push({ entry: entry.name, message: `アンカーはファイルにだけ付けられます: ${docRef(entry)}` });
+        } else if (!markdownAnchors(readFileSync(absolute, "utf8")).has(githubAnchor(entry.anchor))) {
+          problems.push({ entry: entry.name, message: `節が見つかりません: ${docRef(entry)}（見出しが改名・削除されていないか確かめてください）` });
+        }
       }
     }
 
@@ -259,7 +353,7 @@ export function renderIndexBlock(entries: DocEntry[]): string {
   } else {
     for (const entry of listed) {
       const summary = entry.summary === "" ? "" : ` — ${entry.summary}`;
-      lines.push(`- ${entry.name}: \`${entry.path}\`${summary}`);
+      lines.push(`- ${entry.name}: \`${docRef(entry)}\`${summary}`);
     }
   }
   lines.push(

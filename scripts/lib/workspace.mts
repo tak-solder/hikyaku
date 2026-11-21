@@ -1,7 +1,7 @@
 /** サイクルの解決とファイル書き込みの共通処理 */
 
-import { existsSync, writeFileSync } from "node:fs";
-import { flagString, type ParsedArgs } from "./args.mts";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { flagBoolean, flagString, type ParsedArgs } from "./args.mts";
 import { parseBranch, type BranchNaming } from "./branch.mts";
 import { cycleBranchNaming, loadConfig, type ResolvedConfig } from "./config.mts";
 import {
@@ -16,7 +16,7 @@ import { HikyakuError } from "./errors.mts";
 import { currentBranch } from "./git.mts";
 import { readLocalState } from "./local.mts";
 import { warn } from "./output.mts";
-import { loadTasklist, renderTasklistFile, tasklistPath, type BuildRecord } from "./tasklist.mts";
+import { isLegacyTasklist, loadTasklist, renderTasklistFile, tasklistPath, type BuildRecord } from "./tasklist.mts";
 
 /** 対象サイクルをどう決めたか。スキルが根拠を表示できるようにする */
 export type CycleSource = "explicit" | "branch" | "local" | "single-active";
@@ -52,7 +52,7 @@ export interface ResolveOptions {
  *   3. .hikyaku.local       このチェックアウトで最後に作業したサイクル（active のみ）
  *   4. active が1つだけ     迷いようがない
  *
- * どれでも決まらなければ候補を挙げてエラーにする。ここは人間に尋ねる場面であって、
+ * どれでも決まらなければ候補を挙げてエラーにする。ここはユーザーに尋ねる場面であって、
  * スクリプトが推測してよい場面ではない（誤ると別サイクルへコミットする）。
  */
 export function resolveCycle(
@@ -79,22 +79,8 @@ export function resolveCycle(
     return context(hikyakuRoot, record, "explicit");
   }
 
-  // 2. 現在のブランチ。close フェーズもあるので status は問わない
-  if (options.branchNaming && options.currentBranch !== undefined) {
-    const record = matchBranch(records, options.currentBranch, options.branchNaming);
-    if (record) return context(hikyakuRoot, record, "branch");
-  }
-
-  // 3. ローカルの栞。指す先が active でなければ黙って捨てる。
-  // ここは active に限って引く（栞の曖昧さでエラーにはしない。無効なら捨てて次へ）
-  const localKey = options.local?.();
-  if (localKey !== undefined) {
-    const key = localKey;
-    const record = records.find(
-      (r) => r.status === "active" && (r.id === key || r.slug === key || cycleDirName(r) === key),
-    );
-    if (record) return context(hikyakuRoot, record, "local");
-  }
+  const selected = selectedCycle(hikyakuRoot, records, options);
+  if (selected) return selected;
 
   const active = records.filter((r) => r.status === "active");
   if (active.length === 1) return context(hikyakuRoot, active[0] as CycleRecord, "single-active");
@@ -116,6 +102,28 @@ export function resolveCycle(
       "選んだサイクルは hikyaku cycle use で記録すると、次回から尋ねずに済みます。",
     ].join("\n"),
   );
+}
+
+/** ブランチか栞で選択済みのサイクル。未選択なら undefined（件数からは選ばない）。 */
+function selectedCycle(hikyakuRoot: string, records: CycleRecord[], options: ResolveOptions): CycleContext | undefined {
+  // 現在のブランチ。close フェーズもあるので status は問わない
+  if (options.branchNaming && options.currentBranch !== undefined) {
+    const record = matchBranch(records, options.currentBranch, options.branchNaming);
+    if (record) return context(hikyakuRoot, record, "branch");
+  }
+
+  // ローカルの栞。指す先が active でなければ黙って捨てる。
+  // ここは active に限って引く（栞の曖昧さでエラーにはしない。無効なら捨てて次へ）
+  const localKey = options.local?.();
+  if (localKey !== undefined) {
+    const key = localKey;
+    const record = records.find(
+      (r) => r.status === "active" && (r.id === key || r.slug === key || cycleDirName(r) === key),
+    );
+    if (record) return context(hikyakuRoot, record, "local");
+  }
+
+  return undefined;
 }
 
 /**
@@ -192,7 +200,12 @@ export interface OpenedCycle {
 export function openCycle(args: ParsedArgs, key: string | undefined): OpenedCycle {
   const root = flagString(args, "root");
   const base = loadConfig({ root });
-  const ctx = resolveCycle(base.hikyakuRoot, key, {
+  const ctx = resolveCycle(base.hikyakuRoot, key, resolutionOptions(base));
+  return openContext(args, ctx);
+}
+
+function resolutionOptions(base: ResolvedConfig): ResolveOptions {
+  return {
     branchNaming: (record) => cycleBranchNaming(base, cycleDir(base.hikyakuRoot, record)),
     currentBranch: currentBranch(base.repoRoot),
     local: () => {
@@ -204,23 +217,44 @@ export function openCycle(args: ParsedArgs, key: string | undefined): OpenedCycl
         return undefined;
       }
     },
-  });
+  };
+}
+
+function openContext(args: ParsedArgs, ctx: CycleContext): OpenedCycle {
   const config = loadConfig({
-    root,
+    root: flagString(args, "root"),
     cycleDir: ctx.directory,
     profileOverride: flagString(args, "profile") ?? (ctx.record.profile || undefined),
   });
   return { config, context: ctx };
 }
 
-/** サイクルがまだ1つも無い場合だけ undefined を返す（init / create-cycle 用） */
+/**
+ * 設定表示などの任意選択。未選択と、サイクルを省略した profile 確認はルート設定を使う。
+ * --no-cycle なら、現在のブランチや .hikyaku.local からも選ばずにルート設定を使う
+ * （サイクルに属さない patch が、近くのサイクルの設定で動かないため）
+ */
 export function openCycleIfAny(args: ParsedArgs, key: string | undefined): OpenedCycle | undefined {
+  if (flagBoolean(args, "no-cycle")) {
+    if (key !== undefined) throw new HikyakuError("--no-cycle とサイクルは同時に指定できません");
+    return undefined;
+  }
+  if (key !== undefined) return openCycle(args, key);
+  if (flagString(args, "profile") !== undefined) return undefined;
   const base = loadConfig({ root: flagString(args, "root") });
   const path = cyclesPath(base.hikyakuRoot);
-  if (!existsSync(path) || loadCycles(base.hikyakuRoot).length === 0) return undefined;
-  return openCycle(args, key);
+  if (!existsSync(path)) return undefined;
+  const selected = selectedCycle(base.hikyakuRoot, loadCycles(base.hikyakuRoot), resolutionOptions(base));
+  return selected === undefined ? undefined : openContext(args, selected);
 }
 
 export function writeTasklist(context: CycleContext, builds: BuildRecord[]): void {
+  const path = tasklistPath(context.directory);
+  if (existsSync(path) && isLegacyTasklist(readFileSync(path, "utf8"))) {
+    throw new HikyakuError(
+      `${context.name} の tasklist.md は v2 の形式（BP 列）です`,
+      "v2 で作成したサイクルは v3 では更新しません。v2 のプラグインで終えてください（docs/migration/v2-to-v3.md）。",
+    );
+  }
   writeFileSync(tasklistPath(context.directory), renderTasklistFile(context.name, builds), "utf8");
 }

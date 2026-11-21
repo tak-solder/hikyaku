@@ -1,0 +1,87 @@
+# review: コードレビュー
+
+機械的検証だけでは検出できない品質・規約・セキュリティ観点をレビューする。
+レビューそのものは Claude Code（`/code-review`・`/security-review`）か Codex（`codex exec review`）に
+組み込みのレビュー機能が行う。
+どのプロバイダ・モデル・エフォートで何回まで回すかは `[review]` の設定で決まり、
+CLI が起動方法を解決する。
+
+- [ ] コンテキストを確かめる（directive の `context` と `overruns`）
+  - この区切りの推奨は常に「継続」（残りの作業より読み直しのほうが高くつく）。完了時点の見込みが上限を
+    超えるなら、**レビュー結果の提示で**そのことを伝える。`overruns` に前の区切りの超過があれば、それも
+    一緒に伝える。指摘が0件で提示が無ければ、完了の案内で伝える
+- [ ] ローカルでコミットする（push はしない）
+  - どちらのプロバイダのレビューも、コミット済みの差分を対象にするため
+  - 未追跡のファイルも含め、実装したものは全てコミットに含める
+- [ ] 起動方法を解決する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve code build-{NN} {cycle} --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve security build-{NN} {cycle} --json
+```
+
+`enabled` は `code_review` / `security_review` の値、`maxRounds` は回数の上限（0 は無制限）、
+対応確認と再レビューの要否は `review action` で解決する。`base.ref` が差分の基準で、
+スタックしていればスタック元になる。**デフォルトブランチを決め打ちしない。**
+
+- [ ] `code` の `enabled` が true なら（全プロファイル）、code のレビューを行う
+- [ ] `security` の `enabled` で、security のレビューを行うか判定する
+
+| 設定値 | 挙動 |
+|---|---|
+| `off`（既定では該当なし。個別キーで明示したときだけ） | 起動しない |
+| `on`（thorough） | 常に起動する |
+| `recommended`（express / economy / standard） | 判定基準に該当する場合のみ、起動するか確認する |
+
+`recommended` の場合、対象ビルドの `issue.md` と実際の diff が、`config --json` の
+`security.triggers` の基準に該当するか判定する。該当する場合は判定根拠を一行で示して確認する（ask: security-review）。
+外れることがあるので、ユーザーが上書きできる形にする。
+
+```
+このビルドは「認証・認可」に該当する変更を含みます（auth/session.ts の権限判定を変更）。
+security_review を起動しますか？ [Y/n]
+```
+
+- [ ] レビューを実行する（ラウンド n。初回は 1）
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run code build-{NN} {cycle} --round {n}
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run security build-{NN} {cycle} --round {n}
+```
+
+  - 2つを **Bash の `run_in_background` で並列に実行する**（数分かかることがある。`timeout` は最大値）。
+    conductor の子ではバックグラウンドの実行が無効になっているので、1つずつ前景で実行する
+  - 生の出力は `.git` の中に保存され、パスと本文が返る。コミットはしない
+  - **終了コード 1 は失敗であって、パス（指摘0件）ではない。** 空の結果やタイムアウトも失敗になる。
+    メッセージをユーザーに報告して判断を仰ぐ
+- [ ] 指摘を統合する
+  - 同一箇所への重複指摘は1件に統合し、security の指摘を優先する。
+    同じプロバイダが同じ指摘を2回出力することもある
+  - 「確度が低い懸念」は「確度: 要確認」ラベルを保持したまま別枠で提示する
+  - 2ラウンド目以降は、前のラウンドの出力（返ったパスと同じディレクトリの `round-{n-1}-*.md`）と比べる
+- [ ] 統合した指摘をコード・承認済み仕様・スコープに照らして判断する。不採用の指摘には理由を残す。
+  前ラウンドの保留も確認し、未解決なら今回の指摘に含める
+- [ ] 採った指摘ごとに、重さと引いた rule（無ければ `-`）を控え、handoff の「レビューの記録」に書く
+  （重さと行の形は `${CLAUDE_PLUGIN_ROOT}/skills/close-cycle/references/persistence.md` の「レビューの記録」）
+- [ ] 有効な種類ごとに、対応と次のラウンドを解決する
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review action {code|security} build-{NN} {cycle} --round {n} {判定したフラグ} --json
+```
+
+妥当かつ承認済みスコープ内の指摘には `--has-findings`、自動修正できない懸念には `--uncertain`、
+前回から繰り返した指摘には `--repeated` を添える。妥当性・重複は自分で判断し、回数の比較は CLI に任せる。
+
+| action | すること |
+|---|---|
+| `done` | その種類のレビューを終える |
+| `fix` | 妥当な指摘を修正し、verify と同じ検証を通してコミットする |
+| `confirm` | 未解決の指摘を提示して対応を決める（ask: review-findings）。修正、新ビルド化、そのまま進める、から選ぶ |
+
+- `deferUncertain` が true なら、自動修正できない懸念を保留する。`nextRound` があるあいだは次のレビューにも含める。
+  `nextRound` が null なら、その種類のレビューを終え、懸念を未決事項として記録する（handoff の「残したこと」で扱う。
+  要約に「確度: 要確認」と理由を書く）。PR 本文と完了の案内では、事項の ID と要点を伝える（全文やチェックリストを転記しない）
+- 修正して継続するときは、`nextRound` があればそのラウンドで再レビューし、無ければその種類を終える。
+  全指摘を新ビルド化するか、そのまま進めると決めた場合も、その種類を終える
+- 両方のレビューを終えたら `done` を報告する。保留・不採用・意図的に残した指摘は理由とともに handoff に残す
+- 設計の前提が崩れた場合は、SKILL.md の「architect への差し戻し」に従う

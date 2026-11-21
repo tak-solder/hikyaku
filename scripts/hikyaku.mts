@@ -28,13 +28,26 @@ import "./commands/cycle.mts";
 import "./commands/tasklist.mts";
 import "./commands/next.mts";
 import "./commands/context.mts";
+import "./commands/promotions.mts";
+import "./commands/feedback.mts";
+import "./commands/rules.mts";
+import "./commands/areas.mts";
 import "./commands/validate.mts";
 import "./commands/external.mts";
 import "./commands/naming.mts";
-import "./commands/bp.mts";
+import "./commands/start.mts";
+import "./commands/tokens.mts";
 import "./commands/conductor.mts";
 import "./commands/reviewers.mts";
+import "./commands/pr-ready.mts";
+import "./commands/pr-body.mts";
+import "./commands/pr-create.mts";
 import "./commands/review.mts";
+import "./commands/step.mts";
+import "./commands/patch.mts";
+import "./commands/ledger.mts";
+import "./commands/diff.mts";
+import "./commands/gate.mts";
 
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2));

@@ -7,265 +7,93 @@ argument-hint: "[{cycle}]"
 
 # Hikyaku Close Cycle
 
-全ビルドが完了したサイクルを締め、サイクルの成果を永続ドキュメントへ昇格させる。
+全ビルドが完了したサイクルを締め、サイクルで得た知見を永続化する。足すだけでなく、
+役に立たなかった記述や古くなった記述を消し、置き換える。
 
-## あなたの役割
+## 書くもの
 
-永続ドキュメント（実装済みの現実）を書けるのは、このスキルだけ。architect は ADR を
-`accepted` で追記するだけで、planner と builder は書かない。`{HIKYAKU_ROOT}/instructions.md` も
-同じ扱いで、書き換えるのは close-cycle だけ（走行中の他サイクルが読むため）。
-
-`completed`（全ビルド完了）のあいだは、実装が入っているのに `overview` が古く、他サイクルが
-古い `overview` を現実として読む。だから CLOSE は速やかに終える。
+永続ドキュメントと `{HIKYAKU_ROOT}/instructions.md` を、サイクルの中で書けるのはあなただけ（ADR の追記は architect）。
+走行中の他サイクルが読むので、昇格は全ビルドのマージ後にまとめて行う。コードとパス指定の rule は
+builder が書いている。サイクルに属す patch の `patches/{YYYYMM}/{slug}/handoff.md` も、ビルドの handoff.md と
+同じく昇格させる（`hikyaku promotions` が集める）。フックと見積もりのガイドの見直しは、別のブランチの PR にする（followups）。
 
 ## 作業ステップ
 
-### Step 0: 読み込みと完了確認
+### Step 0: 準備と完了確認
 
-- [ ] 設定と document-guide を読み込む
+- [ ] 準備をまとめて行う（作業サイクルの記録・ブランチ・状態の確認・セッション名）
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" start close {cycle}
+```
+
+出力の「次」に従う。
+
+- サイクルを決められずに候補が出たら、推測せずユーザーに尋ねて（ask: cycle）指定し直す
+- ブランチを尋ねるよう出たら（ask: branch）、現在のブランチが実行環境に割り当てられたものだと分かっていても、
+  **自分で決めずに必ず尋ねる。** セッションの中からは、別の作業のブランチに紛れ込んだ状態と区別できない。
+  どれが妥当かの示唆を添えずに3つを示す: 1. 規則どおり期待する名前のブランチを作る（`git switch -c {期待する名前}`）
+  / 2. 現在のブランチで作業する（`--keep-branch` を付ける）/ 3. 別のブランチを指定する（切り替える）。
+  答えに従って `start` をやり直す
+- サイクルが completed でないと出たら、ユーザーに確認する（ask: abandon）。未完了のビルドを残したまま締めるのは、
+  サイクルを中止（abandoned）する場合に限る。中止すると答えたら、サイクルの終了で `--status abandoned` を付ける
+- 止まると出たら、内容を伝えて終了する
+- サイクルを1行で示し、セッション名を設定する（設定する手段が無い環境ではスキップ）
+
+成果物をコミットする直前に `branch verify close {cycle}` でブランチを確かめる。
+
+- [ ] 昇格先の所在を読み込む
+
+```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context close {cycle}
 ```
 
-`context` は昇格先の所在と、素材（全ビルドの `handoff.md` / `design-delta.md`）を
-まとめて返す。末尾の「未作成」は昇格先の候補で、そこへ昇格させるなら新規作成に
-なるため G10 で併せて承認を得る。
-
-`$ARGUMENTS[0]` のサイクルを渡す。省略時は CLI が現在のブランチ → `.hikyaku.local` →
-唯一の進行中サイクルの順で決め、決まらなければエラーになる。そのときは推測せずユーザーに
-尋ねる（ask: cycle）。HIKYAKU_ROOT は `.hikyaku.config` から解決されるので、引数では受け取らない。
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {cycle}
-```
-
-- [ ] ブランチを作成し、命名規則どおりか確認する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify close {cycle}
-```
-
-出力の `ok` と `onBaseBranch` で分岐する。自分で決めず、この表に従う。
-
-| 状況 | 対応 |
-|---|---|
-| `ok: true` | そのまま続ける |
-| `ok: false` かつ `onBaseBranch: true` | `expected` の名前でブランチを作成して続ける |
-| `ok: false` かつ `onBaseBranch` が `false` / `null` | ユーザーに尋ねる（下記）（ask: branch） |
-
-3つ目は、現在のブランチが実行環境に割り当てられたものだと分かっていても、**自分で決めずに
-必ず尋ねる。** セッションの中からは、別の作業のブランチに紛れ込んだ状態と区別できない。
-尋ねる手段（`AskUserQuestion` など）で次の3つを、どれが妥当かの示唆を添えずに提示する。
-
-1. Hikyaku の規則に従う — `expected` の名前でブランチを作成する
-2. 現在のブランチで作業する
-3. 別のブランチを指定する
-
-ユーザーが 2 か 3 を選んだら、`next` の「着手中」検出が効かなくなることを伝える
-（ブランチ名から導出しているため）。ブランチを決めたら、成果物をコミットする直前にもう一度
-この確認を行う。
-
-- [ ] 対象サイクルの状態を確認する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
-```
-
-ブランチを決めてから実行する（成果物の有無は作業ツリーで判定するため、デフォルトブランチの
-ままでは push 済みの成果物が見えない）。
-
-`completed` でない場合はユーザーに確認する（ask: abandon）。未完了のビルドを残したまま締めるのは、
-サイクルを中止（abandoned）する場合に限る。
-
-- [ ] セッション名を設定する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title close {cycle}
-```
-
-返った名前をセッション名に設定する。設定する手段が無い環境と、「変更しません」と返った場合はスキップする。
+`context` は昇格先の所在を返す。全文は読まない。読むのは、集めた候補が指す節だけ（collect の指示）。
+末尾の「未作成」は昇格先の候補で、そこへ昇格させるなら新規作成になるため、昇格の承認で併せて承認を得る。
 
 → Step 1 へ。
 
-### Step 1: 振り返り
+### Step 1 以降: step に従って進める
 
-**昇格より先に行う。** 後に回すと、この回の振り返りで出た学びを昇格させる機会が
-永久に無くなる（次の close-cycle は別のサイクルを見るため）。
-
-- [ ] `retrospective` 設定に従って次を呼び出す
-
-```
-/hikyaku:retrospective {cycle} close
-```
-
-`retrospective` が `skip` の場合はこのステップを飛ばす。
-
-→ Step 2 へ。
-
-### Step 2: 素材の収集
-
-サイクルが長い（ビルドが10本ある等）とコンテキストが厳しくなるため、
-昇格候補の抽出はサブエージェントに委任する。
-
-- [ ] エージェントに次のファイルを渡し、昇格候補を抽出させる
-  - `cycles/{cycle}/design/design-delta.md` — このサイクルが作った差分
-  - `cycles/{cycle}/design/codebase-survey.md` — 調査で得た知見（存在する場合）
-  - `cycles/{cycle}/build-*/handoff.md` — 全ビルドの申し送り
-  - `cycles/{cycle}/*/retrospective.md` — 振り返り（存在する場合）
-  - `document-guide.md` — 昇格先の所在
-- [ ] retrospective.md からは「リポジトリ固有の学び（L-N）」と、対象が `doc:` の
-      改善提案だけを拾わせる
-  - `workflow` は本セッションが直接捌く。`記録のみ` は読ませる必要がない
-  - ビルドが10本あれば retrospective.md は12ファイルになる。委任してコンテキストを
-    守る意味が、渡す量を絞らないと消える
-- [ ] handoff.md からは「昇格素材（close-cycle 向け）」の節だけを拾わせる
-  - 前半の「後続ビルド向け」はビルド間の引き継ぎで、昇格の素材ではない
-  - 節ごとに昇格先が決まっている（下の表）。節の外に書かれた発見は、内容で昇格先を判断させる
-- [ ] エージェントには「候補リスト」だけを返させ、本文の執筆は本セッションで行う
-- [ ] `workflow` 分類の改善提案は、本セッションが各 retrospective.md から直接読む
-
-→ Step 3 へ。
-
-### Step 3: 昇格候補の整理
-
-抽出された候補を、昇格先ごとに整理する。
-
-| 昇格先 | 何を昇格させるか | 主な素材 |
-|---|---|---|
-| overview | アーキテクチャに影響した変更。責務・境界・データフローの変化 | design-delta / handoff の「overview への影響」 |
-| learnings | 再現条件が明確な落とし穴 | handoff の「踏んだ落とし穴」/ retrospective の L-N |
-| constraints | 実装中に判明した新たな制約（数値で書けるもの） | handoff の「新たな制約」 |
-| conventions ほか規約系 | 以後の書き方・進め方の取り決め | retrospective の `doc:` 分類 |
-| `instructions.md` | このリポジトリで Hikyaku を回すときの手順・前提 | retrospective の `workflow` 分類 |
-| ADR | `status: accepted` → `implemented` に更新。覆された判断は旧エントリを `superseded` にし、新エントリを起こす | design / handoff の「覆した設計判断」 |
-| document-guide | このサイクルで新規作成したドキュメントの行を更新 | — |
-
-`doc:` 分類の論理名は `document-guide.md` が正。**そこに無い論理名は昇格先にしない**
-（勝手にドキュメントを作らない）。`未作成` で登録されている論理名へ昇格させる場合は、
-新規作成することになるので G10 でその旨も承認を得る。
-
-同じ提案が複数フェーズの retrospective.md に出ていたら、1件に束ねて出典を全部残す。
-言われた回数は優先度そのものなので、束ねるときに落とさない。
-
-昇格させないもの:
-
-- `overview` にテーブル一覧・エンドポイント一覧・依存パッケージのバージョンを書かない。
-  これらはコードが正で、書いた瞬間に腐り、しかも腐っていることに誰も気づけない。
-  代わりに「正がどこにあるか」のポインタを書く（`スキーマの正は db/migrations/`）
-- `learnings` に一般的なプログラミング知識や曖昧な注意（「気をつける」だけ）を書かない
-- `learnings` に以後の取り決めを書かない（それは `conventions` か `instructions.md`）。
-  `learnings` は踏んだ地雷の記録で、取り決めではない
-- `constraints` に実現方法を書かない（それは ADR か overview）
-- `instructions.md` にこのリポジトリに固有でないことを書かない。一般的な進め方は
-  各スキルが既に持っている
-
-`repo` 管理のドキュメントには形式を強制しない。既存形式に合わせて追記するだけで、
-既存記述の削除・整理はしない。既存 ADR に status 欄が無くて実装状態が分からない
-場合も、勝手に欄を足さずユーザーに提案して判断を仰ぐ（ask: adr-status）。
-
-→ Step 4 へ。
-
-### Step 4: ユーザー承認（G10）
-
-- [ ] 昇格候補を昇格先ごとに提示し、承認を得る（G10）
-
-```
-overview に昇格:
-  + 「請求」セクション: 請求は API → キュー → ワーカーの順で処理される
-  + ポインタ追加: 請求スキーマの正は db/migrations/
-
-learnings に昇格:
-  + 請求バッチのテストは並列実行で落ちる（build-03 で判明、2026-09-01）
-
-conventions（AGENTS.md）に昇格:
-  + マイグレーションは1PR1ファイルに保つ（design#R-1, build-02#R-3 の2件）
-
-instructions.md に反映:
-  + 環境変数を足したら .env.example にも同じキーを足す（build-01#R-2）
-
-ADR:
-  ~ 20260825-payment-provider.md: accepted → implemented
-
-昇格させないもの（参考）:
-  - handoff にあった「invoices テーブルを追加」→ マイグレーションが正のため書かない
-  - build-03#R-1「テストは1ファイル1クラス」→ conventions に既に同じ記述があるため書かない
-```
-
-この承認は **profile の管轄外で、どのプロファイルでも省略しない**。
-不可逆だからではなく、何を昇格させるかの取捨選択は人間の判断だから。
-自動化すると精度が落ちる。
-
-→ 承認を得たら Step 5 へ。
-
-### Step 5: 書き込み
-
-- [ ] 承認された内容を永続ドキュメントへ書き込む
-- [ ] `workflow` 分類が承認されていれば `{HIKYAKU_ROOT}/instructions.md` へ追記する
-  （無ければ新規作成する）
-- [ ] `document-guide.md` を更新する（新規作成したドキュメントの管理列とパス列）
-- [ ] AGENTS.md の索引を更新する
+ここから先の手順（候補の収集 → 整理と G10（同意が要る変更が無く `promotion_gate` が off なら省かれる）→（フックの候補があれば、採るかの記録）→ 書き込み → サイクルの終了 → PR → 別の PR にするもの）は、
+`step next` が設定と進捗から1手ずつ返す。**手順を自分で組み立てない。**
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs link --dry-run
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next close {cycle}
 ```
 
-新しいドキュメントを追加した場合のみ差分が出る。承認を得てから実行する（ask: docs-link）。
+返った1手（directive）の種類ごとに動く。報告のコマンドは directive の「報告」にあるものを使う。
 
-- [ ] 検証する
+| 種類 | すること |
+|---|---|
+| `run` | 「指示」のファイルを読み、そのとおりに行う。終えたら `done` を報告する |
+| `gate` | 「指示」のファイルを読み、ユーザーに提示して承認を求める。承認されたら `approved`、フィードバックなら `rejected` を報告する。どちらも `--input` にユーザーの答えを添える。`rejected` のあとは答えを反映し、`step next` に従って提示し直す |
+| `done` | 手順をすべて終えた。下の「完了の案内」へ |
+| `stop` | メッセージをユーザーに伝えて終了する |
 
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate {cycle}
-```
+- `step report` は記録したあと、次の1手を返す。それに従って続ける
+- 成果物や完了の条件、報告に添える値（`--pr`）は CLI が確かめ、足りなければ報告を受け付けない。
+  メッセージに従って直す。報告を通すために成果物を空で作ったり、別のステップとして報告したりしない
+- 再開したとき、候補が会話の中に無ければ、`hikyaku promotions {cycle}` を実行し直す。候補はスクリプトで
+  再現できるので、`collect` を報告し直す必要はない
+- 報告したら、成果物（永続ドキュメント・rule・スキルの変更）とサイクルのディレクトリ直下の
+  `cycles/{cycle}/progress.jsonl` をコミット & push する。pr の指示にコミットの時機の定めがあれば、そちらに従う
+- 迷ったら `step next` を呼び直す。同じ状態なら同じ1手が返る
 
-→ Step 6 へ。
+### 完了の案内
 
-### Step 6: サイクルの終了
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle close {cycle} \
-  --summary "{一行要約}"
-```
-
-中止する場合は `--status abandoned` を付ける。
-
-サイクルディレクトリは残す。 PR 履歴から辿れることに価値がある。
-
-→ Step 7 へ。
-
-### Step 7: PR 作成
-
-- [ ] コミットする前に、もう一度ブランチを確認する（`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify close {cycle}`）
-- [ ] 外部連携が有効なら、参照行を生成する（`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref close {cycle}`）
-- [ ] コミットして PR を Draft で作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title close {cycle}` で生成）
-  - `external ref` が返した行（`Closes #12` など）を本文の末尾に入れる。
-    親 issue はこの PR のマージで閉じる
-  - `gh pr create --draft` で Draft として作る。リポジトリが Draft PR に対応しておらず作成に失敗したら、
-    `--draft` を外して作り直し、下の「Ready にする」は飛ばす。Draft にできなかったことを完了の案内で伝える
-- [ ] `config` 出力の `pr.autoReady`（`[pr] auto_ready`、既定 true）が true なら、PR を Ready for Review にする（conductor の子なら飛ばす）
-
-```bash
-gh pr ready {PR の URL}
-```
-
-  - false なら Draft のまま残し、完了の案内で「PR は Draft のまま。確認後に `gh pr ready {PR の URL}` で
-    Ready にする」と伝える。**false のときに自分の判断で Ready にしない**
-  - 失敗したら、Draft のままであることと再実行のコマンドを完了の案内でユーザーに伝える
-  - conductor の子（非対話規約で起動されたセッション）は `pr.autoReady` に関わらず Ready にしない。
-    監督が `pr.autoReady` に従って Ready にする
-- [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers close {cycle} --pr {PR の URL}
-```
-
-  失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
-- [ ] 完了後、次を案内する
+`done` が返ったら、次を案内する。
 
 ```
 サイクル {cycle} を closed にしました。
 
+（別の PR を作った場合）
+見積もりのガイドの見直し: {PR の URL}
+フックの提案: {PR の URL}
+どちらも、採るかはマージで決めてください。
+
 次のサイクルを開始するには:
 /hikyaku:create-cycle <slug>
 ```
+
+見送ったもの（未マージの token-guide の PR がある等）や、失敗したものがあれば、理由と一緒に伝える。

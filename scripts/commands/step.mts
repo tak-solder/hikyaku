@@ -1,0 +1,781 @@
+/**
+ * step — フェーズの中の手順を、設定と状態から1手ずつ返す（#50）。
+ *
+ *   step next    次の1手（directive）を返す。何度呼んでも同じ状態なら同じものを返す
+ *   step report  1手の結果を progress.jsonl に追記し、次の1手を返す
+ *   step status  手順の一覧と、それぞれの状態を表示する
+ *   step lint    ステップの定義と指示ファイルの対応を検査する（CI 用）
+ *   step where   サイクルのうち、手順が途中の作業単位を一覧する（navigator 用）
+ *   step hook    Claude Code のフックから呼ばれる（stop: 手順の途中で止まるのを1回だけ引き止める）
+ *
+ * 判定は scripts/lib/steps/ にある。ここは引数の解釈と出力だけを行う。
+ */
+
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { flagBoolean, flagString, type ParsedArgs } from "../lib/args.mts";
+import { HikyakuError, ValidationError } from "../lib/errors.mts";
+import { emit, table } from "../lib/output.mts";
+import { pluginRoot, pluginVersion } from "../lib/paths.mts";
+import {
+  appendProgress,
+  RESTART,
+  RESTART_STEP,
+  STEP_RESULTS,
+  type ProgressEvent,
+  type StepResult,
+} from "../lib/progress.mts";
+import { register } from "../lib/registry.mts";
+import { openCycle } from "../lib/workspace.mts";
+import { formatTokens, measureCurrent } from "../lib/session.mts";
+import { parseTokenAmount } from "../lib/tokens.mts";
+import { assertCurrentConfig } from "../lib/config.mts";
+import { checkEscalation, describeEscalationProblems } from "../lib/escalation.mts";
+import { readReturn, RETURN_FILE } from "../lib/phase.mts";
+import { splitList } from "../lib/rules.mts";
+import {
+  allowedResults,
+  consentOf,
+  evaluate,
+  hasEvidence,
+  lintApproval,
+  missingRequirement,
+  type EvaluatedStep,
+  type Evaluation,
+} from "../lib/steps/engine.mts";
+import { checkpointsOf, CHECKPOINT_STEPS } from "../lib/steps/checkpoints.mts";
+import {
+  childAnswer,
+  nextItemId,
+  openItem,
+  readLedger,
+  readUnitLedger,
+  unacceptedObjections,
+  type Ledger,
+  type OpenRecord,
+} from "../lib/ledger.mts";
+import { g1ConsentRecord } from "../lib/deferred-consent.mts";
+import {
+  buildDirective,
+  CLI,
+  cycleArg,
+  legacyCycleMessage,
+  nextCommand,
+  open,
+  renderDirective,
+  type Directive,
+  type Opened,
+} from "../lib/steps/directive.mts";
+import { stopReason, type StopInput } from "../lib/steps/hook.mts";
+import { directiveOf, findUnits } from "../lib/steps/locate.mts";
+import { instructionPath, SKILL_STEPS, stepsOf } from "../lib/steps/index.mts";
+
+function emitDirective(directive: Directive, extra: Record<string, unknown> = {}, prefix = ""): void {
+  emit({ ...extra, directive }, () => `${prefix}${renderDirective(directive)}`);
+}
+
+// ---------------------------------------------------------------------------
+// コマンド
+
+register({
+  name: "step next",
+  summary: "フェーズの中の次の1手を、設定と進捗から決めて返す",
+  usage: "hikyaku step next <phase> [<cycle>] [--skill <内部スキル>] [--json]",
+  details: [
+    "スキルの転送ループが呼びます。返った1手（directive）を行い、step report で結果を返します。",
+    "状態は保存せず、作業単位のディレクトリの progress.jsonl と成果物から毎回導出します。",
+    "同じ状態なら何度呼んでも同じものを返すので、迷ったら呼び直してください。",
+    "",
+    "  run    ステップを行う。指示ファイル（read）を読み、終えたら report のコマンドで返す",
+    "  gate   ユーザーに承認を求める。承認は差し戻すか前のステップを報告し直すまで有効",
+    "  call   内部スキル（call）を呼ぶ。終えたら呼び出し元が report で返す",
+    "  done   手順をすべて終えた",
+    "  stop   止まる。message をユーザーに伝えて終了する",
+    "",
+    "内部スキル（build-manager / retrospective）は --skill で指定し、呼び出し元のフェーズの",
+    "作業単位で進めます。記録は呼び出し元と同じ progress.jsonl に入り、呼び出し元が最後に",
+    "報告したあとの記録だけが今回の呼び出しの分として数えられます。",
+    "",
+    "区切り（G8・実装開始前・レビュー前）では、現在のセッションのコンテキストを測り、",
+    "[context] の目安と比べます（context）。超えていても止めません。",
+    "",
+    `いま step に移っているスキル: ${SKILL_STEPS.map((entry) => entry.skill).join(" / ")}`,
+  ].join("\n"),
+  run: ({ args, operands }) => {
+    const opened = open(args, operands[0], operands[1]);
+    emitDirective(buildDirective(opened, evaluate(opened.skill, opened.ctx)));
+  },
+});
+
+register({
+  name: "step report",
+  summary: "1手の結果を進捗に記録し、次の1手を返す",
+  usage:
+    "hikyaku step report <phase> <step> [<cycle>] [--skill <内部スキル>] --result done|skipped|approved|rejected|failed|handover [--reason <理由>] [--input <答え>] [--peak <トークン数>] [--findings <件数> --adopted <件数>] [--harm 高|中] [--paths <glob,...>] [--loses <失うもの>] [--pr <URL|番号>] [--dry-run] [--json]",
+  writes: true,
+  details: [
+    "作業単位のディレクトリの progress.jsonl に1行追記します。報告できるのは現在地のステップと、",
+    "完了したステップの done の報告し直し（成果物を作り直したとき）です。報告し直すと、",
+    "そこから後ろのステップはやり直しになります（承認も取り直し）。",
+    "手順に入る前に止まる状態（builder の差し戻し中など）では、報告を受け付けません。",
+    "",
+    "  done      ステップを終えた。成果物が要るステップは、成果物が無ければ受け付けない",
+    "  skipped   スキップした。--reason が必須。スキップできるステップだけ",
+    "  approved  ゲートの承認。--input にユーザーの答えを添えられる",
+    "  rejected  ゲートの差し戻し。--input にユーザーの答えが必須",
+    "  failed    失敗した。--reason が必須。現在地は動かない",
+    "  handover  このステップの前でセッションを切り替える（builder の implement だけ）。--reason が必須。",
+    "            現在地は動かず、新しいセッションが同じステップから続ける。Stop フックはこのセッションを引き止めない",
+    "",
+    "--peak は見積もり直した予測ピークです（380000・380k。分割の検討の判定に使う）。plan の done では必須、",
+    "plan-review では任意です。見積もりの上限（[context] limit × estimate_ratio）を超えると、builder は分割の検討（split）を返します。",
+    "--findings と --adopted は、中間レビュー（planner の review・architecture-review・tasklist-review・",
+    "plan-review・test-spec-review）の done で必須です。指摘の件数と、そのうち成果物に反映した件数で、",
+    "反映しなかった指摘（主観的として無視したものも）は件数にだけ入ります。集計は review findings で見ます。",
+    "--pr は作った PR の URL か番号です。PR を作るステップ（pr）の done では必須です。",
+    "--harm と --paths は、architect の options の done に添える申告です（G3 に提示する案のうち最も重い害と、",
+    "全案が触れるパスの glob。--paths は波括弧の外のカンマで区切る）。欠けていても受け付けますが、",
+    "[app] を宣言したワークスペースでは G3 が同意になります。",
+    "--loses は、事後同意（[consent] deferred）が有効なサイクルで、architect の options（G3）・design-delta（G4）の",
+    "done が上限を超える受け入れになるときに必須です（退けた安全側の案の利点）。そのとき step report は止まらずに",
+    "risk の事項（who=user・when=merge@architect）を decisions.jsonl に積みます（--dry-run では書きません）。",
+    "planner の G1 の承認では、サイクル設定の [consent] deferred の値を設定から読んで記録に残します。",
+    "記録には、報告した時点のコンテキスト・セッション ID・Hikyaku の版が入ります（#68）。",
+    "progress.jsonl は成果物と一緒にコミットしてください。",
+  ].join("\n"),
+  run: ({ args, operands }) => {
+    const opened = open(args, operands[0], operands[2]);
+    const stepId = operands[1];
+    if (stepId === undefined) throw new HikyakuError("ステップを指定してください");
+    const evaluation = evaluate(opened.skill, opened.ctx);
+    const evaluated = evaluation.steps.find((step) => step.definition.id === stepId);
+    if (evaluated === undefined) {
+      throw new HikyakuError(
+        `${opened.skill.skill} にステップ ${stepId} はありません`,
+        `ステップ: ${opened.skill.steps.map((step) => step.id).join(" / ")}`,
+      );
+    }
+    const notes: string[] = [];
+    const event = buildEvent(opened, evaluation, evaluated, args, notes);
+    const after: Opened = { ...opened, ctx: { ...opened.ctx, events: [...opened.ctx.events, event] } };
+    const deferred = deferredRiskRecord(opened, after, evaluated, event, args, notes);
+
+    if (flagBoolean(args, "dry-run")) {
+      const lines = [`（dry-run）次の1行を追記します:\n${JSON.stringify(event)}`];
+      if (deferred !== undefined) lines.push(`事後同意の事項として、decisions.jsonl に次の1行を追記します:\n${JSON.stringify(deferred.record)}`);
+      emit({ dryRun: true, event, ...(deferred === undefined ? {} : { deferredRisk: deferred.record }) }, () => [...lines, ...notes].join("\n"));
+      return;
+    }
+    appendProgress(opened.ctx.unitDirectory, event);
+    if (deferred !== undefined) {
+      // 進捗を書いたあとに積む（事項の at が done より後になり、G3・G4 の consent がこの回の事項として数える）
+      const record = { ...deferred.record, at: new Date().toISOString() };
+      openItem(deferred.cycleDirectory, record, deferred.ledger);
+      notes.push(`上限を超える受け入れを事後同意の事項 ${record.id} として積みました（マージの前の同意ゲートでユーザーが同意します）`);
+    }
+    const prefix = [`記録しました: ${stepId} ${event.result}`, ...notes].join("\n");
+    emitDirective(buildDirective(after, evaluate(after.skill, after.ctx)), { recorded: event }, `${prefix}\n\n`);
+  },
+});
+
+/**
+ * done の報告で、上限を超える受け入れを事後同意の事項（risk）として積むか（defers のステップ）。報告を足した後の
+ * 記録で評価し、値を返せば --loses を必須にする。ledger は進捗を書く前に読み、読めなければ報告を受け付けない
+ * （進捗だけが書かれ、事項の無いまま G3・G4 が同意に戻るのを避ける）
+ */
+function deferredRiskRecord(
+  opened: Opened,
+  after: Opened,
+  evaluated: EvaluatedStep,
+  event: ProgressEvent,
+  args: ParsedArgs,
+  notes: string[],
+): { record: OpenRecord; ledger: Ledger; cycleDirectory: string } | undefined {
+  const definition = evaluated.definition;
+  const loses = flagString(args, "loses");
+  if (loses !== undefined && definition.defers === undefined) throw new HikyakuError(`${definition.id} には --loses を添えられません`);
+  if (definition.defers === undefined || event.result !== "done") {
+    if (loses !== undefined) throw new HikyakuError("--loses は done の報告にだけ添えられます");
+    return undefined;
+  }
+  const cycle = opened.ctx.cycle;
+  const risk = cycle === undefined ? undefined : definition.defers(after.ctx);
+  if (risk === undefined || cycle === undefined) {
+    if (loses !== undefined) notes.push("--loses は使いませんでした（この回は上限を超える受け入れを事後同意に回しません）");
+    return undefined;
+  }
+  if (loses === undefined || loses.trim() === "") {
+    throw new HikyakuError(
+      `${definition.id} の done には --loses で、退けた安全側の案の利点（失うもの）を添えてください`,
+      [
+        `事後同意が有効なので、${risk.gate} の上限を超える受け入れ（${risk.summary}）を止まらずに risk の事項として積みます。`,
+        "ユーザーがマージの前に同意するときに読む「失うもの」を、この報告で書いてください。",
+      ].join("\n"),
+    );
+  }
+  let ledger: Ledger;
+  try {
+    ledger = readLedger(cycle.directory);
+  } catch (error) {
+    throw new HikyakuError(
+      `${definition.id} の報告を受け付けません: 未決事項の記録を読めず、事後同意の事項を積めません`,
+      `${error instanceof Error ? error.message : String(error)}（hikyaku ledger list で確かめてください）`,
+    );
+  }
+  const record: OpenRecord = {
+    record: "open",
+    at: event.at,
+    id: nextItemId(ledger, opened.phase),
+    unit: opened.phase,
+    step: risk.step,
+    type: "risk",
+    summary: risk.summary,
+    when: `merge@${opened.phase}`,
+    who: "user",
+    premises: risk.premises,
+    loses: loses.trim(),
+    ...(risk.harm === undefined ? {} : { harm: risk.harm }),
+    ask: risk.gate,
+    source: "step-report",
+    ...(event.session === undefined ? {} : { session: event.session }),
+    hikyaku: pluginVersion(),
+  };
+  return { record, ledger, cycleDirectory: cycle.directory };
+}
+
+/** planner の G1 の承認で、提示した事後同意の値を記録する（値は設定から読み、LLM の引数では受け取らない） */
+function recordG1Consent(opened: Opened, evaluation: Evaluation, evaluated: EvaluatedStep, event: ProgressEvent, notes: string[]): void {
+  const cycle = opened.ctx.cycle;
+  if (opened.skill.skill !== "planner" || evaluated.definition.id !== "G1" || event.result !== "approved" || cycle === undefined) return;
+  // 最後の提示の起点: G1 の直前に完了したステップの記録か、その後の G1 の差し戻しのうち最後のもの
+  const index = evaluation.steps.indexOf(evaluated);
+  const prior = evaluation.steps.slice(0, index).reverse().find((step) => (step.status === "complete" || step.status === "skipped") && step.event !== undefined);
+  let after = prior?.event?.at;
+  if (after !== undefined) {
+    for (const recorded of opened.ctx.events) {
+      if (recorded.skill === "planner" && recorded.step === "G1" && recorded.result === "rejected" && recorded.at > after) after = recorded.at;
+    }
+  }
+  const recorded = g1ConsentRecord(opened.ctx.config, cycle.directory, after);
+  event.deferredConsent = recorded.value;
+  if (recorded.note !== undefined) notes.push(recorded.note);
+}
+
+function buildEvent(opened: Opened, evaluation: Evaluation, evaluated: EvaluatedStep, args: ParsedArgs, notes: string[]): ProgressEvent {
+  const definition = evaluated.definition;
+  const resultRaw = flagString(args, "result");
+  if (resultRaw === undefined || !STEP_RESULTS.includes(resultRaw as StepResult)) {
+    throw new HikyakuError(`--result は ${STEP_RESULTS.join(" | ")} のどれかで指定してください`);
+  }
+  const result = resultRaw as StepResult;
+
+  const legacy = legacyCycleMessage(opened.ctx.cycle);
+  if (legacy !== undefined) throw new HikyakuError(legacy);
+  assertCurrentConfig(opened.ctx.config);
+  // step next が stop を返す状態（差し戻し中など）では、前に受け取った directive の報告も受け付けない
+  const stopped = opened.skill.stop?.(opened.ctx);
+  if (stopped !== undefined) throw new HikyakuError(stopped);
+  if (evaluated.status === "off") {
+    throw new HikyakuError(`${definition.id} は、このサイクルの設定では行わないステップです`);
+  }
+  // 現在地のほか、完了したステップを done で報告し直せる（成果物を作り直したとき）。
+  // そこから後ろはやり直しになる。現在地より後ろへは進めない
+  const redo = (evaluated.status === "complete" || evaluated.status === "skipped") && result === "done";
+  // 割り込みのゲート（delegation）が現在地のあいだは、報告し直しも受け付けない（同意の前に作業を記録しない）
+  const interrupted = evaluation.current?.definition.interrupt !== undefined && evaluation.current !== evaluated;
+  if (interrupted) {
+    throw new HikyakuError(
+      `${evaluation.current?.definition.id} の承認が先です。それまでは ${definition.id} を報告できません`,
+      "step next で現在地を確認してください。",
+    );
+  }
+  if (evaluation.current !== evaluated && !redo) {
+    const current = evaluation.current?.definition.id;
+    throw new HikyakuError(
+      current === undefined
+        ? "手順はすべて終わっています。作り直したステップを done で報告し直す以外に、報告するものはありません"
+        : `報告できるのは現在地のステップ（${current}）か、完了したステップの報告し直しだけです`,
+      "step next で現在地を確認してください。",
+    );
+  }
+  if (!allowedResults(definition).includes(result)) {
+    throw new HikyakuError(
+      `${definition.id} に ${result} は報告できません`,
+      `報告できる結果: ${allowedResults(definition).join(" | ")}${definition.kind !== "gate" && result === "skipped" ? "（このステップはスキップできません）" : ""}`,
+    );
+  }
+  const reason = flagString(args, "reason");
+  const input = flagString(args, "input");
+  if ((result === "skipped" || result === "failed" || result === "handover") && (reason === undefined || reason.trim() === "")) {
+    throw new HikyakuError(`${result} には --reason で理由を添えてください`);
+  }
+  if (result === "failed" && definition.escalates === true) {
+    // 行き詰まりでユーザーに上げる報告は、問題を変える選択肢と失うもの・推奨が欠けたまま通さない（US-3.4）
+    const check = checkEscalation(reason ?? "");
+    if (!check.ok) {
+      throw new HikyakuError(
+        `${definition.id} の failed を受け付けません: --reason が行き詰まりの報告の形式を満たしていません`,
+        describeEscalationProblems(check.problems),
+      );
+    }
+  }
+  if (result === "rejected" && (input === undefined || input.trim() === "")) {
+    throw new HikyakuError("rejected には --input でユーザーの答えを添えてください");
+  }
+  // gate の accepts は承認で確かめる（同意ゲートは一覧の全項目にユーザーの決定があるまで承認を受け付けない）
+  const completing = result === "done" || (definition.kind === "gate" && result === "approved");
+  const refused = completing ? definition.accepts?.(opened.ctx) : undefined;
+  if (refused !== undefined) throw new HikyakuError(`${definition.id} の完了の条件を満たしていません: ${refused}`);
+  if (definition.kind === "gate" && result === "approved") assertObjectionsSettled(opened, definition.id);
+  if (definition.kind === "gate" && (result === "approved" || result === "rejected")) assertSupervisorAnswerRecorded(opened, definition.id);
+  if (result === "done" && !hasEvidence(definition, opened.ctx)) {
+    const missing = missingRequirement(definition, opened.ctx);
+    throw new HikyakuError(
+      missing === undefined ? `${definition.id} の成果物がまだありません` : `${definition.id} の完了の条件を満たしていません: ${missing}`,
+      definition.produces === undefined ? "完了の条件を満たしてから報告してください。" : `必要な成果物: ${definition.produces.join(", ")}`,
+    );
+  }
+
+  const event: ProgressEvent = { at: new Date().toISOString(), skill: opened.skill.skill, step: definition.id, result };
+  if (reason !== undefined) event.reason = reason;
+  if (input !== undefined) event.input = input;
+  if (definition.kind === "gate" && result === "approved") {
+    // 承認したあとに同意が要る変更が出たとき、確認として受けた承認では足りないと分かるように残す（reopens）
+    const consent = consentOf(definition, opened.ctx);
+    event.approval = consent !== false && consent.timing === "now" ? "consent" : "confirm";
+  }
+  recordG1Consent(opened, evaluation, evaluated, event, notes);
+
+  if (args.flags.has("bp")) {
+    throw new HikyakuError("--bp は廃止しました", "見積もり直した予測ピークを --peak <トークン数>（380k など）で添えてください。");
+  }
+  const peakRaw = flagString(args, "peak");
+  if (peakRaw !== undefined) {
+    if (definition.peak === undefined) throw new HikyakuError(`${definition.id} には --peak を添えられません`);
+    const peak = parseTokenAmount(peakRaw);
+    if (peak === undefined || peak === 0) {
+      throw new HikyakuError(`--peak はトークン数で指定してください（現在: ${peakRaw}）`, "例: --peak 380k / --peak 380000");
+    }
+    event.peak = peak;
+  } else if (definition.peak === "required" && result === "done") {
+    // 予測ピークが無いと分割の検討（split）の判定ができず、報告の漏れで分割の検討を飛ばせてしまう
+    throw new HikyakuError(`${definition.id} の done には --peak で見積もり直した予測ピークを添えてください`);
+  }
+
+  readFindings(definition, result, args, event);
+  readRiskDeclaration(definition, result, args, event);
+
+  const prRaw = flagString(args, "pr");
+  if (prRaw !== undefined) {
+    if (definition.recordsPr === undefined || definition.recordsPr === false) throw new HikyakuError(`${definition.id} には --pr を添えられません`);
+    if (!isPrReference(prRaw)) {
+      throw new HikyakuError(`--pr は PR の URL か番号で指定してください（現在: ${prRaw}）`, "例: --pr https://github.com/owner/repo/pull/12 / --pr 12");
+    }
+    event.pr = prRaw.trim();
+  } else if (definition.recordsPr === true && result === "done") {
+    throw new HikyakuError(`${definition.id} の done には --pr で作った PR の URL を添えてください`);
+  }
+
+  const measured = measureCurrent(process.env);
+  if (measured.tokens !== undefined) event.context = measured.tokens;
+  else if (measured.reason !== undefined) event.contextUnavailable = measured.reason;
+  if (measured.sessionId !== undefined) event.session = measured.sessionId;
+  event.hikyaku = pluginVersion();
+  return event;
+}
+
+/**
+ * 中間レビューの指摘の件数と反映した件数（--findings / --adopted）。countsFindings のステップの done で必須。
+ * 欠けた報告を通すと、採用率がレビューを回した回より少ない回から計算され、レビューを残すかの判断を誤るため
+ */
+function readFindings(definition: EvaluatedStep["definition"], result: StepResult, args: ParsedArgs, event: ProgressEvent): void {
+  const findingsRaw = flagString(args, "findings");
+  const adoptedRaw = flagString(args, "adopted");
+  if (findingsRaw === undefined && adoptedRaw === undefined) {
+    if (definition.countsFindings === true && result === "done") {
+      throw new HikyakuError(
+        `${definition.id} の done には --findings（指摘の件数）と --adopted（反映した件数）を添えてください`,
+        "指摘が無ければ --findings 0 --adopted 0 です。反映しなかった指摘（主観的として無視したものも）は --findings にだけ数えます。",
+      );
+    }
+    return;
+  }
+  if (definition.countsFindings !== true) throw new HikyakuError(`${definition.id} には --findings / --adopted を添えられません`);
+  if (result !== "done") throw new HikyakuError("--findings / --adopted は done の報告にだけ添えられます");
+  if (findingsRaw === undefined || adoptedRaw === undefined) {
+    throw new HikyakuError("--findings と --adopted は組で添えてください");
+  }
+  const findings = countOf(findingsRaw, "findings");
+  const adopted = countOf(adoptedRaw, "adopted");
+  if (adopted > findings) {
+    throw new HikyakuError(`--adopted（${adopted}）が --findings（${findings}）を超えています`, "--adopted は、指摘のうち成果物に反映した件数です。");
+  }
+  event.findings = findings;
+  event.adopted = adopted;
+}
+
+function countOf(raw: string, flag: string): number {
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) throw new HikyakuError(`--${flag} は 0 以上の整数で指定してください（現在: ${raw}）`);
+  return Number(trimmed);
+}
+
+/**
+ * 害の重さとパスの申告（--harm / --paths）。declaresRisk のステップの done だけで受け付ける。
+ * 欠けていても受け付ける（判定する G3・G4 が同意に倒す）。値の形が違えば、黙って捨てずにエラーにする
+ */
+function readRiskDeclaration(definition: EvaluatedStep["definition"], result: StepResult, args: ParsedArgs, event: ProgressEvent): void {
+  const harm = flagString(args, "harm");
+  const paths = flagString(args, "paths");
+  if (harm === undefined && paths === undefined) return;
+  if (definition.declaresRisk !== true) throw new HikyakuError(`${definition.id} には --harm / --paths を添えられません`);
+  if (result !== "done") throw new HikyakuError("--harm / --paths は done の報告にだけ添えられます");
+  if (harm !== undefined) {
+    if (harm !== "高" && harm !== "中") throw new HikyakuError(`--harm は 高 か 中 で指定してください（現在: ${harm}）`);
+    event.harm = harm;
+  }
+  if (paths !== undefined) {
+    // 波括弧の外のカンマで区切る（`src/{a,b}/**` を1つの glob として読む）。波括弧の外の空の要素は書き損じなので
+    // 受け付けない（波括弧の中の空の選択肢 `src/foo{,.test}.ts` は glob として正しい）
+    // 波括弧の釣り合わない glob は、後ろのカンマをすべて波括弧の中と読んで複数の glob を1つにしてしまう
+    const balanced = [...paths].reduce((depth, ch) => (depth < 0 ? depth : depth + (ch === "{" ? 1 : ch === "}" ? -1 : 0)), 0) === 0;
+    const list = splitList(paths);
+    if (!balanced || list.length === 0 || splitList(paths, { keepEmpty: true }).some((part) => part.trim() === "")) {
+      throw new HikyakuError(`--paths は触れるパスの glob をカンマで区切って指定してください（現在: ${paths}）`, "例: --paths \"src/api/**,src/{auth,billing}/**\"");
+    }
+    event.paths = list;
+  }
+}
+
+/**
+ * 監督の答えで再開された子が、そのゲートの結果を報告する前に、答えを記録しているか。
+ * 記録（ledger conductor-answer）が無いと、G8 のように step report だけで完了するゲートでは、子が記録を省いて進めてしまう。
+ * 読むだけで、decisions.jsonl には書かない
+ */
+function assertSupervisorAnswerRecorded(opened: Opened, gate: string): void {
+  const answer = childAnswer();
+  if (answer === undefined || answer.from !== "supervisor" || answer.ask !== gate || answer.token === undefined) return;
+  const cycle = opened.ctx.cycle;
+  if (cycle === undefined) return;
+  let recorded: boolean;
+  try {
+    const ledger = readLedger(cycle.directory);
+    recorded = [...ledger.items.flatMap((item) => item.decisions), ...ledger.orphans].some(
+      (record) => record.by === "supervisor" && record.token === answer.token,
+    );
+  } catch (error) {
+    throw new HikyakuError(
+      `${gate} の結果を受け付けません: 未決事項の記録を読めず、監督の答えが記録されたかを確かめられません`,
+      `${error instanceof Error ? error.message : String(error)}（hikyaku ledger list で確かめてください）`,
+    );
+  }
+  if (recorded) return;
+  throw new HikyakuError(
+    `${gate} の結果を受け付けません: 監督の答えがまだ記録されていません`,
+    [
+      "監督の答えで再開されたので、先に答えを記録してください（答えは回答の先頭のコマンドにそのまま渡す）:",
+      `  ${CLI} ledger conductor-answer ${opened.phase}${cycleArg(opened.ctx)} --input='<監督の答えの全文>'`,
+    ].join("\n"),
+  );
+}
+
+/**
+ * すべてのゲートの承認の条件: そのステップで唱えた害が高の異議が片づいていること（US-1.4）。
+ * ほかの作業単位の記録が壊れていれば、この単位の記録だけで確かめる（ほかの単位の決定が見えない分は
+ * 片づいていない側に倒れる）。この単位の記録を読めなければ、確かめられないので受け付けない
+ */
+function assertObjectionsSettled(opened: Opened, step: string): void {
+  const cycle = opened.ctx.cycle;
+  if (cycle === undefined) return;
+  let pending;
+  try {
+    let ledger;
+    try {
+      ledger = readLedger(cycle.directory);
+    } catch {
+      ledger = readUnitLedger(cycle.directory, opened.phase);
+    }
+    pending = unacceptedObjections(ledger, opened.phase, step);
+  } catch (error) {
+    throw new HikyakuError(
+      `${step} の承認を受け付けません: 未決事項の記録を読めず、害が高の異議が片づいたかを確かめられません`,
+      `${error instanceof Error ? error.message : String(error)}（hikyaku ledger list で確かめてください）`,
+    );
+  }
+  if (pending.length === 0) return;
+  throw new HikyakuError(
+    `${step} の承認を受け付けません: 害が高の異議が片づいていません（${pending.map((item) => item.open.id).join(", ")}）`,
+    [
+      "ユーザーが何を受け入れるかを自分の言葉で書いたら、受け入れの言葉を添えて決定を記録してください:",
+      `  ${CLI} ledger decide ${opened.phase} <ID>${cycleArg(opened.ctx)} --decision consented --by user --input "<ユーザーの答え>" --accepts "<ユーザーが受け入れると書いた言葉>"`,
+      "ユーザーが選択を改めたなら --decision decided で記録します。",
+    ].join("\n"),
+  );
+}
+
+/**
+ * 差し戻しからの再設計の回を始める条件: return.md があり、行き詰まりの報告の形式を満たすこと（US-3.4）。
+ * return.md は手順の外で書かれるので、拒むのは書いた直後ではなく、この回を始めるとき
+ */
+function assertReturnRecord(opened: Opened): void {
+  const cycle = opened.ctx.cycle;
+  const record = cycle === undefined ? undefined : readReturn(cycle.directory);
+  if (record === undefined) {
+    throw new HikyakuError(
+      `--round return を受け付けません: 差し戻しの記録（${RETURN_FILE}）がありません`,
+      "差し戻し元のビルドのブランチで始めてください。差し戻しでない再設計なら --round を付けずに区切ります。",
+    );
+  }
+  if (record.problems.length > 0) {
+    throw new HikyakuError(
+      `--round return を受け付けません: 差し戻しの記録（${RETURN_FILE}）が欠けています`,
+      `${describeEscalationProblems(record.problems)}\n差し戻した builder のセッションか、ユーザーが ${RETURN_FILE} を直してから区切り直してください。`,
+    );
+  }
+}
+
+/** PR の URL か番号（12 / #12）。実在の確認はしない（ネットワークへ行かない） */
+function isPrReference(value: string): boolean {
+  const trimmed = value.trim();
+  return /^#?\d+$/.test(trimmed) || /^https?:\/\/\S+$/.test(trimmed);
+}
+
+register({
+  name: "step restart",
+  summary: "同じ作業単位で、スキルの手順を最初から回し直す区切りを記録する",
+  usage: "hikyaku step restart <phase> [<cycle>] [--skill <内部スキル>] [--round <回の種類>] --reason <理由> [--dry-run] [--json]",
+  writes: true,
+  details: [
+    "progress.jsonl に区切りを1行追記し、次の1手を返します。これより前の記録は現在地の導出に使いません。",
+    "古い記録は消さずに残るので、区切りでのコンテキストなどは後から読めます。",
+    "",
+    "  architect の追加設計   設計を終えた design/ で、もう一度手順を回すとき",
+    "  内部スキルの呼び直し   呼び出し元が報告しないまま、build-manager などをもう一度呼ぶとき",
+    "",
+    "--round は回の種類です（architect の return / add など）。スキルの定義がこの値で手順を変えます。",
+    "使える値はスキルが決め、知らない値はエラーになります。",
+  ].join("\n"),
+  run: ({ args, operands }) => {
+    const opened = open(args, operands[0], operands[1]);
+    const reason = flagString(args, "reason");
+    if (reason === undefined || reason.trim() === "") throw new HikyakuError("--reason で理由を添えてください");
+    const event: ProgressEvent = {
+      at: new Date().toISOString(), skill: opened.skill.skill, step: RESTART_STEP, result: RESTART, reason, hikyaku: pluginVersion(),
+    };
+    const round = flagString(args, "round");
+    if (round !== undefined) {
+      const rounds = opened.skill.rounds ?? [];
+      if (!rounds.includes(round)) {
+        throw new HikyakuError(
+          `--round に ${round} は指定できません`,
+          rounds.length === 0 ? `${opened.skill.skill} には回の種類がありません` : `使える値: ${rounds.join(" | ")}`,
+        );
+      }
+      event.round = round;
+      if (opened.skill.skill === "architect" && round === "return") assertReturnRecord(opened);
+    }
+    const measured = measureCurrent(process.env);
+    if (measured.sessionId !== undefined) event.session = measured.sessionId;
+    if (flagBoolean(args, "dry-run")) {
+      emit({ dryRun: true, event }, () => `（dry-run）次の1行を追記します:\n${JSON.stringify(event)}`);
+      return;
+    }
+    appendProgress(opened.ctx.unitDirectory, event);
+    const after: Opened = { ...opened, ctx: { ...opened.ctx, events: [...opened.ctx.events, event] } };
+    emitDirective(buildDirective(after, evaluate(after.skill, after.ctx)), { recorded: event }, `記録しました: ${opened.skill.skill} の手順を最初から回し直します（${reason}）\n\n`);
+  },
+});
+
+const STATUS_LABELS: Record<EvaluatedStep["status"], string> = {
+  complete: "完了",
+  skipped: "スキップ",
+  pending: "未完了",
+  off: "対象外",
+};
+
+register({
+  name: "step status",
+  summary: "フェーズの手順の一覧と、それぞれの状態を表示する",
+  usage: "hikyaku step status <phase> [<cycle>] [--skill <内部スキル>] [--json]",
+  run: ({ args, operands }) => {
+    const opened = open(args, operands[0], operands[1]);
+    const evaluation = evaluate(opened.skill, opened.ctx);
+    const checkpoints = checkpointsOf(opened.ctx.events);
+    emit(
+      {
+        skill: opened.skill.skill,
+        cycle: opened.ctx.cycle?.name ?? null,
+        unit: opened.phase,
+        current: evaluation.current?.definition.id ?? null,
+        steps: evaluation.steps.map((step) => ({
+          id: step.definition.id,
+          kind: step.definition.kind,
+          title: step.definition.title,
+          status: step.status,
+          at: step.event?.at ?? null,
+          note: step.note ?? null,
+        })),
+        checkpoints,
+      },
+      () => {
+        const lines = [
+          `${opened.skill.skill} ${opened.phase}${opened.ctx.cycle === undefined ? "" : `（${opened.ctx.cycle.name}）`}`,
+          "",
+          table(
+            evaluation.steps.map((step) => [
+              step === evaluation.current ? "→" : "",
+              step.definition.id,
+              STATUS_LABELS[step.status],
+              step.definition.title,
+              step.event?.reason ?? step.note ?? "",
+            ]),
+            ["", "ステップ", "状態", "内容", "補足"],
+          ),
+        ];
+        if (checkpoints.length > 0) {
+          lines.push(
+            "",
+            "区切りでのコンテキスト:",
+            ...checkpoints.map(
+              (entry) => `  ${entry.label}: ${formatTokens(entry.tokens)} / 上限 ${formatTokens(opened.ctx.config.context.limit)}`,
+            ),
+          );
+        }
+        return lines.join("\n");
+      },
+    );
+  },
+});
+
+register({
+  name: "step lint",
+  summary: "ステップの定義と、スキルの指示ファイルの対応を検査する",
+  usage: "hikyaku step lint [--json]",
+  details: [
+    "プラグイン本体の開発用です。CI（check-scripts）が実行します。",
+    "",
+    "scripts/lib/steps/ の各ステップに skills/<skill>/steps/<id>.md があるか、",
+    "定義に無い指示ファイルが残っていないかを検査します。",
+    `区切りの定義（${Object.keys(CHECKPOINT_STEPS).join(" / ")}）が実在するステップを指しているかも見ます。`,
+    "gate が承認の種類（consent。確認なら false）を持つか、gate でないステップが consent / enabled を",
+    "持っていないかも検査します。",
+  ].join("\n"),
+  run: () => {
+    const problems: string[] = [];
+    for (const skill of SKILL_STEPS) {
+      const directory = join(pluginRoot(), "skills", skill.skill, "steps");
+      const ids = skill.steps.map((step) => step.id);
+      const duplicated = ids.filter((id, index) => ids.indexOf(id) !== index);
+      for (const id of new Set(duplicated)) problems.push(`${skill.skill}: ステップ ${id} が重複しています`);
+      problems.push(...lintApproval(skill));
+      for (const id of ids) {
+        if (!existsSync(instructionPath(skill.skill, id))) problems.push(`skills/${skill.skill}/steps/${id}.md がありません`);
+      }
+      const files = existsSync(directory) ? readdirSync(directory).filter((name) => name.endsWith(".md")) : [];
+      for (const file of files) {
+        if (!ids.includes(file.replace(/\.md$/, ""))) {
+          problems.push(`skills/${skill.skill}/steps/${file} に対応するステップが scripts/lib/steps/${skill.skill}.mts にありません`);
+        }
+      }
+    }
+    for (const [checkpoint, { skill, step }] of Object.entries(CHECKPOINT_STEPS)) {
+      if (!stepsOf(skill)?.steps.some((definition) => definition.id === step)) {
+        problems.push(`区切り ${checkpoint} が指す ${skill} の ${step} がありません`);
+      }
+    }
+    if (problems.length > 0) throw new ValidationError(problems);
+    const count = SKILL_STEPS.reduce((sum, skill) => sum + skill.steps.length, 0);
+    emit({ ok: true, skills: SKILL_STEPS.map((skill) => skill.skill) }, () => `✓ ${SKILL_STEPS.length} スキル・${count} ステップの指示ファイルが揃っています`);
+  },
+});
+
+
+register({
+  name: "step where",
+  summary: "サイクルのうち、手順の記録がある作業単位と、それぞれの次の1手を一覧する",
+  usage: "hikyaku step where [<cycle>] [--root <path>] [--json]",
+  details: [
+    "navigator が、どこから再開すればよいかを示すために呼びます。",
+    "",
+    "このチェックアウトの作業ツリーにある progress.jsonl（サイクルのディレクトリ直下・planning/・",
+    "design/・build-NN/）を読み、作業単位ごとに step next と同じ判定で次の1手を返します。",
+    "区切りでのコンテキストは測りません。内部スキルを呼んでいる最中なら、呼ばれたスキルの1手を返します。",
+    "",
+    "記録はそのフェーズのブランチにコミットされるので、別のブランチで進めた作業単位は見えません。",
+    "記録の無い作業単位（まだ着手していないビルドなど）は並びません。",
+    "v2 で作成したサイクルなら、作業単位を読まずに legacy に案内を返します。",
+  ].join("\n"),
+  run: ({ args, operands }) => {
+    const { config, context } = openCycle(args, operands[0]);
+    const root = flagString(args, "root");
+    const legacy = legacyCycleMessage(context);
+    const units = legacy !== undefined ? [] : findUnits(config.hikyakuRoot, { records: [context.record], explicit: true }).map((unit) => {
+      const { opened, directive } = directiveOf(unit, root === undefined ? {} : { root });
+      return { directive, next: nextCommand(opened) };
+    });
+    emit({ cycle: context.name, legacy: legacy ?? null, units }, () => {
+      if (legacy !== undefined) return `cycle ${context.name}\n\nstop: ${legacy}`;
+      if (units.length === 0) return `cycle ${context.name}: このチェックアウトには手順の記録がありません`;
+      return [
+        `cycle ${context.name}`,
+        "",
+        table(
+          units.map(({ directive }) => [
+            directive.unit,
+            directive.skill,
+            `${directive.progress.complete}/${directive.progress.total}`,
+            directive.kind,
+            directive.kind === "stop" ? (directive.message ?? "").split("\n")[0] ?? "" : `${directive.step ?? ""}${directive.title === undefined ? "" : `（${directive.title}）`}`,
+          ]),
+          ["作業単位", "スキル", "進み", "次", "内容"],
+        ),
+      ].join("\n");
+    });
+  },
+});
+
+register({
+  name: "step hook",
+  summary: "Claude Code のフックから呼ばれる。stop: 手順の途中で止まろうとしたら、1回だけ続きを促す",
+  usage: "hikyaku step hook stop",
+  details: [
+    "プラグインの hooks/hooks.json が Stop フックとして呼びます。手で実行するものではありません。",
+    "標準入力で Claude Code のフックの入力（JSON）を受け取ります。",
+    "",
+    "次のすべてに当たるときだけ、{\"decision\": \"block\"} を返してセッションを続けさせます。",
+    "",
+    "  - このセッションが Hikyaku の手順を進めている（進行中のサイクルなどの progress.jsonl に",
+    "    このセッションの ID がある）",
+    "  - その作業単位の次の1手が run か call（gate・done・stop なら止まってよい）。内部スキルを",
+    "    呼んでいる最中なら、呼ばれたスキルの1手で判定する",
+    "  - 同じターンでまだ止めていない（stop_hook_active が true なら止めない）",
+    "  - 最後の出力が、conductor の非対話規約のブロック（gate / done / blocked）で終わっていない",
+    "",
+    "判定できないとき（Hikyaku を使っていないリポジトリ、壊れた記録など）は止めません。",
+    "エラーは標準エラーに書き、終了コードは 0 のままにします。",
+  ].join("\n"),
+  run: async ({ operands }) => {
+    if (operands[0] !== "stop") {
+      throw new HikyakuError(
+        operands[0] === undefined ? "フックの種類を指定してください" : `フックの種類が不正です: ${operands[0]}`,
+        "使用できる値: stop",
+      );
+    }
+    let reason: string | undefined;
+    try {
+      const raw = await readStdin();
+      reason = raw.trim() === "" ? undefined : stopReason(JSON.parse(raw) as StopInput);
+    } catch (error) {
+      process.stderr.write(`hikyaku step hook stop: ${error instanceof Error ? error.message : String(error)}\n`);
+      return;
+    }
+    if (reason !== undefined) process.stdout.write(`${JSON.stringify({ decision: "block", reason })}\n`);
+  },
+});
+
+async function readStdin(): Promise<string> {
+  if (process.stdin.isTTY === true) return "";
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString("utf8");
+}

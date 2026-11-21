@@ -15,21 +15,32 @@ TOML 形式の設定ファイルです。ドキュメントの所在は含みま
 
 ## サイクル側で上書きできないキー
 
-サイクル設定に書けないのは次の3つだけで、指定するとエラーになります。それ以外のキーは、ブランチの命名規則や PR タイトル、投影先を含めてすべてサイクルごとに変えられます。
+サイクル設定に書けないのは次のキーだけで、指定するとエラーになります。それ以外のキーは、ブランチの命名規則や PR タイトル、issue の起票先を含めてすべてサイクルごとに変えられます。
 
 | キー | 理由 |
 |---|---|
 | `hikyaku_root` | ワークスペースの所在そのもの。サイクルごとに動かせるようにすると、そのサイクル設定をどこから読むかが決まらない（自己参照になる） |
 | `profile` | サイクルの属性で `cycles.md` が唯一の正。2箇所に持つと必ず食い違う |
 | `data_integrity.release_branches` | リリースされるブランチはリポジトリの運用で決まる。サイクルが自分の base_branch を外せると、緩和を許すかどうかをサイクル自身が決められてしまう |
+| `[app]`（`[[app.areas]]` を含む）・`[boundaries]` | アプリケーションの状況と境界はリポジトリの宣言。サイクルが自分の上限を緩められると、害の受け入れを AI に任せてよいかをサイクル自身が決められてしまう |
+
+逆に、サイクル設定でしか書けないキーもあります。ルート設定に書くとエラーになります。
+
+| キー | 理由 |
+|---|---|
+| `[consent]` | 事後同意はサイクルごとに G1 でユーザーが合意して選ぶもの。ルートに書けると、全サイクルで合意を経ずに同意を遅らせられてしまう |
 
 サイクルごとに `[branch]` を変えても、対象サイクルの決定は壊れません。現在のブランチからサイクルを引くとき、Hikyaku は「1つの規則で解析して名前を引く」のではなく、サイクルを1件ずつ、そのサイクル自身の規則で解析して、結果が自分を指しているかを確かめます。他サイクルの規則で偶然解析できても、取り出したサイクル名が一致しなければ採用されません。
 
 裏を返すと、あるサイクルの規則で解析できないブランチは、そのサイクルのものとは見なされません。`002-beta` の `prefix` を `feat` に変えたなら、`hikyaku/002-beta/plan` に居ても `002-beta` は選ばれず、サイクルを引数で明示するよう求められます。既に切ってあるブランチがある状態で `[branch]` を変えるときは、ブランチ名も揃えてください。
 
+設定を確認するとき、`hikyaku config` は現在のブランチか `.hikyaku.local` で選択済みのサイクルを使い、未選択ならルート設定を表示します。進行中のサイクルが1件だけでも、それだけを根拠に選びません。`tokens` コマンドがサイクルを省略して設定を参照するときも同じです。
+
+新しいサイクルの profile を確認する `hikyaku config --profile express` は、既存のサイクルを参照せず、ルート設定に profile を当てます。既存サイクルの上書きを含めて確かめる場合は `hikyaku config 002 --profile express` と明示します。フェーズの作業開始では `hikyaku config --require-cycle` で対象を必須解決します。ブランチ・栞で未選択でも進行中が1件ならそれを選び、未作成や候補が複数ならエラーになります。`step` や `tasklist` の選択・エラー条件も同じです。
+
 ## サイクルごとに変える
 
-たとえば「このサイクルだけリリースブランチに向ける」「このサイクルだけ別リポジトリの issue へ投影する」といった使い分けができます。`{HIKYAKU_ROOT}/cycles/002-billing/.hikyaku.config` に書いたキーだけがルートの設定に重なり、書かなかったキーはルートの値のままです。
+たとえば「このサイクルだけリリースブランチに向ける」「このサイクルだけ別リポジトリに issue を起票する」といった使い分けができます。`{HIKYAKU_ROOT}/cycles/002-billing/.hikyaku.config` に書いたキーだけがルートの設定に重なり、書かなかったキーはルートの値のままです。
 
 ```toml
 base_branch = "release/2.x"
@@ -49,7 +60,7 @@ github_repo = "acme/backport"
 
 ## サイクル作成時に決める
 
-サイクルごとに変えたいが、値は作るときまで決まらない、という場合があります。ベースブランチや外部システムの投影先が典型で、ルート設定に固定値を書いても意味がなく、かといって毎回サイクルディレクトリに手でファイルを置くのも忘れます。
+サイクルごとに変えたいが、値は作るときまで決まらない、という場合があります。ベースブランチや issue の起票先が典型で、ルート設定に固定値を書いても意味がなく、かといって毎回サイクルディレクトリに手でファイルを置くのも忘れます。
 
 ルート設定の `ask` にキー名を並べると、`create-cycle` がその値をユーザーに尋ね、答えをそのサイクルの `.hikyaku.config` に記録します。
 
@@ -73,7 +84,7 @@ target = "none"         # 同上
 | `branch.separator` | `--branch-separator <text>` |
 | `pr.title` | `--pr-title <template>` |
 | `session.title` | `--session-title <template>` |
-| `external.target` | `--external <none\|github\|asana>` / `--external-repo` / `--external-project` |
+| `external.target` | `--external <none\|github>` / `--external-repo` |
 
 **答えなくても壊れません。** `hikyaku cycle new` をスキルを通さず直接叩いて値を渡さなくても、エラーにはならずルート設定の値がそのまま使われます。答えていないキーは `hikyaku config <cycle>` に「未回答」として出ます。
 
@@ -83,17 +94,17 @@ target = "none"         # 同上
 hikyaku_root = "docs/hikyaku"   # リポジトリルートでのみ有効
 profile = "standard"            # 作成時に提示する既定値。無条件には採用されない
 base_branch = "main"            # 未設定ならデフォルトブランチを自動検出
-bp_max = 8
 ```
 
 | キー | 既定値 | 意味 |
 |---|---|---|
 | `hikyaku_root` | なし（必須） | HIKYAKU_ROOT のパス。リポジトリルートからの相対または絶対。リポジトリルート自身（`.`）は指定できません |
 | `profile` | `standard` | `create-cycle` が提示する既定値。express / economy / standard / thorough |
-| `base_branch` | 自動検出 | そのサイクルが向かうブランチ。未設定なら `origin/HEAD` から導出し、それも無ければ `null`（`main` と推測しない） |
-| `bp_max` | `8` | ビルド分割の上限 BP。これを超えると分割必須 |
+| `base_branch` | 自動検出 | そのサイクルが向かうブランチ。未設定なら `origin/HEAD` から導出する。その参照が無いクローンでは origin に問い合わせ（`git ls-remote --symref origin HEAD`）、それでも分からなければ `null`（`main` と推測しない） |
 
 `profile` は推奨値の提示にすぎません。`create-cycle` は必ず明示的な選択を求めます。毎回意識して選ぶことを担保するためです。
+
+v2 の `bp_max` は廃止しました。リポジトリルートの設定に書いてあるとエラーになるので削除してください（閉じたサイクルの設定に残っているものは読み飛ばします）。ビルドの大きさは、予測ピークを、[`[context]`](#context) の上限（`limit`）から求めた見積もりの上限・統合の目安と比べて判定します。
 
 ## 承認ゲートとレビューの個別指定
 
@@ -107,11 +118,11 @@ security_review = "on"
 
 | キー | 型 | 対応するもの |
 |---|---|---|
-| `user_stories_gate` | bool | G1 user-stories 承認 |
 | `codebase_survey_gate` | bool | G2 codebase-survey 確認 |
 | `design_choice_gate` | bool | G3 設計案の選択 |
 | `architecture_gate` | bool | G4 設計ドキュメント承認 |
 | `plan_gate` | bool | G7 plan 単独の承認 |
+| `promotion_gate` | bool | G10 永続ドキュメント昇格の承認のうち、確認の回（decisions・constraints の変更を含まない回） |
 | `user_stories_review` | bool | doc-reviewer（user-stories） |
 | `architecture_review` | bool | doc-reviewer（architecture） |
 | `tasklist_review` | bool | doc-reviewer（tasklist） |
@@ -122,7 +133,7 @@ security_review = "on"
 | `retrospective` | `skip` / `prompt` / `auto` | 振り返りの実行 |
 | `validate` | `manual` / `phase` / `step` | `hikyaku validate` の実行タイミング |
 
-プロファイルごとの既定値は [プロファイル](profiles.md) にあります。
+プロファイルごとの既定値は [プロファイル](profiles.md) にあります。ゲートのキーで外せるのは確認の回だけで、差し戻しからの再設計の回や、`[app]` の上限を超える回の G3 / G4 のような同意の回は外れません。G1 は常に同意なので、v2 までの `user_stories_gate` は廃止しました。書かれているとエラーになるので削除してください。
 
 ## [branch]
 
@@ -143,10 +154,12 @@ separator = "/"
 ```toml
 [pr]
 title = "[hikyaku] {cycle}: {phase} {title}"
-reviewers = []        # PR を作った直後にレビューを依頼する相手
+reviewers = []        # PR の公開時にレビューを依頼する相手
 reviewers_skip = []   # アサインをオフにするスキル
-auto_ready = true     # Draft で作った PR を、フェーズの完了時に Ready for Review にする
+auto_ready = true    # フェーズの完了時に Ready for Review にする
 ```
+
+planner / architect / builder / close-cycle と conductor の統合 PR は Draft で作成します。`auto_ready` は公開時に Ready へ切り替えるかを決める設定です。false なら確認後に自分で `gh pr ready <PR>` を実行します。conductor の子は Draft のまま返し、監督が取り込むフェーズの PR は設定に関わらず Ready にします。CLOSE の PR は取り込まないので、監督も `auto_ready` に従います。
 
 PR タイトルは表示専用で解析されないため、テンプレートは自由に組み立てられます。
 
@@ -157,15 +170,13 @@ PR タイトルは表示専用で解析されないため、テンプレート�
 | `{cycle_name}` | `billing` |
 | `{phase}` | `init` / `create` / `plan` / `architect` / `build-01` / `close` |
 | `{build_id}` | `01`（builder のみ） |
-| `{title}` | ビルドのタイトル（他フェーズでは空） |
+| `{title}` | ビルドのタイトル。conductor はサイクルの要約（他フェーズでは空） |
 
 空になった変数は前後の区切り文字ごと詰められます。サイクルを持たない `init` で `[hikyaku] : init` のような出力にならないようにするためです。
 
 `reviewers` には、PR を作る各スキルが PR を作った直後に、レビューを依頼する相手を書きます。人は login、チームは `org/team`、Copilot は `@copilot` で、1要素に1つずつ書きます。空（既定）なら何も依頼しません。依頼は `hikyaku pr request-reviewers` が行い、PR の作成者本人、すでに依頼した相手、すでにレビューした相手には依頼しません（GitHub は作成者本人を依頼先にできず、`gh` はレビュー済みの相手にも再依頼してしまうためです）。
 
-`reviewers_skip` には、アサインをオフにするスキルを `init` / `bp-guide` / `create` / `plan` / `architect` / `build` / `close` / `conductor` のフェーズ名で並べます。`build` は全てのビルドの PR にあたり、`conductor` は監督が作る最後の PR にあたります。たとえば PLAN と ARCHITECT のドキュメントだけの PR にはレビューを求めず、BUILD の PR にだけ求めるなら、`reviewers_skip = ["init", "bp-guide", "create", "plan", "architect", "close"]` と書きます。名前のタイプミスはエラーになります。この設定は [conductor] の `phase_reviewers` にも効きます。
-
-planner・architect・builder・close-cycle の PR と conductor の最後の PR は、常に Draft で作られます。builder は Draft のうちに `tasklist.md` の完了記録を push するので、完了記録がそろう前の PR がレビューに出ることはありません。`auto_ready` が true（既定）なら、各フェーズの完了時に Ready for Review に切り替えます。`false` にすると Draft のまま残すので、内容を確認してから自分で Ready にしてください。conductor の子セッションはこの設定に関わらず PR を Ready にせず、監督が取り込む前に Ready にします。conductor の最後の PR（デフォルトブランチ向け）と CLOSE の PR には、この設定が効きます。CLOSE の PR は子が Draft のまま渡し、監督がこの設定に従って Ready にします。Draft の PR で CI を走らせるかどうかは、各リポジトリの CI の設定で決まります。
+`reviewers_skip` には、アサインをオフにするスキルを `init` / `token-guide` / `create` / `plan` / `architect` / `build` / `close` / `conductor` / `patch` のフェーズ名で並べます。`build` は全てのビルドの PR にあたり、`conductor` は監督が作る最後の PR に、`patch` は全ての patch の PR にあたります。たとえば PLAN と ARCHITECT のドキュメントだけの PR にはレビューを求めず、BUILD の PR にだけ求めるなら、`reviewers_skip = ["init", "token-guide", "create", "plan", "architect", "close"]` と書きます。名前のタイプミスはエラーになります。この設定は [conductor] の `phase_reviewers` にも効きます。
 
 [conductor](../workflow/conductor.md) のフェーズの PR（conductor ブランチ向け）には、`reviewers` ではなく `[conductor] phase_reviewers` が使われます。向き先は PR の実際のマージ先から決まります。
 
@@ -185,13 +196,9 @@ title = "{cycle} {phase} {title}"
 ```toml
 [review]
 provider = "auto"   # auto | claude | codex
-max_rounds = 1      # 0 は無制限。未設定ならプロファイルの既定
-auto_fix = false   # max_rounds = 0 の2回目以降の確認を省くか
+max_rounds = 1      # code / security の回数。0 は無制限。未設定ならプロファイルの既定（doc は常に1回）
+auto_fix = false
 timeout = 30        # レビューのプロセス1回あたりの上限（分）
-
-[review.provider_for]  # メインのセッションのプロバイダ → レビューの実行先
-claude = "codex"
-codex = "claude"
 
 [review.claude]
 model = ""          # 空ならそのプロバイダの既定
@@ -209,35 +216,29 @@ max_rounds = 3
 effort = "high"
 ```
 
-コードレビューとセキュリティレビューは、Claude Code と Codex に組み込みのレビュー機能が行います。Claude なら `/code-review` と `/security-review`、Codex なら `codex exec review` です。`[review]` はそれをどちらのプロバイダで、どのモデルとエフォートで、何回まで回すかを決めます。ドキュメントのレビュー（doc-reviewer）の起動先もここで選べます。
+コードレビューとセキュリティレビューは、Claude Code か Codex に組み込みのレビュー機能が行います。Claude なら `/code-review` と `/security-review`、Codex なら `codex exec review` です。`[review]` はそれをどちらのプロバイダで、どのモデルとエフォートで、何回まで回すかを決めます。ドキュメントのレビュー（doc-reviewer）の起動先もここで選べます。
 
-`provider` の `auto` は、メインのセッションと同じプロバイダを使うという意味です。`claude` や `codex` を指定すると、Claude Code で開発しながら Codex にレビューさせる、あるいはその逆ができます。コードとセキュリティのレビューは、同じプロバイダでも常に別のプロセスとして起動します。実装したセッションのコンテキストからレビューを切り離すためです。ドキュメントのレビューは、メインと同じプロバイダなら従来どおりサブエージェントで動き、別のプロバイダを選んだときだけ別のプロセスになります。
-
-「Claude で開発しているときは Codex で、Codex で開発しているときは Claude でレビューする」のように、メインのプロバイダによって実行先を変えたいときは `[review.provider_for]` を使います。キーがメインのプロバイダ、値がレビューの実行先です。「もう一方」のような相対の指定を用意していないのは、プロバイダが増えたときに意味が決まらなくなるためです。メインのプロバイダの行が無ければ `provider` の値が使われるので、片方だけ書くこともできます。種類ごとに `[review.code.provider_for]` のようにも書けます。
+Hikyaku のスキルを動かすメインのセッションは Claude Code です。Codex はレビューの実行先としてだけ使います。`provider` の `auto` はメインのセッションと同じ `claude` を使うという意味で、`codex` を指定すると Claude Code で開発しながら Codex にレビューさせられます。コードとセキュリティのレビューは、同じプロバイダでも常に別のプロセスとして起動します。実装したセッションのコンテキストからレビューを切り離すためです。ドキュメントのレビューは、`claude` なら従来どおりサブエージェントで動き、`codex` を選んだときだけ別のプロセスになります。
 
 プロバイダは次の順に決まり、最初に決まったものが使われます。
 
-1. クラウド環境の判定（`CLAUDE_CODE_REMOTE=true` なら `claude`、`CODEX_ENVIRONMENT_ID` があれば `codex`）
+1. クラウド環境の判定（`CLAUDE_CODE_REMOTE=true` なら `claude`）
 2. 環境変数 `HIKYAKU_REVIEW_PROVIDER`
-3. `[review.<種類>.provider_for]` のメインのプロバイダの行
-4. `[review.<種類>]` の `provider`
-5. `[review.provider_for]` のメインのプロバイダの行
-6. `[review]` の `provider`
-7. 既定の `auto`
+3. `[review.<種類>]` の `provider`
+4. `[review]` の `provider`
+5. 既定の `auto`
 
 `model` と `effort` はプロバイダごとのテーブルに書きます。モデル名もエフォートの値もプロバイダ間で互換性がないので、`provider` だけを切り替えても、もう一方の値が渡らないようにしてあります。値は `[review.<種類>.<プロバイダ>]`、`[review.<プロバイダ>]`、プロバイダの既定の順に決まり、空文字はキーが無いのと同じです。Claude の `effort` は `low` / `medium` / `high` / `xhigh` / `max` のどれかで、それ以外はエラーになります。Codex の `effort` は使える値がモデルによって変わるため、検証せずにそのまま渡します。
 
-`max_rounds` はコードとセキュリティのレビューを何回まで回すかです。未設定のときは [プロファイル](profiles.md#レビュー) の既定に従います。`1` なら、妥当で承認済みスコープ内の指摘を追加確認なしで修正し、検証後は再レビューせずに進めます。`2` 以上なら、最終回までは妥当な指摘の自動修正と再レビューを続け、最終回に未解決の指摘がある場合だけ対応を確認します。途中で同じ指摘が繰り返されても、対応確認は最終回まで挟みません。指摘が解消すれば上限より前でも終了します。自動修正できない指摘は、1回設定では理由を申し送りに残し、2回以上では最終回の確認まで保留します。設計の前提が崩れた場合は、回数に関わらず設計方針を確認します。
-
-`max_rounds = 0` は無制限です。この場合は従来どおり初回に対応を確認し、`auto_fix = true` なら2回目以降の確認を省いて直します。確度の低い懸念と、同じ指摘が繰り返されて打ち切る場面では確認します。`auto_fix` は無制限の場合にだけ適用され、`max_rounds` が1以上なら値に関わらず上記の手順で進みます。ドキュメントのレビューは1回だけで、`[review.doc]` には `max_rounds` と `auto_fix` を書けません。
+`max_rounds` はコードとセキュリティのレビューを何回まで回すかです。`1` なら妥当な指摘を修正して再レビューせずに終え、`n` なら途中は自動修正し、最終回に未解決の指摘があるときだけ対応を確認します。`0` は無制限で、初回は対応を確認し、`auto_fix = true` のときだけ2回目以降の確認を省きます。確度の低い懸念や、同じ指摘を繰り返して打ち切る場面では確認します。回数の既定は [プロファイル](profiles.md#レビュー) に従い、対応と再レビューの要否は `hikyaku review action` が解決します。ドキュメントのレビューは1回だけで、`[review]` の `max_rounds` と `auto_fix` は効かず、`[review.doc]` には書けません。指摘を反映して手順をやり直しても、同じ呼び出しの中でレビューは回し直さず、残った指摘とレビューのあとに変えたところは次の承認で示します。
 
 組み込みのレビュー機能には指示文を渡せないため、plan.md のスコープから外れていないかは builder 自身が確かめます。また Claude の `/security-review` は origin のデフォルトブランチとの差分しか見ないので、スタックしたビルドや origin/HEAD が無いリポジトリでは使いません。その場合と Codex のセキュリティレビューでは、観点を書いた指示文を渡す形に切り替わります。どの形で起動されるかは `hikyaku review resolve` で確認できます。
 
-未知のキーやテーブル名はエラーになります。
+未知のキーやテーブル名はエラーになります。v3 のベータ版まであった `[review.provider_for]` は、移行先を示すエラーになります（[v2 から v3 への移行](../migration/v2-to-v3.md)）。進行中のサイクルの設定に残っていれば、`review resolve` / `review run` も止まります。
 
-各プロバイダのクラウド環境には、もう一方のプロバイダの CLI がありません。そのため Claude Code のクラウド環境（環境変数 `CLAUDE_CODE_REMOTE` が `true`）ではプロバイダを `claude` に、Codex のクラウド環境（環境変数 `CODEX_ENVIRONMENT_ID` が空でない）では `codex` に固定します。この判定は設定ファイルにも `HIKYAKU_REVIEW_PROVIDER` にも優先するので、`provider = "codex"` のまま Claude Code のクラウド環境で動かしても、レビューは Claude で行われます。
+Claude Code のクラウド環境には codex の CLI がありません。そのため環境変数 `CLAUDE_CODE_REMOTE` が `true` のときはプロバイダを `claude` に固定します。この判定は設定ファイルにも `HIKYAKU_REVIEW_PROVIDER` にも優先するので、`provider = "codex"` のままクラウド環境で動かしても、レビューは Claude で行われます。
 
-ローカルでも、設定したプロバイダの CLI が入っていないことがあります。そうした環境では、環境変数 `HIKYAKU_REVIEW_PROVIDER`（`claude` / `codex` / `auto`）を設定すると、設定ファイルのどの `provider` と `provider_for` よりも優先されます。全種類のレビューにまとめて効き、モデルとエフォートは切り替え先のプロバイダのテーブルから取られます。値がどこから来たかは `hikyaku review resolve` と `hikyaku config` に表示されます。変数は Claude Code を起動した環境に設定してください。conductor の子のセッションにもそのまま渡ります。
+ローカルでも、設定したプロバイダの CLI が入っていないことがあります。そうした環境では、環境変数 `HIKYAKU_REVIEW_PROVIDER`（`claude` / `codex` / `auto`）を設定すると、設定ファイルのどの `provider` よりも優先されます。全種類のレビューにまとめて効き、モデルとエフォートは切り替え先のプロバイダのテーブルから取られます。値がどこから来たかは `hikyaku review resolve` と `hikyaku config` に表示されます。変数は Claude Code を起動した環境に設定してください。conductor の子のセッションにもそのまま渡ります。
 
 CLI を起動できなかったときに、Hikyaku が黙って別のプロバイダに切り替えることはしません。設定したつもりのプロバイダでレビューされていないことに気づけなくなるためです。レビューは失敗として報告され、そのメッセージで `HIKYAKU_REVIEW_PROVIDER` が案内されます。
 
@@ -267,12 +268,11 @@ triggers = """
 
 ```toml
 [external]
-target = "none"                 # none | github | asana
+target = "none"                 # none | github
 # github_repo = "owner/repo"
-# asana_project_gid = "..."
 ```
 
-外部システムへの片方向投影の設定です。詳細は [外部システムへの投影](external.md)。
+サイクルごとに GitHub issue を1つ起票し、CLOSE の PR で閉じる設定です。ビルドごとには起票しません。詳細は [サイクルの GitHub issue](external.md)。
 
 ## [data_integrity]
 
@@ -284,63 +284,167 @@ allow_unsafe_split = false        # 安全でない分割を許すか。サイ�
 
 ビルドを分割するとき、architect（build-manager）は各ビルドの PR をマージした時点で本番データが壊れない単位に分けます。カラムの追加と書き込みの切り替えを別のビルドにするなら、どちらを先にマージしても既存データが壊れない順序と形にする、ということです。本番データの破壊は取り返しがつかないので、これが原則です。
 
-ただ、BP の上限を守ろうとすると、どうしてもリリースしてはいけない中間状態で区切るしかないことがあります。これを安全でない分割と呼びます。安全でない分割が許されるのは、サイクルが `allow_unsafe_split = true` を宣言していて、かつ base_branch がリリースされるブランチではないときだけです。`feature/*` のようにサイクル専用で、まだ本番に出ないと分かっているブランチに向けるサイクルを想定しています。リリースされないブランチなら本番データに触れないので、データが壊れないという目的は保たれます。
+ただ、予測ピークを見積もりの上限（`[context] limit × estimate_ratio`）以下に収めようとすると、どうしてもリリースしてはいけない中間状態で区切るしかないことがあります。これを安全でない分割と呼びます。安全でない分割が許されるのは、サイクルが `allow_unsafe_split = true` を宣言していて、かつ base_branch がリリースされるブランチではないときだけです。`feature/*` のようにサイクル専用で、まだ本番に出ないと分かっているブランチに向けるサイクルを想定しています。リリースされないブランチなら本番データに触れないので、データが壊れないという目的は保たれます。
 
 どのブランチがリリースされるかはリポジトリのブランチ運用次第なので、Hikyaku はブランチ名から推測しません。`release_branches` に書いたパターンと、デフォルトブランチ（`origin/HEAD` が指す先）がリリースされるブランチです。デフォルトブランチは書かなくても常に含まれるので、base_branch を設定していないサイクルは緩和されません。パターンは GitHub のブランチ保護と同じ glob で、`*` は `/` をまたがず、`**` はまたぎます。
 
-`release_branches` をルート設定でしか書けないようにしているのは、サイクル側の宣言が古くなっても事故にならないようにするためです。`allow_unsafe_split = true` のサイクルが途中で base_branch を `main` に変えても、緩和は効かなくなります。`origin/HEAD` が無いクローンでも、判定できないので緩和しません。どちらの場合も黙って無視はせず、`hikyaku config` の出力に効いていない理由が出ます。`origin/HEAD` は `git remote set-head origin --auto` で設定できます。
+`release_branches` をルート設定でしか書けないようにしているのは、サイクル側の宣言が古くなっても事故にならないようにするためです。`allow_unsafe_split = true` のサイクルが途中で base_branch を `main` に変えても、緩和は効かなくなります。デフォルトブランチを決められないとき（`origin/HEAD` の参照が無く、origin にも問い合わせられない）も、判定できないので緩和しません。どちらの場合も黙って無視はせず、`hikyaku config` の出力に効いていない理由が出ます。`origin/HEAD` は `git remote set-head origin --auto` で設定できます。
 
 判定は `hikyaku config --json` の `unsafeSplit` に出ます。スタックや conductor で PR の向き先が先行ビルドや conductor のブランチになっていても、最終的に入るのは base_branch なので、判定は常にサイクルの base_branch で行います。
 
 安全でない分割を使ったビルドの `issue.md` には、マージ時点で何が壊れうるかと、それを解消するビルドが書かれます（[ARCHITECT](../workflow/architect.md#ビルド分割)）。緩和したサイクルの base_branch を、全ビルドが揃う前にリリースされるブランチへマージしないでください。サイクルの外の操作なので、Hikyaku は防げません。
 
+## [app] と [boundaries]
+
+```toml
+[app]                       # アプリケーションの状況。ルート設定でのみ書ける
+exposure = "internal"       # 公開範囲: personal / internal / public
+data = "none"               # 扱うデータの重さ: none / internal / personal-or-secret
+impact = "low"              # 壊れたときの影響: low / medium / high
+merge_gate = "user"         # マージがユーザーの関門である（任意。"user" だけ）
+
+[[app.areas]]               # 重い領域。いくつでも書ける
+name = "auth"               # 名前（必須・重複不可）。前提の参照 area:auth に使う
+paths = ["src/auth/**"]     # パス（glob。必須）
+data = "personal-or-secret" # 軸は任意。省略した軸は [app] の値
+
+[boundaries]                # 境界のパス（glob）。ルート設定でのみ書ける
+external = ["api/openapi.yaml"]
+internal = ["src/lib/**"]
+```
+
+書いた値は読み込みのときに検査され、`hikyaku config` に表示されます。`[app]` と `[[app.areas]]` から決まる上限は、G3（設計案の選択）と G4（設計ドキュメントの承認）を同意にするかの判定と、ゲートで唱えた異議の受け入れにユーザーの言葉が要るかの判定に使います（[プロファイル](profiles.md#承認ゲート)）。害が中の異議でも、上限を超えるなら高と同じく受け入れの言葉と前提が要ります。`[boundaries]` は G4 の提示と判定に使います。設計が外との境界に触れていれば G4 は同意になり、内部の境界の変更は確かめる変更として示されます（[ARCHITECT](../workflow/architect.md#設計ドキュメントの承認)）。
+
+`[app]` は、AI に任せてよい害の上限を決めるための宣言です。公開範囲・扱うデータの重さ・壊れたときの影響を、それぞれ3段の値で1回だけ書きます。3つとも必須です。上限は次の表で決まり、害の重さは知見の置き場の重要度（[persistence.md](persistence.md)）の高・中を使います。
+
+| 3軸の段 | AI に任せてよい害 |
+|---|---|
+| すべてが最下段（`personal` / `none` / `low`） | 高まで |
+| どれかが中段で、最上段が無い | 中まで |
+| どれかが最上段（`public` / `personal-or-secret` / `high`） | 何も任せない（すべてユーザーに上げる） |
+
+認証・課金・マイグレーションのように、そこだけ重い場所は `[[app.areas]]` に重い領域として書きます。重い領域のパスでは、領域に書いた軸が `[app]` の軸を上書きします（軸ごとに重いほうを採ります）。ただし重い領域のパスに触れる受け入れは、害の重さに関わらず上限を超えるとみなすので、領域の軸は省略できます。`[boundaries]` には、外との境界（`external`。公開 API など）と内部の境界（`internal`）のパスを書きます。境界も上限と同じく、作業ツリーと基準のブランチの宣言を合わせて（和で）照合するので、作業中のブランチで消しても効き続けます。
+
+宣言はリポジトリのアプリケーションの状況なので、ルート設定でしか書けません。不正な値や知らないキーは、黙って捨てずにエラーになります。宣言を書かなければ上限は設けず、これまでどおりに動きます。
+
+上限は、ユーザーがマージした宣言で決めます。作業中のブランチの宣言はセッションが書き換えられるので、作業ツリーの宣言と、基準のブランチとの merge-base にある宣言を比べて、最も厳しいものを使います。基準のブランチは base_branch（未設定ならデフォルトブランチ）と、デフォルトブランチ（`origin/HEAD`）の2つです。スタックや conductor で PR の向き先が先行フェーズや conductor のブランチになっていても、それらはユーザーのマージを経ていないので基準にしません。作業中のブランチで宣言を緩めても、ユーザーがベースブランチへマージするまでは効きません。基準の設定ファイルを読めないとき（壊れている、この版の検査を通らない）や、作業ツリーに宣言があるのに基準を1つも読めないときは、上限が分からないので G3 と G4 を同意にし、その理由を手順の注意に出します。
+
+## [consent]
+
+```toml
+[consent]                   # 事後同意。サイクル設定でのみ書ける
+deferred = true             # 上限を超えるリスクの受け入れを止めずに積み、マージの前にまとめて同意する
+```
+
+事後同意（[概念](../concepts.md)）を選ぶ設定です。有効なサイクルでは、G3 と G4 が上限を超えるリスクの受け入れになる回に止まらず、`step report` がその受け入れを `risk` の事項として未決事項の記録に積みます。積むときは、退けた安全側の案の利点（`--loses`）を必ず書かせます。ゲートで唱えた異議が上限を超えるときも、ユーザーが選べば、その場で決めずに `hikyaku ledger object --defer` で同じ一覧に積めます。ユーザーは PR を作る直前の同意ゲートで、一覧をまとめて読んで同意するか退けます（[事後同意](../workflow/build.md#マージの前の同意事後同意)）。事後同意を選んだサイクルでは、ほかの作業単位で積んだ項目も、そのビルドの同意ゲートに現れます。
+
+書いただけでは有効になりません。事後同意は同意を遅らせる、緩める向きの設定なので、作業中のブランチで AI が書き足しても効かないようにしています。
+
+まず、マージがユーザーの関門であることが前提です。`[app]` の `merge_gate = "user"` が作業ツリーと基準のブランチの両方に書かれていなければ有効にならず、基準の宣言を読めないときも有効にしません。conductor の子の中でも、いまは有効にしません。
+
+そのうえで、ユーザーがその値を選んだと分かることが要ります。1つは、planner の G1 で値が提示されて承認されたことです。`step report` が、承認の記録に提示した値を残します。提示のあとにサイクル設定を書き換えた場合（未コミットの変更がある場合や、最後のコミットが G1 の直前のステップと G1 の差し戻しのうち最後の記録より後の場合）は、`false` を記録します。G1 で値を変えるときは、設定を直してコミットしてから差し戻しを報告し、提示し直します。もう1つは、基準のブランチ（base_branch とデフォルトブランチ。`origin/` とローカルの両方）のすべての merge-base のサイクル設定に `deferred = true` があることで、ユーザーがマージしたコミットで入った値として扱います。スタックの前フェーズのブランチや conductor ブランチに入っているだけでは、ユーザーのマージを経ていないので数えません。base_branch を向け直しても、デフォルトブランチの基準が残るので有効になりません。
+
+有効でない理由は、有効になるまで `hikyaku config` と各手順の注意に出し続けます。G1 の後で事後同意を選び直すには、ベースブランチへマージするか、planner を回し直して G1 を取り直します。事後同意が有効でも、G1、G10 の `decisions`・`constraints` の変更、外との境界の変更、差し戻しからの再設計の回、基準を読めない回は、その場で同意を取ります（[プロファイル](profiles.md#承認ゲート)）。
+
+## [diff]
+
+```toml
+[diff]
+exclude = ["package-lock.json", "*.lock", "**/__snapshots__/**", "*.snap", "*.generated.*"]
+tests = ["**/tests/**", "*.test.*", "*_test.*"]
+test_declarations = ["scenario("]
+skip_markers = ["@Skip"]
+assertion_markers = ["check("]
+```
+
+振り返りで `hikyaku tokens history build-NN` がビルドの差分を数えるときの振り分けです。`exclude` に当たるファイルは生成物として数えず、`tests` に当たるファイルはテストとして、それ以外は実装として行数を分けます（[実測と振り返り](token-guide.md#実測と振り返り)）。両方に当たるファイルは生成物として扱います。テストのスナップショットを数えないためです。
+
+パターンはリポジトリルートからのパスに当てる glob です。`/` を含まないパターン（`*.lock`）はファイル名に当て、どのディレクトリにあっても当たります。`/` を含むパターンはパス全体に当て、`**/` は0個以上のディレクトリ、`*` は `/` をまたがない任意の文字列、`?` は `/` 以外の1文字です。
+
+書いた配列は既定値を置き換えます。既定値に足したいときは、`hikyaku config --json` の `diff` に出る既定値を写してから足してください。既定の `exclude` は主要なロックファイル（`package-lock.json`・`pnpm-lock.yaml`・`*.lock`・`go.sum` など）、スナップショット（`__snapshots__/`・`*.snap`）、生成コードと圧縮済みの成果物（`*.generated.*`・`*.pb.go`・`*.min.js`・`*.map` など）です。既定の `tests` は `test/`・`tests/`・`__tests__/`・`spec/`・`e2e/` の配下と、`*.test.*`・`*.spec.*`・`*_test.*`・`test_*.py` です。
+
+`tests` の振り分けは、合意との突き合わせで `hikyaku diff facts` がテストファイルを見分けるのにも使われます（[BUILD](../workflow/build.md#合意との突き合わせ)）。テストファイルの変更行は、3つの印で見ます。`test_declarations` はテストの宣言（削除されたテストの検出）、`skip_markers` はスキップ（追加されたスキップの検出）、`assertion_markers` はアサーション（アサーションの行の変更の検出）の印です。印は正規表現ではなく、行に含まれる文字列として照合します。英数字で始まる印は、直前が英数字でない位置だけに当たります（`it(` は `submit(` に当たりません）。
+
+この3つのキーは、`exclude` や `tests` と違って **既定に追加されます。** 既定を消すことはできません。既定は JavaScript / TypeScript・Python・Go・Ruby・Java / Kotlin・C#・Rust・PHP の主要なテストの枠組みの書き方で、`hikyaku config --json` の `diff` に出ます。既定で拾えない枠組みを使っているときに、その書き方を足してください。
+
+## [context]
+
+```toml
+[context]
+limit = "600k"
+estimate_ratio = "90%"
+merge_ratio = "66.7%"
+```
+
+`limit` は、1ビルドのメインセッションのコンテキストがこれを超えないようにする上限です。`"600k"` や `"1.2m"` のように単位を付けた文字列か、`600000` のような整数で書きます。単位を付けるときは引用符が必要です。引用符の無い `600k` は TOML として正しくないためです。
+
+ユーザーが決めるのは `limit` だけで、予測ピーク（[BUILD](../workflow/build.md#予測ピーク)）の判定の帯は、そこに割合を掛けて求めます。見積もりの上限は `limit × estimate_ratio`（既定 540k）で、予測ピークがこれを超えたら分割を検討します（原則として分割する）。統合の目安は `limit × merge_ratio`（既定は 2/3 で 400k）で、これ未満なら統合を検討します（推奨のみ）。見積もりの上限を `limit` より低くしておくのは、見積もりが外れることへの余裕です。v3 の最初のサイクルでは、plan の予測ピークが実測より最大で約 20% 低く出ました。割合は `"90%"` か `0.9` の形で書き、`merge_ratio` は `estimate_ratio` より小さくします。ほとんどの場合は変える必要がありません。
+
+builder の区切り（G8 の提示・実装開始前・レビュー前）では、`step next` が完了時点の見込みを `limit` と比べ、継続・セッションの切り替え・分割のどれかを推奨します（[BUILD](../workflow/build.md#コンテキストの区切り)）。区切りごとの目安を設定する必要はありません。
+
+既定値は 1M のウィンドウを前提にしています。ウィンドウの小さいモデルを使うときは、`limit` を自動コンパクションの閾値より十分手前に縮めてください。v3 で `merge_below`・`split_above`・`approval`・`implement`・`review` は廃止し、書いてあるとエラーになります。`split_above` を変えていたなら、`limit` を `split_above ÷ 0.9` を目安に書き換えてください。
+
+## [rules]
+
+```toml
+[rules]
+hit_threshold = 3
+```
+
+`hit_threshold` は、`handoff.md` の「レビューの記録」で同じ rule が何回引かれたら、`hikyaku rules candidates` が機械の検査やリファクタへ移す候補として並べるかです。回数はサイクルをまたいで数えます。正の整数で書き、既定は 3 です。考え方は [知見の置き場](persistence.md#移すきっかけ) にあります。
+
+## [areas]
+
+```toml
+[areas]
+dormant_days = 180
+```
+
+`dormant_days` は、最終変更から何日を超えた領域を休眠とみなすかです。`hikyaku areas dormant` が、休眠した領域と結び付いた rule・ADR・constraints の項目を示します。正の整数で書き、既定は 180 です。考え方は [知見の置き場](persistence.md#領域の開発頻度) にあります。
+
+## [metrics]
+
+```toml
+[metrics]
+window = 2
+```
+
+`window` は、close-cycle が基準を試しに消した PR の効果を確かめるときに、マージの前と後でそれぞれ何サイクルを比べるかです。差し戻し、退けた決定（`rejected`）、重要度が高の落とし穴、重い指摘の数を比べます。前後どちらかのサイクルが足りなければ「比較できない」と示されます。正の整数で書き、既定は 2 です。考え方は [知見の置き場](persistence.md#消すこと) にあります。
+
+`[rules]`・`[areas]`・`[metrics]` は、どれもサイクル設定で上書きできます。
+
 ## [conductor]
 
 ```toml
 [conductor]
-provider = "claude"  # 子の CLI。claude / codex
-escalate = []        # 既定では監督が答える問いのうち、人間に上げるものの ID
-delegate = []        # 既定では人間に上げる問いのうち、監督に任せるものの ID
+escalate = []        # 既定では監督が答える問いのうち、ユーザーに上げるものの ID
+delegate = []        # 既定ではユーザーに上げる問いのうち、監督に任せるものの ID
 allowed_tools = []   # 子セッションに許可するツール（既定に追加される）
 budget_per_run = 0   # 子の呼び出し1回ごとの費用の上限（USD）。0 なら上限なし
 require_approval = false  # true なら、PR を conductor ブランチに取り込む条件に承認（Approve）を加える
 phase_reviewers = []      # conductor ブランチ向けのフェーズの PR にアサインするレビュアー
 review_timeout = 15       # レビューの依頼や CI を待つ上限（分）。0 なら待たずにその場で判定する
+# model = "sonnet"   # 子のモデル（全フェーズの既定）。未指定なら Claude Code の既定
 
-[conductor.claude]
-# model = "sonnet"   # Claude の子の既定モデル。未指定なら CLI の既定
-
-[conductor.claude.models]   # Claude のフェーズごとの上書き
+[conductor.models]   # フェーズごとのモデル。model より優先する
 # architect = "opus"
 # builder = "sonnet"
 # close-cycle = "sonnet"
-
-[conductor.codex]
-# model = "<Codex で利用できるモデル名>"
-
-[conductor.codex.models]    # Codex のフェーズごとの上書き
-# architect = "<Codex で利用できるモデル名>"
 ```
 
 [conductor](../workflow/conductor.md) で子セッションを動かすときの設定です。使わないなら書く必要はありません。
 
-`escalate` と `delegate` には問いの ID（`G8`、`review-findings` など）を並べます。使える ID と現在の振り分けは `hikyaku conductor asks <cycle>` で確認できます。表に無い ID や、同じ ID を両方に書いた場合はエラーになります。サイクルの中止（`abandon`）と ID の無い問い（`other`）は常に人間に上げるので、`delegate` には書けません。
+`escalate` と `delegate` には問いの ID（`G8`、`review-findings` など）を並べます。使える ID と現在の振り分けは `hikyaku conductor asks <cycle>` で確認できます。表に無い ID や、同じ ID を両方に書いた場合はエラーになります。同意ゲート（`G10`）、サイクルの中止（`abandon`）、ID の無い問い（`other`）は常にユーザーに上げるので、`delegate` には書けません（`escalate` に `G10` を書いても、もとからユーザーに上がるので何も変わりません）。確認のゲートでも、差し戻しからの再設計の回や `[app]` の上限を超える回の `G3` / `G4` のように、その回が同意になるときは `delegate` に書いてあってもユーザーに上がります。
 
-クラウド環境ではレビューと同じ `detectCloudEnv()` の判定を使い、`CLAUDE_CODE_REMOTE=true` なら Claude、`CODEX_ENVIRONMENT_ID` が空でなければ Codex に固定します。この判定は `provider` の明示指定より優先し、両方が該当するときは Claude を選びます。クラウドでない場合は `provider`、未指定なら `claude` を使います。`conductor asks` は実際の CLI と選択元（`providerSource`）を示します。
+`allowed_tools` は `--allowedTools` に渡す書式で書きます（`"Bash(npm test:*)"` など）。子はこの設定を起動のたびに読むので、作業ツリーで一時的に足すのではなくコミットしておいてください。子は auto モードで動くので、ここに足したツールは安全判定を通らずに許可されます。既定で `git` と `gh` を許可していないのは判定にかけるためなので、足すときはそれを外すことになると考えてください（[conductor](../workflow/conductor.md)）。
 
-`provider = "codex"` はクラウドでない環境で Codex CLI を子として使います。Codex は承認なし・`workspace-write` サンドボックスで動きます。`allowed_tools` は空配列、`budget_per_run` は 0 のみ受け付け、Claude のツール許可や費用上限には対応しません。実行環境の制限は [conductor](../workflow/conductor.md#codex-を子セッションに使う) を参照してください。
-
-Claude の `allowed_tools` は `--allowedTools` に渡す書式で書きます（`"Bash(npm test:*)"` など）。子はこの設定を起動のたびに読むので、作業ツリーで一時的に足すのではなくコミットしておいてください。
-
-`phase_reviewers` には、conductor ブランチに向かうフェーズの PR にアサインするレビュアーを書きます。Copilot のような Bot を入れておくと、取り込みの前にレビューが付くのを待てます。人間のレビュアーを入れると、レビューが付くまで取り込みが止まるので、フェーズごとの確認が重くなります。`review_timeout` を超えても依頼が残っていれば、監督は人間に確認します。
+`phase_reviewers` には、conductor ブランチに向かうフェーズの PR にアサインするレビュアーを書きます。Copilot のような Bot を入れておくと、取り込みの前にレビューが付くのを待てます。人間のレビュアーを入れると、レビューが付くまで取り込みが止まるので、フェーズごとの確認が重くなります。`review_timeout` を超えても依頼が残っていれば、監督はユーザーに確認します。
 
 `require_approval` を `true` にすると、監督がフェーズの PR を取り込む条件に、1人以上の承認があり、変更の要求が残っていないことが加わります。承認の有無は、レビュアーごとに承認・変更の要求・取り下げのうち最新のもので判定します。コメントだけのレビューは判定を変えません。子の PR はあなたの `gh` の認証で作られるので、承認できるのはあなた以外のレビュアーです。
 
-モデルは `[conductor.claude]` / `[conductor.codex]` の `model` に、フェーズごとの上書きは `[conductor.claude.models]` / `[conductor.codex.models]` に書きます。選択したプロバイダの値だけを CLI の `--model` に渡します。未指定なら、その CLI の既定モデルを使います。`models` のキーは `architect` / `builder` / `close-cycle` だけで、それ以外や、テーブル以外の値はエラーになります。プロバイダ別テーブルの未知のキーや不正な値は、未選択のプロバイダでも検査します。
+`model` と `[conductor.models]` の値は、`claude --model` に渡すモデル名（`opus` / `sonnet` のような別名か、正式なモデル名）です。`[conductor.models]` のキーは `architect` / `builder` / `close-cycle` だけで、それ以外はエラーになります。`models = "opus"` のようにテーブル以外で書いた場合もエラーになります。効くのは子のセッション本体だけです。子の中で起動されるサブエージェントは、環境変数 `CLAUDE_CODE_SUBAGENT_MODEL` を設定していればそのモデルで、していなければ子のセッションと同じモデルで動きます。ただし cycle-scanner だけは haiku に固定しています。
 
-旧形式の `[conductor] model` と `[conductor.models]` も使えます。旧形式は、設定で明示した `provider`（未指定なら `claude`）に属するものとして扱います。クラウド判定で別のプロバイダに切り替わった場合、旧形式のモデルは渡しません。優先順位は、選択したプロバイダのフェーズ別モデル、プロバイダの既定モデル、旧形式のフェーズ別モデル、旧形式の既定モデルです。ルートとサイクルの設定は、プロバイダ別モデルもキーごとにマージされます。
-
-効くのは子のセッション本体だけです。Claude の子の中で起動されるサブエージェントは、環境変数 `CLAUDE_CODE_SUBAGENT_MODEL` を設定していればそのモデルで、していなければ子のセッションと同じモデルで動きます。ただし cycle-scanner だけは haiku に固定しています。
+`[conductor]` に書けるのは上のキーだけで、知らないキーはエラーになります。v2 の `provider`・`[conductor.claude]`・`[conductor.codex]` は廃止したので、書いてあると移行先を示して止まります。`hikyaku config migrate` で移せます（[v2 → v3 移行ガイド](../migration/v2-to-v3.md#conductor-のモデル設定)）。
 
 配列はキー単位で上書きされます。サイクル設定に `escalate` を書くと、ルートの `escalate` に足されるのではなく置き換わります。
 

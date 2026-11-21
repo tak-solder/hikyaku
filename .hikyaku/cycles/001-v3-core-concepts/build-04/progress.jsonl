@@ -1,0 +1,15 @@
+{"at":"2026-11-16T19:46:45.355Z","skill":"builder","step":"plan","result":"done","peak":365000,"context":210773,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T19:52:18.668Z","skill":"builder","step":"plan-review","result":"done","peak":395000,"context":251947,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T19:55:21.116Z","skill":"builder","step":"test-spec","result":"done","context":262310,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T19:57:08.657Z","skill":"builder","step":"test-spec-review","result":"done","context":273546,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T19:58:29.610Z","skill":"builder","step":"G8","result":"approved","input":"監督の委任された判断: 承認。条件1: 高の異議で decided のときもユーザーの言葉（--input）を必須にしテストを1つ足す。条件2: G8 前の未コミットの変更は plan.md に沿うか確かめ直す。delegation の判定で decisions.jsonl を読む逸脱は handoff の残したことに確度: 要確認で残す","context":278302,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T20:04:52.841Z","skill":"builder","step":"implement","result":"done","context":327458,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T20:15:27.309Z","skill":"builder","step":"verify","result":"done","context":337994,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T20:36:27.548Z","skill":"builder","step":"review","result":"done","context":392531,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T20:37:04.923Z","skill":"builder","step":"handoff","result":"done","context":395749,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T20:37:18.127Z","skill":"retrospective","step":"peak-actual","result":"done","context":401334,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T20:37:26.231Z","skill":"retrospective","step":"analyze","result":"done","context":403352,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T20:37:49.783Z","skill":"retrospective","step":"write","result":"done","context":408905,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T20:37:50.101Z","skill":"builder","step":"retrospective","result":"done","context":408905,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T20:39:06.209Z","skill":"builder","step":"pr","result":"done","pr":"https://github.com/tak-solder/hikyaku/pull/112","context":417609,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T20:39:14.774Z","skill":"builder","step":"publish","result":"done","context":420594,"session":"b3515250-5719-42eb-b4df-204fe6f768a6","hikyaku":"3.0.0"}

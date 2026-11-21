@@ -1,0 +1,269 @@
+import assert from "node:assert/strict";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
+import { cli, repository, succeeds, workspace, write } from "./helpers.mts";
+
+// ワークフローの外の入口（init / create-cycle / token-guide）の step。手本は step.test.mts
+
+interface Directive {
+  kind: string;
+  step?: string;
+  read?: string;
+  report?: Record<string, string>;
+  note?: string;
+  progress?: { complete: number; total: number };
+}
+
+function next(directory: string, ...operands: string[]): Directive {
+  const result = cli(directory, "step", "next", ...operands, "--json");
+  assert.equal(result.status, 0, result.stderr);
+  return (JSON.parse(result.stdout) as { directive: Directive }).directive;
+}
+
+/** step report <phase> <step> [<cycle>] ... の結果の次の1手 */
+function report(directory: string, phase: string, step: string, ...extra: string[]): Directive {
+  const result = cli(directory, "step", "report", phase, step, ...extra, "--json");
+  assert.equal(result.status, 0, result.stderr);
+  return (JSON.parse(result.stdout) as { directive: Directive }).directive;
+}
+
+function events(path: string): Record<string, unknown>[] {
+  return readFileSync(path, "utf8").trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+// ---------------------------------------------------------------------------
+// init
+
+test("step init: 雛形を生成する前は設定が無いので進めない", (t) => {
+  const directory = repository(t);
+  const result = cli(directory, "step", "next", "init");
+  assert.equal(result.status, 1);
+});
+
+const GUIDE_FILE = "docs/hikyaku/document-guide.md";
+
+/** document-guide.md の overview の行を書き換える */
+function registerOverview(directory: string, ownership: string, path: string): void {
+  const file = join(directory, GUIDE_FILE);
+  writeFileSync(file, readFileSync(file, "utf8").replace(/\| overview +\| 未作成 +\| — +\|/, `| overview | ${ownership} | ${path} |`));
+}
+
+test("step init: 雛形のあとは cleanup から始まり、記録はワークスペース直下に置く", (t) => {
+  const directory = workspace(t);
+  // 雛形を生成した直後（記録がまだ無い）に中断しても、cleanup から続けられる
+  const directive = next(directory, "init");
+  assert.equal(directive.kind, "run");
+  assert.equal(directive.step, "cleanup");
+  assert.ok(directive.read !== undefined && existsSync(directive.read), String(directive.read));
+  assert.match(directive.report?.["done"] ?? "", /step report init cleanup --result done$/);
+
+  assert.equal(report(directory, "init", "cleanup", "--result", "done").step, "register");
+  assert.equal(events(join(directory, "docs/hikyaku/progress.jsonl"))[0]?.["step"], "cleanup");
+});
+
+test("step init: 記録が無く document-guide.md に登録があれば、初期化済みとして止まる", (t) => {
+  const directory = workspace(t);
+  write(directory, "docs/overview.md");
+  registerOverview(directory, "repo", "`docs/overview.md`");
+  const directive = next(directory, "init");
+  assert.equal(directive.kind, "stop");
+  assert.match(String((directive as { message?: string }).message), /初期化済み/);
+});
+
+test("step init: 旧名のファイルが残っていれば cleanup を受け付けない", (t) => {
+  const directory = workspace(t);
+  write(directory, "docs/hikyaku/instruction.md");
+  const result = cli(directory, "step", "report", "init", "cleanup", "--result", "done");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /instruction\.md → instructions\.md/);
+});
+
+test("step init: document-guide.md が検証を通らなければ register を受け付けない", (t) => {
+  const directory = workspace(t);
+  report(directory, "init", "cleanup", "--result", "done");
+  registerOverview(directory, "repo", "`docs/missing.md`");
+  const result = cli(directory, "step", "report", "init", "register", "--result", "done");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /document-guide\.md が検証を通りません/);
+  write(directory, "docs/missing.md");
+  assert.equal(report(directory, "init", "register", "--result", "done").step, "link-approval");
+});
+
+test("step init: 索引を承認して書き込み、PR を添えて終えたら初期化済みになる", (t) => {
+  const directory = workspace(t);
+  report(directory, "init", "cleanup", "--result", "done");
+  const gate = report(directory, "init", "register", "--result", "done");
+  assert.equal(gate.kind, "gate");
+  assert.equal(gate.step, "link-approval");
+  assert.equal(report(directory, "init", "link-approval", "--result", "approved", "--input", "OK").step, "link");
+
+  // 索引を書き込むまでは link を受け付けない
+  const early = cli(directory, "step", "report", "init", "link", "--result", "done");
+  assert.equal(early.status, 1);
+  assert.match(early.stderr, /hikyaku docs link/);
+  succeeds(directory, "docs", "link");
+  assert.equal(report(directory, "init", "link", "--result", "done").step, "pr");
+
+  // PR を添えない done は受け付けない
+  const noPr = cli(directory, "step", "report", "init", "pr", "--result", "done");
+  assert.equal(noPr.status, 1);
+  assert.match(noPr.stderr, /--pr/);
+  // PR の前に guide を直して索引と食い違えば、link に戻る（食い違ったまま PR にしない）
+  const guide = join(directory, GUIDE_FILE);
+  const original = readFileSync(guide, "utf8");
+  write(directory, "docs/overview.md");
+  registerOverview(directory, "repo", "`docs/overview.md`");
+  assert.equal(next(directory, "init").step, "link");
+  writeFileSync(guide, original);
+  assert.equal(next(directory, "init").step, "pr");
+
+  // PR まで終えたら初期化済みとして止まり、あとで guide が変わっても手順に戻らない
+  assert.equal(report(directory, "init", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1").kind, "stop");
+  registerOverview(directory, "対象外", "—");
+  assert.equal(next(directory, "init").kind, "stop");
+});
+
+test("step init: 廃止した論理名が残っていれば移行を案内し、migrate の回で振り分けから PR まで進む", (t) => {
+  const directory = workspace(t);
+  write(directory, "docs/learnings.md", "# 落とし穴\n");
+  write(directory, "AGENTS.md", "# 規約\n");
+  const guide = (rows: string[]): string =>
+    ["| 論理名 | 管理 | パス | 概要 |", "| --- | --- | --- | --- |", ...rows, ""].join("\n");
+  const kept = [
+    "| overview | 未作成 | — | 概要 |",
+    "| decisions | 未作成 | — | ADR |",
+    "| constraints | 未作成 | — | 制約 |",
+    "| conventions | repo | `AGENTS.md` | 規約 |",
+  ];
+  write(directory, "docs/hikyaku/document-guide.md", guide([...kept, "| learnings | hikyaku | `docs/learnings.md` | 落とし穴 |"]));
+
+  const stopped = next(directory, "init") as Directive & { message?: string };
+  assert.equal(stopped.kind, "stop");
+  assert.match(stopped.message ?? "", /learnings/);
+  assert.match(stopped.message ?? "", /--round migrate/);
+
+  succeeds(directory, "step", "restart", "init", "--round", "migrate", "--reason", "v3 への移行");
+  assert.equal(next(directory, "init").step, "triage", "初期化の手順（cleanup / register）は返さない");
+  assert.equal(report(directory, "init", "triage", "--result", "done").step, "triage-approval");
+  assert.equal(report(directory, "init", "triage-approval", "--result", "approved", "--input", "OK").step, "triage-write");
+
+  const early = cli(directory, "step", "report", "init", "triage-write", "--result", "done");
+  assert.equal(early.status, 1, "廃止した論理名の行が残っていれば受け付けない");
+  assert.match(early.stderr, /廃止した論理名/);
+
+  write(directory, "docs/hikyaku/document-guide.md", guide(kept));
+  assert.equal(report(directory, "init", "triage-write", "--result", "done").step, "link-approval");
+  report(directory, "init", "link-approval", "--result", "approved", "--input", "OK");
+  succeeds(directory, "docs", "link");
+  assert.equal(report(directory, "init", "link", "--result", "done").step, "pr");
+  const done = report(directory, "init", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/9") as Directive & { message?: string };
+  assert.equal(done.kind, "stop");
+  assert.match(done.message ?? "", /移行は完了/);
+});
+
+// ---------------------------------------------------------------------------
+// create-cycle
+
+test("step create: サイクルを作ったあとは to-plan から始まり、記録はサイクル直下に置く", (t) => {
+  const directory = workspace(t, true);
+  const directive = next(directory, "create", "001");
+  assert.equal(directive.step, "to-plan");
+  assert.match(directive.report?.["skipped"] ?? "", /step report create to-plan 001-test --result skipped --reason/);
+  assert.deepEqual(directive.progress, { complete: 0, total: 1 }, "単独の PR は、PLAN へ進まないときだけ手順に入る");
+
+  // PLAN へ続けるなら、そのまま終わる
+  assert.equal(report(directory, "create", "to-plan", "001", "--result", "done").kind, "done");
+  assert.equal(events(join(directory, "docs/hikyaku/cycles/001-test/progress.jsonl"))[0]?.["step"], "to-plan");
+});
+
+test("step create: 単独で終えるなら理由付きでスキップし、PR が手順に入る", (t) => {
+  const directory = workspace(t, true);
+  const noReason = cli(directory, "step", "report", "create", "to-plan", "001", "--result", "skipped");
+  assert.equal(noReason.status, 1);
+  assert.match(noReason.stderr, /--reason/);
+
+  const pr = report(directory, "create", "to-plan", "001", "--result", "skipped", "--reason", "単独で終える");
+  assert.equal(pr.step, "pr");
+  assert.deepEqual(pr.progress, { complete: 1, total: 2 });
+  const noPr = cli(directory, "step", "report", "create", "pr", "001", "--result", "done");
+  assert.equal(noPr.status, 1, "PR を添えない done は受け付けない");
+  assert.equal(report(directory, "create", "pr", "001", "--result", "done", "--pr", "https://github.com/o/r/pull/1").kind, "done");
+});
+
+test("step create: サイクルが無ければ進めない", (t) => {
+  const directory = workspace(t);
+  const result = cli(directory, "step", "next", "create", "001");
+  assert.equal(result.status, 1);
+});
+
+// ---------------------------------------------------------------------------
+// token-guide
+
+const GUIDE = "docs/hikyaku/token-guide";
+
+test("step token-guide: ガイドが無くても進め、最初の報告で記録の置き場ができる", (t) => {
+  const directory = workspace(t);
+  assert.equal(existsSync(join(directory, GUIDE)), false, "init はガイドを作らない");
+  assert.equal(next(directory, "token-guide").step, "start");
+  assert.equal(report(directory, "token-guide", "start", "--result", "done").step, "collect");
+  assert.ok(existsSync(join(directory, GUIDE, "progress.jsonl")));
+});
+
+test("step token-guide: 変更を承認し、版を上げたガイドだけを書き込みと PR の完了にする", (t) => {
+  const directory = workspace(t);
+  report(directory, "token-guide", "start", "--result", "done");
+  report(directory, "token-guide", "collect", "--result", "done");
+  const gate = report(directory, "token-guide", "propose", "--result", "done");
+  assert.equal(gate.kind, "gate");
+  assert.equal(gate.step, "approve");
+
+  const rejected = report(directory, "token-guide", "approve", "--result", "rejected", "--input", "根拠のビルドを添えて");
+  assert.equal(rejected.step, "approve");
+  assert.equal(report(directory, "token-guide", "approve", "--result", "approved", "--input", "OK").step, "write");
+
+  // ガイドが無いうちは、書き込みを完了にしない
+  const missing = cli(directory, "step", "report", "token-guide", "write", "--result", "done");
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /tokens stamp/);
+  succeeds(directory, "tokens", "stamp");
+  // 本文を変えて版を上げていなければ、書き込みを完了にしない
+  const guide = join(directory, GUIDE, "guide.md");
+  writeFileSync(guide, `${readFileSync(guide, "utf8")}\n- 補正\n`);
+  const stale = cli(directory, "step", "report", "token-guide", "write", "--result", "done");
+  assert.equal(stale.status, 1);
+  assert.match(stale.stderr, /hash/);
+  succeeds(directory, "tokens", "stamp");
+  assert.equal(report(directory, "token-guide", "write", "--result", "done").step, "pr");
+  // 書き込みのあとに本文を変えれば、PR の前に書き込みへ戻る
+  writeFileSync(guide, `${readFileSync(guide, "utf8")}\n- もう1つ\n`);
+  assert.equal(next(directory, "token-guide").step, "write");
+  succeeds(directory, "tokens", "stamp");
+  assert.equal(report(directory, "token-guide", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1").kind, "done");
+});
+
+test("step token-guide: 収集や変更案を省くと、承認と書き込みを行わずに PR へ進む", (t) => {
+  const directory = workspace(t);
+  report(directory, "token-guide", "start", "--result", "done");
+  assert.equal(report(directory, "token-guide", "collect", "--result", "skipped", "--reason", "標準をコピーするだけ").step, "pr");
+
+  const other = workspace(t);
+  report(other, "token-guide", "start", "--result", "done");
+  report(other, "token-guide", "collect", "--result", "done");
+  assert.equal(report(other, "token-guide", "propose", "--result", "skipped", "--reason", "素材が無い").step, "pr");
+});
+
+test("step token-guide: 前の回を終えていれば done が返り、step restart で新しい回になる", (t) => {
+  const directory = workspace(t);
+  report(directory, "token-guide", "start", "--result", "done");
+  report(directory, "token-guide", "collect", "--result", "skipped", "--reason", "標準をコピーするだけ");
+  succeeds(directory, "tokens", "stamp");
+  report(directory, "token-guide", "pr", "--result", "done", "--pr", "https://github.com/o/r/pull/1");
+  assert.equal(next(directory, "token-guide").kind, "done");
+
+  const restarted = cli(directory, "step", "restart", "token-guide", "--reason", "新しい回", "--json");
+  assert.equal(restarted.status, 0, restarted.stderr);
+  assert.equal((JSON.parse(restarted.stdout) as { directive: Directive }).directive.step, "start");
+  assert.equal(report(directory, "token-guide", "start", "--result", "done").step, "collect", "前の回の収集の省略は数えない");
+  assert.deepEqual(next(directory, "token-guide").progress, { complete: 1, total: 6 });
+});

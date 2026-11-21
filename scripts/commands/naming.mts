@@ -1,12 +1,17 @@
 /** branch name / branch verify / pr title / session title — 命名規則の適用 */
 
 import { flagBoolean, flagString } from "../lib/args.mts";
-import { branchName, parseBranch, renderPrTitle } from "../lib/branch.mts";
+import { defaultTitleFor, isPatchPhase, phaseTitleLabel, renderPrTitle, renderSessionTitle } from "../lib/branch.mts";
 import { ValidationError } from "../lib/errors.mts";
-import { currentBranch, defaultBranch, listRemoteBranches } from "../lib/git.mts";
+import { listRemoteBranches } from "../lib/git.mts";
 import { emit } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
-import { requirePhase, resolvePrBase, scopeFor, stackParent } from "../lib/stack.mts";
+import { requirePhase, resolvePrBase, scopeFor, verifyBranch } from "../lib/stack.mts";
+
+/** デフォルトブランチ（PR のマージ先の基準）を決められないときの案内 */
+const BASE_UNRESOLVED =
+  "デフォルトブランチを決められないので、PR のマージ先（prBase）が分かりません。[branch] base_branch を設定するか、" +
+  "git remote set-head origin --auto で origin/HEAD を設定してください（origin に届けば自動で問い合わせます）";
 
 register({
   name: "branch verify",
@@ -15,7 +20,9 @@ register({
   details: [
     "  {prefix}{separator}{cycle}{separator}{phase}",
     "",
-    "init と bp-guide はサイクルに属さないため {prefix}{separator}{phase} になります。",
+    "init と token-guide はサイクルに属さないため {prefix}{separator}{phase} になります。",
+    "patch（patch-YYYYMM-slug）はサイクルの有無に関わらず {prefix}{separator}patch{separator}YYYYMM{separator}slug です。",
+    "進行中のサイクルの patch では、startPoint がブランチを切る元（統合ブランチ）を示します。",
     "",
     "**生成と検証を兼ねます。** 不一致のときは期待するブランチ名と切り替えコマンドを",
     "返すので、ブランチの作成にもこのコマンドを使ってください。名前を生成するだけの",
@@ -34,17 +41,21 @@ register({
     "出力の onBaseBranch がこれを示します。",
     "",
     "  onBaseBranch: true   まだブランチを切っていないだけ。expected を作れば良い",
-    "  onBaseBranch: false  既に何らかの作業ブランチに居る。**どう扱うかは人間の判断**",
+    "  onBaseBranch: false  既に何らかの作業ブランチに居る。**どう扱うかはユーザーの判断**",
     "  onBaseBranch: null   デフォルトブランチを特定できない（origin/HEAD が無い等）",
     "",
     "false と null のとき、スクリプトは「どうすべきか」を決めません。エージェントが",
     "用意した別のブランチかもしれず、実行環境がブランチ名を決めているのかもしれず、",
     "外からは区別できないためです。**呼び出し元のスキルはユーザーに尋ねてください。**",
     "「今回は実行環境の都合だから」という推測を通すと、本当に紛れ込んだ場合も",
-    "同じ理屈で通ります。区別できないからこそ人間に尋ねる場面です。",
+    "同じ理屈で通ります。区別できないからこそユーザーに尋ねる場面です。",
     "",
     "デフォルトブランチは base_branch の設定が正で、未設定なら origin/HEAD から",
-    "導出します。どちらも無ければ null にします（\"main\" と推測しません）。",
+    "導出します。origin/HEAD の参照が無いクローン（新しく clone したクラウドのセッションなど）では、",
+    "git ls-remote --symref origin HEAD で origin に問い合わせます（書き込みはしません）。",
+    "それでも分からなければ null にします（\"main\" と推測しません）。サイクルのフェーズでは、",
+    "ブランチ名が合っていても（ok: true）、baseResolved: false を返して終了コード 2 で止まります",
+    "（PR のマージ先を決められないまま先へ進まないため）。",
     "",
     "ブランチ名は着手状態の導出に解析されるため、構造は固定です。",
     "prefix と separator は [branch] で設定できますが、separator に空文字は指定できません",
@@ -59,26 +70,17 @@ register({
     "使うため、フェーズのサイクルが分かっている場合は明示してください。",
     "",
     "stackedOn / prBase は「先行フェーズのブランチの上に積んでいるか」の**目安**です。",
-    "このコマンドはネットワークへ行かないため、リモートで先行 PR がマージされた直後は",
+    "このコマンドは fetch しないため（origin/HEAD の参照が無いときの問い合わせを除く）、リモートで先行 PR がマージされた直後は",
     "まだスタック中と見えることがあります。**PR の base として正なのは pr base** で、",
     "そちらは必要ならリモート追跡参照を更新します。",
   ].join("\n"),
   run: async ({ args, operands }) => {
     const phase = requirePhase(operands[0]);
     const { config, cycle, context } = scopeFor(args, phase, operands[1]);
-    const expected = branchName(config.branch, phase, cycle);
-    const actual = currentBranch(config.repoRoot);
-    const parsed = actual === undefined ? undefined : parseBranch(config.branch, actual);
-    const ok = actual === expected;
-
-    const base = config.baseBranch ?? defaultBranch(config.repoRoot);
-    // base が分からなければ true/false のどちらとも言えない。推測せず null で返す
-    const onBaseBranch = base === undefined || actual === undefined ? null : actual === base;
-
-    // ここは毎フェーズの冒頭とコミット直前に走るので fetch しない。
-    // PR の base として正なのは pr base（そちらは必要なら追跡参照を更新する）
-    const stacked = await stackParent(config, context, phase, base, { fetch: false });
-    const prBase = stacked?.name ?? base;
+    const { ok, expected, actual, parsed, base, start, startPoint, onBaseBranch, stacked, prBase } = await verifyBranch(config, phase, cycle, context);
+    // サイクルのフェーズで PR のマージ先を決められないなら、ブランチ名が合っていても先へ進ませない
+    // （ok だけを見て進むと、マージ先の無いまま PR を作ろうとする。conductor の Step 2 など）
+    const baseResolved = context === undefined || base !== undefined;
 
     emit(
       {
@@ -89,11 +91,17 @@ register({
         cycle,
         parsed,
         baseBranch: base ?? null,
+        startPoint: startPoint ?? null,
+        startPointRef: start.ref ?? null,
         onBaseBranch,
         stackedOn: stacked?.name ?? null,
         prBase: prBase ?? null,
+        baseResolved,
       },
       () => {
+      if (ok && !baseResolved) {
+        return [`✓ ${actual}`, `! ${BASE_UNRESOLVED}`].join("\n");
+      }
       if (ok) {
         return stacked === undefined
           ? `✓ ${actual}`
@@ -107,9 +115,12 @@ register({
         "",
       ];
 
+      if (startPoint !== base) lines.splice(3, 0, `切る元（統合ブランチ）: ${startPoint ?? "(特定できません)"}`);
       if (onBaseBranch === true) {
         lines.push(
-          "デフォルトブランチに居ます。まだこのフェーズのブランチを切っていないだけなので、",
+          startPoint === base
+            ? "デフォルトブランチに居ます。まだこのフェーズのブランチを切っていないだけなので、"
+            : "統合ブランチに居ます。まだこのフェーズのブランチを切っていないだけなので、",
           "期待する名前で作成してください。",
           "",
           `作成: git switch -c ${expected}`,
@@ -123,7 +134,10 @@ register({
           : `現在のブランチは ${parsed.cycle ?? "-"} の ${parsed.phase} を指しています。`,
         "",
         "hikyaku の規則に従ったブランチで作業してください",
-        `git switch ${expected} || git switch -c ${expected}`,
+        // patch は切る元が決まっている（統合ブランチかデフォルトブランチ）。いまの HEAD から切らない
+        isPatchPhase(phase) && start.ref !== undefined
+          ? `git switch ${expected} || git switch -c ${expected} ${start.ref}`
+          : `git switch ${expected} || git switch -c ${expected}`,
       );
 
       if (parsed !== undefined && cycle !== undefined && parsed.cycle === cycle && actual !== undefined) {
@@ -143,6 +157,7 @@ register({
         `ブランチが一致しません（期待: ${expected} / 現在: ${actual ?? "detached HEAD"}）`,
       ]);
     }
+    if (!baseResolved) throw new ValidationError([BASE_UNRESOLVED]);
   },
 });
 
@@ -156,9 +171,10 @@ register({
     "  {cycle}       002-billing",
     "  {cycle_id}    002",
     "  {cycle_name}  billing",
-    "  {phase}       init / bp-guide / create / plan / architect / build-01 / close",
+    "  {phase}       init / token-guide / create / plan / architect / build-01 / close / patch",
     "  {build_id}    01（builder のみ）",
-    "  {title}       --build-title の値（他フェーズでは空）",
+    "  {title}       --build-title の値（builder と patch）。conductor は未指定ならサイクルの",
+    "                要約（cycles.md の要約）。他フェーズでは空",
     "",
     "空になった変数は前後の区切り文字ごと詰めます。init のようにサイクルを持たない",
     "フェーズで \"[hikyaku] : init\" のような出力にならないようにするためです。",
@@ -167,13 +183,12 @@ register({
   ].join("\n"),
   run: ({ args, operands }) => {
     const phase = requirePhase(operands[0]);
-    const { config, cycle } = scopeFor(args, phase, operands[1]);
-    const buildId = /^build-(\d+)$/.exec(phase)?.[1];
+    const { config, cycle, context } = scopeFor(args, phase, operands[1]);
     const title = renderPrTitle(config.pr.title, {
       cycle,
-      phase,
-      buildId,
-      title: flagString(args, "build-title"),
+      phase: phaseTitleLabel(phase),
+      buildId: /^build-(\d+)$/.exec(phase)?.[1],
+      title: defaultTitleFor(phase, context?.record.summary, flagString(args, "build-title")),
     });
     emit({ title, phase, cycle }, () => title);
   },
@@ -282,7 +297,7 @@ register({
   ].join("\n"),
   run: ({ args, operands }) => {
     const phase = requirePhase(operands[0]);
-    const { config, cycle } = scopeFor(args, phase, operands[1]);
+    const { config, cycle, context } = scopeFor(args, phase, operands[1]);
 
     if (config.session.title === "") {
       emit({ title: undefined, phase, cycle, disabled: true }, () =>
@@ -291,13 +306,7 @@ register({
       return;
     }
 
-    const buildId = /^build-(\d+)$/.exec(phase)?.[1];
-    const title = renderPrTitle(config.session.title, {
-      cycle,
-      phase,
-      buildId,
-      title: flagString(args, "build-title"),
-    });
+    const title = renderSessionTitle(config.session.title, phase, cycle, defaultTitleFor(phase, context?.record.summary, flagString(args, "build-title"))) as string;
     emit({ title, phase, cycle }, () => title);
   },
 });

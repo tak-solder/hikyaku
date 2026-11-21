@@ -53,23 +53,29 @@ hikyaku validate
 
 区切りが無いとブランチ名からサイクルとフェーズを切り出せません。`-` や `_` は使えます。
 
-## BP の基準表
+## 予測ピークと見積もりのガイド
 
-### bp-guide/rules.toml を解析できません / 不明なキーです
+### bp_max は v3 で廃止しました / [bp_actual] は [diff] に改名しました
 
-`{HIKYAKU_ROOT}/bp-guide/rules.toml` が基準表として読めません。無いなら既定値で動きますが、あって読めないものは黙って既定値に落としません。「調整したのに効かない」が最も気づきにくい壊れ方だからです。エラーメッセージの箇所を直し、`hikyaku bp test` と `hikyaku validate` で確認してください。書き方は [BP の基準表](../configuration/bp-guide.md) にあります。
+`.hikyaku.config` に v2 の設定が残っています。ビルドの大きさは BP ではなく予測ピーク（トークン）で判定するようになり、境目は `[context]` の `limit` から求めます。`bp_max` を削除し、`[bp_actual]` はテーブル名を `[diff]` に変えてください（[設定](../configuration/config-file.md#context)）。黙って無視しないのは、「設定したのに効かない」が最も気づきにくい壊れ方だからです。
 
-### 基準表の表が rules.toml と食い違っています
+リポジトリルートの設定に残っていると、すべてのコマンドが止まります。サイクルの設定に残っている場合は、そのサイクルで v3 の作業（`step`・`tokens estimate`・`tasklist` の書き込み）をしようとしたときだけ止まります。閉じたサイクルの設定は履歴として読み飛ばすので、`cycle list` や `validate` は止まりません。
 
-`rules.toml` を変えたあと `README.md` の表を再生成していません。`hikyaku bp render` を実行してください。`README.md` の表を手で直した場合も同じです。表は生成物なので、直すのは `rules.toml` 側です。
+### 本文が hash と合いません
 
-### --xxx は基準表にありません
+`{HIKYAKU_ROOT}/token-guide/guide.md` の本文を変えたあと、版を上げていません。`hikyaku tokens stamp` を実行してください。版を上げずに本文だけを変えると、補正の前と後の予測が同じ版として記録され、`tokens history --group-by guide` で区別できなくなります。先頭の `---` の間を手で直した場合も同じで、直すのは本文だけにして `tokens stamp` に任せます（[予測ピークと見積もりのガイド](../configuration/token-guide.md#ガイドの版)）。
 
-`hikyaku bp estimate` に渡したオプションが基準表の指標・加算要素に無い名前です。エラーに使える入力の一覧が出るので、そこから選んでください。タイプミスを黙って捨てると加算要素の取りこぼしになり、そのまま過小見積もりになるためエラーにしています。基準表に要素を足したいなら `/hikyaku:bp-guide` で `rules.toml` に追加します。
+### --fixed（固定費）がありません
 
-### bp test で期待値が一致しません
+`hikyaku tokens estimate` には5つの成分（`--fixed` / `--reading` / `--implementation` / `--tests` / `--unknown`）をすべて渡します。該当しない成分には 0 を渡してください。省略をエラーにしているのは、考えなかった成分と、考えて無いと判断した成分を記録の上で区別するためです。
 
-`rules.toml` の変更で、`cases.toml` に記録されていた期待値が変わりました。意図した変更なら期待値を直し、意図していないなら `rules.toml` を見直します。既存のケースは過去の判断の記録なので、黙って書き換えないでください。
+### --bp は廃止しました
+
+`hikyaku step report` と `hikyaku tasklist add / update` の `--bp` は `--peak` に置き換わりました。`--peak 380k` のように、予測ピークをトークン数で渡します。
+
+### bp-guide/ が残っています（doctor）
+
+v2 の BP 基準表です。v3 は読みません。`bp-guide/README.md` にリポジトリ固有の数え方を書いていたら、`/hikyaku:token-guide` でガイドに書き直してから `bp-guide/` を削除してください。
 
 ## ドキュメントガイド
 
@@ -81,9 +87,9 @@ hikyaku validate
 
 使える値は `hikyaku` / `repo` / `未作成` / `対象外` の4つだけです。タイプミスを黙って `対象外` に落とすと、登録済みのドキュメントが索引からも昇格対象からも静かに消えるため、エラーにしています。
 
-### 既定に無い論理名は管理を repo にしてください
+### 未知の論理名です
 
-[ドキュメントガイド](../configuration/documents.md#論理名) の表に無い論理名を、管理が `hikyaku`・`未作成`・`対象外` の行で使っています。既定の論理名のタイプミスなら直してください。リポジトリ固有の永続ドキュメントを載せたいなら、ドキュメントを作ってから管理を `repo` にし、パスを書きます。
+論理名は増やせません。使えるものは [ドキュメントガイド](../configuration/documents.md#論理名) の表にあります。
 
 ### パスが存在しません
 
@@ -91,7 +97,7 @@ hikyaku validate
 
 ### 必要なドキュメントの行がありません
 
-必須の論理名（overview / decisions / constraints / learnings / conventions）は、`未作成` や `対象外` であっても行が必要です。「意図的に持たない」と「まだ決めていない」を区別するためです。
+必須の論理名（overview / decisions / constraints / conventions）は、`未作成` や `対象外` であっても行が必要です。「意図的に持たない」と「まだ決めていない」を区別するためです。
 
 ## サイクルとビルド
 
@@ -129,7 +135,7 @@ hikyaku validate
 
 ### 完了済みビルドは更新できません
 
-`PR` 列が非空のビルドはスコープも依存も変更できません。依存グラフの整合性が崩れるためです。追加の作業が必要なら、新しいビルドを足してください。
+完了したビルドはスコープも依存も変更できません。依存グラフの整合性が崩れるためです。追加の作業が必要なら、新しいビルドを足してください。
 
 ## ブランチ
 
@@ -146,9 +152,11 @@ hikyaku validate
 
 規則から外れたブランチで作業すると、`next` の「着手中」表示と `hikyaku pr base` のスタック元の導出が効かなくなります。どちらもブランチ名から導出しているためです。着手可能・待機の判定と中断検出には影響しません。
 
-### デフォルトブランチを特定できない（`onBaseBranch: null`）
+### デフォルトブランチを特定できない（`onBaseBranch: null`・`baseResolved: false`）
 
-`base_branch` が未設定で、`origin/HEAD` からも導出できない状態です。`.hikyaku.config` に `base_branch = "main"` を設定してください。`main` と推測することはしません。
+`base_branch` が未設定で、デフォルトブランチを導出できない状態です。Hikyaku はローカルの `origin/HEAD` の参照を読み、それが無いクローン（新しく clone したクラウドのセッションなど）では `git ls-remote --symref origin HEAD` で origin に問い合わせます。origin が無いか、届かないときに、この状態になります。`main` と推測することはしません。
+
+サイクルのフェーズの `branch verify` は、ブランチ名が合っていても `baseResolved: false` を返して終了コード 2 で止まります。PR のマージ先（`prBase`）を決められないまま先へ進まないためです。`.hikyaku.config` に `base_branch = "main"` を設定するか、`git remote set-head origin --auto` で `origin/HEAD` を設定してください。Hikyaku は `origin/HEAD` を自分では書きません。
 
 ## 進行状況
 
@@ -156,13 +164,19 @@ hikyaku validate
 
 全ビルドが完了しているか、すべてのビルドが依存待ちです。`cycle status` で確認してください。
 
-依存待ちの場合、先行ビルドの成果がいま居るブランチの履歴に無いということです。判定に使うのは `HEAD` の `tasklist.md` の `PR` 列なので、デフォルトブランチに居るなら先行ビルドの PR がマージされて手元に取り込まれている必要があります。他のセッションがマージした直後であれば `git pull` で取り込めば解消します。マージを待たない場合は、先行ビルドのブランチに切り替えて（そこから積んで）始められます。
+依存待ちの場合、先行ビルドの成果がいま居るブランチの履歴に無いということです。判定に使うのは `HEAD` にある各ビルドの完了の記録（`build-NN/progress.jsonl` の pr の `done`）なので、デフォルトブランチに居るなら先行ビルドの PR がマージされて手元に取り込まれている必要があります。他のセッションがマージした直後であれば `git pull` で取り込めば解消します。マージを待たない場合は、先行ビルドのブランチに切り替えて（そこから積んで）始められます。
 
-### `tasklist done` を実行したのに未完了と表示される
+### tasklist.md がコンフリクトする
 
-まだコミットしていないためです。判定は `HEAD` の `tasklist.md` を読むので、作業ツリーの編集は数えません。`PR` 列の更新をコミットすれば解消します。builder はこの更新を実装と同じ PR に同梱するので、通常はすぐコミットされます。
+並行するビルドの PR は、`tasklist.md` では図の自分のブロックだけを書き換え、表には触れないので、通常はコンフリクトしません。完了の記録はビルドごとの `progress.jsonl` にあります。起きるのは、v3.0.0 より前の形で書かれた `tasklist.md` を複数のビルドが同時に書き直したときと、PR 列をビルドの PR で埋めていた版の builder で作ったブランチをマージするときです。古い形は全ビルドの状態を1行にまとめていたり、表の隣り合う行を書き換えていたりするためです。
 
-`PR` 列だけが先に書かれた状態を「実装が在る」と読まないための挙動です。
+どちらも、ベースブランチ側の `tasklist.md` をそのまま採ってから、自分のビルドの `hikyaku tasklist done --id <n>` を実行し直せば解消します。`tasklist.md` は表と記録から全体を生成し直すので、手で図を直す必要はありません。
+
+### 完了を記録したのに未完了と表示される
+
+まだコミットしていないためです。判定は `HEAD` の完了の記録を読むので、作業ツリーの編集は数えません。`progress.jsonl` をコミットすれば解消します。builder はこの記録を実装と同じ PR に同梱するので、通常はすぐコミットされます。
+
+記録だけが先に書かれた状態を「実装が在る」と読まないための挙動です。
 
 ### 先行ビルドをマージしたのに、まだ待機中と表示される
 
@@ -186,6 +200,14 @@ hikyaku validate
 
 成果物がコミット & push されていない場合も同様に見えません。成果物を1つ作るごとにコミットするのはこのためです。
 
+### 止まったはずのセッションが続けて作業を始める
+
+スキルの手順が途中（次の1手が `run` か `call`）のままセッションが止まろうとすると、プラグインの Stop フック（`hikyaku step hook stop`）が1回だけ続きを促します。報告を忘れて手順が切れるのを防ぐためです。ゲートで承認を待つとき、手順を終えたとき、そのターンで一度促したあとは止めません。作業を中断したいときは、そう伝えれば次の止まり方でそのまま終わります。どの作業単位の手順が途中かは `hikyaku step where` で確かめられます。
+
+### 差し戻しの記録・行き詰まりの報告に欠けがあると言われる
+
+差し戻しの `return.md`、リトライの上限で止まるときの `failed --reason`、conductor の子の blocked は、ユーザーに判断を上げる報告です。試したこと（1項目以上）、問題を変える選択肢（各項目に `失うもの:`）、推奨の3つがそろっていなければ、CLI は受け付けません。`return.md` が欠けていれば builder は欠けを示して止まり、`step restart architect --round return` も回を区切りません。conductor の子の blocked なら violation になります。示された節を見出し（`## 試したこと`）か行頭のラベル（`試したこと:`）で書き足してから、やり直してください。テンプレートの `（…）` のまま残した行は中身に数えません。
+
 ### completed のまま止まっている
 
 実装は main に入っているのに、永続ドキュメントへの昇格が終わっていない状態です。この期間に他サイクルの architect が走ると古い `overview` を現実として読みます。`/hikyaku:close-cycle` を実行してください。
@@ -194,11 +216,21 @@ hikyaku validate
 
 ### gh CLI が無い（`reason: "gh-not-found"`）
 
-投影内容自体は返るので、スキルが GitHub MCP ツールで適用し、`hikyaku cycle link` / `hikyaku tasklist link` で参照を記録します。エラーではありません。
+起票する内容自体は返るので、スキルが GitHub MCP ツールで起票し、`hikyaku cycle link` で参照を記録します。エラーではありません。
 
-### 投影に失敗した
+### 起票に失敗した
 
 警告が出ますが、ワークフローは止まりません（終了コード 0）。ファイル側が常にマスターなので、後から `hikyaku external sync` をやり直せば収束します。
+
+### gh が使えずにレビュアーの依頼や Ready への切り替えができない（`applied: false`）
+
+`gh` が無い（`reason: "gh-unavailable"`）か、認証・権限・応答の問題で失敗した（`reason: "gh-failed"`）とき、`hikyaku pr request-reviewers` と `hikyaku pr ready` は手順を止めずに終了コード 0 で終わります。PR は作成済みなので、付随する処理が通らないことは先へ進めない理由にならないためです。出力の `stage` がどの `gh` の呼び出しで失敗したかを、`manual` が代わりに行うことを示します。GitHub の PR の画面で、示されたレビュアーに依頼するか、Ready for review にしてください。設定のレビュアーが空か、そのフェーズのアサインがオフなら、`gh` は呼ばれません。conductor の監督が取り込む直前に使う `pr ready --for-merge` だけは、向き先を確かめられないまま取り込まないよう、終了コード 1 で止まります。
+
+### GitHub の GraphQL が使えない（Claude Code のクラウドのセッションなど）
+
+Claude Code のクラウドのセッションでは、`gh` の GraphQL が「GitHub GraphQL is not available」で拒まれます。`gh pr create`・`gh pr view`・`gh pr ready`・`gh pr edit`・`gh issue` は GraphQL を使うので、そのままでは動きません。Hikyaku の CLI はこの応答を見たときだけ REST（`gh api`）と、その応答が案内する CCR のルート（`pulls/{n}/ccr/...`）に切り替えます。PR の作成と本文の差し替えは、もともと REST だけで行う `hikyaku pr create` と `hikyaku pr update-body` が担います。
+
+切り替えても、REST では確かめられないことが残ります。REST には Copilot などの Bot へのレビューの依頼が現れないので、`conductor check-pr` は `[conductor] phase_reviewers` の `@copilot` について、Bot のレビューが付くまで待ちます。`pr request-reviewers` は人とチームには依頼しますが、`@copilot` には依頼できないので、`applied: false`・`reason: "graphql-unavailable"` と `manual` を返します。GitHub の PR の画面で依頼してください。コミットのステータス（commit status）を権限で読めないときは、`check-pr` は check-runs だけで CI を判定し、`warnings` に残します。レビュースレッドの応答の形を読めないときは、未解決なしとは扱わずに終了コード 1 で止まります。
 
 ## 環境
 
@@ -218,4 +250,4 @@ git rm --cached {HIKYAKU_ROOT}/.hikyaku.local
 
 ### origin に到達できない
 
-着手中ブランチの検出ができなくなりますが、着手可能・待機の判定には影響しません（判定は `PR` 列だけで行うため）。
+着手中ブランチの検出ができなくなりますが、着手可能・待機の判定には影響しません（判定は完了の記録だけで行うため）。

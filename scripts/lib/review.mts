@@ -19,6 +19,7 @@
  */
 
 import {
+  MAIN_PROVIDER,
   resolveReviewProvider,
   type ReviewKind,
   type ReviewKindSettings,
@@ -44,8 +45,6 @@ export type ReviewStyle = "code-review" | "security-review" | "prompt";
 
 export interface ReviewPlanInput {
   kind: ReviewKind;
-  /** メインのセッションのプロバイダ */
-  self: ReviewProvider;
   settings: ReviewKindSettings;
   /** 差分の基準にする、ローカルで解決できる ref（pr base --ref の値）。doc では使わない */
   baseRef?: string | undefined;
@@ -58,8 +57,6 @@ export interface ReviewPlan {
   provider: ReviewProvider;
   /** provider の値の出所 */
   providerSource: ReviewProviderSource;
-  /** provider_for で決まったとき、使った行のキー（メインのプロバイダ） */
-  providerKey: ReviewProvider | undefined;
   mode: ReviewMode;
   style: ReviewStyle;
   model: string | undefined;
@@ -69,13 +66,13 @@ export interface ReviewPlan {
 }
 
 export function planReview(input: ReviewPlanInput): ReviewPlan {
-  const { kind, self, settings } = input;
-  const resolved = resolveReviewProvider(settings, self);
+  const { kind, settings } = input;
+  const resolved = resolveReviewProvider(settings);
   const provider = resolved.provider;
   const models: ReviewModelSettings = settings.models[provider];
   // doc はメインと同じプロバイダなら今までどおりサブエージェントで動かす。
   // code / security は実装したコンテキストから切り離すため、常に別プロセスにする
-  const mode: ReviewMode = kind === "doc" && provider === self ? "agent" : "process";
+  const mode: ReviewMode = kind === "doc" && provider === MAIN_PROVIDER ? "agent" : "process";
   let style: ReviewStyle;
   if (kind === "code") style = "code-review";
   else if (kind === "security" && provider === "claude" && input.nativeSecurity === true) style = "security-review";
@@ -84,7 +81,6 @@ export function planReview(input: ReviewPlanInput): ReviewPlan {
     kind,
     provider,
     providerSource: resolved.source,
-    providerKey: resolved.key,
     mode,
     style,
     model: models.model,
@@ -196,7 +192,8 @@ export interface SecurityPromptInput {
   /** skills/builder/references/security-review.md の本文 */
   guide: string;
   baseRef: string;
-  buildDirectory: string;
+  /** 対象ビルドのディレクトリ。patch では undefined（plan.md も issue.md も無い） */
+  buildDirectory: string | undefined;
   triggers: string;
 }
 
@@ -207,7 +204,9 @@ export function securityPrompt(input: SecurityPromptInput): string {
     "",
     "## 今回の対象",
     "",
-    `- 対象ビルド: \`${input.buildDirectory}\`（plan.md と issue.md はここにある）`,
+    input.buildDirectory === undefined
+      ? "- 対象: patch（サイクルを要しない小さな変更）。変更の意図は PR の本文とコミットにある"
+      : `- 対象ビルド: \`${input.buildDirectory}\`（plan.md と issue.md はここにある）`,
     `- 差分の基準: \`${input.baseRef}\`。コミット済みの差分は \`git diff $(git merge-base ${input.baseRef} HEAD)..HEAD\` で確認する。\`origin/main\` などで代用しない`,
     "- 未コミットの変更と未追跡ファイルも `git status` / `git diff` / `git diff --cached` で確認する",
     "- このリポジトリが機微情報として扱うもの（[review.security] triggers）:",
@@ -278,4 +277,21 @@ export function parseCodexResult(fileContent: string | undefined): ReviewOutcome
     return { ok: false, text: "", problem: "codex が結果を書き出しませんでした" };
   }
   return { ok: true, text: fileContent, problem: undefined };
+}
+
+/** ラウンドの境目は機械で決め、指摘の妥当性・重複・修正文は呼び出し元が判断する。 */
+export function reviewAction(input: {
+  round: number; maxRounds: number; autoFix: boolean;
+  hasFindings: boolean; uncertain: boolean; repeated: boolean;
+}): { action: "done" | "fix" | "confirm"; nextRound: number | null; deferUncertain: boolean } {
+  const { round, maxRounds, autoFix, hasFindings, uncertain, repeated } = input;
+  if (!hasFindings && !uncertain) return { action: "done", nextRound: null, deferUncertain: false };
+  if (maxRounds > 0 && !hasFindings) return { action: "done", nextRound: null, deferUncertain: uncertain };
+  if (maxRounds === 1) return { action: hasFindings ? "fix" : "done", nextRound: null, deferUncertain: uncertain };
+  if (maxRounds > 1) {
+    if (round === maxRounds) return { action: "confirm", nextRound: null, deferUncertain: false };
+    return { action: "fix", nextRound: round + 1, deferUncertain: uncertain };
+  }
+  if (repeated) return { action: "confirm", nextRound: null, deferUncertain: false };
+  return { action: round > 1 && autoFix && !uncertain ? "fix" : "confirm", nextRound: round + 1, deferUncertain: false };
 }

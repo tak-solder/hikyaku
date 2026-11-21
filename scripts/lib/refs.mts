@@ -1,10 +1,10 @@
 /**
- * 外部システムへの参照（issue / PR / タスク）の表記。
+ * 外部システムへの参照（issue / PR）の表記。
  *
- * tasklist.md の issue 列・PR 列、cycles.md の外部列で表記を揃える。
+ * tasklist.md の PR 列、cycles.md の外部列で表記を揃える。
  * 生の URL のままだと表が横に伸びて読めなくなるため `[#12](URL)` に整える。
  *
- * 完了判定は「PR 列が非空かどうか」の一点なので、この整形が判定に影響することはない。
+ * 完了判定は「PR（PR 列か完了の記録）が非空かどうか」の一点なので、この整形が判定に影響することはない。
  */
 
 /** 既に Markdown リンクになっているか */
@@ -46,4 +46,16 @@ export function refUrl(raw: string): string | undefined {
   const link = /^\[[^\]]*\]\(([^)]+)\)$/.exec(text)?.[1];
   if (link !== undefined) return link;
   return /^https?:\/\//.test(text) ? text : undefined;
+}
+
+/**
+ * PR 本文に入れるサイクルの issue への参照行（close は Closes、ほかは Refs）。参照が無い・外部への参照でない・
+ * target が none なら空。クローズキーワードは #12 か URL しか解釈しないので、Markdown リンクにしない
+ */
+export function cycleRefLine(target: string, reference: string, phase: string): string {
+  const number = refNumber(reference);
+  const url = refUrl(reference);
+  const subject = number !== undefined ? `#${number}` : url !== undefined && /^https?:\/\//.test(url) ? url : undefined;
+  if (target === "none" || subject === undefined) return "";
+  return `${phase === "close" ? "Closes" : "Refs"} ${subject}`;
 }

@@ -1,0 +1,15 @@
+{"at":"2026-11-17T05:34:05.462Z","skill":"builder","step":"plan","result":"done","peak":275000,"context":132547,"session":"cafb370b-eae6-45fd-848a-5aff92edee1c","hikyaku":"3.0.0"}
+{"at":"2026-11-17T05:38:11.339Z","skill":"builder","step":"plan-review","result":"done","peak":305000,"context":163826,"session":"cafb370b-eae6-45fd-848a-5aff92edee1c","hikyaku":"3.0.0"}
+{"at":"2026-11-17T05:40:10.336Z","skill":"builder","step":"test-spec","result":"done","context":168647,"session":"cafb370b-eae6-45fd-848a-5aff92edee1c","hikyaku":"3.0.0"}
+{"at":"2026-11-17T05:41:43.043Z","skill":"builder","step":"test-spec-review","result":"done","context":184392,"session":"cafb370b-eae6-45fd-848a-5aff92edee1c","hikyaku":"3.0.0"}
+{"at":"2026-11-17T05:42:27.521Z","skill":"builder","step":"G8","result":"approved","input":"承認（委任された判断。監督）。追加2点と解釈2件は安全側。追加2点は handoff に AI の解釈として残す","context":186992,"session":"cafb370b-eae6-45fd-848a-5aff92edee1c","hikyaku":"3.0.0"}
+{"at":"2026-11-17T05:55:52.110Z","skill":"builder","step":"implement","result":"done","context":242595,"session":"cafb370b-eae6-45fd-848a-5aff92edee1c","hikyaku":"3.0.0"}
+{"at":"2026-11-17T05:55:59.045Z","skill":"builder","step":"verify","result":"done","context":244333,"session":"cafb370b-eae6-45fd-848a-5aff92edee1c","hikyaku":"3.0.0"}
+{"at":"2026-11-17T06:19:40.410Z","skill":"builder","step":"review","result":"done","context":289235,"session":"cafb370b-eae6-45fd-848a-5aff92edee1c","hikyaku":"3.0.0"}
+{"at":"2026-11-17T06:20:02.309Z","skill":"builder","step":"handoff","result":"done","context":292307,"session":"cafb370b-eae6-45fd-848a-5aff92edee1c","hikyaku":"3.0.0"}
+{"at":"2026-11-17T06:20:18.493Z","skill":"retrospective","step":"peak-actual","result":"done","context":301174,"session":"cafb370b-eae6-45fd-848a-5aff92edee1c","hikyaku":"3.0.0"}
+{"at":"2026-11-17T06:20:46.689Z","skill":"retrospective","step":"analyze","result":"done","context":307010,"session":"cafb370b-eae6-45fd-848a-5aff92edee1c","hikyaku":"3.0.0"}
+{"at":"2026-11-17T06:20:48.689Z","skill":"retrospective","step":"write","result":"done","context":309927,"session":"cafb370b-eae6-45fd-848a-5aff92edee1c","hikyaku":"3.0.0"}
+{"at":"2026-11-17T06:20:50.975Z","skill":"builder","step":"retrospective","result":"done","context":310122,"session":"cafb370b-eae6-45fd-848a-5aff92edee1c","hikyaku":"3.0.0"}
+{"at":"2026-11-17T06:22:27.813Z","skill":"builder","step":"pr","result":"done","pr":"https://github.com/tak-solder/hikyaku/pull/122","context":318063,"session":"cafb370b-eae6-45fd-848a-5aff92edee1c","hikyaku":"3.0.0"}
+{"at":"2026-11-17T06:22:29.995Z","skill":"builder","step":"publish","result":"done","context":318550,"session":"cafb370b-eae6-45fd-848a-5aff92edee1c","hikyaku":"3.0.0"}

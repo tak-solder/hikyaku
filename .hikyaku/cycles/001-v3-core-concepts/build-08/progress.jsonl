@@ -1,0 +1,15 @@
+{"at":"2026-11-16T21:54:24.180Z","skill":"builder","step":"plan","result":"done","peak":350000,"context":151222,"session":"0c7899e1-7a3c-49e8-a558-284732df3fb6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T21:58:13.157Z","skill":"builder","step":"plan-review","result":"done","peak":415000,"context":177535,"session":"0c7899e1-7a3c-49e8-a558-284732df3fb6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T22:00:17.099Z","skill":"builder","step":"test-spec","result":"done","context":182505,"session":"0c7899e1-7a3c-49e8-a558-284732df3fb6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T22:04:00.764Z","skill":"builder","step":"test-spec-review","result":"done","context":226739,"session":"0c7899e1-7a3c-49e8-a558-284732df3fb6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T22:04:52.171Z","skill":"builder","step":"G8","result":"approved","input":"承認（委任された判断・監督）。G8 前に実装を始めた逸脱は retrospective に記録し、作業ツリーの変更を plan と test-spec に照らして確かめ直す","context":230011,"session":"0c7899e1-7a3c-49e8-a558-284732df3fb6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T22:19:11.865Z","skill":"builder","step":"implement","result":"done","context":288450,"session":"0c7899e1-7a3c-49e8-a558-284732df3fb6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T22:23:42.182Z","skill":"builder","step":"verify","result":"done","context":290883,"session":"0c7899e1-7a3c-49e8-a558-284732df3fb6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T22:47:50.998Z","skill":"builder","step":"review","result":"done","context":347035,"session":"0c7899e1-7a3c-49e8-a558-284732df3fb6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T22:48:28.308Z","skill":"builder","step":"handoff","result":"done","context":354309,"session":"0c7899e1-7a3c-49e8-a558-284732df3fb6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T22:48:40.456Z","skill":"retrospective","step":"peak-actual","result":"done","context":362396,"session":"0c7899e1-7a3c-49e8-a558-284732df3fb6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T22:48:52.803Z","skill":"retrospective","step":"analyze","result":"done","context":368468,"session":"0c7899e1-7a3c-49e8-a558-284732df3fb6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T22:49:16.996Z","skill":"retrospective","step":"write","result":"done","context":369349,"session":"0c7899e1-7a3c-49e8-a558-284732df3fb6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T22:49:17.264Z","skill":"builder","step":"retrospective","result":"done","context":369349,"session":"0c7899e1-7a3c-49e8-a558-284732df3fb6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T22:50:53.530Z","skill":"builder","step":"pr","result":"done","pr":"https://github.com/tak-solder/hikyaku/pull/114","context":376038,"session":"0c7899e1-7a3c-49e8-a558-284732df3fb6","hikyaku":"3.0.0"}
+{"at":"2026-11-16T22:50:59.384Z","skill":"builder","step":"publish","result":"done","context":379079,"session":"0c7899e1-7a3c-49e8-a558-284732df3fb6","hikyaku":"3.0.0"}

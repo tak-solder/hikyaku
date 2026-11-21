@@ -17,10 +17,21 @@ const BOOLEAN_FLAGS = new Set([
   "all",
   "verbose",
   "no-fetch",
+  "for-merge",
+  "require-cycle",
+  "no-cycle",
+  "has-findings",
+  "uncertain",
+  "repeated",
   "ref",
+  "full",
+  "defer",
+  "notice",
+  "escalate",
+  "no-risk",
 ]);
 
-/** すべてのコマンドが受け付けるグローバルオプション。BP の基準表のキーはこれと衝突しない（lib/bp.mts が弾く） */
+/** すべてのコマンドが受け付けるグローバルオプション */
 export const GLOBAL_FLAGS: ReadonlySet<string> = new Set(["json", "root", "profile", "help", "version", "dry-run"]);
 
 export interface ParsedArgs {

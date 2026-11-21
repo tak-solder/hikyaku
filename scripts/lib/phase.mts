@@ -2,7 +2,7 @@
  * フェーズと中断点の導出。
  *
  * 状態ファイルは持たない。フェーズはファイルの存在から、着手中はブランチの
- * 存在から、完了は tasklist.md の PR 列から導出する。重複した状態は必ず腐り、
+ * 存在から、完了は各ビルドの完了の記録（tasklist.mts）から導出する。重複した状態は必ず腐り、
  * しかも腐っていることに気づけないため。
  *
  * 中断の検出も同じ原理で、ブランチ上の成果物の有無から「どこまで進んだか」を
@@ -14,6 +14,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildDirName, isComplete, normalizeBuildId, type BuildRecord } from "./tasklist.mts";
 import type { CycleRecord } from "./cycles.mts";
+import { checkEscalation } from "./escalation.mts";
 
 export type DerivedPhase =
   | "planning"
@@ -57,16 +58,22 @@ export const RETURN_FILE = "return.md";
 export interface ReturnRecord {
   /** 差し戻し元のビルド ID。見出しから読めなければ undefined */
   buildId: string | undefined;
+  /** 行き詰まりの報告の欠け（試したこと / 選択肢と失うもの / 推奨）。そろっていれば空 */
+  problems: string[];
 }
 
-/** 差し戻し元は見出し（`# 差し戻し: build-NN`）から読む。中身の他の部分は解釈しない */
+/** 差し戻し元は見出し（`# 差し戻し: build-NN`）から読む。本文は行き詰まりの報告の形式だけを確かめる */
 const RETURN_HEADING = /^#\s*差し戻し\s*[:：]\s*(build-\d+)/m;
 
 export function readReturn(cycleDirectory: string): ReturnRecord | undefined {
   const path = join(cycleDirectory, RETURN_FILE);
   if (!existsSync(path)) return undefined;
-  const match = RETURN_HEADING.exec(readFileSync(path, "utf8"));
-  return { buildId: match?.[1] === undefined ? undefined : normalizeBuildId(match[1]) };
+  const text = readFileSync(path, "utf8");
+  const match = RETURN_HEADING.exec(text);
+  return {
+    buildId: match?.[1] === undefined ? undefined : normalizeBuildId(match[1]),
+    problems: checkEscalation(text).problems,
+  };
 }
 
 interface ArtifactSpec {
@@ -161,7 +168,7 @@ export function deriveState(
   }
 
   // 「サイクルが完了したか」はリポジトリ全体の問いなので、デフォルトブランチで
-  // マージ済みかを見る。builds（HEAD 基準）の PR 列で代用すると、最後のビルドで
+  // マージ済みかを見る。builds（HEAD 基準）の完了で代用すると、最後のビルドで
   // tasklist done した直後に completed と出て close-cycle を勧めてしまう。
   // mergedIds が undefined（base を読めない）なら completed とは言わない。
   // close-cycle は永続ドキュメントへの昇格なので、誤って勧めるほうが害が大きい。

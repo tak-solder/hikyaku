@@ -1,0 +1,30 @@
+# tasklist-review: doc-reviewer による tasklist のレビュー
+
+`doc-reviewer` を起動する（`context: tasklist`）。`{phase}` は値 `caller`（呼び出し元のフェーズ。
+architect から呼ばれたら `architect`、builder からなら `build-{NN}`）。
+
+- [ ] 起動方法を決める
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc {phase} {cycle} --json
+```
+
+  `mode: agent` ならサブエージェントとして起動する。`mode: process` なら
+  `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run doc {phase} {cycle} --context tasklist --files <渡す情報のパスをカンマ区切りで>`
+  を実行し、返った本文をレビュー結果として扱う。終了コード 1 は失敗で、指摘0件として扱わずユーザーに報告する。
+  `mode: process` では、プロンプトに直接含める `--dry-run` の出力と issue.md の本文を
+  `git rev-parse --git-path hikyaku` の下の一時ファイルに書き出し、そのパスも `--files` に含める
+- [ ] この時点ではまだファイルに書き込まれていない。`--dry-run` の出力（変更後の一覧・依存グラフ）と
+  issue.md の本文をプロンプトに直接含めて渡す
+- [ ] 参照として渡す: `cycles/{cycle}/planning/user-stories.md`, `cycles/{cycle}/design/design-delta.md`（存在する場合）,
+  見積もりに使ったガイド（`tokens guide {cycle}` が示すパス）、予測ピークの判定の帯（値 `mergeHint` / `estimateLimit`）
+- [ ] 予測ピークのレビュー対象は成分の見積もり（列挙した読むファイル・作成するファイルがスコープと合っているか、
+  未知の領域の取りこぼしが無いか）。合計と判定はコマンドが行っているので、そこは見ない
+- [ ] 明確な不整合・見積もりの乖離は反映する（主観的な指摘は無視してよい）
+- [ ] `done` を報告する。`--findings`（レビューが返した指摘の件数。`###` の項目の数で、確度が低い懸念も含む）と
+  `--adopted`（そのうち反映すると決めた件数）を添える。主観的として無視した指摘も `--findings` には数える
+- [ ] レビュー結果とその対応は G6 の提示で使うので、このセッションに残しておく
+- [ ] 反映するなら、続けて `scope` を `done` で報告し直し、整理と `tokens estimate` からやり直す。
+  レビューはこの呼び出しで1回だけで、もう一度は回らない（ドキュメントのレビューは1回だけ）。
+  反映したあとの変更はレビューを経ずに G6 へ進むので、レビューに渡した `--dry-run` の出力と issue.md の本文も
+  残しておく（G6 で、レビューのあとに変えたところを分けて示すため）

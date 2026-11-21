@@ -22,7 +22,7 @@ argument-hint: "[{cycle}] [build-{NN} | add {指摘}]"
 
 ### 最も重要な制約: 永続ドキュメントを書き換えない
 
-永続ドキュメント（overview / constraints / learnings / conventions 等）は
+永続ドキュメント（overview / decisions / constraints / conventions 等）は
 「実装済みの現実（as-is）」を表す。あなたが作るのは「これから作るもの（to-be）」で、
 それは `design-delta.md` に書く。
 
@@ -39,7 +39,7 @@ close-cycle が行う。並行サイクルはこの status を見て「決まっ
 各ビルドは、PR をマージした時点で既存機能に影響せず、本番でどんな操作が起きても
 データが壊れたり不整合を起こしたりしない単位に分ける。本番データの破壊は取り返しがつかない。
 
-BP の都合などでやむを得ずこの原則を外す（安全でない分割）のは、`config --json` の
+ビルドの大きさの都合などでやむを得ずこの原則を外す（安全でない分割）のは、`config --json` の
 `unsafeSplit.allowed` が true のときだけ。これは、サイクルが `[data_integrity] allow_unsafe_split`
 を宣言していて、かつ base_branch がリリースされるブランチでない（まだ本番に出ない）ことを
 CLI が確かめた結果。自分で base_branch の名前から判断しない。分割の判断は build-manager が行う。
@@ -49,88 +49,45 @@ CLI が確かめた結果。自分で base_branch の名前から判断しない
 - 実装コード・テストコードの記述
 - ADR 以外の永続ドキュメントへの書き込み
 
-## 差し戻しからの再設計
+## 通常の設計以外の起動
 
-`$ARGUMENTS[1]` に `build-{NN}` が指定された場合、または `cycle status` が
-`building（差し戻し中: build-NN）` を返した場合は、builder から差し戻された設計の見直しとして
-進める。差し戻しの記録は `cycles/{cycle}/return.md` にあり、差し戻し元のビルドのブランチにだけ
-コミットされている。
+次の2つも手順は `step next` が返す。同じ `design/` で手順を回し直すので、Step 0 の中で `step restart` で
+回を区切ってから始める。ブランチ・入力・区切り方は、それぞれの準備の手順に従う。
 
-通常の設計との違いは次のとおり。ここに書いていないステップは通常どおり行う。
-
-- ブランチ: 差し戻し元のビルドのブランチ上で作業する。 architect 用のブランチは切らない。
-  Step 0 のブランチ確認は `branch verify architect` ではなく `branch verify build-{NN} {cycle}` で行い、
-  `ok: true` でなければブランチを作らずにユーザーに尋ねる（ask: branch）（差し戻し元のブランチに切り替えてもらう）。
-  設計の変更はそのビルドの PR に入るので、積んでいる場合も連鎖が一直線のまま保てる
-- 入力: `return.md` と、差し戻し元のビルドの `questions.md` を必ず読む。何が崩れたか、
-  何を決め直すかはそこに書かれている。企画成果物と既存の design-delta.md も通常どおり読む
-- design-delta.md: 撤回した判断を残す。書き換えるだけでなく、どの判断を、なぜ撤回したかを
-  1段落で書く（後からビルドの PR を読む人が、設計が変わった理由を追えるようにするため）
-- Step 5b: 影響を受けるビルドは、追加よりも更新で扱う。 build-manager を呼び出し、差し戻し元の
-  issue.md・BP・依存を改める。他のビルドに波及する場合はそれも更新する
-- Step 6: PR を作らない。振り返りのあと、`return.md` と、差し戻し元のビルドの `plan.md` /
-  `test-spec.md`（古い設計の上で書かれたもの）を削除してコミット & push する。この削除が差し戻しの
-  解決の記録になる。`return.md` が消えれば、`cycle status` は差し戻し元のビルドの plan.md からの
-  再開を返す
-- 案内: `/hikyaku:builder {cycle} {NN}` を案内する。同じブランチで builder を起動し直せば、
-  Step 3 からやり直せる
-
-## 指摘からの追加設計
-
-`$ARGUMENTS[1]` が `add` の場合は、全ビルドを終えたあとに付いたレビューの指摘を受けて、
-対応するビルドを足す設計として進める。`add` に続く引数の残り（改行以降も含む）が、対応する指摘の
-内容。指摘が渡されていなければ、指摘を添えて `/hikyaku:architect {cycle} add {指摘}` で起動し直すよう
-案内して終了する（推測で埋めない）。
-
-通常の設計との違いは次のとおり。ここに書いていないステップは通常どおり行う。
-
-- 前提: `cycle status` が `building`（全ビルドが完了している）か `completed` であること。
-  `closed` / `abandoned` なら何もせず終了する。完了していないビルドがあれば、指摘はそのビルドか、
-  そのビルドの後に扱うよう案内して終了する
-- ブランチ: `branch verify architect {cycle}` の `expected`（architect のブランチ）で作業する。
-  無ければ、全ビルドを取り込んだブランチ（通常はデフォルトブランチ。conductor では conductor ブランチ）
-  から作る。既にあれば中断からの再開として、ブランチ上の差分から済んだ手順を飛ばす
-- 入力: 渡された指摘を必ず読む。企画成果物・`codebase-survey.md`・`design-delta.md`・`tasklist.md` も読む
-- Step 1・Step 2: 行わない（調査は済んでいる）。指摘に関わるファイルだけを読む
-- Step 3〜Step 5a: 指摘への対応に設計の変更が要るときだけ行う。要らなければ Step 5b へ進む。
-  設計を変えたら、`design-delta.md` にどの指摘を受けて何を変えたかを1段落で残す
-- Step 5b: 指摘に対応するビルドを build-manager で追加する。既存のビルドは完了しているので更新しない。
-  issue.md の「やること」に、対応する指摘（PR のコメントの URL があればそれも）を書く
-- Step 6: 通常どおり PR を作る。向き先は `pr base` に従う（conductor では conductor ブランチ）
+- `$ARGUMENTS[1]` に `build-{NN}` が指定された場合、または `start` が差し戻し（`return`）を
+  返した場合: 差し戻しからの再設計。`${CLAUDE_PLUGIN_ROOT}/skills/architect/references/return.md`
+  （[return.md](references/return.md)）に従う
+- `$ARGUMENTS[1]` が `add` の場合: 指摘からの追加設計。`add` に続く引数の残り（改行以降も含む）が、
+  対応する指摘の内容。`${CLAUDE_PLUGIN_ROOT}/skills/architect/references/add.md`（[add.md](references/add.md)）に従う
 
 ## 作業ステップ
 
-### Step 0: 設定の解決と入力の読み込み
+### Step 0: 準備と入力の読み込み
 
 - [ ] `${CLAUDE_PLUGIN_ROOT}/skills/architect/references/templates.md`: 各種テンプレート（必須）
-- [ ] 設定と対象サイクルを解決する
+- [ ] `$ARGUMENTS[1]` に `build-{NN}` が指定されていれば、差し戻しからの再設計の準備（return.md）へ進む。
+  それ以外は、準備をまとめて行う（作業サイクルの記録・ブランチ・状態の確認・セッション名）
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config {cycle} --json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" start architect {cycle}
 ```
 
-`$ARGUMENTS[0]` のサイクルを渡す。省略時は CLI が現在のブランチ → `.hikyaku.local` →
-唯一の進行中サイクルの順で決め、決まらなければ候補を添えてエラーになる。そのときは推測せず
-ユーザーに尋ねて（ask: cycle）指定し直す（別サイクルへコミットする事故になる）。HIKYAKU_ROOT は
-`.hikyaku.config` から解決されるので、引数では受け取らない。
+出力の「次」に従う。
 
-出力の `cycle` と `cycleSource` を、作業対象としてユーザーに1行で示す。
-以降のゲートとレビューの有無は、出力の `gates` / `reviews` で決める。
-`unsafeSplit.allowed` が true なら、その `message` も1行で示す（このサイクルでは原則を外せることを、
-分割の前にユーザーが知っておくため）。
+- サイクルを決められずに候補が出たら、推測せずユーザーに尋ねて（ask: cycle）指定し直す（別サイクルへコミットする事故になる）
+- ブランチを尋ねるよう出たら（ask: branch）、現在のブランチが実行環境に割り当てられたものだと分かっていても、
+  **自分で決めずに必ず尋ねる。** セッションの中からは、別の作業のブランチに紛れ込んだ状態と区別できない。
+  どれが妥当かの示唆を添えずに3つを示す: 1. 規則どおり期待する名前のブランチを作る（`git switch -c {期待する名前}`）
+  / 2. 現在のブランチで作業する（`--keep-branch` を付ける）/ 3. 別のブランチを指定する（切り替える）。
+  答えに従って `start` をやり直す
+- 差し戻しと出たら（`return`）、差し戻しからの再設計の準備（return.md）へ進む
+- 止まると出たら、内容を伝えて終了する
+- サイクルを1行で示す。「安全でない分割」の行があれば、それも1行で示す（分割の前にユーザーが知っておくため）。
+  セッション名を設定する（設定する手段が無い環境ではスキップ）
 
-- [ ] 対象サイクルを記録する（次回から尋ねられずに済む）
+成果物をコミットする直前に `branch verify architect {cycle}` でブランチを確かめる。
 
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle use {cycle}
-```
-
-- [ ] 企画成果物を読み込む（必須）
-  - `cycles/{cycle}/planning/user-stories.md`
-  - `cycles/{cycle}/planning/questions.md`（存在する場合）
-
-いずれも無ければ `/hikyaku:planner` を先に実行するよう案内して終了する。
-
+- [ ] 企画成果物を読み込む: `cycles/{cycle}/planning/user-stories.md` と `planning/questions.md`（存在する場合）
 - [ ] 読むべきドキュメントの候補を取得する
 
 ```bash
@@ -140,276 +97,55 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" context architect {cycle}
 概要欄を見て、今回のスコープに関係するものだけを読む。`context` が返すのは候補と理由までで、
 絞るのはあなたの仕事。
 
-- `overview` は Step 2 の差分調査の基準になる。未作成なら差分ではなく全体を調査する
-- `decisions` は採用理由とトレードオフを把握する。覆す場合は Step 4b で新エントリとして記録し、既存エントリは書き換えない
+- `overview` は既存コードの差分調査（`survey`）の基準になる。未作成なら差分ではなく全体を調査する
+- `decisions` は採用理由とトレードオフを把握する。覆す場合は ADR の追記（`adr`）で新エントリとして記録し、既存エントリは書き換えない
 
 `repo` 管理のドキュメントは既存形式が正。参考として読むが、形式には手を出さない。
-`tech-stack` / `db-schema` / `interfaces` は俯瞰の手がかりとして読むが、
-コードと矛盾したら常にコードを正とする（勝手に直さず、codebase-survey.md に記録する）。
+永続ドキュメントがコードと矛盾したら常にコードを正とする（勝手に直さず、codebase-survey.md に記録する）。
 
-- [ ] ブランチを作成し、命名規則どおりか確認する（差し戻しからの再設計では
-  `branch verify build-{NN} {cycle}`。上の「差し戻しからの再設計」を参照。指摘からの追加設計は
-  上の「指摘からの追加設計」を参照）
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify architect {cycle}
-```
-
-出力の `ok` と `onBaseBranch` で分岐する。自分で決めず、この表に従う。
-
-| 状況 | 対応 |
-|---|---|
-| `ok: true` | そのまま続ける |
-| `ok: false` かつ `onBaseBranch: true` | `expected` の名前でブランチを作成して続ける |
-| `ok: false` かつ `onBaseBranch` が `false` / `null` | ユーザーに尋ねる（下記）（ask: branch） |
-
-3つ目は、現在のブランチが実行環境に割り当てられたものだと分かっていても、**自分で決めずに
-必ず尋ねる。** セッションの中からは、別の作業のブランチに紛れ込んだ状態と区別できない。
-尋ねる手段（`AskUserQuestion` など）で次の3つを、どれが妥当かの示唆を添えずに提示する。
-
-1. Hikyaku の規則に従う — `expected` の名前でブランチを作成する
-2. 現在のブランチで作業する
-3. 別のブランチを指定する
-
-ユーザーが 2 か 3 を選んだら、`next` の「着手中」検出が効かなくなることを伝える
-（ブランチ名から導出しているため）。ブランチを決めたら、成果物をコミットする直前にもう一度
-この確認を行う。
-
-- [ ] サイクルの状態を確認する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle status {cycle}
-```
-
-ブランチを決めてから実行する（成果物の有無は作業ツリーで判定するため、デフォルトブランチの
-ままでは push 済みの成果物が見えない）。中断からの再開なら、表示された位置から再開する。
-
-- [ ] セッション名を設定する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" session title architect {cycle}
-```
-
-返った名前をセッション名に設定する。設定する手段が無い環境と、「変更しません」と返った場合はスキップする。
+- [ ] 差し戻しからの再設計・指摘からの追加設計なら、それぞれの準備の手順に従って回を区切る（`step restart`）
 
 → Step 1 へ。
 
-### Step 1: 並行サイクルの確認
+### Step 1 以降: step に従って進める
+
+ここから先の手順（並行サイクルの確認 → 既存コードの調査 → G2 → 質問 → 設計案 → G3 → ADR →
+design-delta → レビュー → G4 → ビルド分割 → 検証 → 振り返り → PR）は、`step next` が設定と進捗から
+1手ずつ返す。**手順を自分で組み立てない。** どのレビューやゲートが有効か、並行サイクルの確認が
+要るかは step が決める。
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" cycle list --active
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next architect {cycle}
 ```
 
-他に走行中のサイクルが無ければこのステップをスキップして Step 2 へ。
+返った1手（directive）の種類ごとに動く。報告のコマンドは directive の「報告」にあるものを使う。
 
-- [ ] `cycle-scanner` エージェントを起動する
-  - 渡す情報: 今回の `user-stories.md` のパス / 走行中サイクルのディレクトリ一覧 / `document-guide.md` のパス
-  - 出力フォーマットは `${CLAUDE_PLUGIN_ROOT}/agents/cycle-scanner.md` を参照
-- [ ] 重複が報告されたら、ユーザーに提示して方針を確認する（ask: overlap）
-  - 設計を分ける / どちらかに寄せる / そのまま進める
+| 種類 | すること |
+|---|---|
+| `run` | 「指示」のファイルを読み、そのとおりに行う。終えたら `done` を報告する |
+| `gate` | 「指示」のファイルを読み、ユーザーに提示して承認を求める。承認されたら `approved`、フィードバックなら `rejected` を報告する。どちらも `--input` にユーザーの答えを添える。`rejected` のあとは指示ファイルの戻り方に従い、無ければ答えを反映して `step next` に従って提示し直す |
+| `call` | 「指示」のファイルを読み、「呼ぶスキル」を呼び出す。「呼ばれたスキルの手順」があれば、呼ばれたスキルはそのコマンドから始める。呼ばれたスキルが手順を終えて戻ったら、指示ファイルの「戻ったら」に従って `done` を報告する。呼ばれたスキルが `stop` で止まったら報告せず、そのメッセージを伝えて止まる |
+| `done` | 手順をすべて終えた。下の「完了の案内」へ |
+| `stop` | メッセージをユーザーに伝えて終了する |
 
-全走行サイクルの本文を本セッションで読むと、大規模リポジトリでコンテキストが破綻する。
-だから軽量エージェントに委任し、返ってきた重複箇所だけを本セッションで扱う。
+- `step report` は記録したあと、次の1手を返す。それに従って続ける
+- 成果物や完了の条件（tasklist.md のビルド、`return.md` の削除など）、報告に添える値（`--pr`）は CLI が確かめ、
+  足りなければ報告を受け付けない。メッセージに従って直す。報告を通すために成果物を空で作ったり、
+  別のステップとして報告したりしない
+- `skipped` は、指示ファイルがスキップを指示する場合だけ。理由を `--reason` に書く
+- 前のステップに戻るとき（G4 のフィードバックで質問に戻る、など）は、戻る先のステップを `done` で
+  報告し直す。そこから後ろはやり直しになる。承認したあとの成果物の変更は Git の履歴で追い、
+  取り直すと決めたときも同じく報告し直す
+- 再開したとき、前のステップで会話の中に作った成果（trade-off表と推奨案、レビューの指摘と対処など）が
+  手元に無ければ、そのステップを `done` で報告し直してやり直す
+- 報告したら、成果物と `cycles/{cycle}/design/progress.jsonl`（build-manager の記録も同じファイルに入る）を
+  コミット & push する。指示ファイルにコミット・push の時機の定めがあれば（resolve-return / pr）、そちらに従う
+- 迷ったら `step next` を呼び直す。同じ状態なら同じ1手が返る
 
-→ Step 2 へ。
+### 完了の案内
 
-### Step 2: 既存コードベースの差分調査
-
-既存コードがない（新規開発）場合はスキップして Step 3 へ。
-
-調査のコンテキスト消費を避けるため、探索は `code-explorer` に委任する。ただし、
-設計判断に必要な Key Files は本セッション自身が読む。
-
-- [ ] 調査範囲の判定
-  - 単一機能・小規模スコープ → 単一エージェント（モード: 単一起動）
-  - 複数の独立した機能領域を含む、または大規模 → 観点別に2〜3並列（モード: 並列起動）
-
-- [ ] `code-explorer` を起動する
-  - 委任プロンプトに以下の絶対パスを必ず明示する:
-    - ワークスペース: `{HIKYAKU_ROOT}`
-    - 要件: `cycles/{cycle}/planning/user-stories.md`
-    - 調査対象リポジトリのルート
-    - `overview` のパス（登録されている場合） ← これが差分調査の鍵
-  - `overview` を渡すと、エージェントは全体調査ではなく差分調査を行う
-    - 調べる: 今回のスコープに関係する箇所 / overview に無い詳細 / overview とコードのズレ
-    - 調べない: overview に既にある内容の再確認
-  - 並列起動の場合は「担当観点」を明記し、いずれか1つに「概観担当」を追加指示する
-  - 各エージェントに Key Files（5〜10ファイルのパスと役割）を必ず返させる
-
-- [ ] Key Files をメインセッションで直接読む
-  - 重複を排除し、Read tool で実ファイルを読む
-  - **このステップを省略しない。** 要約だけで設計を進めると規約・インターフェースの解像度が落ちる
-
-- [ ] `cycles/{cycle}/design/codebase-survey.md` を作成する
-  - フォーマットは [templates.md](references/templates.md) を参照
-  - overview に既にある内容は書かない。これが差分調査の肝で、書いてしまうと
-    2周目以降も初回と同じコストがかかり、overview を持つ意味が失われる
-  - 恒久的な価値のある発見（規約・拡張ポイント）は、close-cycle が overview へ昇格させる。
-    ここでは「今回のサイクルで必要な範囲」に留める
-- [ ] コミット & push する
-
-- [ ] `codebase_survey_gate` が有効な場合、ユーザーに提示して確認を得る（G2）
-
-→ Step 3 へ。
-
-### Step 3: 設計に関する質問（反復ループ）
-
-codebase-survey.md・planning/・永続ドキュメントに明記されている内容は質問しない。
-特に `constraints` に書かれている非機能要件を聞き直さないこと。
-
-- [ ] 技術設計に落とし込む過程で生じる不明点を質問する（ask: questions）
-  - 1ラウンドの質問数に上限はない。聞くべきことは1回でまとめて聞く
-  - 確認観点: 技術選定, データ設計, インターフェース設計, 非機能要件, 既存コードとの整合
-  - 質問が発生した場合のみ `cycles/{cycle}/design/design-questions.md` に記録する
-  - 未回答の質問を放置しない
-- [ ] 設計判断に必要な情報が揃うまで繰り返す
-
-→ Step 4 へ。
-
-### Step 4: 設計判断と design-delta の作成
-
-#### Step 4a: 主要な設計判断の特定と分岐評価
-
-- [ ] 設計に反映する主要な技術判断を列挙する（認証方式、状態管理戦略、データ同期方式など）
-- [ ] 各判断について、妥当な代替案が複数あり trade-off が非自明かを評価する
-  - 既存規約から自明 / 単一の合理的選択肢しかない → 分岐なし
-  - 複数案で trade-off が異なり、ユーザーの判断が必要 → 分岐あり
-
-#### Step 4b: 分岐がある判断の選択（G3）
-
-分岐がなければスキップして Step 4c へ。この場合 ADR は作成しない（記録対象は分岐ありの判断のみ）。
-
-- [ ] 各判断について `code-architect` を2〜3並列で起動し、異なる観点の案を生成させる
-  - 委任プロンプトに以下の絶対パスを明示する:
-    - 要件: `cycles/{cycle}/planning/user-stories.md`
-    - 設計質問の回答: `cycles/{cycle}/design/design-questions.md`（存在する場合）
-    - 既存コード調査: `cycles/{cycle}/design/codebase-survey.md`（存在する場合）
-    - 永続ドキュメント: `overview` / `constraints` / `decisions` のパス
-  - 観点の例: Minimal（既存資産の最大活用・低リスク）/ Clean（関心分離・長期保守性）/ Pragmatic（中間）
-  - 各案に「影響ファイル」「主要コンポーネントの責務」「Trade-off」を返させる
-- [ ] trade-off表にまとめ、推奨案と理由を明記する
-
-`design_choice_gate` が有効な場合:
-
-- [ ] trade-off表と推奨案をユーザーに提示し、選択を得る（G3）
-- [ ] 「お任せ」と回答された場合も、推奨案を改めて提示して明示的な確認を得る（空回答として進めない）
-
-無効な場合:
-
-- [ ] 推奨案をそのまま採用し、ユーザーに確認を求めない
-- [ ] trade-off表と推奨理由は破棄せず、そのまま ADR の「検討した案」「採用理由」に残す
-  - 承認を省いた以上、判断を後から追える場所は ADR だけになる
-- [ ] 採用案と退けた案を PR 本文にも一行で示す（PR レビューが人間の目になる）
-
-- [ ] 確定した採用案を ADR として追記する
-  - 昇格先は `document-guide.md` の `decisions` が指すパス
-  - `hikyaku` 管理の場合: 日付ベースのファイル名（`20260901-auth-strategy.md`）、`status: accepted`
-  - `repo` 管理の場合: 既存形式に合わせる。連番なら連番、独自テンプレートならそれに従う。
-    既存に status 欄が無い場合、勝手に欄を足さずユーザーに提案して判断を仰ぐ（ask: adr-status）
-  - 記録項目: 決定 / 文脈 / 検討した案 / 採用理由 / トレードオフ / 影響範囲
-  - **トレードオフ欄に「特になし」と書かない。** 書きたくなるなら Step 4a の分岐判定が誤っている
-  - 既存エントリは書き換えない（覆すときは新エントリ + 旧を superseded）
-- [ ] コミット & push する
-
-#### Step 4c: design-delta.md の作成
-
-- [ ] `cycles/{cycle}/design/design-delta.md` を作成する
-  - フォーマットは [templates.md](references/templates.md) を参照
-  - 書く: このサイクルで作るもの（to-be）/ 永続ドキュメントのどこを更新する予定か / 既存構造への影響
-  - 書かない: 実装コード / ビルド分割（tasklist が正）/ 恒久的な設計判断（ADR が正）/
-    既に永続側にある内容の再掲
-  - 「永続ドキュメントのどこを更新する予定か」は close-cycle と cycle-scanner の入力になる
-  - データの形や意味を変える設計（スキーマ・保存形式・API の契約の変更）では、移行の段階を書く。
-    例: 追加 → 書き込みの切り替え → 既存データの移行 → 旧形式の削除、フィーチャーフラグで未完成の
-    機能を隠す、新旧 API を並行稼働させる。段階に分けておくと、Step 5b で各段階をマージしても
-    データを壊さないビルドに分けられる
-  - user-stories.md の「スコープ外」に挙げたものは設計に含めない。必要だと判断したら、設計に入れずに企画フェーズへの差し戻しをユーザーに提案する
-- [ ] コミット & push する
-
-→ Step 5 へ。
-
-### Step 5: 承認とビルド分割
-
-#### Step 5a: 設計の承認（G4）
-
-- [ ] `architecture_review` が有効な場合、`doc-reviewer` を起動する（`context: architecture`）
-  - 起動方法は `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review resolve doc architect {cycle} --self claude --json` の `mode` で決める。
-    `agent` ならサブエージェントとして起動する。`process` なら
-    `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" review run doc architect {cycle} --self claude --context architecture --files <渡す情報のパスをカンマ区切りで>`
-    の本文をレビュー結果とする。終了コード 1 は失敗で、指摘0件として扱わずユーザーに報告する
-  - 渡す情報: `design-delta.md`, `codebase-survey.md`, 今回追記した ADR, `user-stories.md`
-  - 明確な不整合・網羅漏れは反映する（主観的な指摘は無視してよい）
-- [ ] `architecture_gate` が有効な場合、ユーザーに提示して承認を得る（G4）
-
-承認観点はこれに限定する:
-
-```
-- Step 4b で採用した案が design-delta に正しく反映されているか
-- 分岐なしとして ADR に記録しなかった判断に、見落としがないか
-- doc-reviewer の指摘への対処は妥当か
-```
-
-技術選定の是非は G3 で決着済みなので、ここで問い直さない（同じことを二度聞かない）。
-
-→ 承認を得たら Step 5b へ。フィードバックがあれば Step 3 に戻る。
-
-#### Step 5b: ビルド分割（G6）
-
-ビルド分割の承認は build-manager の G6 だけで取る。build-manager は `--dry-run` で差分を提示し、
-承認後に初めて書き込むので、拒否されても外部に何も残らない。
-
-- [ ] 設計に基づいてビルドの論理的な単位（タイトル・スコープ・依存関係）を整理する
-  - 各ビルドをマージした時点で本番データを壊さないことを、分割の前提にする（「あなたの役割」を参照）
-- [ ] `/hikyaku:build-manager {cycle}` を呼び出す
-  - 伝える情報: 各ビルドのタイトル・スコープ・依存関係・参照すべき設計ドキュメント・
-    design-delta.md の移行の段階
-  - build-manager が BP見積もり、tasklist の更新、issue.md の作成、承認までを行う
-- [ ] 検証する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" validate {cycle}
-```
-
-user-stories.md の受け入れ基準に番号があれば、`validate` はどのビルドにも割り当てられていない
-受け入れ基準を報告する。報告されたら、該当するビルドの「対応する受け入れ基準」に足すか、
-満たすビルドを追加する（build-manager を再度呼び出す）。
-
-→ 承認を得たら Step 6 へ。フィードバックの内容に応じて対応する:
-- 設計へのフィードバック → Step 3 に戻る
-- ビルド分割へのフィードバック → build-manager を再度呼び出す
-
-### Step 6: 振り返りと PR
-
-- [ ] `retrospective` 設定に従って `/hikyaku:retrospective {cycle} design` を呼び出す
-- [ ] コミット前にブランチを確認する（`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify architect {cycle}`。差し戻しからの再設計では `branch verify build-{NN} {cycle}`）
-- [ ] 外部連携が有効なら、参照行を生成する（`node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" external ref architect {cycle}`）
-- [ ] PR を Draft で作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title architect {cycle}` で生成）
-  - `external ref` が返した行（`Refs #12` など）を本文の末尾に入れる。空なら入れない
-  - `gh pr create --draft` で Draft として作る。リポジトリが Draft PR に対応しておらず作成に失敗したら、
-    `--draft` を外して作り直し、下の「Ready にする」は飛ばす。Draft にできなかったことを完了の案内で伝える
-- [ ] `config` 出力の `pr.autoReady`（`[pr] auto_ready`、既定 true）が true なら、PR を Ready for Review にする（conductor の子なら飛ばす）
-
-```bash
-gh pr ready {PR の URL}
-```
-
-  - false なら Draft のまま残し、完了の案内で「PR は Draft のまま。確認後に `gh pr ready {PR の URL}` で
-    Ready にする」と伝える。**false のときに自分の判断で Ready にしない**
-  - 失敗したら、Draft のままであることと再実行のコマンドを完了の案内でユーザーに伝える
-  - conductor の子（非対話規約で起動されたセッション）は `pr.autoReady` に関わらず Ready にしない。
-    Ready にするのは、取り込む前の監督の役目
-- [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers architect {cycle} --pr {PR の URL}
-```
-
-  失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
-
-この PR は速やかにマージすることを想定している。tasklist.md がデフォルトブランチに入らないと、
-このサイクルの進捗が他から見えない。
-
-- [ ] 完了後、次に着手できるビルドを案内する
+`done` が返ったら、次に着手できるビルドを案内する。差し戻しからの再設計では、差し戻し元のビルド
+（`/hikyaku:builder {cycle} {NN}`）を案内する。
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" next {cycle}

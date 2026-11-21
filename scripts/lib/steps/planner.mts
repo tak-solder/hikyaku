@@ -1,0 +1,58 @@
+/**
+ * planner（PLAN フェーズ）のステップ。
+ *
+ * 並びは SKILL.md の Step 2〜6 と同じ。Step 0〜1（設定の解決・init / create-cycle の代行・
+ * ブランチ・セッション名）はセッションごとにやり直す準備なので、ここには含めず SKILL.md に置く。
+ * サイクルが無い時点（create-cycle を代行する前）は、作業単位のディレクトリも無いため。
+ *
+ * 作業単位はサイクルの planning/。成果物（user-stories.md）と同じ場所に progress.jsonl を置く。
+ */
+
+import { publicationStep } from "./publication.mts";
+import { consentProblem } from "./consent.mts";
+import { declarationArgs } from "../premises.mts";
+import type { SkillSteps } from "./engine.mts";
+
+export const PLANNER_STEPS: SkillSteps = {
+  skill: "planner",
+  unit: (phase) => (phase === "plan" ? "planning" : undefined),
+  steps: [
+    { id: "inputs", kind: "run", title: "インプットの読み込み" },
+    { id: "scope", kind: "run", title: "目的とスコープのすり合わせ" },
+    {
+      id: "user-stories",
+      kind: "run",
+      title: "質問ループと user-stories.md の作成",
+      produces: ["user-stories.md"],
+    },
+    {
+      id: "review",
+      kind: "run",
+      title: "doc-reviewer による user-stories.md のレビュー",
+      when: (ctx) => ctx.config.reviews.userStories,
+      countsFindings: true,
+    },
+    {
+      id: "G1",
+      kind: "gate",
+      title: "user-stories.md の承認",
+      // 要件の合意は意図を決める判断なので、どのプロファイル・設定でも外さない
+      consent: () => ({ timing: "now", reason: "要件の合意（意図を決める判断）" }),
+      ask: "G1",
+      // 選んだプロファイルのままでよいかと、事後同意を選ぶかを、要件と一緒に確かめる（US-14.1・US-20）。
+      // 事後同意の値は step report が承認の記録に残し、有効の判定（deferred-consent.mts）に使う
+      args: (ctx) => ({ profile: ctx.config.profile, deferredConsent: ctx.config.consent.deferred === true }),
+    },
+    {
+      id: "retrospective",
+      kind: "call",
+      title: "振り返り",
+      call: "retrospective",
+      when: (ctx) => ctx.config.reviews.retrospective !== "skip",
+      reason: () => "企画フェーズの最後の振り返り",
+    },
+    // merge@plan の who=user の事項が決定なしで PR になるのを防ぐ（同意ゲートは置かない）
+    { id: "pr", kind: "run", title: "サイクルの issue と PR の作成", recordsPr: true, accepts: consentProblem("planner"), args: declarationArgs },
+    publicationStep("planner"),
+  ],
+};

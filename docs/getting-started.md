@@ -1,6 +1,6 @@
 # Getting Started
 
-Claude Code でのインストールから最初の1サイクルを締めるまでを通します。Codex を使う場合は [Codex で使い始める](getting-started-codex.md) で導入と起動方法を確認してください。既存のリポジトリに導入する想定で、途中で分岐はありません。プロファイルや設定を選ぶ判断は、ひととおり回してからで間に合うので、まず1周してください。
+Claude Code でのインストールから最初の1サイクルを締めるまでを通します。既存のリポジトリに導入する想定で、途中で分岐はありません。プロファイルや設定を選ぶ判断は、ひととおり回してからで間に合うので、まず1周してください。
 
 ## 前提
 
@@ -47,8 +47,10 @@ CLI を自分のシェルからも叩きたい場合は、[実行方法](referen
 リポジトリルート/.hikyaku.config   設定のベース。hikyaku_root の唯一の宣言先
 {HIKYAKU_ROOT}/cycles.md           サイクル索引
 {HIKYAKU_ROOT}/document-guide.md   ドキュメントガイド
-{HIKYAKU_ROOT}/.gitignore          .hikyaku.local の1行だけ
+{HIKYAKU_ROOT}/.gitignore          .hikyaku.local と feedback/ の2行だけ
 ```
+
+雛形を生成したあとの手順は、`hikyaku step next init` が1手ずつ決めます。進み具合は `{HIKYAKU_ROOT}/progress.jsonl` に記録されるので、途中で止まっても、もう一度 `/hikyaku:init` を実行すれば続きから再開できます。この記録も PR に含まれます。
 
 最後に PR が作られます。この PR はマージしてから次へ進んでください。
 
@@ -67,7 +69,7 @@ CLI を自分のシェルからも叩きたい場合は、[実行方法](referen
 
 違いは [プロファイル](configuration/profiles.md) にあります。選んだ値は `cycles.md` に記録され、以後そのサイクルの属性になります。
 
-作成後「このまま企画フェーズに進みますか？」と聞かれます。進むとブランチと PR が PLAN のものに畳まれるので、PR は増えません。
+作成後「このまま企画フェーズに進みますか？」と聞かれます。進むとブランチと PR が PLAN のものに畳まれるので、PR は増えません。サイクルを作ったあとのこの確認と PR の作成は `hikyaku step next create <cycle>` が順に返し、記録はサイクルのディレクトリの `progress.jsonl` に残ります。
 
 ## 4. PLAN — 企画
 
@@ -91,7 +93,7 @@ CLI を自分のシェルからも叩きたい場合は、[実行方法](referen
 
 既存コードの調査はサブエージェントに委任され、設計判断に必要なファイルだけを本セッションが読みます。トレードオフが非自明な判断は複数案が提示され、選択を求められます（express では推奨案が自動採用されます）。選んだ案は ADR に記録されます。
 
-続いてビルド分割です。BP を見積もり、1セッションに収まる単位へ割ります。tasklist と issue.md の差分が提示されるので、承認します。
+続いてビルド分割です。各ビルドのセッションのコンテキストのピークを見積もり（予測ピーク）、1セッションに収まる単位へ割ります。tasklist と issue.md の差分が提示されるので、承認します。
 
 成果物は `design/design-delta.md`、`design/codebase-survey.md`、`tasklist.md`、`build-{NN}/issue.md`、そして PR です。**この PR もマージしてから次へ進んでください。** `tasklist.md` がデフォルトブランチに無いと、他のサイクルからも外からもこのサイクルの進捗が見えません。
 
@@ -121,7 +123,7 @@ hikyaku next
 /hikyaku:close-cycle
 ```
 
-各ビルドの `handoff.md` と振り返りから昇格候補が抽出され、昇格先ごとに提示されます。何を昇格させ、何を捨てるかを選んで承認してください。この取捨選択は人間の判断で、どのプロファイルでも省略されません。
+各ビルドの `handoff.md` と振り返りから永続化の候補が集められ、置き場ごとに、追加・置き換え・削除が分けて提示されます。何を残し、何を消すかを選んで承認してください。`decisions`（ADR）と `constraints` を変える回の承認は同意なので、どのプロファイルでも省略されません。
 
 承認された内容が永続ドキュメントへ書き込まれ、ADR の status が `accepted` から `implemented` に更新され、サイクルが `closed` になります。最後に PR が作られます。
 
@@ -133,6 +135,6 @@ hikyaku next
 
 - 承認が多い / 少ないと感じた → [プロファイル](configuration/profiles.md)
 - ブランチ名や PR タイトルを変えたい → [.hikyaku.config](configuration/config-file.md)
-- GitHub の issue と連動させたい → [外部システムへの投影](configuration/external.md)
+- サイクルごとに GitHub の issue を立てたい → [サイクルの GitHub issue](configuration/external.md)
 - 複数のサイクルを同時に回したい → [複数サイクルの並行運用](operations/multi-cycle.md)
 - エラーが出た → [トラブルシューティング](operations/troubleshooting.md)

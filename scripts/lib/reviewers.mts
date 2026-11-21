@@ -5,12 +5,14 @@
  * CLI が担い、スキルは結果に従って依頼するだけにする。
  */
 
+import { isPatchPhase } from "./branch.mts";
 import { REVIEWER_SKIP_TARGETS, type ReviewerSkipTarget } from "./config.mts";
 
 /** フェーズ名を、アサインをオフにできる単位に直す。build-NN は build */
 export function skipTargetOf(phase: string): ReviewerSkipTarget | undefined {
   if (/^build-\d+$/.test(phase)) return "build";
-  return phase !== "build" && (REVIEWER_SKIP_TARGETS as readonly string[]).includes(phase)
+  if (isPatchPhase(phase)) return "patch";
+  return phase !== "build" && phase !== "patch" && (REVIEWER_SKIP_TARGETS as readonly string[]).includes(phase)
     ? (phase as ReviewerSkipTarget)
     : undefined;
 }
@@ -49,18 +51,34 @@ export interface ReviewerPlan {
 }
 
 /** @copilot は Copilot の login（copilot-pull-request-reviewer など）として現れる */
-function same(reviewer: string, login: string): boolean {
+export function sameReviewer(reviewer: string, login: string): boolean {
   const a = reviewer.toLowerCase();
   const b = login.toLowerCase();
   if (a === "@copilot") return b.includes("copilot");
   return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
 }
 
-export function planReviewers(input: ReviewerInput): ReviewerPlan {
+/**
+ * PR の状態（gh）を読む前に決まる結果。このフェーズがオフか、マージ先がどちらでも一覧が空なら決まる。
+ * 決まらなければ undefined。gh が使えない環境でも、依頼するものが無いなら何も失敗させないため
+ */
+export function planWithoutPr(
+  input: Pick<ReviewerInput, "phase" | "conductorBranch" | "reviewers" | "skip" | "phaseReviewers">,
+): ReviewerPlan | undefined {
   const target = skipTargetOf(input.phase);
   if (target !== undefined && input.skip.includes(target)) {
     return { source: "none", skipped: true, request: [], excluded: [] };
   }
+  const conductorList = input.conductorBranch === undefined ? [] : input.phaseReviewers;
+  if (input.reviewers.length === 0 && conductorList.length === 0) {
+    return { source: "none", skipped: false, request: [], excluded: [] };
+  }
+  return undefined;
+}
+
+export function planReviewers(input: ReviewerInput): ReviewerPlan {
+  const decided = planWithoutPr(input);
+  if (decided?.skipped === true) return decided;
 
   // conductor ブランチ向けの PR だけ別の一覧を使う。人間のレビュアーを入れると、
   // フェーズごとの取り込みが止まるため、通常の PR とは分けて持つ
@@ -74,11 +92,11 @@ export function planReviewers(input: ReviewerInput): ReviewerPlan {
     if (request.includes(reviewer)) continue;
     // GitHub は PR の作成者本人をレビュアーにできない。依頼が失敗すると PR の作成後の
     // 手順が止まるので、先に外す
-    if (same(reviewer, input.author)) {
+    if (sameReviewer(reviewer, input.author)) {
       excluded.push({ reviewer, reason: "PR の作成者本人" });
-    } else if (input.requested.some((login) => same(reviewer, login))) {
+    } else if (input.requested.some((login) => sameReviewer(reviewer, login))) {
       excluded.push({ reviewer, reason: "依頼済み" });
-    } else if (input.reviewed.some((login) => same(reviewer, login))) {
+    } else if (input.reviewed.some((login) => sameReviewer(reviewer, login))) {
       // gh pr edit --add-reviewer はレビュー済みの人にも再依頼してしまう
       excluded.push({ reviewer, reason: "レビュー済み" });
     } else {

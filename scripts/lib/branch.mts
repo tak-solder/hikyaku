@@ -14,26 +14,27 @@ import { HikyakuError } from "./errors.mts";
 /** フェーズは閉じた集合。これがブランチ名の解析を成立させている */
 export type Phase =
   | "init"
-  | "bp-guide"
+  | "token-guide"
   | "create"
   | "plan"
   | "architect"
   | "close"
   | "conductor"
-  | `build-${string}`;
+  | `build-${string}`
+  | `patch-${string}`;
 
 /**
  * サイクルに属さないフェーズ。ブランチ名は {prefix}{sep}{phase} になる。
- * init はワークスペースの初期化、bp-guide は BP 基準表の運用（どちらもサイクル横断）
+ * init はワークスペースの初期化、token-guide は予測ピークのガイドの校正（どちらもサイクル横断）
  */
-export const CYCLELESS_PHASES = ["init", "bp-guide"] as const;
+export const CYCLELESS_PHASES = ["init", "token-guide"] as const;
 
 /**
  * conductor はフェーズではなく、/hikyaku:conductor がサイクルの作業を集める統合ブランチ。
  * 各フェーズのブランチはここから切り、PR もここへ向ける。ブランチ名の解析と
  * スタック元の導出に参加させるため、フェーズと同じ閉じた集合に入れる
  */
-export const FIXED_PHASES = ["init", "bp-guide", "create", "plan", "architect", "close", "conductor"] as const;
+export const FIXED_PHASES = ["init", "token-guide", "create", "plan", "architect", "close", "conductor"] as const;
 
 export function isCyclelessPhase(phase: string): boolean {
   return (CYCLELESS_PHASES as readonly string[]).includes(phase);
@@ -41,8 +42,37 @@ export function isCyclelessPhase(phase: string): boolean {
 
 const BUILD_PHASE = /^build-\d{2,}$/;
 
+/**
+ * patch（/hikyaku:patch）の作業単位。patch-{YYYYMM}-{slug}。
+ *
+ * サイクルに属さないことも、進行中のサイクルに属すこともある。どちらでもブランチ名は
+ * {prefix}{sep}patch{sep}{YYYYMM}{sep}{slug} で、記録は patches/{YYYYMM}/{slug}/ に置く
+ * （サイクルに属すならサイクルのディレクトリの下、属さないなら HIKYAKU_ROOT の下）。
+ * 年月を名前に含めるのは、記録の場所をブランチ名から一意に導くため（別の月の同じ slug と区別する）
+ */
+const PATCH_PHASE = /^patch-(\d{4}(?:0[1-9]|1[0-2]))-([a-z0-9]+(?:-[a-z0-9]+)*)$/;
+
+export interface PatchId {
+  /** YYYYMM */
+  month: string;
+  slug: string;
+}
+
+export function parsePatchPhase(value: string): PatchId | undefined {
+  const match = PATCH_PHASE.exec(value);
+  return match === null ? undefined : { month: match[1] as string, slug: match[2] as string };
+}
+
+export function isPatchPhase(value: string): boolean {
+  return PATCH_PHASE.test(value);
+}
+
+export function patchPhase(id: PatchId): Phase {
+  return `patch-${id.month}-${id.slug}` as Phase;
+}
+
 export function isPhase(value: string): value is Phase {
-  return (FIXED_PHASES as readonly string[]).includes(value) || BUILD_PHASE.test(value);
+  return (FIXED_PHASES as readonly string[]).includes(value) || BUILD_PHASE.test(value) || PATCH_PHASE.test(value);
 }
 
 export function buildPhase(buildId: string | number): Phase {
@@ -55,8 +85,16 @@ export interface BranchNaming {
   separator: string;
 }
 
-/** init / bp-guide はサイクルに属さないので {prefix}{sep}{phase} になる */
+/**
+ * init / token-guide はサイクルに属さないので {prefix}{sep}{phase} になる。
+ * patch はサイクルの有無に関わらず {prefix}{sep}patch{sep}{YYYYMM}{sep}{slug}
+ */
 export function branchName(naming: BranchNaming, phase: Phase, cycle?: string): string {
+  const patch = parsePatchPhase(phase);
+  if (patch !== undefined) {
+    const body = ["patch", patch.month, patch.slug].join(naming.separator);
+    return naming.prefix === "" ? body : `${naming.prefix}${naming.separator}${body}`;
+  }
   const parts = isCyclelessPhase(phase) ? [phase] : [cycle ?? "", phase];
   if (!isCyclelessPhase(phase) && (cycle === undefined || cycle === "")) {
     throw new HikyakuError(`フェーズ ${phase} のブランチ名にはサイクルが必要です`);
@@ -87,6 +125,20 @@ export function parseBranch(naming: BranchNaming, name: string): ParsedBranch | 
 
   for (const phase of CYCLELESS_PHASES) {
     if (rest === phase) return { cycle: undefined, phase };
+  }
+
+  // patch はサイクルより先に見る。サイクル名は数字で始まるので patch とは重ならないが、
+  // slug が close などのフェーズ名で終わると、末尾から剥がす解析では取り違える
+  const patchHead = `patch${separator}`;
+  if (rest.startsWith(patchHead)) {
+    const tail = rest.slice(patchHead.length);
+    const month = tail.slice(0, 6);
+    const slug = tail.slice(6 + separator.length);
+    if (/^\d{6}$/.test(month) && tail.slice(6, 6 + separator.length) === separator) {
+      const phase = `patch-${month}-${slug}`;
+      if (isPatchPhase(phase)) return { cycle: undefined, phase: phase as Phase };
+    }
+    return undefined;
   }
 
   // 末尾から既知のフェーズを剥がす（サイクルに属さないフェーズは上で完全一致のみ）
@@ -148,4 +200,33 @@ export function renderPrTitle(
     .replace(/\s{2,}/g, " ")
     .replace(new RegExp(`\\s*${DELIMITERS}\\s*$`), "")
     .trim();
+}
+
+/**
+ * {title} の既定値。--build-title（builder・patch の依頼の要約）が優先で、無ければ conductor に限り
+ * サイクルの要約（cycles.md の summary）を使う。conductor の最後の PR はサイクル全体を表し、
+ * ビルドのような個別の題を持たないため。ほかのフェーズには入れない
+ */
+export function defaultTitleFor(phase: Phase, cycleSummary: string | undefined, buildTitle: string | undefined): string | undefined {
+  if (buildTitle !== undefined) return buildTitle;
+  return phase === "conductor" && cycleSummary !== undefined && cycleSummary !== "" ? cycleSummary : undefined;
+}
+
+/** タイトルに出すフェーズ名。patch は年月と slug を落とす（{title} に依頼の要約が入るため） */
+export function phaseTitleLabel(phase: Phase): string {
+  return isPatchPhase(phase) ? "patch" : phase;
+}
+
+/**
+ * [session] title のテンプレートからセッション名を作る。空のテンプレートは「変更しない」で、undefined を返す。
+ * patch は年月と slug を落とす（{title} に依頼の要約が入るため）
+ */
+export function renderSessionTitle(template: string, phase: Phase, cycle: string | undefined, title: string | undefined): string | undefined {
+  if (template === "") return undefined;
+  return renderPrTitle(template, {
+    cycle,
+    phase: phaseTitleLabel(phase),
+    buildId: /^build-(\d+)$/.exec(phase)?.[1],
+    title,
+  });
 }

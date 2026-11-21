@@ -12,23 +12,20 @@ import {
   defaultAllowedTools,
   judgePr,
   lintTags,
-  modelFor,
   parseFinalText,
   parseResultJson,
-  parseCodexResult,
   resolveAllAsks,
   resolveAsk,
   settingsDigest,
   shellQuote,
 } from "../scripts/lib/conductor.mts";
-import { readConductor } from "../scripts/lib/config.mts";
 import { pluginRoot } from "../scripts/lib/paths.mts";
 import { parsePrReviewState, parsePrView } from "../scripts/lib/github.mts";
-import { planReviewers, skipTargetOf, type ReviewerInput } from "../scripts/lib/reviewers.mts";
-import { cli, snapshot, succeeds, testEnvironment, workspace, write } from "./helpers.mts";
+import { planReviewers, planWithoutPr, skipTargetOf, type ReviewerInput } from "../scripts/lib/reviewers.mts";
+import { cli, ESCALATION_BODY, snapshot, succeeds, testEnvironment, withoutGh, workspace, write } from "./helpers.mts";
 
 const settings: AskSettings = {
-  gates: { userStories: true, codebaseSurvey: false, designChoice: true, architecture: true, plan: false },
+  gates: { codebaseSurvey: false, designChoice: true, architecture: true, plan: false, promotion: true },
   reviews: {
     userStories: true, architecture: true, tasklist: true, plan: true, testSpec: true, code: true,
     security: "recommended", retrospective: "auto", validate: "manual",
@@ -59,19 +56,34 @@ function result(text: string, extra: Record<string, unknown> = {}): string {
   });
 }
 
-test("conductor: 既定では同意ゲートを監督に、障害・中止・分類できない問いを人間に振り分ける", () => {
-  const handlers = Object.fromEntries(resolveAllAsks(conductor(), settings).map((ask) => [ask.id, ask.handler]));
+test("conductor: 既定では確認ゲートを監督に、同意・障害・中止・分類できない問いをユーザーに振り分ける", () => {
+  const asks = resolveAllAsks(conductor(), settings);
+  const handlers = Object.fromEntries(asks.map((ask) => [ask.id, ask.handler]));
   for (const id of ["cycle", "branch", "G3", "G6", "G8", "G10", "questions", "review-findings", "docs-link"]) {
     assert.equal(handlers[id], "supervisor", id);
   }
-  for (const id of ["retry-limit", "abandon", "other"]) assert.equal(handlers[id], "human", id);
+  for (const id of ["delegation", "retry-limit", "abandon", "other"]) assert.equal(handlers[id], "user", id);
+  assert.ok(asks.every((ask) => ask.handler === "supervisor" || ask.handler === "user"));
 });
 
-test("conductor: escalate と delegate で振り分けを上書きし、中止は常に人間に上げる", () => {
+test("conductor: G10 は同意の回（decisions・constraints の変更を含む）だけユーザーに固定し、G6・G8 は確認で既定では監督が答える", () => {
+  const g10 = resolveAsk("G10", conductor({ delegate: ["G10"] }), settings, "consent");
+  assert.deepEqual([g10.category, g10.handler, g10.source], ["consent", "user", "fixed"]);
+  const confirm = resolveAsk("G10", conductor(), settings, "confirm");
+  assert.deepEqual([confirm.category, confirm.handler, confirm.source], ["confirm", "supervisor", "default"]);
+  const express = { ...settings, gates: { ...settings.gates, promotion: false } };
+  assert.equal(resolveAsk("G10", conductor(), express).enabled, false, "promotion_gate が off なら確認の回は出ない");
+  for (const id of ["G6", "G8"]) {
+    const ask = resolveAsk(id, conductor(), settings);
+    assert.deepEqual([ask.category, ask.handler, ask.source], ["confirm", "supervisor", "default"], id);
+  }
+});
+
+test("conductor: escalate と delegate で振り分けを上書きし、中止は常にユーザーに上げる", () => {
   const config = conductor({ escalate: ["G8"], delegate: ["retry-limit"] });
   assert.deepEqual(
     [resolveAsk("G8", config, settings).handler, resolveAsk("G8", config, settings).source],
-    ["human", "escalate"],
+    ["user", "escalate"],
   );
   assert.deepEqual(
     [resolveAsk("retry-limit", config, settings).handler, resolveAsk("retry-limit", config, settings).source],
@@ -79,14 +91,37 @@ test("conductor: escalate と delegate で振り分けを上書きし、中止�
   );
   assert.deepEqual(
     [resolveAsk("abandon", config, settings).handler, resolveAsk("abandon", config, settings).source],
-    ["human", "fixed"],
+    ["user", "fixed"],
   );
 });
 
-test("conductor: 表に無い ID は分類できない問いとして人間に上げる", () => {
+test("conductor: 子の手順の approval が同意なら、escalate・delegate に関わらずユーザーに固定する", () => {
+  const express = { ...settings, gates: { ...settings.gates, designChoice: false, architecture: false } };
+  const redesign = resolveAsk("G3", conductor(), express, "consent");
+  assert.deepEqual(
+    [redesign.category, redesign.handler, redesign.source, redesign.enabled],
+    ["consent", "user", "fixed", true],
+  );
+  assert.deepEqual(
+    [resolveAsk("G4", conductor({ delegate: ["G4"] }), express, "consent").handler, resolveAsk("G4", conductor({ delegate: ["G4"] }), express, "consent").source],
+    ["user", "fixed"],
+  );
+  assert.equal(resolveAsk("G3", conductor({ escalate: ["G3"] }), express, "consent").source, "fixed");
+});
+
+test("conductor: approval が確認なら監督に振り、そのゲートで止まっているので enabled にする", () => {
+  const off = { ...settings, gates: { ...settings.gates, designChoice: false, architecture: false } };
+  const confirm = resolveAsk("G4", conductor(), off, "confirm");
+  assert.deepEqual([confirm.category, confirm.handler, confirm.enabled], ["confirm", "supervisor", true]);
+  const statically = resolveAsk("G3", conductor(), off);
+  assert.deepEqual([statically.category, statically.handler, statically.enabled], ["confirm", "supervisor", false]);
+});
+
+test("conductor: 表に無い ID は分類できない問いとしてユーザーに上げる", () => {
   const ask = resolveAsk("G1", conductor(), settings);
   assert.equal(ask.category, "unknown");
-  assert.equal(ask.handler, "human");
+  assert.equal(ask.handler, "user");
+  assert.equal(resolveAsk("Z9", conductor(), settings).source, "fixed");
 });
 
 test("conductor: profile と振り返りの設定で出ない問いを enabled: false にする", () => {
@@ -97,6 +132,9 @@ test("conductor: profile と振り返りの設定で出ない問いを enabled: 
   assert.equal(enabled["retrospective"], false);
   const prompt = { ...settings, reviews: { ...settings.reviews, retrospective: "prompt" as const } };
   assert.equal(resolveAsk("retrospective", conductor(), prompt).enabled, true);
+  assert.equal(enabled["security-review"], true);
+  const secOn = { ...settings, reviews: { ...settings.reviews, security: "on" as const } };
+  assert.equal(resolveAsk("security-review", conductor(), secOn).enabled, false);
 });
 
 for (const [name, config, pattern] of [
@@ -104,11 +142,27 @@ for (const [name, config, pattern] of [
   ["delegate の abandon", conductor({ delegate: ["abandon"] }), /指定できません/],
   ["delegate の other", conductor({ delegate: ["other"] }), /指定できません/],
   ["両方に同じ ID", conductor({ escalate: ["G8"], delegate: ["G8"] }), /両方/],
+  ["delegate の同意ゲート delegation", conductor({ delegate: ["delegation"] }), /指定できません/],
+  ["escalate の abandon", conductor({ escalate: ["abandon"] }), /指定できません/],
 ] as const) {
   test(`conductor: 設定の検査で${name}を拒否する`, () => {
     assert.throws(() => checkConductorAsks(config, "[conductor]"), pattern);
   });
 }
+
+test("conductor: 同意ゲートを delegate に書いたエラーは、ユーザーが判断することを示す", () => {
+  assert.throws(
+    () => checkConductorAsks(conductor({ delegate: ["delegation"] }), "[conductor]"),
+    (error: Error & { hint?: string }) => /ユーザー/.test(`${error.message}\n${error.hint ?? ""}`) && !/人間/.test(`${error.message}\n${error.hint ?? ""}`),
+  );
+  assert.doesNotThrow(() => checkConductorAsks(conductor({ delegate: ["G8"] }), "[conductor]"));
+  // すでにユーザーに上がる同意ゲートを escalate に書くのは害が無いので受け付ける
+  assert.doesNotThrow(() => checkConductorAsks(conductor({ escalate: ["delegation"] }), "[conductor]"));
+  assert.equal(resolveAsk("delegation", conductor({ escalate: ["delegation"] }), settings).source, "fixed");
+  // G10 は回によって同意になる確認のゲート。delegate に書けるが、同意の回はユーザーに固定される
+  assert.doesNotThrow(() => checkConductorAsks(conductor({ delegate: ["G10"] }), "[conductor]"));
+  assert.equal(resolveAsk("G10", conductor({ escalate: ["G10"] }), settings).source, "escalate");
+});
 
 test("conductor: 最終出力の末尾にある gate / done / blocked を取り出す", () => {
   assert.deepEqual(parseFinalText('plan を書きました。\n\n<hikyaku-gate id="G8">\n承認しますか？\n</hikyaku-gate>\n'), {
@@ -117,9 +171,24 @@ test("conductor: 最終出力の末尾にある gate / done / blocked を取り�
   assert.deepEqual(parseFinalText('<hikyaku-done next="/hikyaku:builder 001-test 2">\nPR: x\n</hikyaku-done>'), {
     outcome: "done", next: "/hikyaku:builder 001-test 2", body: "PR: x",
   });
-  assert.deepEqual(parseFinalText("<hikyaku-blocked>\n差し戻し\n</hikyaku-blocked>"), {
-    outcome: "blocked", body: "差し戻し",
+  assert.deepEqual(parseFinalText(`<hikyaku-blocked>\n差し戻し\n\n${ESCALATION_BODY}</hikyaku-blocked>`), {
+    outcome: "blocked", body: `差し戻し\n\n${ESCALATION_BODY}`.trim(),
   });
+});
+
+test("conductor: 行き詰まりの報告の欠けた blocked は violation にし、reason に欠けを示す", () => {
+  const parsed = parseFinalText("<hikyaku-blocked>\nテストが通らないので止まります\n</hikyaku-blocked>");
+  assert.equal(parsed.outcome, "violation");
+  assert.equal(parsed.body, "テストが通らないので止まります");
+  assert.match(parsed.reason ?? "", /「試したこと」の節がありません/);
+  assert.match(parsed.reason ?? "", /「推奨」の節がありません/);
+});
+
+test("conductor: 行き詰まりに見えない blocked（PR 作成の代行の依頼）も同じ形式で検査する", () => {
+  const plain = "PR 作成の代行を依頼します。\nbase: main\nhead: x";
+  assert.equal(parseFinalText(`<hikyaku-blocked>\n${plain}\n</hikyaku-blocked>`).outcome, "violation");
+  const formed = `${plain}\n\n試したこと: 本文を .tmp/pr.md に書き出した\n選択肢:\n- 監督が PR を作る 失うもの: なし\n推奨: 監督が PR を作る`;
+  assert.equal(parseFinalText(`<hikyaku-blocked>\n${formed}\n</hikyaku-blocked>`).outcome, "blocked");
 });
 
 for (const [name, text, reason] of [
@@ -161,12 +230,10 @@ for (const raw of ["null", "[]", '"text"', "1"]) {
   });
 }
 
-test("conductor: 既定の許可は node を Hikyaku CLI の実行だけに、git を列挙したサブコマンドだけに絞る", () => {
+test("conductor: 既定の許可は node を Hikyaku CLI の実行だけに絞り、git・gh は許可せず安全判定にかける", () => {
   const tools = defaultAllowedTools("/plugins/hikyaku");
   assert.equal(tools.includes("Bash(node:*)"), false);
-  assert.equal(tools.includes("Bash(git:*)"), false);
-  assert.ok(tools.includes("Bash(git commit:*)"));
-  assert.equal(tools.some((tool) => /^Bash\(git (-c|config)/.test(tool)), false);
+  assert.equal(tools.some((tool) => /^Bash\((git|gh)\b/.test(tool)), false);
   assert.ok(tools.includes("Bash(node /plugins/hikyaku/scripts/hikyaku.mts:*)"));
   assert.ok(tools.includes('Bash(node "/plugins/hikyaku/scripts/hikyaku.mts":*)'));
   assert.equal(tools.some((tool) => /^Bash\(node(?! .*hikyaku\.mts)/.test(tool)), false);
@@ -225,7 +292,7 @@ test("CLI: conductor asks はサイクルの profile を反映し、設定の誤
 
 test("CLI: conductor launch は起動コマンドを組み立てるだけで、何も書き込まない", (t) => {
   const directory = workspace(t, true);
-  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--bp", "2");
+  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--peak", "350k");
   write(directory, ".hikyaku.config", `hikyaku_root = "docs/hikyaku"
 [conductor]
 allowed_tools = ["Bash(npm test:*)"]
@@ -245,7 +312,9 @@ budget_per_run = 2.5
   const disallowed = output.argv.indexOf("--disallowedTools");
   assert.deepEqual(output.argv.slice(disallowed + 1, disallowed + 4), ["AskUserQuestion", "ScheduleWakeup", "CronCreate"]);
   assert.equal(output.argv[output.argv.indexOf("--max-budget-usd") + 1], "2.5");
+  assert.equal(output.argv[output.argv.indexOf("--permission-mode") + 1], "auto", "子は常に auto モード");
   assert.ok(output.command.endsWith("< /dev/null > r.json"));
+  assert.match(output.command, /^HIKYAKU_CONDUCTOR_CHILD=1 CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1 /, "子ではバックグラウンドの実行を無効にする");
   assert.deepEqual(snapshot(directory), before);
 
   const returned = JSON.parse(succeeds(
@@ -274,24 +343,25 @@ test("CLI: conductor launch の architect add は指摘のファイルを必須�
   write(directory, "answer.md", "回答（委任された判断）: 承認\n");
   const resumed = JSON.parse(succeeds(
     directory, "conductor", "launch", "architect", "001", "add", "--resume", output.sessionId,
-    "--message", join(directory, "answer.md"), "--expect-digest", expected, "--json",
+    "--message", join(directory, "answer.md"), "--from", "supervisor", "--ask", "G6", "--choice", "approved",
+    "--expect-digest", expected, "--json",
   ));
-  assert.equal(resumed.argv[2], "回答（委任された判断）: 承認");
+  assert.match(resumed.argv[2] ?? "", /^続きに進む前に.*\n- hikyaku ledger conductor-answer architect 001-test --input=.回答（委任された判断）: 承認.\n[\s\S]*監督の答え:\n回答（委任された判断）: 承認$/);
   assert.ok(resumed.argv.includes("--resume"));
 });
 
 test("CLI: conductor launch は再開時に回答ファイルを渡し、組で指定されなければ拒否する", (t) => {
   const directory = workspace(t, true);
-  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--bp", "2");
+  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--peak", "350k");
   write(directory, "answer.txt", "回答（委任された判断）: 承認する\n");
   const expected = digest(directory);
   const output = JSON.parse(succeeds(
     directory, "conductor", "launch", "builder", "001", "1", "--resume", "s-1", "--message", "answer.txt",
-    "--expect-digest", expected, "--json",
+    "--from", "supervisor", "--ask", "G8", "--choice", "approved", "--expect-digest", expected, "--json",
   ));
   assert.equal(output.resumed, true);
   assert.equal(output.sessionId, "s-1");
-  assert.equal(output.argv[2], "回答（委任された判断）: 承認する");
+  assert.match(output.argv[2] ?? "", /conductor-answer build-01 001-test --input=.回答（委任された判断）: 承認する.\n[\s\S]*監督の答え:\n回答（委任された判断）: 承認する$/);
   assert.ok(output.argv.includes("--resume"));
   assert.equal(output.argv.includes("--max-budget-usd"), false);
 
@@ -312,13 +382,16 @@ test("CLI: conductor parse は gate の振り分けまで返す", (t) => {
 
   write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[conductor]\nescalate = ["G8"]\n');
   const escalated = JSON.parse(succeeds(directory, "conductor", "parse", "r.json", "001", "--expect-digest", digest(directory), "--json"));
-  assert.equal(escalated.ask.handler, "human");
+  assert.equal(escalated.ask.handler, "user");
   assert.equal(escalated.ask.source, "escalate");
+  const text = succeeds(directory, "conductor", "parse", "r.json", "001", "--expect-digest", digest(directory));
+  assert.match(text, /ユーザーに上げる/);
+  assert.doesNotMatch(text, /人間/);
 });
 
 test("CLI: 合意したときから委任の設定が変わっていれば launch / parse を止める", (t) => {
   const directory = workspace(t, true);
-  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--bp", "2");
+  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--peak", "350k");
   write(directory, "r.json", result('<hikyaku-gate id="G8">\nq\n</hikyaku-gate>'));
   const agreed = digest(directory);
   // 子が .hikyaku.config を書き換えた想定
@@ -332,7 +405,7 @@ test("CLI: 合意したときから委任の設定が変わっていれば launc
 
 test("CLI: [conductor] 以外の設定（base_branch やサイクル設定）が変わっても launch を止める", (t) => {
   const directory = workspace(t, true);
-  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--bp", "2");
+  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--peak", "350k");
   const agreed = digest(directory);
   const launch = () => cli(directory, "conductor", "launch", "builder", "001", "1", "--expect-digest", agreed);
   assert.equal(launch().status, 0);
@@ -399,7 +472,7 @@ test("CLI: デフォルトブランチから切ったばかりの conductor ブ�
 
 test("CLI: [conductor.models] のフェーズ、無ければ model を --model で渡し、どちらも無ければ渡さない", (t) => {
   const directory = workspace(t, true);
-  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--bp", "2");
+  succeeds(directory, "tasklist", "add", "001", "--title", "export", "--peak", "350k");
   const modelOf = (...args: string[]) => {
     const output = JSON.parse(succeeds(
       directory, "conductor", "launch", ...args, "--expect-digest", digest(directory), "--json",
@@ -719,7 +792,7 @@ test("conductor: 未解決のレビュースレッドがあれば、待たずに
   assert.equal(truncated.ok, false);
 });
 
-test("conductor: 待てば解消しうる問題（CI の実行中・レビューの依頼）だけなら waiting、人間の対応が要る問題が混ざれば waiting でない", () => {
+test("conductor: 待てば解消しうる問題（CI の実行中・レビューの依頼）だけなら waiting、ユーザーの対応が要る問題が混ざれば waiting でない", () => {
   const running = { __typename: "CheckRun", name: "c", status: "IN_PROGRESS" };
   const failed = { __typename: "CheckRun", name: "f", status: "COMPLETED", conclusion: "FAILURE" };
   const request = [{ __typename: "Bot", login: "copilot-pull-request-reviewer" }];
@@ -752,7 +825,7 @@ function reviewerInput(overrides: Partial<ReviewerInput> = {}): ReviewerInput {
 test("reviewers: build-NN は build として、他のフェーズはそのままの名前でオフにできる単位に対応する", () => {
   assert.equal(skipTargetOf("build-03"), "build");
   assert.equal(skipTargetOf("build-120"), "build");
-  for (const phase of ["init", "bp-guide", "create", "plan", "architect", "close", "conductor"]) {
+  for (const phase of ["init", "token-guide", "create", "plan", "architect", "close", "conductor"]) {
     assert.equal(skipTargetOf(phase), phase);
   }
   assert.equal(skipTargetOf("review"), undefined);
@@ -826,13 +899,10 @@ review_timeout = 5
   const config = JSON.parse(succeeds(directory, "config", "001", "--json"));
   assert.deepEqual(config.pr.reviewers, ["alice", "@copilot", "org/platform"]);
   assert.deepEqual(config.pr.reviewersSkip, ["init", "build"]);
-  assert.equal(config.pr.autoReady, true);
   assert.deepEqual(config.conductor.phaseReviewers, ["@copilot"]);
   assert.equal(config.conductor.reviewTimeoutMinutes, 5);
   write(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config", '[pr]\nreviewers = ["bob"]\n');
   assert.deepEqual(JSON.parse(succeeds(directory, "config", "001", "--json")).pr.reviewers, ["bob"]);
-  write(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config", "[pr]\nauto_ready = false\n");
-  assert.equal(JSON.parse(succeeds(directory, "config", "001", "--json")).pr.autoReady, false);
 });
 
 test("CLI: pr request-reviewers は PR のマージ先で一覧を選び、作成者を除いて gh pr edit で依頼する", (t) => {
@@ -891,15 +961,73 @@ reviewers_skip = ["plan"]
   assert.equal([...gh.calls(), ...already.calls()].some((call) => call.startsWith("pr edit")), false);
 });
 
-test("CLI: pr request-reviewers は --pr が無い・gh が失敗したときに終了コード 1 を返す", (t) => {
+test("CLI: pr request-reviewers は --pr が無ければ終了コード 1、gh pr edit の失敗は止めずに代わりに行うことを返す", (t) => {
   const directory = workspace(t, true);
   write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["alice"]\n');
   const gh = useGh(t, directory, { view: prView({ baseRefName: "main" }), editFails: true });
   assert.equal(gh.cli("pr", "request-reviewers", "plan", "001").status, 1);
-  const failed = gh.cli("pr", "request-reviewers", "plan", "001", "--pr", "7");
-  assert.equal(failed.status, 1);
-  assert.match(failed.stderr, /レビュアーの依頼に失敗しました: alice/);
-  assert.match(failed.stderr, /PR 自体は作成済み/);
+  const failed = gh.cli("pr", "request-reviewers", "plan", "001", "--pr", "7", "--json");
+  assert.equal(failed.status, 0, failed.stderr);
+  const output = JSON.parse(failed.stdout);
+  assert.deepEqual([output.applied, output.reason, output.stage, output.requested], [false, "gh-failed", "gh pr edit", false]);
+  assert.match(output.manual, /PR #7 の画面で/);
+  assert.match(output.manual, /alice/);
+});
+
+test("CLI: pr request-reviewers は gh api graphql の失敗も止めずに stage を返す", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["alice"]\n');
+  const gh = useGh(t, directory, { view: prView({ baseRefName: "main" }), graphql: { data: null } });
+  const result = gh.cli("pr", "request-reviewers", "plan", "001", "--pr", "7", "--json");
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.deepEqual([output.applied, output.reason, output.stage], [false, "gh-failed", "gh api graphql"]);
+  assert.match(output.manual, /^GitHub の PR #7 の画面で[^\n]*\n {2}alice$/, "マージ先が分かっていれば一覧は1つ");
+  assert.equal(gh.calls().some((call) => call.startsWith("pr edit")), false);
+});
+
+test("CLI: gh が無い環境で pr request-reviewers は止めず、マージ先が分からなければ両方の一覧を示す", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["alice"]\n[conductor]\nphase_reviewers = ["@copilot"]\n');
+  const result = withoutGh(t, directory, "pr", "request-reviewers", "build-01", "001", "--pr", "7", "--json");
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.deepEqual([output.applied, output.reason, output.stage], [false, "gh-unavailable", "gh pr view"]);
+  assert.match(output.manual, /phase_reviewers: @copilot/);
+  assert.match(output.manual, /\[pr\] reviewers: alice/);
+});
+
+test("CLI: phase_reviewers が空でも、マージ先が分からなければ conductor ブランチ向けは依頼しないと示す", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["alice"]\n');
+  const output = JSON.parse(withoutGh(t, directory, "pr", "request-reviewers", "build-01", "001", "--pr", "7", "--json").stdout);
+  assert.match(output.manual, /phase_reviewers: （依頼しない）/);
+  assert.match(output.manual, /\[pr\] reviewers: alice/);
+});
+
+test("CLI: pr request-reviewers は gh pr view の応答が JSON でなければ終了コード 1", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["alice"]\n');
+  assert.equal(useGh(t, directory, { view: "not json" }).cli("pr", "request-reviewers", "plan", "001", "--pr", "7").status, 1);
+});
+
+test("CLI: gh が無い環境でも、オフ・空の一覧なら gh を呼ばずに何もしない", (t) => {
+  const directory = workspace(t, true);
+  const empty = withoutGh(t, directory, "pr", "request-reviewers", "plan", "001", "--pr", "7", "--json");
+  assert.equal(empty.status, 0, empty.stderr);
+  assert.deepEqual([JSON.parse(empty.stdout).source, JSON.parse(empty.stdout).applied], ["none", true]);
+  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[pr]\nreviewers = ["alice"]\nreviewers_skip = ["build"]\n');
+  const skipped = withoutGh(t, directory, "pr", "request-reviewers", "build-01", "001", "--pr", "7", "--json");
+  assert.equal(skipped.status, 0, skipped.stderr);
+  assert.equal(JSON.parse(skipped.stdout).skipped, true);
+});
+
+test("planWithoutPr: オフなら skip、どちらの一覧も空なら none、片方でもあれば決めない", () => {
+  const base = { phase: "build-03", conductorBranch: "hikyaku/001-test/conductor", reviewers: [] as string[], skip: [] as string[], phaseReviewers: [] as string[] };
+  assert.equal(planWithoutPr({ ...base, skip: ["build"], reviewers: ["alice"] })?.skipped, true);
+  assert.equal(planWithoutPr(base)?.source, "none");
+  assert.equal(planWithoutPr({ ...base, phaseReviewers: ["@copilot"] }), undefined);
+  assert.equal(planWithoutPr({ ...base, conductorBranch: undefined, phaseReviewers: ["@copilot"] })?.source, "none");
 });
 
 test("CLI: conductor check-pr は gh の結果で取り込めるかを返し、満たさなければ終了コード 2", (t) => {
@@ -1151,265 +1279,4 @@ test("CLI: pr request-reviewers は Copilot が GraphQL 上で依頼済みなら
   assert.deepEqual(output.request, []);
   assert.deepEqual(output.excluded, [{ reviewer: "@copilot", reason: "依頼済み" }]);
   assert.equal(gh.calls().some((call) => call.startsWith("pr edit")), false);
-});
-
-test("conductor: モデルは選択したプロバイダ内でフェーズ別、新形式の既定、旧形式の順に解決する", () => {
-  const table = {
-    provider: "claude", model: "legacy-default", models: { architect: "legacy-architect", builder: "legacy-builder" },
-    claude: { model: "claude-default", models: { architect: "claude-architect" } },
-    codex: { model: "codex-default", models: { architect: "codex-architect" } },
-  };
-  for (const [env, provider] of [[{}, "claude"], [{ CODEX_ENVIRONMENT_ID: "env" }, "codex"]] as const) {
-    const config = readConductor(table, env);
-    assert.equal(modelFor(config, "architect"), `${provider}-architect`);
-    assert.equal(modelFor(config, "builder"), `${provider}-default`);
-    assert.equal(modelFor(config, "close-cycle"), `${provider}-default`);
-  }
-  const partial = readConductor({ ...table, claude: { models: { architect: "claude-architect" } } }, {});
-  assert.equal(modelFor(partial, "architect"), "claude-architect");
-  assert.equal(modelFor(partial, "builder"), "legacy-builder");
-  assert.equal(modelFor(partial, "close-cycle"), "legacy-default");
-});
-
-test("conductor: 旧形式モデルは明示 provider、未指定なら Claude に属し、環境による切り替え先には渡さない", () => {
-  for (const provider of [undefined, "claude", "codex"]) {
-    const table = { ...(provider === undefined ? {} : { provider }), model: "old-model", models: { architect: "old-architect" } };
-    const local = readConductor(table, {});
-    assert.equal(modelFor(local, "architect"), "old-architect");
-    assert.equal(modelFor(local, "builder"), "old-model");
-    const other = provider === "codex" ? { CLAUDE_CODE_REMOTE: "true" } : { CODEX_ENVIRONMENT_ID: "env" };
-    const switched = readConductor(table, other);
-    assert.equal(modelFor(switched, "architect"), undefined);
-    assert.equal(modelFor(switched, "builder"), undefined);
-    const same = provider === "codex" ? { CODEX_ENVIRONMENT_ID: "env" } : { CLAUDE_CODE_REMOTE: "true" };
-    assert.equal(modelFor(readConductor(table, same), "architect"), "old-architect");
-  }
-  const config = readConductor({ claude: { model: "sonnet" } }, { CODEX_ENVIRONMENT_ID: "env" });
-  assert.equal(modelFor(config, "builder"), undefined);
-});
-
-for (const [table, pattern] of [
-  [{ codex: "model" }, /codex はテーブル/],
-  [{ claude: { models: "model" } }, /\[conductor.claude\]\.models はテーブル/],
-  [{ codex: { models: { planner: "model" } } }, /\[conductor.codex.models\].*planner/],
-  [{ claude: { model: "" } }, /空文字/],
-  [{ codex: { model: 1 } }, /model/],
-  [{ codex: { models: { builder: false } } }, /builder/],
-  [{ claude: { modle: "model" } }, /\[conductor.claude\].*modle/],
-] as const) {
-  test(`conductor: プロバイダ別モデルの不正な設定を未選択でも拒否する ${JSON.stringify(table)}`, () => {
-    for (const provider of ["claude", "codex"]) {
-      assert.throws(() => readConductor({ ...table, provider }, {}), pattern);
-    }
-  });
-}
-
-test("CLI: プロバイダ別モデルのサイクル上書きを asks・起動・再開で使い、変更後は旧 digest を拒否する", (t) => {
-  const directory = workspace(t, true);
-  write(directory, ".hikyaku.config", `hikyaku_root = "docs/hikyaku"
-[conductor]
-provider = "claude"
-model = "sonnet"
-[conductor.models]
-architect = "opus"
-[conductor.claude]
-model = "claude-default"
-[conductor.codex]
-model = "codex-default"
-[conductor.codex.models]
-architect = "codex-architect"
-`);
-  write(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config", '[conductor.codex.models]\narchitect = "cycle-architect"\n');
-  const inCloud = (...args: string[]) => {
-    const result = spawnSync(process.execPath, [join(pluginRoot(), "scripts/hikyaku.mts"), "conductor", ...args], {
-      cwd: directory, encoding: "utf8", env: { ...testEnvironment(), CODEX_ENVIRONMENT_ID: "env" }, timeout: 10_000,
-    });
-    assert.ifError(result.error);
-    return result;
-  };
-  const asksResult = inCloud("asks", "001", "--json");
-  assert.equal(asksResult.status, 0, asksResult.stderr);
-  const asks = JSON.parse(asksResult.stdout);
-  assert.deepEqual(asks.models, { architect: "cycle-architect", builder: "codex-default", "close-cycle": "codex-default" });
-  const launch = (...extra: string[]) => {
-    const result = inCloud("launch", "architect", "001", "--expect-digest", asks.digest, "--json", ...extra);
-    assert.equal(result.status, 0, result.stderr);
-    const output = JSON.parse(result.stdout);
-    assert.equal(output.model, "cycle-architect");
-    assert.equal(output.argv[output.argv.indexOf("--model") + 1], "cycle-architect");
-  };
-  launch();
-  write(directory, "answer.md", "承認します");
-  launch("--resume", "thread-id", "--message", "answer.md");
-  write(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config", '[conductor.codex.models]\narchitect = "changed"\n');
-  assert.equal(inCloud("launch", "architect", "001", "--expect-digest", asks.digest).status, 1);
-});
-
-function codexEvents(...events: Record<string, unknown>[]): string {
-  return events.map((event) => JSON.stringify(event)).join("\n") + "\n";
-}
-
-function codexResult(text: string): string {
-  return codexEvents(
-    { type: "thread.started", thread_id: "codex-thread-1" },
-    { type: "turn.started" },
-    { type: "item.completed", item: { type: "agent_message", text } },
-    { type: "turn.completed", usage: { input_tokens: 20, output_tokens: 10 } },
-  );
-}
-
-test("conductor: Codex の JSONL から最終メッセージと thread_id を取り出す", () => {
-  const parsed = parseCodexResult(codexResult('<hikyaku-gate id="G8">\n承認しますか\n</hikyaku-gate>'));
-  assert.equal(parsed.outcome, "gate");
-  assert.equal(parsed.id, "G8");
-  assert.equal(parsed.sessionId, "codex-thread-1");
-  assert.equal(parsed.costUsd, null);
-  assert.equal(parseCodexResult(codexResult("自由文だけ")).outcome, "violation");
-});
-
-test("conductor: Codex の途中終了・失敗・壊れた JSONL は done と扱わない", () => {
-  const done = '<hikyaku-done next="">\n完了\n</hikyaku-done>';
-  const complete = codexResult(done);
-  for (const raw of [
-    "", "null", "[]", complete + "broken", complete.replace(/.*turn.completed.*\n/, ""),
-    complete.replace(/.*thread.started.*\n/, ""),
-    complete + codexEvents({ type: "turn.failed", error: { message: "利用上限" } }),
-    complete + codexEvents({ type: "error", message: "接続失敗" }),
-    complete + codexEvents({ type: "turn.started" }),
-  ]) assert.equal(parseCodexResult(raw).outcome, "error", raw);
-  assert.match(parseCodexResult(complete + codexEvents({ type: "turn.failed", error: { message: "利用上限" } })).reason ?? "", /利用上限/);
-});
-
-test("CLI: Codex 子は規約・入口を読み、初回 ID は parse から取得して同じ設定で再開する", (t) => {
-  const directory = workspace(t, true);
-  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[conductor]\nprovider = "codex"\nmodel = "codex-model"\n');
-  const agreed = digest(directory);
-  const asks = JSON.parse(succeeds(directory, "conductor", "asks", "001", "--json"));
-  assert.equal(asks.provider, "codex");
-  assert.equal(asks.sandbox, "workspace-write");
-  assert.deepEqual(asks.allowedTools, []);
-  const before = snapshot(directory);
-  const launch = JSON.parse(succeeds(directory, "conductor", "launch", "architect", "001", "--expect-digest", agreed, "--out", "result.jsonl", "--json"));
-  assert.equal(launch.provider, "codex");
-  assert.equal(launch.sessionId, null);
-  assert.equal(launch.argv[0], "codex");
-  assert.equal(launch.argv[1], "exec");
-  assert.ok(launch.argv.includes('--json'));
-  assert.ok(launch.argv.includes('approval_policy="never"'));
-  assert.ok(launch.argv.includes('sandbox_mode="workspace-write"'));
-  assert.equal(launch.argv[launch.argv.indexOf("--model") + 1], "codex-model");
-  assert.match(launch.argv.at(-1), /非対話規約/);
-  assert.ok(launch.argv.at(-1).includes(join(pluginRoot(), "codex/skills/architect/SKILL.md")));
-  assert.match(launch.argv.at(-1), /hikyaku:architect 001-test/);
-  assert.ok(!launch.argv.includes("--allowedTools"));
-  assert.ok(!launch.argv.includes("--dangerously-bypass-approvals-and-sandbox"));
-  assert.deepEqual(snapshot(directory), before);
-  write(directory, "result.jsonl", codexResult('<hikyaku-gate id="G8">\n承認しますか\n</hikyaku-gate>'));
-  const parsed = JSON.parse(succeeds(directory, "conductor", "parse", "result.jsonl", "001", "--expect-digest", agreed, "--json"));
-  assert.equal(parsed.outcome, "gate");
-  assert.equal(parsed.ask.handler, "supervisor");
-  write(directory, "answer.md", "回答（委任された判断）: 承認 'quoted' $value\n");
-  const resumed = JSON.parse(succeeds(directory, "conductor", "launch", "architect", "001", "--resume", parsed.sessionId, "--message", "answer.md", "--expect-digest", agreed, "--json"));
-  assert.deepEqual(resumed.argv.slice(0, 3), ["codex", "exec", "resume"]);
-  assert.equal(resumed.sessionId, "codex-thread-1");
-  assert.ok(resumed.argv.includes('approval_policy="never"'));
-  assert.ok(resumed.argv.includes('sandbox_mode="workspace-write"'));
-  assert.equal(resumed.argv.at(-2), parsed.sessionId);
-  assert.match(resumed.argv.at(-1), /回答（委任された判断）: 承認 'quoted' \$value/);
-  // POSIX shell を通してもプロンプトの引用符・$・改行が保持される
-  const bin = join(directory, "bin");
-  mkdirSync(bin);
-  const executable = join(bin, "codex");
-  writeFileSync(executable, '#!/usr/bin/env node\nprocess.stdout.write(JSON.stringify(process.argv.slice(2)))\n');
-  chmodSync(executable, 0o755);
-  const command = spawnSync("sh", ["-c", resumed.command], {
-    cwd: directory, encoding: "utf8", env: { ...testEnvironment(), PATH: `${bin}:${process.env["PATH"] ?? ""}` }, timeout: 10_000,
-  });
-  assert.equal(command.status, 0, command.stderr);
-  assert.deepEqual(JSON.parse(readFileSync(resumed.resultFile, "utf8")), resumed.argv.slice(1));
-  rmSync(resumed.resultFile);
-});
-
-for (const [config, pattern] of [
-  ['provider = "unknown"', /provider/],
-  ['provider = "codex"\nallowed_tools = ["Bash(npm test:*)"]', /allowed_tools/],
-  ['provider = "codex"\nbudget_per_run = 1', /budget_per_run/],
-] as const) {
-  test(`CLI: conductor の非対応設定を拒否する: ${config}`, (t) => {
-    const directory = workspace(t, true);
-    write(directory, ".hikyaku.config", `hikyaku_root = "docs/hikyaku"\n[conductor]\n${config}\n`);
-    const output = cli(directory, "conductor", "asks", "001");
-    assert.equal(output.status, 1);
-    assert.match(output.stderr, pattern);
-  });
-}
-
-test("CLI: 子の provider が変われば合意済み digest で launch / parse できない", (t) => {
-  const directory = workspace(t, true);
-  const agreed = digest(directory);
-  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[conductor]\nprovider = "codex"\n');
-  write(directory, "result.jsonl", codexResult('<hikyaku-done next="">\n完了\n</hikyaku-done>'));
-  for (const args of [["launch", "architect", "001"], ["parse", "result.jsonl", "001"]]) {
-    const output = cli(directory, "conductor", ...args, "--expect-digest", agreed);
-    assert.equal(output.status, 1);
-    assert.match(output.stderr, /変わ|変化|一致/);
-  }
-});
-
-
-test("conductor: クラウド判定は明示 provider と既定値より優先し、レビューと同じ規則を使う", () => {
-  for (const [env, expected] of [
-    [{ CLAUDE_CODE_REMOTE: "true" }, "claude"],
-    [{ CODEX_ENVIRONMENT_ID: "env-123" }, "codex"],
-    [{ CLAUDE_CODE_REMOTE: " true ", CODEX_ENVIRONMENT_ID: "env-123" }, "claude"],
-    [{ CLAUDE_CODE_REMOTE: "false", CODEX_ENVIRONMENT_ID: " env-123 " }, "codex"],
-  ] as const) {
-    for (const provider of [undefined, "claude", "codex"]) {
-      const config = readConductor(provider === undefined ? undefined : { provider }, env);
-      assert.equal(config.provider, expected);
-      assert.equal(config.providerSource, "cloud");
-    }
-  }
-  for (const env of [{}, { CLAUDE_CODE_REMOTE: "false" }, { CLAUDE_CODE_REMOTE: "" }, { CODEX_ENVIRONMENT_ID: "   " }]) {
-    assert.equal(readConductor(undefined, env).provider, "claude");
-    assert.equal(readConductor(undefined, env).providerSource, "default");
-    assert.equal(readConductor({ provider: "codex" }, env).provider, "codex");
-    assert.equal(readConductor({ provider: "codex" }, env).providerSource, "config");
-  }
-});
-
-test("conductor: クラウドによる切り替え後の CLI で非対応設定を検査し、digest に反映する", () => {
-  const table = { provider: "claude", allowed_tools: ["Bash(npm test:*)"] };
-  assert.throws(() => readConductor(table, { CODEX_ENVIRONMENT_ID: "env-123" }), /allowed_tools/);
-  assert.throws(() => readConductor({ budget_per_run: 1 }, { CODEX_ENVIRONMENT_ID: "env-123" }), /budget_per_run/);
-  assert.equal(readConductor({ ...table, provider: "codex" }, { CLAUDE_CODE_REMOTE: "true" }).provider, "claude");
-  assert.throws(() => readConductor({ provider: "typo" }, { CODEX_ENVIRONMENT_ID: "env-123" }), /provider/);
-  const local = readConductor(undefined, {});
-  const cloud = readConductor(undefined, { CODEX_ENVIRONMENT_ID: "env-123" });
-  assert.notEqual(settingsDigest("standard", settings, local), settingsDigest("standard", settings, cloud));
-});
-
-test("CLI: conductor asks / launch / parse はクラウド判定した同じ provider を使う", (t) => {
-  const directory = workspace(t, true);
-  write(directory, ".hikyaku.config", 'hikyaku_root = "docs/hikyaku"\n[conductor]\nprovider = "claude"\n');
-  const inCloud = (...args: string[]) => {
-    const output = spawnSync(process.execPath, [join(pluginRoot(), "scripts/hikyaku.mts"), "conductor", ...args], {
-      cwd: directory, encoding: "utf8", env: { ...testEnvironment(), CODEX_ENVIRONMENT_ID: "env-123" }, timeout: 10_000,
-    });
-    assert.ifError(output.error);
-    assert.equal(output.status, 0, output.stderr);
-    return output.stdout;
-  };
-  const asks = JSON.parse(inCloud("asks", "001", "--json"));
-  assert.equal(asks.provider, "codex");
-  assert.equal(asks.providerSource, "cloud");
-  assert.match(inCloud("asks", "001"), /クラウド環境（CODEX_ENVIRONMENT_ID）/);
-  const launch = JSON.parse(inCloud("launch", "architect", "001", "--expect-digest", asks.digest, "--json"));
-  assert.equal(launch.argv[0], "codex");
-  assert.equal(launch.providerSource, "cloud");
-  write(directory, "cloud-result.jsonl", codexResult('<hikyaku-done next="">\n完了\n</hikyaku-done>'));
-  const parsed = JSON.parse(inCloud("parse", "cloud-result.jsonl", "001", "--expect-digest", asks.digest, "--json"));
-  assert.equal(parsed.outcome, "done");
-  const local = cli(directory, "conductor", "launch", "architect", "001", "--expect-digest", asks.digest);
-  assert.equal(local.status, 1);
 });

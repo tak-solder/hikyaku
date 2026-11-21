@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { pluginVersion } from "../scripts/lib/paths.mts";
-import { cli, repository, snapshot, succeeds, workspace, write } from "./helpers.mts";
+import { cli, repository, returnRecord, snapshot, succeeds, testEnvironment, workspace, write } from "./helpers.mts";
+import { githubRepositoryOf } from "../scripts/lib/github.mts";
 
 const tasklist = "docs/hikyaku/cycles/001-test/tasklist.md";
 
@@ -25,7 +27,7 @@ test("CLI: init の dry-run は生成予定を JSON で返し、ファイルを�
   const before = snapshot(directory);
   const output = JSON.parse(succeeds(directory, "init", "--root", "docs/hikyaku", "--dry-run", "--json"));
   assert.equal(output.dryRun, true);
-  assert.equal(output.files.length, 7);
+  assert.equal(output.files.length, 4, "bp-guide/ も token-guide/ も生成しない");
   assert.ok(output.files.every((file: { status: string }) => file.status === "create"));
   assert.deepEqual(snapshot(directory), before);
   assert.equal(existsSync(join(directory, "docs/hikyaku")), false);
@@ -41,7 +43,35 @@ test("CLI: init を再実行しても既存文書を上書きせず、gitignore 
   assert.deepEqual(snapshot(directory), before);
   assert.equal(readFileSync(join(directory, "docs/hikyaku/document-guide.md"), "utf8"), "# 手書きのガイド\n");
   assert.match(readFileSync(join(directory, "docs/hikyaku/.gitignore"), "utf8"), /^custom-entry\n/);
+  const lines = readFileSync(join(directory, "docs/hikyaku/.gitignore"), "utf8").split("\n");
+  assert.equal(lines.filter((line) => line === ".hikyaku.local").length, 1);
+  assert.equal(lines.filter((line) => line === "feedback/").length, 1);
+});
+
+test("CLI: init は .gitignore に無い除外の行だけを足す（先頭の / 付きも揃っているとみなす）", (t) => {
+  const directory = repository(t);
+  write(directory, "docs/hikyaku/.gitignore", ".hikyaku.local\n");
+  const appended = JSON.parse(succeeds(directory, "init", "--root", "docs/hikyaku", "--json"));
+  assert.equal(appended.files.find((file: { path: string }) => file.path.endsWith(".gitignore")).status, "append");
   assert.equal(readFileSync(join(directory, "docs/hikyaku/.gitignore"), "utf8").split("\n").filter((line) => line === ".hikyaku.local").length, 1);
+  assert.match(readFileSync(join(directory, "docs/hikyaku/.gitignore"), "utf8"), /^feedback\/$/m);
+
+  const other = repository(t);
+  write(other, "docs/hikyaku/.gitignore", "/.hikyaku.local\n/feedback\n");
+  const skipped = JSON.parse(succeeds(other, "init", "--root", "docs/hikyaku", "--json"));
+  assert.equal(skipped.files.find((file: { path: string }) => file.path.endsWith(".gitignore")).status, "skip");
+
+  // `.hikyaku.local/` はディレクトリにだけ当たり、ファイルの .hikyaku.local を除外しない
+  const directoryOnly = repository(t);
+  write(directoryOnly, "docs/hikyaku/.gitignore", ".hikyaku.local/\nfeedback/\n");
+  succeeds(directoryOnly, "init", "--root", "docs/hikyaku");
+  assert.match(readFileSync(join(directoryOnly, "docs/hikyaku/.gitignore"), "utf8"), /^\.hikyaku\.local$/m);
+
+  // `!feedback/` はユーザーが追跡に戻すと決めた方針。後ろに feedback/ を足して覆さない
+  const negated = repository(t);
+  write(negated, "docs/hikyaku/.gitignore", ".hikyaku.local\n!feedback/\n");
+  const kept = JSON.parse(succeeds(negated, "init", "--root", "docs/hikyaku", "--json"));
+  assert.equal(kept.files.find((file: { path: string }) => file.path.endsWith(".gitignore")).status, "skip");
 });
 
 test("CLI: 正規化するとリポジトリルートになる init のパスを拒否する", (t) => {
@@ -68,7 +98,7 @@ test("CLI: cycle new の dry-run は索引とサイクル設定を書き込ま�
 
 test("CLI: tasklist の dry-run とグラフ検証失敗はいずれも既存データを書き換えない", (t) => {
   const directory = workspace(t, true);
-  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--bp", "2");
+  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--peak", "350k");
   const before = snapshot(directory);
   const output = JSON.parse(succeeds(directory, "tasklist", "add", "001", "--title", "API", "--deps", "build-01", "--dry-run", "--json"));
   assert.equal(output.dryRun, true);
@@ -82,10 +112,10 @@ test("CLI: tasklist の dry-run とグラフ検証失敗はいずれも既存デ
 
 test("CLI: tasklist は不明なオプションと余分な引数を拒否し、書き込まない", (t) => {
   const directory = workspace(t, true);
-  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--bp", "2");
+  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--peak", "350k");
   const before = snapshot(directory);
   // zsh で ${3:+--deps $3} を展開したときのように、オプションと値が1つの引数で渡る
-  const joined = cli(directory, "tasklist", "add", "001", "--title", "API", "--bp", "1", "--deps 1");
+  const joined = cli(directory, "tasklist", "add", "001", "--title", "API", "--peak", "200k", "--deps 1");
   assert.equal(joined.status, 1);
   assert.match(joined.stderr, /不明なオプションです: --deps 1/);
   assert.match(joined.stderr, /--deps=1/);
@@ -98,23 +128,8 @@ test("CLI: tasklist は不明なオプションと余分な引数を拒否し、
   assert.equal(extra.status, 1);
   assert.match(extra.stderr, /余分な引数があります: "2"/);
   assert.deepEqual(snapshot(directory), before);
-  assert.match(succeeds(directory, "tasklist", "add", "001", "--title", "API", "--deps=1", "--dry-run"), /build-02 を追加します（BP: なし \/ 依存: build-01）/);
-});
-
-test("CLI: tasklist done は URL を検証し、PR を記録すると完了済みの更新を拒否する", (t) => {
-  const directory = workspace(t, true);
-  succeeds(directory, "tasklist", "add", "001", "--title", "基盤");
-  const before = snapshot(directory);
-  assert.equal(cli(directory, "tasklist", "done", "001", "--id", "1", "--pr", "typo").status, 1);
-  assert.deepEqual(snapshot(directory), before);
-  succeeds(directory, "tasklist", "done", "001", "--id", "build-01", "--pr", "https://example.com/pull/42", "--dry-run");
-  assert.deepEqual(snapshot(directory), before);
-  succeeds(directory, "tasklist", "done", "001", "--id", "1", "--pr", "https://example.com/pull/42");
-  const output = JSON.parse(succeeds(directory, "tasklist", "read", "001", "--json"));
-  assert.equal(output.builds[0].pr, "[#42](https://example.com/pull/42)");
-  const completed = snapshot(directory);
-  assert.equal(cli(directory, "tasklist", "update", "001", "--id", "1", "--title", "変更").status, 1);
-  assert.deepEqual(snapshot(directory), completed);
+  assert.match(succeeds(directory, "tasklist", "update", "001", "--id", "1", "--peak", "375k", "--dry-run"), /予測ピーク: 375k/);
+  assert.match(succeeds(directory, "tasklist", "add", "001", "--title", "API", "--deps=1", "--dry-run"), /build-02 を追加します（予測ピーク: なし \/ 依存: build-01）/);
 });
 
 test("CLI: validate は正常時 0、不整合は JSON と終了コード 2、対象の誤指定は 1", (t) => {
@@ -129,24 +144,6 @@ test("CLI: validate は正常時 0、不整合は JSON と終了コード 2、�
   write(directory, "docs/hikyaku/cycles/001-test/build-01/issue.md");
   assert.equal(JSON.parse(succeeds(directory, "validate", "--json")).ok, true);
   assert.ok(readFileSync(join(directory, tasklist), "utf8").includes("基盤"));
-});
-
-test("CLI: 既定に無い論理名は repo 管理でだけ受け付け、context の候補に含める", (t) => {
-  const directory = workspace(t, true);
-  const guide = "docs/hikyaku/document-guide.md";
-  const original = readFileSync(join(directory, guide), "utf8");
-  write(directory, "docs/observability.md");
-  write(directory, guide, `${original.trimEnd()}\n| observability | repo | \`docs/observability.md\` | 運用確認の手順書 |\n`);
-  assert.equal(JSON.parse(succeeds(directory, "validate", "--json")).ok, true);
-  const architect = JSON.parse(succeeds(directory, "context", "architect", "001", "--json"));
-  assert.ok(architect.suggestions.some((s: { ref: string; summary: string }) => s.ref === "observability" && s.summary === "運用確認の手順書"));
-  const close = JSON.parse(succeeds(directory, "context", "close", "001", "--json"));
-  assert.ok(!close.suggestions.some((s: { ref: string }) => s.ref === "observability"));
-
-  write(directory, guide, `${original.trimEnd()}\n| prd | 未作成 | — | プロダクト要求 |\n`);
-  const invalid = cli(directory, "validate", "--json");
-  assert.equal(invalid.status, 2);
-  assert.match(invalid.stdout, /既定に無い論理名は管理を repo にしてください/);
 });
 
 test("CLI: validate は番号付きの受け入れ基準がビルドに割り当てられているかを検査する", (t) => {
@@ -183,19 +180,143 @@ test("CLI: validate は手編集されたサイクル間の循環依存を検出
   assert.match(result.stderr, /サイクル間の依存に循環/);
 });
 
-test("CLI: validate は BP ガイドの表が古い場合と期待値の不一致を検出する", (t) => {
+test("CLI: tokens stamp は標準からガイドを作り、本文を変えたら版を上げる。版を上げ忘れると validate が止める", (t) => {
   const directory = workspace(t);
-  write(directory, "docs/hikyaku/bp-guide/README.md", "# 古い説明\n");
-  let result = cli(directory, "validate", "--json");
-  assert.equal(result.status, 2);
-  assert.match(result.stderr, /食い違っています/);
-  succeeds(directory, "bp", "render");
-  write(directory, "docs/hikyaku/bp-guide/cases.toml", `[cases.mismatch]\nexpect = 999\n[cases.mismatch.input]\nnew_files = 1\n`);
-  result = cli(directory, "validate", "--json");
-  assert.equal(result.status, 2);
-  assert.match(result.stderr, /期待 999/);
-  rmSync(join(directory, "docs/hikyaku/bp-guide/cases.toml"));
+  const guide = "docs/hikyaku/token-guide/guide.md";
+  const shown = JSON.parse(succeeds(directory, "tokens", "guide", "--json"));
+  assert.equal(shown.kind, "standard");
+  assert.match(shown.label, /^標準 v\d+$/);
+
+  const dry = JSON.parse(succeeds(directory, "tokens", "stamp", "--dry-run", "--json"));
+  assert.equal(dry.created, true);
+  assert.equal(existsSync(join(directory, guide)), false);
+
+  const created = JSON.parse(succeeds(directory, "tokens", "stamp", "--json"));
+  assert.equal(created.version, 1);
+  assert.equal(created.basedOn, shown.label);
+  const project = JSON.parse(succeeds(directory, "tokens", "guide", "--json"));
+  assert.equal(project.kind, "project");
+  assert.equal(project.label, "プロジェクト v1");
   assert.equal(JSON.parse(succeeds(directory, "validate", "--json")).ok, true);
+  assert.equal(JSON.parse(succeeds(directory, "tokens", "stamp", "--json")).changed, false);
+
+  write(directory, guide, `${readFileSync(join(directory, guide), "utf8")}\n- 補正: docker の環境に触れるビルドは未知の領域に 100k\n`);
+  const stale = cli(directory, "validate", "--json");
+  assert.equal(stale.status, 2);
+  assert.match(stale.stderr, /tokens stamp/);
+  // 版を上げ忘れたガイドでは見積もらない（補正後の本文が古い版の名前で記録されるため）
+  const estimate = cli(directory, "tokens", "estimate", "--fixed", "0", "--reading", "0", "--implementation", "0", "--tests", "0", "--unknown", "0");
+  assert.equal(estimate.status, 1);
+  assert.match(estimate.stderr, /tokens stamp/);
+
+  const bumped = JSON.parse(succeeds(directory, "tokens", "stamp", "--json"));
+  assert.equal(bumped.previous, 1);
+  assert.equal(bumped.version, 2);
+  assert.match(readFileSync(join(directory, guide), "utf8"), /^---\nversion: 2\nbased_on: 標準 v\d+\nhash: [0-9a-f]{8}\n---\n/);
+  assert.equal(JSON.parse(succeeds(directory, "validate", "--json")).ok, true);
+
+  // 1 未満の版は 1 に正す（そのままだと validate が止まり続ける）
+  write(directory, guide, readFileSync(join(directory, guide), "utf8").replace("version: 2", "version: 0"));
+  assert.equal(cli(directory, "validate", "--json").status, 2);
+  const fixed = JSON.parse(succeeds(directory, "tokens", "stamp", "--json"));
+  assert.equal(fixed.version, 1);
+  assert.equal(JSON.parse(succeeds(directory, "validate", "--json")).ok, true);
+});
+
+test("CLI: tokens estimate は5成分を必須にして合計し、帯で判定してガイドの版を表に残す", (t) => {
+  const directory = workspace(t, true);
+  const all = ["--fixed", "90k", "--reading", "120k", "--implementation", "100k", "--tests", "60k", "--unknown", "30k"];
+  const result = JSON.parse(succeeds(directory, "tokens", "estimate", "001", ...all, "--reading-basis", "design-delta.md", "--json"));
+  assert.equal(result.peak, 400_000);
+  assert.equal(result.verdict, "target");
+  assert.equal(result.guide.kind, "standard");
+  assert.match(result.markdown, /\| 読み込み \| 120k \| design-delta.md \|/);
+  assert.match(result.markdown, /\| ガイド \| 標準 v\d+ \| [0-9a-f]{8} \|$/);
+
+  const split = JSON.parse(succeeds(directory, "tokens", "estimate", "001", ...all.slice(0, -1), "200k", "--json"));
+  assert.equal(split.verdict, "split");
+  const merge = JSON.parse(succeeds(directory, "tokens", "estimate", "001", "--fixed", "90k", "--reading", "50k", "--implementation", "50k", "--tests", "20k", "--unknown", "0", "--json"));
+  assert.equal(merge.verdict, "merge");
+
+  const missing = cli(directory, "tokens", "estimate", "001", ...all.slice(0, -2));
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /--unknown/);
+  assert.match(missing.stderr, /0 を渡します/);
+  const typo = cli(directory, "tokens", "estimate", "001", ...all, "--readng-basis", "x");
+  assert.equal(typo.status, 1);
+  assert.match(typo.stderr, /--readng-basis は使えません/);
+  const invalid = cli(directory, "tokens", "estimate", "001", ...all.slice(0, -1), "many");
+  assert.equal(invalid.status, 1);
+
+  write(directory, ".hikyaku.config", `${readFileSync(join(directory, ".hikyaku.config"), "utf8")}\n[context]\nlimit = "350k"\n`);
+  assert.equal(JSON.parse(succeeds(directory, "tokens", "estimate", "001", ...all, "--json")).verdict, "split", "帯は設定に従う");
+});
+
+test("CLI: tasklist は予測ピークを --peak で受け取り、--bp と v2 の tasklist.md への書き込みは止める", (t) => {
+  const directory = workspace(t, true);
+  succeeds(directory, "tasklist", "add", "001", "--title", "基盤", "--peak", "380k");
+  const read = JSON.parse(succeeds(directory, "tasklist", "read", "001", "--json"));
+  assert.equal(read.builds[0].peak, 380_000);
+  assert.match(readFileSync(join(directory, "docs/hikyaku/cycles/001-test/tasklist.md"), "utf8"), /\| 予測ピーク \|[\s\S]*\| 380k +\|/);
+  const retired = cli(directory, "tasklist", "add", "001", "--title", "API", "--bp", "3");
+  assert.equal(retired.status, 1);
+  assert.match(retired.stderr, /--bp は廃止/);
+
+  write(directory, "docs/hikyaku/cycles/001-test/tasklist.md", "| buildID | title | BP | dependencies | issue | PR |\n| --- | --- | --- | --- | --- | --- |\n| 1 | 基盤 | 3 | — | — | — |\n");
+  assert.equal(JSON.parse(succeeds(directory, "tasklist", "read", "001", "--json")).builds[0].peak, undefined);
+  const legacy = cli(directory, "tasklist", "add", "001", "--title", "API");
+  assert.equal(legacy.status, 1);
+  assert.match(legacy.stderr, /v2 の形式/);
+});
+
+test("CLI: 閉じたサイクルの設定に残った bp_max は履歴として許し、進行中のサイクルでは v3 の作業を止める", (t) => {
+  const directory = workspace(t, true);
+  succeeds(directory, "cycle", "new", "next", "--profile", "standard");
+  write(directory, "docs/hikyaku/cycles/001-test/.hikyaku.config", "bp_max = 13\n[bp_actual]\nexclude = []\n");
+  write(directory, "docs/hikyaku/cycles/002-next/.hikyaku.config", "bp_max = 13\n");
+  const cycles = "docs/hikyaku/cycles.md";
+  write(directory, cycles, readFileSync(join(directory, cycles), "utf8").replace(/^(\| 001 \| test \| )active/m, "$1closed"));
+
+  // 読むだけの操作は止めない
+  succeeds(directory, "cycle", "list");
+  succeeds(directory, "cycle", "status", "001");
+  const closedConfig = JSON.parse(succeeds(directory, "config", "001", "--json"));
+  assert.equal(closedConfig.retired.length, 2);
+  assert.equal(closedConfig.peakBands.estimateLimit, 540_000);
+
+  // validate は進行中のサイクルの分だけを知らせる
+  const validate = cli(directory, "validate", "--json");
+  assert.equal(validate.status, 2);
+  assert.match(validate.stderr, /002-next\/\.hikyaku\.config: .*bp_max は v3 で廃止/);
+  assert.doesNotMatch(validate.stderr, /001-test\/\.hikyaku\.config/);
+
+  // v3 の作業は止める
+  const directive = JSON.parse(succeeds(directory, "step", "next", "plan", "002", "--json")).directive;
+  assert.equal(directive.kind, "stop");
+  assert.match(directive.message, /bp_max は v3 で廃止/);
+  const reported = cli(directory, "step", "report", "plan", "inputs", "002", "--result", "done");
+  assert.equal(reported.status, 1);
+  assert.match(reported.stderr, /bp_max/);
+  const estimate = cli(directory, "tokens", "estimate", "002", "--fixed", "0", "--reading", "0", "--implementation", "0", "--tests", "0", "--unknown", "0");
+  assert.equal(estimate.status, 1);
+  const added = cli(directory, "tasklist", "add", "002", "--title", "基盤", "--peak", "350k");
+  assert.equal(added.status, 1);
+  assert.match(added.stderr, /bp_max/);
+  succeeds(directory, "tasklist", "read", "002");
+
+  // ルート設定の bp_max は全サイクルに効くので、読んだ時点で止める
+  write(directory, ".hikyaku.config", `bp_max = 8\n${readFileSync(join(directory, ".hikyaku.config"), "utf8")}`);
+  assert.equal(cli(directory, "cycle", "list").status, 1);
+});
+
+test("CLI: doctor は v2 の bp-guide/ が残っていることを知らせる", (t) => {
+  const directory = workspace(t);
+  const before = JSON.parse(cli(directory, "doctor", "--json").stdout);
+  assert.ok(!before.checks.some((c: { name: string }) => c.name === "bp-guide/"));
+  write(directory, "docs/hikyaku/bp-guide/rules.toml", "levels = [1]\n");
+  const after = JSON.parse(cli(directory, "doctor", "--json").stdout);
+  const check = after.checks.find((c: { name: string }) => c.name === "bp-guide/");
+  assert.equal(check?.status, "warn");
 });
 
 test("CLI: return.md があれば cycle status・next・cycle list が差し戻し中として扱う", (t) => {
@@ -210,24 +331,24 @@ test("CLI: return.md があれば cycle status・next・cycle list が差し戻�
   assert.equal(normal.returned, null);
   assert.deepEqual(normal.available, ["1", "2"]);
 
-  write(directory, `${cycleDirectory}/return.md`, "# 差し戻し: build-01\n\n## 何が崩れたか\n");
+  write(directory, `${cycleDirectory}/return.md`, returnRecord());
 
   const status = JSON.parse(succeeds(directory, "cycle", "status", "001", "--no-fetch", "--json"));
   assert.equal(status.phase, "building");
-  assert.deepEqual(status.returned, { buildId: "1" });
+  assert.deepEqual(status.returned, { buildId: "1", problems: [] });
   assert.equal(status.suggestion, "/hikyaku:architect 001-test build-01");
   const text = succeeds(directory, "cycle", "status", "001", "--no-fetch");
   assert.match(text, /^cycle 001-test: building（差し戻し中: build-01）/);
   assert.match(text, /再開: \/hikyaku:architect 001-test build-01/);
 
   const next = JSON.parse(succeeds(directory, "next", "001", "--no-fetch", "--json"));
-  assert.deepEqual(next.returned, { buildId: "1" });
+  assert.deepEqual(next.returned, { buildId: "1", problems: [] });
   assert.deepEqual(next.available, []);
   assert.match(succeeds(directory, "next", "001", "--no-fetch"), /どのビルドにも着手できません/);
 
   const list = JSON.parse(succeeds(directory, "cycle", "list", "--json"));
   assert.equal(list.cycles[0].phase, "building");
-  assert.deepEqual(list.cycles[0].returned, { buildId: "1" });
+  assert.deepEqual(list.cycles[0].returned, { buildId: "1", problems: [] });
   assert.match(succeeds(directory, "cycle", "list"), /building（差し戻し中: build-01）/);
 
   // architect が再設計の最後に return.md を消すと、通常の再開に戻る
@@ -235,4 +356,81 @@ test("CLI: return.md があれば cycle status・next・cycle list が差し戻�
   const resumed = JSON.parse(succeeds(directory, "cycle", "status", "001", "--no-fetch", "--json"));
   assert.equal(resumed.returned, null);
   assert.equal(resumed.suggestion, "/hikyaku:builder 001-test");
+});
+
+test("CLI: external はサイクルの issue だけを扱い、close だけが閉じる", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", `${readFileSync(join(directory, ".hikyaku.config"), "utf8")}\n[external]\ntarget = "github"\ngithub_repo = "o/r"\n`);
+  // 参照が記録されていなければ空を返す
+  assert.equal(JSON.parse(succeeds(directory, "external", "ref", "build-01", "001", "--json")).line, "");
+
+  succeeds(directory, "cycle", "link", "001", "--external", "https://github.com/o/r/issues/12");
+  const ref = (phase: string): string => JSON.parse(succeeds(directory, "external", "ref", phase, "001", "--json")).line;
+  assert.equal(ref("plan"), "Refs #12");
+  assert.equal(ref("build-01"), "Refs #12", "ビルドの PR はサイクルの issue を閉じない");
+  assert.equal(ref("conductor"), "Refs #12");
+  assert.equal(ref("close"), "Closes #12");
+
+  // origin が GitHub でなければ、サイクルの在り処はリポジトリ相対パスにする（github_repo からは作らない）
+  const local = JSON.parse(succeeds(directory, "external", "sync", "001", "--dry-run", "--json"));
+  assert.equal(local.applied, false);
+  assert.match(local.projection.body, /\*\*サイクル\*\*: docs\/hikyaku\/cycles\/001-test$/m);
+  assert.doesNotMatch(local.projection.body, /## ビルド/, "ビルドの一覧は載せない");
+  assert.doesNotMatch(local.projection.body, /次回の同期/, "同期し続けるビューのようには書かない");
+
+  // 起票先（github_repo）が別のリポジトリでも、リンクはサイクルのファイルがある origin を指す
+  const remote = spawnSync("git", ["remote", "add", "origin", "git@github.com:acme/app.git"], { cwd: directory, env: testEnvironment() });
+  assert.equal(remote.status, 0);
+  const dry = JSON.parse(succeeds(directory, "external", "sync", "001", "--dry-run", "--json"));
+  assert.match(dry.projection.body, /https:\/\/github\.com\/acme\/app\/tree\/.*\/docs\/hikyaku\/cycles\/001-test/);
+  assert.doesNotMatch(dry.projection.body, /github\.com\/o\/r/);
+
+  assert.equal(cli(directory, "external", "sync", "asana", "001").status, 1);
+  assert.equal(cli(directory, "tasklist", "link", "001", "--id", "1", "--issue", "https://github.com/o/r/issues/13").status, 1);
+});
+
+test("CLI: Asana の設定は移行先を示して止まる", (t) => {
+  const directory = workspace(t, true);
+  const root = readFileSync(join(directory, ".hikyaku.config"), "utf8");
+  write(directory, ".hikyaku.config", `${root}\n[external]\ntarget = "asana"\n`);
+  const result = cli(directory, "config", "001");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Asana への投影は v3 で廃止/);
+
+  write(directory, ".hikyaku.config", root);
+  const created = cli(directory, "cycle", "new", "other", "--profile", "standard", "--external", "asana", "--dry-run");
+  assert.equal(created.status, 1);
+  assert.match(created.stderr, /Asana への投影は v3 で廃止/);
+});
+
+test("github: リモートの URL から owner/repo を取り出し、GitHub 以外は undefined", () => {
+  assert.equal(githubRepositoryOf("https://github.com/acme/app.git"), "acme/app");
+  assert.equal(githubRepositoryOf("https://x-access-token:t@github.com/acme/app"), "acme/app");
+  assert.equal(githubRepositoryOf("git@github.com:acme/app.git"), "acme/app");
+  assert.equal(githubRepositoryOf("ssh://git@github.com/acme/app.git"), "acme/app");
+  assert.equal(githubRepositoryOf("https://gitlab.com/acme/app.git"), undefined);
+  assert.equal(githubRepositoryOf("http://127.0.0.1:8080/git/acme/app"), undefined);
+  assert.equal(githubRepositoryOf(undefined), undefined);
+});
+
+test("CLI: 進行中のサイクルの設定に残った廃止キーは、review と external でも止まる", (t) => {
+  const directory = workspace(t, true);
+  write(directory, ".hikyaku.config", `${readFileSync(join(directory, ".hikyaku.config"), "utf8")}\n[external]\ntarget = "github"\n`);
+  const cycleConfig = "docs/hikyaku/cycles/001-test/.hikyaku.config";
+
+  // ルートの github に戻って起票しない
+  write(directory, cycleConfig, '[external]\ntarget = "asana"\n');
+  for (const args of [["external", "sync", "001", "--dry-run"], ["external", "ref", "plan", "001"]]) {
+    const result = cli(directory, ...args);
+    assert.equal(result.status, 1, args.join(" "));
+    assert.match(result.stderr, /Asana への投影は v3 で廃止/, args.join(" "));
+  }
+
+  // 黙って claude で動かさない
+  write(directory, cycleConfig, '[review.provider_for]\nclaude = "codex"\n');
+  const review = cli(directory, "review", "resolve", "doc", "plan", "001");
+  assert.equal(review.status, 1);
+  assert.match(review.stderr, /provider_for は v3 で廃止/);
+  // 読むだけの操作は止めない
+  assert.equal(cli(directory, "cycle", "status", "001").status, 0);
 });

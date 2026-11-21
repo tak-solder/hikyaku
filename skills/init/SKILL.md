@@ -17,19 +17,10 @@ Hikyaku ワークスペースを初期化する。このスキルは1つのリ�
 機械的な雛形生成はスクリプトが行う。あなたの仕事はリポジトリを調べて、既存の
 設計ドキュメントを見つけ、ユーザーと相談して guide に当てはめること。
 
-## 判断基準
-
-永続ドキュメントに何を持つかは、次の基準で決まっている。
-
-> 復元コスト ÷ 陳腐化速度
-
-- `db-schema` の全テーブル定義 — 復元コスト低（マイグレーションを読めばよい）／陳腐化速い → Hikyaku は作らない
-- `overview` の責務・境界・データフロー — 復元コスト極高（全ファイルを読んで構造を推論）／陳腐化遅い → 作る価値がある
-
-コピーではなくポインタを持つ。「スキーマの正は `db/migrations/`」は腐らないが、
-「主要テーブル: users, orders」は腐り、しかも腐っていることに誰も気づけない。
-
 ## 作業ステップ
+
+Step 0〜3 はワークスペースができる前の準備で、ここに書いてある。雛形を生成したあとの手順は
+`step next` が1手ずつ返す（Step 4 以降）。
 
 ### Step 0: 既存ワークスペースの確認
 
@@ -38,7 +29,43 @@ Hikyaku ワークスペースを初期化する。このスキルは1つのリ�
 Node が v22.18.0 未満の場合はここで終了し、更新を案内する（型剥がしがフラグ無しで
 有効になる最小バージョン）。
 
-- [ ] 既に `document-guide.md` が存在する場合は、初期化済みとして終了する
+- [ ] v2 の conductor の設定が残っていないか確かめる。`step` は設定を読むので、ルートの `.hikyaku.config` に
+  v2 の `[conductor]` の設定（`provider`・`[conductor.claude]`・`[conductor.codex]`）が残っていると動かない。
+  `doctor` が廃止キーを報告したとき、または移行の回を始める前に、次で変換案を出す
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" config migrate --dry-run
+```
+
+変換するものがあれば、出力（どのキーをどこへ移し、何を消すか）をそのままユーザーに示し、取り込むかを尋ねる。
+取り込むかはユーザーの方針なので、こちらで決めない。衝突（移し先に別の値がある）で止まったら、
+衝突を示して、どちらを残すかをユーザーに決めてもらう。
+
+- 取り込む: `config migrate` を実行する
+- 取り込まない: `config migrate --drop` を実行する（旧キーを消すだけ。残すとルートの設定を読むコマンドが止まり続ける）
+
+どちらも `.hikyaku.config` の差分をユーザーに見せ、コミットは PR（`pr` の手順）に含める。
+「ありません」と出たら何もしない。進行中のサイクルの `.hikyaku.config` に残っている分は手で同じ形に直す。
+
+- [ ] 既に `document-guide.md` が存在する場合は、`step next` で初期化済みかを確かめる
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next init
+```
+
+`stop` が返ったら初期化済み（手順を終えている、または v2 までに初期化された）なので、
+メッセージを伝えて終了する。それ以外は中断からの再開（雛形を生成した直後の中断を含む）なので、
+返った1手から Step 4 の転送ループで続ける。
+
+`stop` のメッセージが「v3 で廃止した論理名が残っています」と知らせていたら、移行が要る。
+ユーザーに伝えて同意を得たら、案内されたコマンドで移行の回を始め、Step 4 の転送ループで続ける。
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step restart init --round migrate --reason "v3 への移行"
+```
+
+移行の回では、廃止した論理名の文書（`learnings` など）の中身を、重要度と置き場で振り分ける
+（振り分け → 承認 → 書き込み → 索引 → PR）。判定は `doc-triager` エージェントに委任する。
 
 → Step 1 へ。
 
@@ -55,24 +82,8 @@ HIKYAKU_ROOT にはサイクルの成果物だけを置く。永続ドキュメ�
 ### Step 2: v1 構造の検出（該当時のみ）
 
 指定されたパスの直下に `planning/` や `build-01/` があれば、Hikyaku v1 のワークスペースである。
-
-移行は機械的に決め打ちせず、ユーザーと対話して決める。 v1 ユーザーの状態は多様で、
-一律のルールでは捌けない。
-
-| 状況 | 妥当な扱い |
-|---|---|
-| サイクル完走済み | `cycles/001-legacy/` へアーカイブ（第一候補） |
-| ビルド途中 | v1.0.0 のまま完走してから移行する（プラグインのバージョンを固定） |
-| planning だけやって放置 | 捨ててよいことが多い |
-| 複数の DOC_ROOT を運用していた | 別サイクルか別ワークスペースか要判断 |
-
-アーカイブする場合:
-
-- [ ] `git mv` で `planning/` `tasklist.md` `build-NN/` を `cycles/001-{slug}/` へ移す
-- [ ] `architecture/` は移動しない。Step 4 で `repo` 管理として guide に登録する
-- [ ] cycles.md に `hikyaku: 1.0.0` / `status: closed` で1行足す
-
-これにより、`planning/` があって `design-delta.md` が無い理由が、行を見ただけで分かるようになる。
+`${CLAUDE_PLUGIN_ROOT}/skills/init/references/v1.md`（[v1.md](references/v1.md)）に従って、
+ユーザーと扱いを決める。無ければ飛ばす。
 
 → Step 3 へ。
 
@@ -82,116 +93,49 @@ HIKYAKU_ROOT にはサイクルの成果物だけを置く。永続ドキュメ�
 node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" init --root {HIKYAKU_ROOT}
 ```
 
-ルートの `.hikyaku.config`、`cycles.md`、`document-guide.md` の雛形、`bp-guide/`（BP の基準表）、
-`.gitignore`（`.hikyaku.local` の1行）を、無いものだけ生成する。既存ファイルは上書きされない。
-`.gitignore` に包括パターンを足さない（close-cycle が `retrospective.md` を素材として読むため）。
+生成するのは次の4つ。
 
-出力に警告があれば、次のとおり対応する。
+| ファイル | 役割 |
+|---|---|
+| リポジトリルート/`.hikyaku.config` | 設定のベース（必須）。`hikyaku_root` の唯一の宣言先 |
+| `{HIKYAKU_ROOT}/cycles.md` | サイクル索引 |
+| `{HIKYAKU_ROOT}/document-guide.md` | ドキュメントガイドの雛形 |
+| `{HIKYAKU_ROOT}/.gitignore` | `.hikyaku.local` と `feedback/` の2行だけ（既にあれば無い行だけ追記する） |
 
-- v1 の除外設定（`retrospective.md` など）が `.gitignore` に残っている → ユーザーに削除を提案する
-- `{HIKYAKU_ROOT}/.hikyaku.config` がある（v2.0 初期実装の名残。中間層は読み込まれない）→ 内容を
-  ルートの `.hikyaku.config` へ移して削除するよう案内する
+予測ピークの見積もりのガイド（`{HIKYAKU_ROOT}/token-guide/guide.md`）は生成しない。無ければプラグインの
+標準のガイドで見積もり、`/hikyaku:token-guide` で補正するときに作られる。
 
-- [ ] 旧名の `{HIKYAKU_ROOT}/instruction.md` が残っていれば、`instructions.md` へ `git mv` で改名する
-  （中身はそのまま使える。旧名は読み込まれない。`hikyaku validate` も残存を検出する）
+出た警告は、Step 4 の最初の手順（cleanup）で扱う。
 
 → Step 4 へ。
 
-### Step 4: 既存ドキュメントの検出と登録
+### Step 4 以降: step に従って進める
 
-ここがこのスキルの本体。
+ここから先の手順（警告の後始末 → 既存ドキュメントの登録 → AGENTS.md への索引の承認と書き込み →
+PR）は、`step next` が進捗から1手ずつ返す。**手順を自分で組み立てない。**
 
-- [ ] リポジトリを走査して既存の設計ドキュメントを探す
-  - `docs/` `doc/` `adr/` `architecture/` `AGENTS.md` `CLAUDE.md` `CONTRIBUTING.md`
-  - v1 から移行する場合は `{HIKYAKU_ROOT}/architecture/` も対象
-  - AGENTS.md / CLAUDE.md にドキュメント規約が書かれていれば最優先で従う
-- [ ] 見つけたものを論理名に割り当て、ユーザーに提示して確認を得る
-
-```
-既存の設計ドキュメントを検出しました。document-guide に登録しますか？
-
-  decisions   → docs/adr/                 (repo 管理・既存ADR形式)
-  conventions → AGENTS.md                 (repo 管理)
-  db-schema   → docs/db.md                (repo 管理・参考資料)
-  overview    → 該当なし。未作成として登録し、初回の close-cycle で作成します
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" step next init
 ```
 
-- [ ] `{HIKYAKU_ROOT}/document-guide.md` の管理列とパス列を埋める
+返った1手（directive）の種類ごとに動く。報告のコマンドは directive の「報告」にあるものを使う。
 
-管理列の意味を守ること:
-
-| 管理 | Hikyaku の振る舞い |
+| 種類 | すること |
 |---|---|
-| `hikyaku` | テンプレートに従う。書く/書かない・振る舞い・形式のすべてを適用する |
-| `repo` | **既存形式が正。追記のみで、形式には手を出さない**。既存記述の削除・整理もしない |
-| `未作成` | 次に必要になったとき Hikyaku が作成する |
-| `対象外` | 意図的に持たない。理由を概要欄に書く |
+| `run` | 「指示」のファイルを読み、そのとおりに行う。終えたら `done` を報告する |
+| `gate` | 「指示」のファイルを読み、ユーザーに提示して承認を求める。承認されたら `approved`、直す指示なら `rejected` を報告する。どちらも `--input` にユーザーの答えを添える。`rejected` のあとは答えを反映し、`step next` に従って提示し直す |
+| `stop` | メッセージをユーザーに伝えて終了する。`pr` の報告のあとに返るものは、完了の案内のあとでよい |
 
-既存 ADR が `AD-N` 形式でも、`repo` 管理として登録すればそのまま使い続けられる。
-形式変換は不要。
+- `step report` は記録したあと、次の1手を返す。それに従って続ける
+- 成果物や完了の条件、報告に添える値（`--pr`）は CLI が確かめ、足りなければ報告を受け付けない。
+  メッセージに従って直す。報告を通すために、条件を満たしたふりをしたり別のステップとして報告したりしない
+- 承認したあとのファイルの変更は Git の履歴で追う。承認を取り直すと決めたら、作り直したステップを
+  `done` で報告し直す。そこから後ろはやり直しになる
+- 再開したとき、前のステップで会話の中に作った成果（提示した割り当てなど）が手元に無ければ、
+  そのステップを `done` で報告し直してやり直す
+- 迷ったら `step next` を呼び直す。同じ状態なら同じ1手が返る
+- 進捗は `{HIKYAKU_ROOT}/progress.jsonl` に記録される。コミットは `pr` の指示に従い、PR に含める
 
-既定の論理名のどれにも当てはまらないリポジトリ固有の永続ドキュメント（運用手順書・PRD など）は、
-独自の論理名を付けて `repo` 管理で登録できる。概要欄には何のドキュメントかを書く
-（`hikyaku context` が候補に含め、概要欄で要否を判断させるため）。独自の論理名を
-`hikyaku` / `未作成` / `対象外` で登録すると `hikyaku validate` がエラーにする。
+### 完了の案内
 
-- [ ] 検証する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs validate
-```
-
-→ 問題がなければ Step 5 へ。
-
-### Step 5: AGENTS.md への索引（承認必須）
-
-- [ ] 差分を提示する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" docs link --dry-run
-```
-
-- [ ] **ユーザーの承認を得てから**実行する
-
-AGENTS.md はリポジトリ全体の AI 設定であり、チーム全体に影響する。マーカーで
-囲むので人間が書いた部分は保持されるが、書き換える以上は承認を取る。
-
-この索引が無いと、Hikyaku 以外のセッション（通常の Claude Code、Copilot、Cursor）は
-永続ドキュメントの存在に気づけない。
-
-→ Step 6 へ。
-
-### Step 6: コミットと PR
-
-- [ ] ブランチを作成し、命名規則どおりか確認する
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" branch verify init
-```
-
-`ok: true` ならそのまま、`onBaseBranch: true` なら `expected` の名前で作成する。
-`onBaseBranch` が `false` / `null`（既に別の作業ブランチに居る）なら、必ずユーザーに尋ねる。
-Hikyaku の規則に従う / 現在のブランチで作業する / 別のブランチを指定する、の3つを提示し、
-どれが妥当かは示唆しない。実行環境が割り当てたブランチだと分かっていても自分で決めない
-（別の作業のブランチに紛れ込んだ状態と、セッションの中からは区別できないため）。
-
-- [ ] コミットして PR を作成する（タイトルは `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr title init` で生成）
-  - コミットメッセージの形式はリポジトリの規約に従う。Hikyaku は関与しない
-- [ ] レビュアーをアサインする（`[pr] reviewers` が空、またはこのフェーズがオフなら何もしない）
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" pr request-reviewers init --pr {PR の URL}
-```
-
-  失敗しても PR は作成済みなので止めない。失敗の内容を、完了の案内と一緒にユーザーに伝える
-- [ ] 完了後、次を案内する
-
-```
-初期化が完了しました。
-
-サイクルを開始するには:
-/hikyaku:create-cycle <slug>
-
-または planner が代行します:
-/hikyaku:planner
-```
+完了の案内は最後のステップ（`pr`）の指示にある。`pr` を報告したあとは、初期化済みを示す `stop` が返る。

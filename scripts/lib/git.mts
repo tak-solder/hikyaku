@@ -2,18 +2,18 @@
  * git への問い合わせ。
  *
  * 着手可能・待機の判定の入力は **HEAD の tasklist.md**（readFileAtRef で読む）。
- * PR 列の更新は実装と同じコミットに同梱されるため、HEAD で PR 列が非空である
+ * 完了の記録は実装と同じブランチにコミットされるため、HEAD に記録が在る
  * ことがそのまま実装が履歴に在ることを意味する。**作業ツリーは読まない**
- * （未コミットの PR 列を「実装が在る」と数えてしまう）。
+ * （未コミットの完了の記録を「実装が在る」と数えてしまう）。
  *
  * リモートを見るのは「マージ済みかどうかのラベル付け」「着手中の検出」
  * 「スタック元の導出」だけ。リモートに到達できなくてもワークフローは止まらず、
  * 到達できないことで着手可否が変わることもない。
  */
 
-import { execFile } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 const run = promisify(execFile);
@@ -26,9 +26,9 @@ type RunResult = { ok: true; stdout: string } | { ok: false; message: string };
  * **終了コードだけで判断する。** fatal メッセージは locale 依存なので、
  * 文字列の一致で場合分けしてはいけない（LANG が日本語の環境で壊れる）。
  */
-async function tryGit(cwd: string, argv: string[], timeout = 15_000): Promise<RunResult> {
+async function tryGit(cwd: string, argv: string[], timeout = 15_000, maxBuffer = 8 * 1024 * 1024): Promise<RunResult> {
   try {
-    const { stdout } = await run("git", argv, { cwd, timeout, maxBuffer: 8 * 1024 * 1024 });
+    const { stdout } = await run("git", argv, { cwd, timeout, maxBuffer });
     return { ok: true, stdout };
   } catch (error) {
     // execFile の message は "Command failed: git …" で始まり、原因は stderr 側にある。
@@ -43,6 +43,20 @@ async function tryGit(cwd: string, argv: string[], timeout = 15_000): Promise<Ru
         : undefined;
     const message = fromStderr ?? (error instanceof Error ? error.message : String(error));
     return { ok: false, message: message.split("\n")[0] ?? message };
+  }
+}
+
+/**
+ * git を同期で実行する。失敗は undefined（終了コードだけで判断する）。
+ * ステップの判定（consent など）は同期で評価されるので、そこから git を読むときに使う
+ */
+export function gitSync(cwd: string, argv: string[]): string | undefined {
+  try {
+    return execFileSync("git", argv, {
+      cwd, encoding: "utf8", timeout: 15_000, maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return undefined;
   }
 }
 
@@ -65,18 +79,51 @@ export function currentBranch(repoRootPath: string): string | undefined {
  * デフォルトブランチ。origin/HEAD が指す先から導出する。
  *
  * 設定の base_branch が正だが、未設定のときの自動検出をスクリプト側で持つ。
- * origin/HEAD が無いクローンもあるので、分からなければ undefined を返す。
+ * origin/HEAD の参照が無いクローンでは origin に問い合わせ、それでも分からなければ undefined を返す。
  * 「分からない」を "main" と推測すると、main 以外を使うリポジトリで
  * 「デフォルトブランチ上ではない」と誤判定する。
  */
 export function defaultBranch(repoRootPath: string): string | undefined {
+  if (resolveGitDir(repoRootPath) === undefined) return undefined;
+  return originHeadRef(repoRootPath) ?? remoteDefaultBranch(repoRootPath);
+}
+
+/**
+ * ローカルの origin/HEAD の参照が指すブランチ（問い合わせない）。Claude の /security-review のように、
+ * 参照そのものを読む外のツールが使えるかを判定するときはこちらを使う
+ */
+export function originHeadRef(repoRootPath: string): string | undefined {
   const gitDir = resolveGitDir(repoRootPath);
   if (gitDir === undefined) return undefined;
-
   const head = join(commonGitDir(gitDir), "refs", "remotes", "origin", "HEAD");
   if (!existsSync(head)) return undefined;
-
   return /^ref:\s*refs\/remotes\/origin\/(.+)$/m.exec(readFileSync(head, "utf8").trim())?.[1];
+}
+
+/** プロセスの中で引いたリモートのデフォルトブランチ（保存しない。1回の実行で何度も問い合わせないため） */
+const remoteHeads = new Map<string, string | undefined>();
+
+/**
+ * origin/HEAD の参照が無いクローン（新しく clone したクラウドのセッションなど）で、origin に
+ * デフォルトブランチを問い合わせる（git ls-remote --symref origin HEAD）。origin/HEAD は clone のときに
+ * この値から作られるので、意味は同じ。git remote set-head などの書き込みはしない（ユーザーのリポジトリの
+ * 設定を黙って変えない）。origin が無い・届かないときは undefined（推測しない）
+ */
+function remoteDefaultBranch(repoRootPath: string): string | undefined {
+  if (remoteHeads.has(repoRootPath)) return remoteHeads.get(repoRootPath);
+  let name: string | undefined;
+  try {
+    const stdout = execFileSync("git", ["ls-remote", "--symref", "origin", "HEAD"], {
+      cwd: repoRootPath, encoding: "utf8", timeout: 10_000, stdio: ["ignore", "pipe", "ignore"],
+      // 認証のプロンプトで止まらない（届かなければ分からないとする）
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    });
+    name = /^ref:\s*refs\/heads\/(\S+)\s+HEAD$/m.exec(stdout)?.[1];
+  } catch {
+    name = undefined;
+  }
+  remoteHeads.set(repoRootPath, name);
+  return name;
 }
 
 /** worktree では refs は共有される（HEAD だけが worktree 固有） */
@@ -250,6 +297,54 @@ export async function readFileAtRef(
 }
 
 /**
+ * 1つの ref の tree から複数のファイルをまとめて読む（git cat-file --batch を1回）。
+ * 在ったファイルだけを返す。ref に無いファイルは含めない（「無い」は確定情報）。
+ * git を実行できない・出力を解釈できないときは undefined（本当に不明）
+ */
+export async function readFilesAtRef(
+  cwd: string,
+  ref: string,
+  repoRelativePaths: string[],
+): Promise<Map<string, string> | undefined> {
+  if (repoRelativePaths.length === 0) return new Map();
+  const output = await new Promise<Buffer | undefined>((resolvePromise) => {
+    const child = spawn("git", ["cat-file", "--batch"], { cwd, stdio: ["pipe", "pipe", "ignore"] });
+    const chunks: Buffer[] = [];
+    const timer = setTimeout(() => child.kill(), 15_000);
+    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+    child.on("error", () => {
+      clearTimeout(timer);
+      resolvePromise(undefined);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolvePromise(code === 0 ? Buffer.concat(chunks) : undefined);
+    });
+    child.stdin.end(repoRelativePaths.map((path) => `${ref}:${path}\n`).join(""));
+  });
+  if (output === undefined) return undefined;
+
+  // 応答は入力の順に「<sha> blob <size>\n<内容>\n」か「<入力> missing\n」
+  const files = new Map<string, string>();
+  let offset = 0;
+  for (const path of repoRelativePaths) {
+    const end = output.indexOf(0x0a, offset);
+    if (end === -1) return undefined;
+    const header = output.subarray(offset, end).toString("utf8");
+    offset = end + 1;
+    const found = /^[0-9a-f]+ (\w+) (\d+)$/.exec(header);
+    if (found === null) {
+      if (header.endsWith(" missing") || header.endsWith(" ambiguous")) continue;
+      return undefined;
+    }
+    const size = Number(found[2]);
+    if (found[1] === "blob") files.set(path, output.subarray(offset, offset + size).toString("utf8"));
+    offset += size + 1;
+  }
+  return files;
+}
+
+/**
  * デフォルトブランチの tree からファイルを読む。
  *
  * origin/{base} を先に見る。ローカルの {base} は fetch していなければ古い。
@@ -409,24 +504,29 @@ export async function nearestAncestorBranch(
   return nearest?.branch;
 }
 
+export interface DiffFile {
+  /** リポジトリルートからの相対パス。リネームは移動先 */
+  path: string;
+  /** 行数を数えられないファイル（バイナリ）は undefined */
+  added: number | undefined;
+  deleted: number | undefined;
+  /** base に無く、このブランチで追加されたファイル */
+  isNew: boolean;
+}
+
 export interface DiffStats {
   /** 比較の起点（merge-base のコミット SHA） */
   mergeBase: string;
-  /** 差分に現れたファイル数（リネームは1件） */
-  changedFiles: number;
-  /** 新規追加されたファイル数 */
-  newFiles: number;
-  addedLines: number;
-  deletedLines: number;
-  /** 行数を数えられないファイル数（バイナリ）。addedLines には含まれない */
-  binaryFiles: number;
+  /** 差分に現れたファイル（リネームは1件） */
+  files: DiffFile[];
 }
 
 /**
- * base から HEAD までの差分を数える。
+ * base から HEAD までの差分を、ファイルごとに数える。
  *
- * BP の実績を測るために使う。**数えるのはここの仕事で、LLM の仕事ではない。**
- * 差分を目で見た概算は、見積もりと突き合わせる意味を失わせる。
+ * ビルドの差分の集計（tokens history build-NN）に使う。**数えるのはここの仕事で、LLM の仕事ではない。**
+ * 差分を目で見た概算は、振り返りの素材として信用できない。
+ * 生成物やテストの振り分けは呼び出し元（diff-stats.mts）が行う。
  *
  * `..HEAD` ではなく merge-base からの差分を見るのは、base 側が先に進んでいても
  * このブランチが加えた分だけを数えるため。
@@ -443,44 +543,217 @@ export async function diffStats(
   excludePaths: string[] = [],
   head = "HEAD",
 ): Promise<DiffStats | undefined> {
-  const found = await tryGit(cwd, ["merge-base", baseRef, head]);
-  if (!found.ok) return undefined;
-  const mergeBase = found.stdout.trim();
-  if (mergeBase === "") return undefined;
+  const mergeBase = await mergeBaseOf(cwd, baseRef, head);
+  if (mergeBase === undefined) return undefined;
 
-  const pathspec = ["--", ".", ...excludePaths.map((path) => `:(exclude)${path}`)];
+  const pathspec = excludingPathspec(excludePaths);
 
-  const numstat = await tryGit(cwd, ["diff", "--numstat", `${mergeBase}..${head}`, ...pathspec]);
+  // -z ではパスが引用符でくくられず、リネームも「移動元\0移動先」で分かれて出る
+  const numstat = await tryGit(cwd, ["diff", "--numstat", "-z", `${mergeBase}..${head}`, ...pathspec]);
   if (!numstat.ok) return undefined;
-
-  let changedFiles = 0;
-  let addedLines = 0;
-  let deletedLines = 0;
-  let binaryFiles = 0;
-
-  for (const line of numstat.stdout.split("\n")) {
-    if (line.trim() === "") continue;
-    const [added = "", deleted = ""] = line.split("\t");
-    changedFiles += 1;
-    // バイナリは "-\t-\t<path>"。0 として足すと「変更なし」に見えるので分けて数える
-    if (added === "-" || deleted === "-") {
-      binaryFiles += 1;
-      continue;
-    }
-    addedLines += Number.parseInt(added, 10) || 0;
-    deletedLines += Number.parseInt(deleted, 10) || 0;
-  }
 
   const created = await tryGit(cwd, [
     "diff",
     "--name-only",
+    "-z",
     "--diff-filter=A",
     `${mergeBase}..${head}`,
     ...pathspec,
   ]);
-  const newFiles = created.ok
-    ? created.stdout.split("\n").filter((line) => line.trim() !== "").length
-    : 0;
+  const newPaths = new Set(created.ok ? created.stdout.split("\0").filter((path) => path !== "") : []);
 
-  return { mergeBase, changedFiles, newFiles, addedLines, deletedLines, binaryFiles };
+  const files: DiffFile[] = [];
+  const fields = numstat.stdout.split("\0");
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index] as string;
+    if (field.trim() === "") continue;
+    const [added = "", deleted = "", inline = ""] = field.split("\t");
+    let path = inline;
+    if (path === "") {
+      // リネーム・コピー: 次の2フィールドが移動元と移動先
+      path = fields[index + 2] ?? "";
+      index += 2;
+    }
+    // バイナリは "-\t-"。0 として足すと「変更なし」に見えるので undefined で分ける
+    const binary = added === "-" || deleted === "-";
+    files.push({
+      path,
+      added: binary ? undefined : Number.parseInt(added, 10) || 0,
+      deleted: binary ? undefined : Number.parseInt(deleted, 10) || 0,
+      isNew: newPaths.has(path),
+    });
+  }
+
+  return { mergeBase, files };
+}
+
+/** リポジトリ全体から、指定したパスを除く pathspec（`--` から） */
+function excludingPathspec(excludePaths: string[]): string[] {
+  return ["--", ".", ...excludePaths.map((path) => `:(exclude,literal)${path}`)];
+}
+
+/** base と head の merge-base。解決できなければ undefined */
+export async function mergeBaseOf(cwd: string, baseRef: string, head = "HEAD"): Promise<string | undefined> {
+  const found = await tryGit(cwd, ["merge-base", baseRef, head]);
+  if (!found.ok) return undefined;
+  const sha = found.stdout.trim();
+  return sha === "" ? undefined : sha;
+}
+
+export type NameStatusCode = "A" | "M" | "D" | "R" | "C" | "T" | "U" | "X";
+
+export interface NameStatusEntry {
+  status: NameStatusCode;
+  /** リポジトリルートからの相対パス。リネーム・コピーは移動先 */
+  path: string;
+  /** リネーム・コピーの移動元 */
+  from?: string;
+}
+
+/**
+ * from から作業ツリーまでの変更ファイルと種類（git diff --name-status -M）。
+ * コミット済みの変更と、未コミットの追跡ファイルの変更の両方を含む。未追跡のファイルは含まない
+ * （untrackedFiles で別に取る）。失敗は undefined
+ */
+export async function nameStatus(cwd: string, from: string, excludePaths: string[] = []): Promise<NameStatusEntry[] | undefined> {
+  const result = await tryGit(cwd, ["diff", "--name-status", "-M", "-z", "--no-ext-diff", from, ...excludingPathspec(excludePaths)]);
+  if (!result.ok) return undefined;
+  const fields = result.stdout.split("\0");
+  const entries: NameStatusEntry[] = [];
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index] as string;
+    if (field === "") continue;
+    // R100・C075 のように類似度が付く
+    const code = (field[0] ?? "X") as NameStatusCode;
+    if (code === "R" || code === "C") {
+      entries.push({ status: code, from: fields[index + 1] ?? "", path: fields[index + 2] ?? "" });
+      index += 2;
+    } else {
+      entries.push({ status: code, path: fields[index + 1] ?? "" });
+      index += 1;
+    }
+  }
+  return entries;
+}
+
+/**
+ * from から作業ツリーまでの、指定したパスの unified diff（-U0。hunk の行番号と増減の行だけ）。
+ * 行の照合に使うので文脈の行は要らない。外部の diff ツールと色は切る。
+ * 見出しの接頭辞は a/ b/ に固定する（利用者の diff.mnemonicPrefix・diff.noprefix で見出しのパスが変わらないように）。
+ * パスが空なら空文字列。失敗は undefined
+ */
+export async function unifiedDiff(cwd: string, from: string, paths: string[]): Promise<string | undefined> {
+  if (paths.length === 0) return "";
+  const result = await tryGit(
+    cwd,
+    [
+      "-c", "core.quotePath=false",
+      "diff", "-M", "-U0", "--no-color", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/",
+      from, "--", ...paths.map((path) => `:(literal)${path}`),
+    ],
+    30_000,
+    64 * 1024 * 1024,
+  );
+  return result.ok ? result.stdout : undefined;
+}
+
+/** 未追跡で、ignore されていないファイル（作業中に足したばかりのファイル）。失敗は undefined */
+export async function untrackedFiles(cwd: string, excludePaths: string[] = []): Promise<string[] | undefined> {
+  const result = await tryGit(cwd, ["ls-files", "--others", "--exclude-standard", "-z", ...excludingPathspec(excludePaths)]);
+  if (!result.ok) return undefined;
+  return result.stdout.split("\0").filter((path) => path !== "");
+}
+
+export interface CommitSummary {
+  sha: string;
+  /** コミット日時（ISO 8601） */
+  committedAt: string;
+  subject: string;
+}
+
+/**
+ * path の履歴で、needle を初めて足したコミット（git log -S の最も古いもの）。
+ * 記録（progress.jsonl の承認の at）がコミットに入った時点を、日時ではなく履歴で求める。
+ * 見つからなければ null、失敗は undefined
+ */
+export async function commitIntroducing(cwd: string, path: string, needle: string): Promise<string | null | undefined> {
+  const result = await tryGit(cwd, ["log", "--reverse", "--format=%H", `-S${needle}`, "--", path]);
+  if (!result.ok) return undefined;
+  return result.stdout.split("\n").find((line) => line.trim() !== "")?.trim() ?? null;
+}
+
+/**
+ * since のコミットより後（since..HEAD）に path を変えたコミット（新しい順）。
+ * 日時ではなく履歴の前後で決める（rebase でコミット日時が書き換わっても、前のコミットを後と数えない）。失敗は undefined
+ */
+export async function commitsTouchingSince(cwd: string, path: string, since: string): Promise<CommitSummary[] | undefined> {
+  const result = await tryGit(cwd, ["log", "--format=%h%x09%cI%x09%s", `${since}..HEAD`, "--", path]);
+  if (!result.ok) return undefined;
+  const commits: CommitSummary[] = [];
+  for (const line of result.stdout.split("\n")) {
+    if (line.trim() === "") continue;
+    const [sha = "", committedAt = "", ...subject] = line.split("\t");
+    commits.push({ sha, committedAt, subject: subject.join("\t") });
+  }
+  return commits;
+}
+
+/** 1回の git log に渡すファイルの数。引数の長さの上限（ARG_MAX）を超えないよう分ける */
+const LAST_TOUCHED_CHUNK = 500;
+
+/**
+ * files のどれかを最後に変えたコミットの日時（コミッタの日時）。
+ * glob は渡さない: rule の glob（rules.mts の matchesRule）と git の pathspec では `*.md` や `{a,b}` の意味が違うので、
+ * 呼び出し側が追跡ファイルを絞ってから渡す。files が空・どれも履歴が無ければ null、git の失敗は undefined
+ */
+export async function lastTouched(cwd: string, files: string[]): Promise<Date | null | undefined> {
+  let latest: Date | null = null;
+  for (let start = 0; start < files.length; start += LAST_TOUCHED_CHUNK) {
+    const chunk = files.slice(start, start + LAST_TOUCHED_CHUNK);
+    // :(literal) でファイル名の中の * や [ を pathspec の記号として読ませない
+    const result = await tryGit(cwd, ["log", "-1", "--format=%cI", "--", ...chunk.map((file) => `:(literal)${file}`)]);
+    if (!result.ok) return undefined;
+    const value = result.stdout.trim();
+    if (value === "") continue;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return undefined;
+    if (latest === null || date > latest) latest = date;
+  }
+  return latest;
+}
+
+/** path に、HEAD からの未コミットの変更（ステージ済みを含む）があるか。未追跡も変更とみなす。失敗は undefined */
+export async function hasUncommittedChange(cwd: string, path: string): Promise<boolean | undefined> {
+  const result = await tryGit(cwd, ["status", "--porcelain", "--", path]);
+  return result.ok ? result.stdout.trim() !== "" : undefined;
+}
+
+/**
+ * メインの作業ツリーのルート（worktree からでも、共有の .git の親）。
+ * セッションの記録は作業ツリーごとのディレクトリに分かれるので、探す範囲を決めるのに使う
+ */
+export async function mainWorktreeRoot(cwd: string): Promise<string | undefined> {
+  const result = await tryGit(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  if (!result.ok) return undefined;
+  const common = result.stdout.trim();
+  return common === "" ? undefined : dirname(common);
+}
+
+/** いま登録されている worktree のパス（メインを含む） */
+export async function worktreePaths(cwd: string): Promise<string[]> {
+  const result = await tryGit(cwd, ["worktree", "list", "--porcelain"]);
+  if (!result.ok) return [];
+  return result.stdout
+    .split("\n")
+    .filter((line) => line.startsWith("worktree "))
+    .map((line) => line.slice("worktree ".length).trim())
+    .filter((path) => path !== "");
+}
+
+/** origin の URL。無ければ undefined */
+export async function originUrl(cwd: string): Promise<string | undefined> {
+  const result = await tryGit(cwd, ["remote", "get-url", "origin"]);
+  if (!result.ok) return undefined;
+  const url = result.stdout.trim();
+  return url === "" ? undefined : url;
 }

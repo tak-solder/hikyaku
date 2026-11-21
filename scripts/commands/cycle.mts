@@ -1,10 +1,12 @@
 /** cycle new / list / status / close — サイクルのライフサイクル操作 */
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { flagBoolean, flagList, flagString, type ParsedArgs } from "../lib/args.mts";
 import { branchName } from "../lib/branch.mts";
 import {
+  checkExternalTarget,
+  EXTERNAL_TARGETS,
   loadConfig,
   PROFILE_NAMES,
   type AskKey,
@@ -31,7 +33,8 @@ import { emit, table } from "../lib/output.mts";
 import { pluginVersion } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
 import { formatRef } from "../lib/refs.mts";
-import { buildDirName, isComplete, loadTasklist } from "../lib/tasklist.mts";
+import { cycleTimeline, itemJson, itemLine, readLedger, summarize, type LedgerSummary } from "../lib/ledger.mts";
+import { buildDirName, fillPrColumn, isComplete, isLegacyTasklist, loadTasklist, normalizeBuildId, renderTasklistFile, tasklistPath } from "../lib/tasklist.mts";
 import { resolveViews, sectionNote } from "../lib/views.mts";
 import { openCycle, type CycleContext } from "../lib/workspace.mts";
 
@@ -59,7 +62,6 @@ interface Decided {
   sessionTitle: string | undefined;
   externalTarget: ExternalTarget | undefined;
   externalGithubRepo: string | undefined;
-  externalAsanaProjectGid: string | undefined;
 }
 
 /** どのキーも渡されていなければ何も書かない */
@@ -76,13 +78,14 @@ function readDecided(args: ParsedArgs): Decided {
     );
   }
 
-  const target = flagString(args, "external");
-  if (target !== undefined && target !== "none" && target !== "github" && target !== "asana") {
+  const rawTarget = flagString(args, "external");
+  if (args.flags.has("external-project")) {
     throw new HikyakuError(
-      `--external の値が不正です: ${target}`,
-      "使用できる値: none | github | asana",
+      "--external-project は v3 で廃止しました",
+      `Asana への投影は廃止しました。使用できる --external の値: ${EXTERNAL_TARGETS.join(" | ")}`,
     );
   }
+  const target = rawTarget === undefined ? undefined : checkExternalTarget(rawTarget, "--external");
 
   return {
     baseBranch: flagString(args, "base-branch"),
@@ -92,7 +95,6 @@ function readDecided(args: ParsedArgs): Decided {
     sessionTitle: flagString(args, "session-title"),
     externalTarget: target,
     externalGithubRepo: flagString(args, "external-repo"),
-    externalAsanaProjectGid: flagString(args, "external-project"),
   };
 }
 
@@ -132,20 +134,13 @@ function renderCycleConfig(cycleName: string, decided: Decided): string {
   if (decided.sessionTitle !== undefined) {
     lines.push("[session]", `title = ${tomlString(decided.sessionTitle)}`, "");
   }
-  if (
-    decided.externalTarget !== undefined ||
-    decided.externalGithubRepo !== undefined ||
-    decided.externalAsanaProjectGid !== undefined
-  ) {
+  if (decided.externalTarget !== undefined || decided.externalGithubRepo !== undefined) {
     lines.push("[external]");
     if (decided.externalTarget !== undefined) {
       lines.push(`target = ${tomlString(decided.externalTarget)}`);
     }
     if (decided.externalGithubRepo !== undefined) {
       lines.push(`github_repo = ${tomlString(decided.externalGithubRepo)}`);
-    }
-    if (decided.externalAsanaProjectGid !== undefined) {
-      lines.push(`asana_project_gid = ${tomlString(decided.externalAsanaProjectGid)}`);
     }
     lines.push("");
   }
@@ -193,7 +188,7 @@ const ASK_FLAGS: Record<AskKey, string> = {
   "branch.separator": "--branch-separator <text>",
   "pr.title": "--pr-title <template>",
   "session.title": "--session-title <template>",
-  "external.target": "--external <none|github|asana> [--external-repo <owner/repo>]",
+  "external.target": `--external <${EXTERNAL_TARGETS.join("|")}> [--external-repo <owner/repo>]`,
 };
 
 register({
@@ -203,8 +198,7 @@ register({
     "hikyaku cycle new <slug> --profile <name> [--ticket <ref>] [--depends 001,002]\n" +
     "                           [--base-branch <name>] [--branch-prefix <text>] [--branch-separator <text>]\n" +
     "                           [--pr-title <template>] [--session-title <template>]\n" +
-    "                           [--external <none|github|asana>] [--external-repo <owner/repo>]\n" +
-    "                           [--external-project <gid>] [--dry-run]",
+    `                           [--external <${EXTERNAL_TARGETS.join("|")}>] [--external-repo <owner/repo>] [--dry-run]`,
   writes: true,
   details: [
     "--profile は必須です。サイクルの進め方は作成時に明示的に選ぶ必要があります",
@@ -242,7 +236,7 @@ register({
         [
           "サイクルの進め方は作成時に明示的に選ぶ必要があります。",
           "",
-          "  express   承認は要件と plan だけ・レビューは有効。人間の時間を節約する",
+          "  express   承認は要件と plan だけ・レビューは有効。ユーザーの時間を節約する",
           "  economy   承認は残しレビューを落とす。AI 実行コストを節約する",
           "  standard  全レビュー有効・各フェーズで承認",
           "  thorough  codebase-survey の確認を追加、validate を各ステップで実行",
@@ -408,16 +402,15 @@ register({
 
 register({
   name: "cycle link",
-  summary: "外部システムへ投影した親 issue / 親タスクの参照を記録する",
+  summary: "GitHub に起票したサイクルの issue の参照を記録する",
   usage: "hikyaku cycle link [<cycle>] --external <url> [--dry-run]",
   writes: true,
   details: [
     "cycles.md の外部列を埋めます。gh CLI が使える場合は external sync が自動で",
-    "記録するので、このコマンドを直接使うのは GitHub MCP や Asana MCP で",
-    "スキル側が投影した場合です。",
+    "記録するので、このコマンドを直接使うのは GitHub MCP でスキル側が起票した場合です。",
     "",
     "参照は `[#12](URL)` に整えて記録します。表記が揃っていないと表が横に伸びて",
-    "読めなくなるためで、判定に使う値ではありません（完了判定は常に PR 列）。",
+    "読めなくなるためで、判定に使う値ではありません（完了判定は常に各ビルドの完了の記録）。",
     "",
     "外部システムはあくまで可視化のためのビューです。ここに記録された参照を",
     "読み取りや完了判定に使うことはありません。",
@@ -426,11 +419,11 @@ register({
     const { config, context: ctx } = openCycle(args, operands[0]);
     const external = flagString(args, "external");
     if (external === undefined) {
-      throw new HikyakuError("--external に親 issue / 親タスクの URL を指定してください");
+      throw new HikyakuError("--external にサイクルの issue の URL を指定してください");
     }
 
     const records = loadCycles(config.hikyakuRoot);
-    const formatted = formatRef(external, "親issue");
+    const formatted = formatRef(external, "issue");
     const next = records.map((record) =>
       record.id === ctx.record.id ? { ...record, external: formatted } : record,
     );
@@ -594,6 +587,17 @@ register({
     const prefix = branchName(config.branch, "plan", name).replace(/plan$/, "");
     const inProgress = remote.names.filter((branchRef) => branchRef.startsWith(prefix));
 
+    // 未決事項。merge の事項は、ベースブランチへマージ済みのビルドで期限を過ぎたとする
+    // 記録を読めなくても status は止めない（直し方は ledger list が示す）
+    const merged = views.mergedIds === undefined ? undefined : new Set([...views.mergedIds].map((id) => buildDirName(normalizeBuildId(id))));
+    let ledger: LedgerSummary = { due: [], open: [], rejected: [] };
+    let ledgerError: string | null = null;
+    try {
+      ledger = summarize(readLedger(directory), cycleTimeline(config, ctx, merged));
+    } catch (error) {
+      ledgerError = error instanceof Error ? error.message : String(error);
+    }
+
     emit(
       {
         cycle: record,
@@ -611,6 +615,12 @@ register({
           ids: views.mergedIds === undefined ? null : [...views.mergedIds],
         },
         remoteUnavailable: remote.unavailable,
+        ledger: {
+          due: ledger.due.map(itemJson),
+          open: ledger.open.map(itemJson),
+          rejected: ledger.rejected.map(itemJson),
+          ...(ledgerError === null ? {} : { error: ledgerError }),
+        },
         suggestion: suggestFor(state, name),
       },
       () => {
@@ -651,6 +661,14 @@ register({
           }
         }
 
+        if (ledgerError !== null) {
+          lines.push("", `  ! 未決事項の記録を読めません: ${ledgerError}`);
+        } else if (ledger.open.length > 0 || ledger.rejected.length > 0) {
+          lines.push("", `  未決事項: ${ledger.open.length} 件（期限が来た・過ぎた ${ledger.due.length} 件）`);
+          for (const item of ledger.due) lines.push(`    ${itemLine(item)}`);
+          for (const item of ledger.rejected) lines.push(`    未解決の退け ${item.open.id}: ${item.open.summary}`);
+        }
+
         if (remote.unavailable !== undefined) {
           lines.push("", `  ! origin に到達できないため、着手中ブランチは不明です`);
         } else if (inProgress.length > 0) {
@@ -659,8 +677,8 @@ register({
 
         lines.push(
           "",
-          `  ${sectionNote("判定", views.head, " の PR 列（未コミットの変更は数えません）")}`,
-          `  ${sectionNote("マージ状況", views.base, " の PR 列")}`,
+          `  ${sectionNote("判定", views.head, " の完了の記録（未コミットの変更は数えません）")}`,
+          `  ${sectionNote("マージ状況", views.base, " の完了の記録")}`,
         );
         if (views.fetched) lines.push(`    origin/${views.baseBranch} を更新しました`);
 
@@ -697,6 +715,9 @@ register({
     "",
     "全ビルドが完了していない場合は警告しますが、中止（abandoned）にする場合も",
     "あるため実行は止めません。--status abandoned で中止として記録できます。",
+    "",
+    "tasklist.md の PR 列も、各ビルドの完了の記録（build-NN/progress.jsonl の pr の done）から",
+    "まとめて埋めます。サイクルの途中は、並行するビルドの PR がコンフリクトしないよう PR 列を書きません。",
   ].join("\n"),
   run: ({ args, operands }) => {
     const config = loadConfig({ root: flagString(args, "root") });
@@ -710,8 +731,13 @@ register({
       throw new HikyakuError(`--status は closed か abandoned を指定してください`);
     }
 
-    const builds = loadTasklist(cycleDir(config.hikyakuRoot, record));
+    const directory = cycleDir(config.hikyakuRoot, record);
+    const builds = loadTasklist(directory);
     const incomplete = builds.filter((build) => !isComplete(build));
+    // 完了の記録から読んだ PR を、締めるときに PR 列へ書く（v2 の形式は書き換えない）
+    const listPath = tasklistPath(directory);
+    const filled = builds.filter((build) => build.prSource === "record");
+    const fillsPrColumn = filled.length > 0 && !isLegacyTasklist(readFileSync(listPath, "utf8"));
 
     const updated: CycleRecord = {
       ...record,
@@ -721,9 +747,11 @@ register({
     };
     const dryRun = flagBoolean(args, "dry-run");
 
-    emit({ cycle: updated, incomplete: incomplete.map((b) => b.id), dryRun }, () => {
+    const prColumn = fillsPrColumn ? filled.map((b) => b.id) : [];
+    emit({ cycle: updated, incomplete: incomplete.map((b) => b.id), prColumn, dryRun }, () => {
       const lines = [`サイクル ${cycleDirName(record)} を ${status} にします`, `  完了日  ${updated.finished}`];
       if (updated.summary !== "") lines.push(`  要約    ${updated.summary}`);
+      if (prColumn.length > 0) lines.push(`  PR 列   ${prColumn.map(buildDirName).join(", ")} を完了の記録から埋めます（tasklist.md）`);
       if (incomplete.length > 0 && status === "closed") {
         lines.push(
           "",
@@ -738,6 +766,7 @@ register({
 
     const next = records.map((r) => (r.id === record.id ? updated : r));
     writeFileSync(cyclesPath(config.hikyakuRoot), renderCyclesFile(next), "utf8");
+    if (fillsPrColumn) writeFileSync(listPath, renderTasklistFile(cycleDirName(record), fillPrColumn(builds)), "utf8");
   },
 });
 

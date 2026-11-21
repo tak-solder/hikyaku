@@ -1,7 +1,5 @@
 # Hikyaku ドキュメント
 
-Codex での導入と起動は [Codex で使い始める](getting-started-codex.md) を参照してください。
-
 Hikyaku を自分のリポジトリで使うためのドキュメントです。プラグイン本体の開発については [AGENTS.md](../AGENTS.md) を参照してください。
 
 コマンド例に出てくる `hikyaku` は、シェルから CLI を叩くための関数です。定義方法は [実行方法](reference/cli.md#実行方法) にあります。Claude Code のスキル（`/hikyaku:planner` など）を使うだけなら設定は要りません。
@@ -28,8 +26,9 @@ Hikyaku がなぜこの形をしているのか（永続ドキュメントとサ
 - [.hikyaku.config](configuration/config-file.md) — 設定キーの一覧と、サイクル単位の上書き
 - [プロファイル](configuration/profiles.md) — 承認ゲートとレビューの量をサイクルごとに選ぶ
 - [ドキュメントガイド](configuration/documents.md) — 永続ドキュメントの所在を宣言する
-- [外部システムへの投影](configuration/external.md) — GitHub / Asana へ片方向で投影する
-- [BP の基準表](configuration/bp-guide.md) — ビルド分割の基準をリポジトリに合わせて調整する
+- [知見の置き場](configuration/persistence.md) — 得た知見を残すか、どこに置くかの考え方
+- [サイクルの GitHub issue](configuration/external.md) — サイクルごとに issue を起票し、CLOSE で閉じる
+- [予測ピークと見積もりのガイド](configuration/token-guide.md) — ビルドの大きさの見積もり方を、リポジトリの実績で補正する
 
 ## 運用する
 
@@ -43,6 +42,6 @@ Hikyaku がなぜこの形をしているのか（永続ドキュメントとサ
 - [ディレクトリとファイル](reference/directory-layout.md)
 - [内部スキルとエージェント](reference/agents-and-skills.md)
 
-## v1 から移行する
+## 以前の版から移行する
 
-[v1 → v2 移行ガイド](migration/v1-to-v2.md)。進行中のサイクルがある場合は、プラグインのバージョンを固定して完走してから移行してください。
+[v2 → v3 移行ガイド](migration/v2-to-v3.md) と [v1 → v2 移行ガイド](migration/v1-to-v2.md)。進行中のサイクルがある場合は、プラグインのバージョンを固定して完走してから移行してください。

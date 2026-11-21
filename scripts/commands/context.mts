@@ -16,20 +16,22 @@
 
 import { existsSync } from "node:fs";
 import { join, relative } from "node:path";
-import { isCyclelessPhase, isPhase, type Phase } from "../lib/branch.mts";
-import { isCustomEntry, loadGuide, type DocEntry } from "../lib/docs.mts";
+import { isCyclelessPhase, isPatchPhase, isPhase, type Phase } from "../lib/branch.mts";
+import type { ResolvedConfig } from "../lib/config.mts";
+import { scopeFor } from "../lib/stack.mts";
+import { docRef, loadGuide, type DocEntry } from "../lib/docs.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { emit, table } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
 import { buildDirName, normalizeBuildId, type BuildRecord } from "../lib/tasklist.mts";
-import { openCycle, type CycleContext } from "../lib/workspace.mts";
+import { openCycle } from "../lib/workspace.mts";
 
 interface Suggestion {
   /** 論理名（永続ドキュメント）またはファイル名 */
   ref: string;
   /** どこから来た候補か */
   origin: "doc" | "cycle" | "build" | "workflow";
-  /** リポジトリルートからの相対パス */
+  /** リポジトリルートからの相対パス。節を指して登録した永続ドキュメントはアンカー付き（`docs/concepts.md#用語`） */
   path: string;
   /** document-guide の管理列。永続ドキュメント以外は undefined */
   ownership?: string;
@@ -44,6 +46,15 @@ interface Suggestion {
  *
  * planner に overview を入れていないのは、企画が「何を作るか」の合意であって
  * 実装済みの現実を前提に置く場面ではないため。制約だけは再質問を避けるために読む。
+ *
+ * build-NN は overview / decisions / constraints を候補に出さない。どの節がそのビルドに効くかは、全文を読んで
+ * 設計した architect が issue.md の「参照する設計ドキュメント」でポインタとして渡す。
+ * 候補に並べると、実装のセッションが設計時と同じ量を読み直すことになる。選び漏れは
+ * plan のレビュー（doc-reviewer）が全文と突き合わせて拾う。
+ *
+ * conventions だけは別に扱う。コードを1行書くたびに効く取り決めなので、節を選んで渡すものではない。
+ * AGENTS.md / CLAUDE.md に登録されていればホストが自動で読み込むので候補に出さず、それ以外の
+ * ファイル（docs/conventions.md など）に登録されていれば、自動では読み込まれないので候補に出す。
  */
 const DOC_REASONS: Record<string, Record<string, string>> = {
   plan: {
@@ -52,53 +63,58 @@ const DOC_REASONS: Record<string, Record<string, string>> = {
   },
   architect: {
     overview: "実装済みの現実。既存コード調査の差分の基準になる",
-    constraints: "既に確定している非機能要件。再度質問しないため",
+    constraints: "設計を縛る条件。再度質問しないため",
     decisions: "過去の設計判断。採用理由とトレードオフを把握し、覆さないため",
-    learnings: "既知の落とし穴",
-    conventions: "規約",
-    "security-model": "認証認可・信頼境界に触れる設計のため",
-    "test-strategy": "テスト方針",
+    conventions: "リポジトリ全体に効く取り決め",
     glossary: "ドメイン用語",
-    "tech-stack": "参考。コードと矛盾したらコードが正",
-    "db-schema": "参考。正はマイグレーション",
-    interfaces: "参考。正は OpenAPI / 型定義",
+  },
+  patch: {
+    overview: "実装済みの現実。変更が触れる責務・境界の節だけを読む",
+    constraints: "変更を縛る条件。触れる節だけを読む",
+    decisions: "過去の設計判断。覆さないため、触れる節だけを読む",
+    conventions: "リポジトリ全体に効く取り決め。AGENTS.md / CLAUDE.md に無く、自動では読み込まれない",
+    glossary: "依頼の語を既存の定義に揃えるため",
   },
   close: {
     overview: "昇格先。責務・境界・データフローの変化を反映する",
-    learnings: "昇格先。再現条件が明確な落とし穴",
-    constraints: "昇格先。実装中に判明した制約",
-    conventions: "昇格先。以後の書き方・進め方の取り決め",
+    constraints: "昇格先。実装中に判明した、設計を縛る条件",
+    conventions: "昇格先。リポジトリ全体に効く取り決め",
     decisions: "ADR の status を accepted → implemented に更新する",
+    glossary: "昇格先。このサイクルで定まった用語",
   },
 };
 
-/** build-NN は architect と同じ集合を読む。理由だけ実装視点に寄せる */
 const BUILD_DOC_REASONS: Record<string, string> = {
-  ...DOC_REASONS["architect"],
-  overview: "実装済みの現実。他サイクルの成果も含む",
-  decisions: "過去の設計判断。実装中に覆さない（覆すなら handoff に記録する）",
+  conventions: "リポジトリ全体に効く取り決め。AGENTS.md / CLAUDE.md に無く、自動では読み込まれない",
 };
 
 function docReasons(phase: Phase): Record<string, string> {
   if (phase.startsWith("build-")) return BUILD_DOC_REASONS;
+  if (isPatchPhase(phase)) return DOC_REASONS["patch"] ?? {};
   return DOC_REASONS[phase] ?? {};
 }
 
-/** リポジトリ固有の永続ドキュメントは中身を Hikyaku が知らないので、概要欄で要否を判断させる */
-const CUSTOM_DOC_REASON = "リポジトリ固有の永続ドキュメント。今回のスコープに関係するかは概要欄で判断する";
+/** ホストがセッションの開始時に自動で読み込むファイル（リポジトリルートからの相対パス） */
+const AUTO_LOADED = ["AGENTS.md", "CLAUDE.md", ".claude/CLAUDE.md"];
 
-/**
- * リポジトリ固有の永続ドキュメント（既定に無い論理名）を候補に含めるフェーズ。
- * close は昇格先が決まっているため含めない（振り返りが doc: で指したときだけ書き込む）
- */
-function includesCustomDocs(phase: Phase): boolean {
-  return phase === "plan" || phase === "architect" || phase.startsWith("build-");
+/** そのパスの文書を、ホストが自動で読み込むか */
+export function isAutoLoaded(path: string | undefined): boolean {
+  return path !== undefined && AUTO_LOADED.includes(path.replace(/^\.\//, ""));
 }
 
 /** そのフェーズで読むサイクル成果物。[サイクルディレクトリからの相対パス, 理由] */
 function cycleArtifacts(phase: Phase): [string, string][] {
   if (phase === "plan") {
-    return [["planning/questions.md", "中断からの再開時、既に確認した内容"]];
+    return [
+      ["planning/intake.md", "patch から引き継いだ依頼・合意・調査。チケットと同じく企画の入力にする"],
+      ["planning/questions.md", "中断からの再開時、既に確認した内容"],
+    ];
+  }
+  if (isPatchPhase(phase)) {
+    return [
+      ["planning/user-stories.md", "このサイクルの要件。変更が合意済みの要件と食い違わないかを見る"],
+      ["design/design-delta.md", "このサイクルの設計。変更が設計と食い違わないかを見る"],
+    ];
   }
   if (phase === "architect") {
     return [
@@ -147,7 +163,10 @@ register({
   summary: "そのフェーズで読むべきドキュメントの候補を返す",
   usage: "hikyaku context <phase> [<cycle>] [--root <path>] [--json]",
   details: [
-    "phase: plan | architect | build-NN | close",
+    "phase: plan | architect | build-NN | close | patch-YYYYMM-slug",
+    "",
+    "patch はサイクルに属さなくても使えます。進行中のサイクルに属す patch では、そのサイクルの",
+    "要件と設計も返します。",
     "",
     "返すのは候補と、なぜ候補なのかだけです。どれが今回のスコープに関係するかは",
     "概要欄を見て判断してください。全部読む必要はありません。",
@@ -158,11 +177,12 @@ register({
     "",
     "永続ドキュメントの所在は document-guide.md が正です。管理が「対象外」の",
     "ものは候補にも未作成にも出しません（意図的に持たないため）。",
-    "既定に無い論理名（repo 管理のリポジトリ固有ドキュメント）は、plan / architect /",
-    "build-NN の候補に含めます。",
     "",
-    "build-NN では、tasklist.md の依存グラフから先行ビルドの handoff.md を",
-    "辿ります。手で辿ると漏れるためです。",
+    "build-NN では overview / decisions / constraints を候補に出しません。そのビルドに効く節は、",
+    "architect が issue.md の「参照する設計ドキュメント」で指します。conventions は、AGENTS.md /",
+    "CLAUDE.md 以外のファイルに登録されているときだけ候補に出します（自動では読み込まれないため）。",
+    "tasklist.md の依存グラフから先行ビルドの handoff.md は辿ります。",
+    "手で辿ると漏れるためです。",
     "",
     "パスはすべてリポジトリルートからの相対です。--json はサブエージェントへの",
     "委任プロンプトに流し込む用途を想定しています（概要欄で絞る仕組みが",
@@ -173,51 +193,29 @@ register({
     if (rawPhase === undefined) {
       throw new HikyakuError(
         "phase を指定してください",
-        "使用できる値: plan | architect | build-NN | close",
+        "使用できる値: plan | architect | build-NN | close | patch-YYYYMM-slug",
       );
     }
     // conductor は統合ブランチの名前で、読むべきドキュメントを持つフェーズではない
     if (!isPhase(rawPhase) || isCyclelessPhase(rawPhase) || rawPhase === "create" || rawPhase === "conductor") {
       throw new HikyakuError(
         `読むべきドキュメントを持たないフェーズです: ${rawPhase}`,
-        "使用できる値: plan | architect | build-NN | close",
+        "使用できる値: plan | architect | build-NN | close | patch-YYYYMM-slug",
       );
     }
     const phase = rawPhase;
 
-    const { config, context: ctx } = openCycle(args, operands[1]);
-    const suggestions: Suggestion[] = [];
-    const missing: string[] = [];
-
-    for (const entry of docEntriesFor(loadGuide(config.hikyakuRoot), phase)) {
-      const path = entry.path;
-      if (path === undefined || !existsSync(join(config.repoRoot, path))) {
-        missing.push(entry.name);
-        continue;
-      }
-      suggestions.push({
-        ref: entry.name,
-        origin: "doc",
-        path,
-        ownership: entry.ownership,
-        reason: docReasons(phase)[entry.name] ?? CUSTOM_DOC_REASON,
-        summary: entry.summary,
-      });
-    }
-
-    const cycleRel = relative(config.repoRoot, ctx.directory);
-    const pushIfPresent = (
-      origin: Suggestion["origin"],
-      rel: string,
-      reason: string,
-    ): void => {
-      if (!existsSync(join(ctx.directory, rel))) return;
-      suggestions.push({ ref: rel, origin, path: join(cycleRel, rel), reason });
+    // patch はサイクルに属さないことがある（ctx が undefined）。それ以外のフェーズは必ずサイクルを開く
+    const { config, context: ctx } = isPatchPhase(phase) ? scopeFor(args, phase, operands[1]) : openCycle(args, operands[1]);
+    const { suggestions, missing } = collectDocSuggestions(config, phase);
+    const pushIfPresent = (origin: Suggestion["origin"], rel: string, reason: string): void => {
+      if (ctx === undefined || !existsSync(join(ctx.directory, rel))) return;
+      suggestions.push({ ref: rel, origin, path: join(relative(config.repoRoot, ctx.directory), rel), reason });
     };
 
     for (const [rel, reason] of cycleArtifacts(phase)) pushIfPresent("cycle", rel, reason);
 
-    if (phase.startsWith("build-")) {
+    if (ctx !== undefined && phase.startsWith("build-")) {
       const id = normalizeBuildId(phase.slice("build-".length));
       // 番号のタイプミスで、それらしい候補が返って成功するのを防ぐ。
       // tasklist に無いビルドは存在しないビルドで、読むものも決められない
@@ -235,7 +233,7 @@ register({
       }
     }
 
-    if (phase === "close") {
+    if (ctx !== undefined && phase === "close") {
       for (const build of ctx.builds) {
         pushIfPresent(
           "build",
@@ -245,39 +243,67 @@ register({
       }
     }
 
-    const instructions = join(config.hikyakuRoot, "instructions.md");
-    if (existsSync(instructions)) {
-      suggestions.push({
-        ref: "instructions.md",
-        origin: "workflow",
-        path: relative(config.repoRoot, instructions),
-        reason: "このリポジトリで Hikyaku を回すときの指示。スキルより優先する",
-      });
-    }
+    pushInstructions(config, suggestions);
 
-    emit({ cycle: ctx.name, phase, suggestions, missingDocs: missing }, () =>
-      render(ctx, phase, suggestions, missing),
+    emit({ cycle: ctx?.name ?? null, phase, suggestions, missingDocs: missing }, () =>
+      render(ctx?.name ?? "（サイクルに属さない）", phase, suggestions, missing),
     );
   },
 });
 
+function pushInstructions(config: ResolvedConfig, suggestions: Suggestion[]): void {
+  const instructions = join(config.hikyakuRoot, "instructions.md");
+  if (existsSync(instructions)) {
+    suggestions.push({
+      ref: "instructions.md",
+      origin: "workflow",
+      path: relative(config.repoRoot, instructions),
+      reason: "このリポジトリで Hikyaku を回すときの指示。スキルより優先する",
+    });
+  }
+}
+
+/** そのフェーズで読む永続ドキュメントの候補と、未作成の論理名 */
+function collectDocSuggestions(config: ResolvedConfig, phase: Phase): { suggestions: Suggestion[]; missing: string[] } {
+  const suggestions: Suggestion[] = [];
+  const missing: string[] = [];
+  for (const entry of docEntriesFor(loadGuide(config.hikyakuRoot), phase)) {
+    const path = entry.path;
+    if (path === undefined || !existsSync(join(config.repoRoot, path))) {
+      missing.push(entry.name);
+      continue;
+    }
+    suggestions.push({
+      ref: entry.name,
+      origin: "doc",
+      // 存在の検査はアンカーを除いたパスで行い、返すのは節まで指したポインタ
+      path: docRef(entry) ?? path,
+      ownership: entry.ownership,
+      reason: docReasons(phase)[entry.name] as string,
+      summary: entry.summary,
+    });
+  }
+  return { suggestions, missing };
+}
+
 /** そのフェーズが読む論理名のうち、「対象外」でないものを guide の並びで返す */
 function docEntriesFor(entries: DocEntry[], phase: Phase): DocEntry[] {
   const reasons = docReasons(phase);
-  return entries.filter(
-    (e) =>
-      (reasons[e.name] !== undefined || (isCustomEntry(e) && includesCustomDocs(phase))) &&
-      e.ownership !== "対象外",
-  );
+  const candidates = entries.filter((e) => reasons[e.name] !== undefined && e.ownership !== "対象外");
+  // patch: conventions は、ホストが自動で読み込むなら候補に出さない（build-NN と同じ理由）
+  if (isPatchPhase(phase)) return candidates.filter((e) => e.name !== "conventions" || !isAutoLoaded(e.path));
+  if (!phase.startsWith("build-")) return candidates;
+  // build-NN: 自動で読み込まれる文書と、まだ無い文書は出さない（未作成を知らせても実装では使えない）
+  return candidates.filter((e) => e.path !== undefined && !isAutoLoaded(e.path));
 }
 
 function render(
-  ctx: CycleContext,
+  name: string,
   phase: Phase,
   suggestions: Suggestion[],
   missing: string[],
 ): string {
-  const lines = [`${ctx.name} / ${phase} で読む候補`, ""];
+  const lines = [`${name} / ${phase} で読む候補`, ""];
 
   const docs = suggestions.filter((s) => s.origin === "doc");
   if (docs.length > 0) {
@@ -304,6 +330,12 @@ function render(
     lines.push(`未作成: ${missing.join(", ")}`, "");
   }
 
-  lines.push("概要欄を見て、今回のスコープに関係するものだけを読んでください。");
+  lines.push(
+    phase.startsWith("build-")
+      ? "overview / decisions / constraints は、issue.md の「参照する設計ドキュメント」が指す節だけを読んでください。"
+      : isPatchPhase(phase)
+        ? "全文は読まず、変更が触れる節だけを読んでください（所在の確認と節の特定は調査のサブエージェントに任せられます）。"
+        : "概要欄を見て、今回のスコープに関係するものだけを読んでください。",
+  );
   return lines.join("\n");
 }

@@ -1,38 +1,44 @@
 /**
  * フェーズの解決と、スタック元の導出。
  *
- * PR のマージ先（pr base）と、差分を測る基準（bp actual）は同じ答えでなければ
+ * PR のマージ先（pr base）と、差分を測る基準（tokens history build-NN）は同じ答えでなければ
  * ならない。基準がずれると、PR に含まれない差分を測ったり、逆に先行ビルドの
  * 差分まで数えたりする。導出をここに1つだけ置くのはそのため。
  */
 
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { flagString, type ParsedArgs } from "./args.mts";
-import { isCyclelessPhase, isPhase, parseBranch, type Phase } from "./branch.mts";
+import { branchName, isCyclelessPhase, isPatchPhase, isPhase, parseBranch, type ParsedBranch, type Phase } from "./branch.mts";
 import { loadConfig, type ResolvedConfig } from "./config.mts";
+import { cycleDirName } from "./cycles.mts";
+import { patchCycleOf, patchUnitDirectory } from "./patch.mts";
 import { HikyakuError } from "./errors.mts";
 import {
+  currentBranch,
   defaultBranch,
   isAncestor,
   listKnownBranches,
   localSha,
   nearestAncestorBranch,
+  readFileAtRef,
   type KnownBranch,
 } from "./git.mts";
 import { normalizeBuildId } from "./tasklist.mts";
-import { resolveViews } from "./views.mts";
+import { buildsAtRef, resolveViews, type TasklistViews } from "./views.mts";
 import { openCycle, type CycleContext } from "./workspace.mts";
 
 export function requirePhase(raw: string | undefined): Phase {
   if (raw === undefined) {
     throw new HikyakuError(
       "フェーズを指定してください",
-      "使用できる値: init | bp-guide | create | plan | architect | build-NN | close | conductor",
+      "使用できる値: init | token-guide | create | plan | architect | build-NN | close | conductor | patch-YYYYMM-slug",
     );
   }
   if (!isPhase(raw)) {
     throw new HikyakuError(
       `フェーズの値が不正です: ${raw}`,
-      "使用できる値: init | bp-guide | create | plan | architect | build-NN（NN は2桁以上の数字）| close | conductor",
+      "使用できる値: init | token-guide | create | plan | architect | build-NN（NN は2桁以上の数字）| close | conductor | patch-YYYYMM-slug（slug は英小文字・数字・ハイフン）",
     );
   }
   return raw;
@@ -56,6 +62,7 @@ export interface Scope {
  * 解決を通す副次的な効果（`002` から `002-billing` のブランチ名が出る）。
  */
 export function scopeFor(args: ParsedArgs, phase: Phase, operand: string | undefined): Scope {
+  if (isPatchPhase(phase)) return patchScope(args, phase, operand);
   if (isCyclelessPhase(phase)) {
     return {
       config: loadConfig({ root: flagString(args, "root") }),
@@ -64,6 +71,37 @@ export function scopeFor(args: ParsedArgs, phase: Phase, operand: string | undef
     };
   }
   const opened = openCycle(args, operand);
+  return { config: opened.config, cycle: opened.context.name, context: opened.context };
+}
+
+/**
+ * patch の対象。サイクルは推測しない（現在のブランチや .hikyaku.local から決めると、
+ * サイクルに属さない patch が近くのサイクルに紛れ込む）。明示されたサイクルか、
+ * そのディレクトリを持つ進行中のサイクルに属し、どちらも無ければサイクルに属さない
+ */
+function patchScope(args: ParsedArgs, phase: Phase, operand: string | undefined): Scope {
+  const base = loadConfig({ root: flagString(args, "root") });
+  const recorded = patchCycleOf(base.hikyakuRoot, phase);
+  const unit = patchUnitDirectory(phase) as string;
+  const atRoot = existsSync(join(base.hikyakuRoot, unit));
+  if (operand === undefined) {
+    if (recorded === undefined) return { config: base, cycle: undefined, context: undefined };
+    return patchScope(args, phase, cycleDirName(recorded));
+  }
+  const opened = openCycle(args, operand);
+  // 記録が正。渡されたサイクルと記録の場所が食い違えば、どちらかの取り違えなので止める
+  if (atRoot || (recorded !== undefined && cycleDirName(recorded) !== opened.context.name)) {
+    throw new HikyakuError(
+      `${phase} の記録は ${atRoot ? "サイクルに属さない patch（HIKYAKU_ROOT の下）" : cycleDirName(recorded as NonNullable<typeof recorded>)} にあります`,
+      "サイクルの指定を外すか、記録のある場所に合わせて指定し直してください。",
+    );
+  }
+  if (opened.context.record.status !== "active") {
+    throw new HikyakuError(
+      `サイクル ${opened.context.name} は ${opened.context.record.status} です`,
+      "終えたサイクルの後の小さな変更は、サイクルを指定せずに patch として進めてください。",
+    );
+  }
   return { config: opened.config, cycle: opened.context.name, context: opened.context };
 }
 
@@ -78,7 +116,7 @@ export function scopeFor(args: ParsedArgs, phase: Phase, operand: string | undef
  * 取り込み済みの判定は2つ併用する。
  *
  *   祖先関係      git merge-base --is-ancestor で base に含まれるか
- *   base の PR 列  そのビルドの PR 列がデフォルトブランチで非空か
+ *   base の完了の記録  そのビルドの完了の記録がデフォルトブランチに在るか
  *
  * 後者が要るのは、**squash merge / rebase merge ではマージ済みでも
  * ブランチの先端が base の祖先にならない**ため。どれだけ fetch しても
@@ -90,8 +128,8 @@ export function scopeFor(args: ParsedArgs, phase: Phase, operand: string | undef
  * conductor ブランチは統合の終点で、サイクルの最後までデフォルトブランチにマージされない。
  * ところが最新の base から切った直後は先端が base 上のコミットになり（その後 base が
  * 進めば祖先になり）、祖先関係だけで判定すると取り込み済みに見える。そこで conductor
- * ブランチは、base の祖先であることに加えて、base の PR 列にビルドが1つ以上あるとき
- * （conductor の PR がマージされ、ビルドの PR 列がデフォルトブランチに届いたあと）だけ
+ * ブランチは、base の祖先であることに加えて、base で完了したビルドが1つ以上あるとき
+ * （conductor の PR がマージされ、ビルドの完了の記録がデフォルトブランチに届いたあと）だけ
  * 取り込み済みとみなす。未マージの plan のブランチから切ったときのように、取り込む前の
  * フェーズのブランチと先端が同じなら、conductor ブランチを選ぶ。
  * conductor ブランチ自身の PR は常にデフォルトブランチへ向ける（統合の終点なので）。
@@ -101,13 +139,13 @@ export async function stackParent(
   context: CycleContext | undefined,
   phase: Phase,
   base: string | undefined,
-  options: { fetch: boolean },
+  options: { fetch: boolean; inputs?: StackInputs },
 ): Promise<KnownBranch | undefined> {
   if (context === undefined || phase === "conductor") return undefined;
 
-  const views = await resolveViews(config, context, { fetch: options.fetch });
+  const { views, branches, baseRefs } = options.inputs ?? (await stackInputs(config, context, base, options));
 
-  const candidates = (await listKnownBranches(config.repoRoot)).filter((branch) => {
+  const candidates = branches.filter((branch) => {
     if (branch.name === base) return false;
     const parsed = parseBranch(config.branch, branch.name);
     if (parsed === undefined || parsed.cycle !== context.name || parsed.phase === phase) {
@@ -122,19 +160,12 @@ export async function stackParent(
   });
   if (candidates.length === 0) return undefined;
 
-  const baseRefs: string[] = [];
-  if (base !== undefined) {
-    for (const ref of [`origin/${base}`, base]) {
-      if ((await localSha(config.repoRoot, ref)) !== undefined) baseRefs.push(ref);
-    }
-  }
-
   // 取り込み済みを1つも除外できないなら、スタック元を推測しない。
   // この状態で祖先を拾うと、既にマージ済みのブランチや無関係のブランチへ
   // PR を向けることになる。デフォルトブランチへフォールバックするほうが安全
   if (views.mergedIds === undefined && baseRefs.length === 0) return undefined;
 
-  const conductor = candidates.find((branch) => parseBranch(config.branch, branch.name)?.phase === "conductor");
+  const conductor = conductorOf(config, context, candidates);
   const nearest = await nearestAncestorBranch(
     config.repoRoot,
     candidates.filter((branch) => branch !== conductor),
@@ -154,9 +185,103 @@ export async function stackParent(
   return conductor;
 }
 
+/** スタック元と統合ブランチの判定の材料。branch verify はこれを1回だけ作り、両方に渡す */
+export interface StackInputs {
+  views: TasklistViews;
+  branches: KnownBranch[];
+  /** base のうち、ローカルで解決できる ref（origin/<base> と <base>） */
+  baseRefs: string[];
+}
+
+export async function stackInputs(
+  config: ResolvedConfig,
+  context: CycleContext,
+  base: string | undefined,
+  options: { fetch: boolean },
+): Promise<StackInputs> {
+  const views = await resolveViews(config, context, { fetch: options.fetch });
+  const branches = await listKnownBranches(config.repoRoot);
+  const baseRefs: string[] = [];
+  if (base !== undefined) {
+    for (const ref of [`origin/${base}`, base]) {
+      if ((await localSha(config.repoRoot, ref)) !== undefined) baseRefs.push(ref);
+    }
+  }
+  return { views, branches, baseRefs };
+}
+
+/** そのサイクルの conductor ブランチ */
+function conductorOf(config: ResolvedConfig, context: CycleContext, branches: KnownBranch[]): KnownBranch | undefined {
+  return branches.find((branch) => {
+    const parsed = parseBranch(config.branch, branch.name);
+    return parsed?.cycle === context.name && parsed.phase === "conductor";
+  });
+}
+
+async function isAncestorOfBase(repoRoot: string, branch: KnownBranch, baseRefs: string[]): Promise<boolean> {
+  for (const baseRef of baseRefs) {
+    if (await isAncestor(repoRoot, branch.ref, baseRef)) return true;
+  }
+  return false;
+}
+
+export interface IntegrationBranch {
+  /** ブランチ名（PR の base・表示に使う） */
+  name: string | undefined;
+  /** ブランチを切るときに渡す ref。追跡参照しか無ければ origin/<name> */
+  ref: string | undefined;
+}
+
+/**
+ * サイクルの統合ブランチ。まだ base に取り込まれていない conductor ブランチがあればそれ、
+ * 無ければ base（サイクルの base_branch か、デフォルトブランチ）。
+ *
+ * patch がどこからブランチを切るかに使う。統合ブランチから切れば、PR の base は
+ * stackParent が同じ conductor ブランチを導く（pr base と食い違わない）。
+ *
+ * 取り込み済みかは stackParent と別の規則で決める。stackParent は「切ったばかりの conductor」を
+ * 取り込み済みと読まないことが要るので、祖先関係と base の完了の記録の両方を条件にしている。
+ * それだけだと squash merge で取り込んだ conductor（先端が base の祖先にならない）を、
+ * 未マージと読む。patch が知りたいのは「統合ブランチにまだ base に無い成果があるか」なので、
+ * conductor の先端の tasklist で完了しているのに base で完了していないビルドがあるかで決める。
+ * conductor を building の途中から始めたサイクル（先に main へ入ったビルドがある）でも、
+ * conductor で完了したビルドが base に無いうちは未マージと読める。conductor でまだビルドを
+ * 1つも終えていなければ、取り込む成果が無いので base を返す。base の完了の記録を読めないときは、
+ * 取り込み済みと言えないので conductor ブランチを返す。
+ */
+export async function integrationBranch(
+  config: ResolvedConfig,
+  context: CycleContext,
+  base: string | undefined,
+  options: { fetch: boolean; inputs?: StackInputs },
+): Promise<IntegrationBranch> {
+  const inputs = options.inputs ?? (await stackInputs(config, context, base, options));
+  const fallback = async (): Promise<IntegrationBranch> => ({
+    name: base,
+    ref: base === undefined ? undefined : await resolvableRef(config.repoRoot, base),
+  });
+  const conductor = conductorOf(config, context, inputs.branches);
+  if (conductor === undefined) return fallback();
+
+  const merged = inputs.views.mergedIds;
+  if (merged !== undefined) {
+    const atTip = await readFileAtRef(config.repoRoot, conductor.ref, inputs.views.relativePath);
+    // 先端の記録を読めなければ、取り込んでいない成果があるとみなす（conductor ブランチを返す向き）
+    const done =
+      atTip.state !== "found"
+        ? []
+        : await buildsAtRef(config.repoRoot, { ...atTip, state: "found" }, inputs.views.relativePath)
+            .then((builds) => builds.filter((build) => build.pr.trim() !== ""))
+            .catch(() => undefined);
+    if (done === undefined) return { name: conductor.name, ref: conductor.ref };
+    if (!done.some((build) => !merged.has(build.id))) return fallback();
+  }
+  return { name: conductor.name, ref: conductor.ref };
+}
+
 /**
  * conductor ブランチが HEAD の祖先で、まだ base に取り込まれていないか。
- * base の祖先でも、base の PR 列にビルドが無ければ（切った直後や、base だけが進んだとき）
+ * base の祖先でも、base で完了したビルドが無ければ（切った直後や、base だけが進んだとき）
  * 取り込み済みにしない
  */
 async function isUnmergedConductor(
@@ -167,10 +292,7 @@ async function isUnmergedConductor(
 ): Promise<boolean> {
   if (!(await isAncestor(repoRoot, conductor.ref, "HEAD"))) return false;
   if (mergedIds === undefined || mergedIds.size === 0) return true;
-  for (const baseRef of baseRefs) {
-    if (await isAncestor(repoRoot, conductor.ref, baseRef)) return false;
-  }
-  return true;
+  return !(await isAncestorOfBase(repoRoot, conductor, baseRefs));
 }
 
 /**
@@ -187,6 +309,11 @@ export async function resolvableRef(
   const tracking = `origin/${branch}`;
   if ((await localSha(repoRoot, tracking)) !== undefined) return tracking;
   return undefined;
+}
+
+/** ベースブランチ（base_branch か、デフォルトブランチ）。resolvePrBase の defaultBase */
+export function defaultBaseOf(config: ResolvedConfig): string | undefined {
+  return config.baseBranch ?? defaultBranch(config.repoRoot);
 }
 
 export interface PrBase {
@@ -211,7 +338,7 @@ export async function resolvePrBase(
   options: { fetch: boolean },
 ): Promise<PrBase> {
   const { config, context } = scope;
-  const defaultBase = config.baseBranch ?? defaultBranch(config.repoRoot);
+  const defaultBase = defaultBaseOf(config);
   const stacked = await stackParent(config, context, phase, defaultBase, options);
   const base = stacked?.name ?? defaultBase;
 
@@ -223,4 +350,51 @@ export async function resolvePrBase(
   }
 
   return { base, ref: await resolvableRef(config.repoRoot, base), stacked, defaultBase };
+}
+
+export interface BranchCheck {
+  ok: boolean;
+  expected: string;
+  actual: string | undefined;
+  parsed: ParsedBranch | undefined;
+  /** デフォルトブランチ（base_branch か origin/HEAD）。特定できなければ undefined */
+  base: string | undefined;
+  /** ブランチを切る元。patch では統合ブランチ、それ以外は base */
+  start: IntegrationBranch;
+  startPoint: string | undefined;
+  /** 切る元に居るか。切る元が分からなければ null（推測しない） */
+  onBaseBranch: boolean | null;
+  stacked: KnownBranch | undefined;
+  prBase: string | undefined;
+}
+
+/**
+ * いま居るブランチを、フェーズの命名規則と突き合わせる（branch verify と start が共有する）。
+ * 毎フェーズの冒頭とコミット直前に走るので fetch しない。PR の base として正なのは pr base
+ */
+export async function verifyBranch(
+  config: ResolvedConfig,
+  phase: Phase,
+  cycle: string | undefined,
+  context: CycleContext | undefined,
+): Promise<BranchCheck> {
+  const expected = branchName(config.branch, phase, cycle);
+  const actual = currentBranch(config.repoRoot);
+  const parsed = actual === undefined ? undefined : parseBranch(config.branch, actual);
+  const ok = actual === expected;
+
+  const base = config.baseBranch ?? defaultBranch(config.repoRoot);
+  // 判定の材料（tasklist の断面とブランチの一覧）は1回だけ集め、統合ブランチとスタック元で共有する
+  const inputs = context === undefined ? undefined : await stackInputs(config, context, base, { fetch: false });
+  // patch はサイクルの統合ブランチから切る（未マージの conductor ブランチがあればそれ）
+  const start =
+    isPatchPhase(phase) && context !== undefined && inputs !== undefined
+      ? await integrationBranch(config, context, base, { fetch: false, inputs })
+      : { name: base, ref: base === undefined ? undefined : await resolvableRef(config.repoRoot, base) };
+  const startPoint = start.name;
+  const onBaseBranch = startPoint === undefined || actual === undefined ? null : actual === startPoint;
+
+  const stacked = await stackParent(config, context, phase, base, { fetch: false, ...(inputs === undefined ? {} : { inputs }) });
+  const prBase = stacked?.name ?? base;
+  return { ok, expected, actual, parsed, base, start, startPoint, onBaseBranch, stacked, prBase };
 }

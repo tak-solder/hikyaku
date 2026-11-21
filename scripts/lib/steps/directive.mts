@@ -1,0 +1,453 @@
+/**
+ * directive の組み立て — step next が返す1手を、作業単位の評価から作る（#50）。
+ *
+ * step の各コマンドのほか、Stop フック（step hook stop）・step where・conductor parse も
+ * 同じ1手を読む。どこから読んでも同じ判定になるよう、組み立てはここに1つだけ置く。
+ */
+
+import { existsSync } from "node:fs";
+import { join, relative } from "node:path";
+import { flagString, type ParsedArgs } from "../args.mts";
+import type { Phase } from "../branch.mts";
+import { HikyakuError } from "../errors.mts";
+import { docRef, loadGuide } from "../docs.mts";
+import { cycleTimeline, noticeLines, readLedger, summarize } from "../ledger.mts";
+import { deferredConsentNotice } from "../deferred-consent.mts";
+import { pluginRoot } from "../paths.mts";
+import { readProgress, type StepResult } from "../progress.mts";
+import { formatTokens, measureCurrent, type CurrentContext } from "../session.mts";
+import { requirePhase, scopeFor } from "../stack.mts";
+import type { CycleContext } from "../workspace.mts";
+import { CHECKPOINT_LABELS, type CheckpointKey } from "./checkpoints.mts";
+import { forecastFor, overrunsOf, type Forecast } from "../forecast.mts";
+import { allowedResults, consentOf, type Evaluation, type SkillSteps, type StepContext } from "./engine.mts";
+import { instructionPath, ownerOf, SKILL_STEPS, stepsOf } from "./index.mts";
+
+export const CLI = `node "${join(pluginRoot(), "scripts", "hikyaku.mts")}"`;
+
+export interface Opened {
+  phase: Phase;
+  skill: SkillSteps;
+  ctx: StepContext;
+}
+
+export function open(args: ParsedArgs, phaseOperand: string | undefined, cycleOperand: string | undefined): Opened {
+  const phase = requirePhase(phaseOperand);
+  const owner = ownerOf(phase);
+  if (owner === undefined) {
+    throw new HikyakuError(
+      `${phase} の手順はまだ step に移っていません`,
+      `step に移ったスキル: ${SKILL_STEPS.map((entry) => entry.skill).join(" / ")}`,
+    );
+  }
+  // 内部スキル（build-manager / retrospective）は、呼び出し元のフェーズの作業単位で動く
+  const skillName = flagString(args, "skill");
+  const skill = skillName === undefined ? owner.skill : stepsOf(skillName);
+  if (skill === undefined || (skillName !== undefined && skill.internal !== true)) {
+    const internal = SKILL_STEPS.filter((entry) => entry.internal === true).map((entry) => entry.skill);
+    throw new HikyakuError(
+      `--skill に ${skillName} は指定できません`,
+      `指定できるのは step に移った内部スキルだけです: ${internal.length === 0 ? "（まだありません）" : internal.join(" / ")}`,
+    );
+  }
+  const scope = scopeFor(args, phase, cycleOperand);
+  const base = scope.context?.directory ?? scope.config.hikyakuRoot;
+  const unitDirectory = join(base, owner.directory);
+  // 作業単位のディレクトリは無くてよい（Git は空のディレクトリを残さないので、別のチェックアウトでは
+  // planning/ などがまだ無いことがある）。記録は最初の報告で作られ、成果物が無いうちは完了にならない
+  if (!existsSync(base)) {
+    throw new HikyakuError(
+      `${scope.context === undefined ? "HIKYAKU_ROOT" : "サイクルのディレクトリ"}がありません: ${relative(scope.config.repoRoot, base)}`,
+      "そのフェーズのブランチに居るかを確認してください。",
+    );
+  }
+  return {
+    phase,
+    skill,
+    ctx: {
+      config: scope.config,
+      cycle: scope.context,
+      unit: phase,
+      unitDirectory,
+      events: readProgress(unitDirectory),
+    },
+  };
+}
+
+/** コマンドに添えるサイクルの引数。サイクルの無いフェーズでは空 */
+export function cycleArg(ctx: StepContext): string {
+  return ctx.cycle === undefined ? "" : ` ${ctx.cycle.name}`;
+}
+
+/** 内部スキルなら --skill を添える */
+export function skillArg(opened: Opened): string {
+  return opened.skill.internal === true ? ` --skill ${opened.skill.skill}` : "";
+}
+
+/** 作成時の版のメジャーが 2 以下のサイクルは扱わない（v2 のまま終える） */
+/** その作業単位の次の1手を返すコマンド */
+export function nextCommand(opened: Opened): string {
+  return `${CLI} step next ${opened.phase}${cycleArg(opened.ctx)}${skillArg(opened)}`;
+}
+
+/** サイクル設定に v3 で廃止したキー（bp_max など）が残っていれば、移行の案内 */
+export function retiredConfigMessage(ctx: StepContext): string | undefined {
+  const [first] = ctx.config.retired;
+  return first === undefined ? undefined : [first.message, first.hint].filter(Boolean).join("\n");
+}
+
+export function legacyCycleMessage(cycle: CycleContext | undefined): string | undefined {
+  if (cycle === undefined) return undefined;
+  const version = cycle.record.hikyaku;
+  const major = Number.parseInt(version.split(".")[0] ?? "", 10);
+  if (Number.isInteger(major) && major >= 3) return undefined;
+  const label = version === "" ? "作成時の版が記録されていない版" : `v${version}`;
+  return [
+    `サイクル ${cycle.name} は ${label} で作成されています。v3 の手順では扱いません。`,
+    "v2 で始めたサイクルは v2 のまま終えてください（docs/migration/v2-to-v3.md）。",
+  ].join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// directive
+
+/**
+ * 区切りでのコンテキストと、完了までの見込み（forecast.mts）。計測できなければ forecast は null で、
+ * unavailable に理由が入る
+ */
+export interface ContextCheck {
+  checkpoint: CheckpointKey;
+  label: string;
+  /** [context] limit */
+  limit: number;
+  tokens: number | null;
+  forecast: Forecast | null;
+  unavailable: string | null;
+}
+
+export interface Directive {
+  kind: "run" | "gate" | "call" | "done" | "stop";
+  skill: string;
+  cycle: string | null;
+  unit: string;
+  step?: string;
+  title?: string;
+  /** 読む指示ファイル */
+  read?: string;
+  args?: Record<string, unknown>;
+  /** 結果ごとの報告コマンド */
+  report?: Partial<Record<StepResult, string>>;
+  note?: string;
+  /** 差し戻されたゲートの、ユーザーの答え */
+  revise?: string;
+  ask?: string;
+  /** gate の承認の種類。deferred の回は、同意をマージの前へ遅らせるので確認として示す */
+  approval?: "confirm" | "consent";
+  /** 同意の理由（確認なら null） */
+  approvalReason?: string | null;
+  /** 異を唱える範囲と記録の仕方（サイクルに属す作業単位の gate だけ） */
+  objection?: ObjectionGuide;
+  call?: string;
+  reason?: string;
+  /** 呼ぶ内部スキルが step に移っていれば、そのスキルが最初に呼ぶコマンド */
+  callNext?: string;
+  context?: ContextCheck;
+  /** 上限を超える見込みのまま継続した区切り。ゲートの報告・完了の案内で伝える */
+  overruns?: Forecast[];
+  notices: string[];
+  message?: string;
+  progress: { complete: number; total: number };
+}
+
+export interface ObjectionGuide {
+  /** スクリプトが固定する短い指示。各スキルの指示文には写さない */
+  guide: string[];
+  /** 照合に使える宣言・記録のポインタ */
+  pointers: string[];
+  /** 異議と決定を記録するコマンド */
+  command: string;
+}
+
+const OBJECTION_GUIDE = [
+  "ユーザーの選択が、下の宣言・記録・前提と食い違うときだけ異を唱える。好みの違い（どれとも食い違わない選択）には唱えない",
+  "唱えるときは、根拠（どの宣言・記録か）と、その選択で失うものを示す",
+  "害の重さは persistence.md の重要度で決める（高: 害が成果物に残る / 中: セッションのコスト）。中は指摘にとどめ、ユーザーがそのまま進めればそれで決まる",
+  "高は、ユーザーが何を受け入れるかを自分の言葉で書くまで承認を報告しない（受け入れの言葉を AI が代わりに書かない）",
+  "害が中でも、AI に任せてよい上限（[app] の宣言）を超えると ledger object が判定した異議は、高と同じく受け入れの言葉（--accepts）と前提（--premises）が要る",
+  "異を唱えたら、ユーザーの決定を聞いてから、承認を報告する前に下のコマンドで異議と決定を対で記録する",
+  "事後同意（[consent] deferred）が有効なサイクルで、ユーザーが上限を超える異議の同意をマージの前に回すと選んだら、--decision・--input の代わりに --defer で記録する（同意ゲートの一覧に載る）",
+];
+
+/** 照合に使える宣言・記録。登録されていない文書は指さない */
+function objectionPointers(opened: Opened, cycle: CycleContext): string[] {
+  const pointers = [`アプリケーションの状況と境界の宣言: ${CLI} config ${cycle.name}（[app]・[[app.areas]]・[boundaries]）`];
+  try {
+    for (const entry of loadGuide(opened.ctx.config.hikyakuRoot)) {
+      if ((entry.name === "constraints" || entry.name === "decisions") && entry.path !== undefined) {
+        pointers.push(`${entry.name}: ${docRef(entry)}`);
+      }
+    }
+  } catch {
+    // document-guide.md が読めなくても、ほかのポインタは示す
+  }
+  pointers.push(
+    `見積もり（予測ピーク）: ${relative(opened.ctx.config.repoRoot, join(cycle.directory, "tasklist.md"))}`,
+    `受け入れ・決定・異議の記録: ${CLI} ledger list ${cycle.name}`,
+  );
+  return pointers;
+}
+
+function objectionGuide(opened: Opened, cycle: CycleContext): ObjectionGuide {
+  return {
+    guide: OBJECTION_GUIDE,
+    pointers: objectionPointers(opened, cycle),
+    command:
+      `${CLI} ledger object ${opened.phase} ${cycle.name} --summary "<異議>" --basis "<食い違う宣言・記録>" --loses "<失うもの>" ` +
+      `--harm 高|中 --decision consented|decided --input "<ユーザーの答え>" [--accepts "<ユーザーが受け入れると書いた言葉>" --premises <前提の参照,...>]` +
+      `（マージの前に回すなら --decision・--input・--accepts の代わりに --defer --premises <app.*|area:*,...>）`,
+  };
+}
+
+function reportCommand(opened: Opened, step: string, result: StepResult): string {
+  const extra =
+    result === "skipped" || result === "failed"
+      ? ' --reason "<理由>"'
+      : result === "handover"
+        ? ' --reason "<切り替える理由（区切りの見込みと推奨）>"'
+        : result === "rejected"
+        ? ' --input "<ユーザーの答え>"'
+        : result === "approved"
+          ? ' --input "<ユーザーの答え>"'
+          : "";
+  const definition = opened.skill.steps.find((entry) => entry.id === step);
+  const peak =
+    result !== "done" || definition?.peak === undefined
+      ? ""
+      : definition.peak === "required"
+        ? " --peak <見積もり直した予測ピーク>"
+        : " [--peak <見積もり直した予測ピーク>]";
+  const pr =
+    result === "done" && definition?.recordsPr === true
+      ? " --pr <PR の URL>"
+      : result === "done" && definition?.recordsPr === "optional"
+        ? ` [--pr <${definition.prHint ?? "作った PR の URL"}>]`
+        : "";
+  // 欠けていても受け付けるが、宣言のあるワークスペースでは G3 が同意になるので、必須の形で示す
+  const risk = result === "done" && definition?.declaresRisk === true ? " --harm 高|中 --paths <触れるパスの glob,...>" : "";
+  const findings = result === "done" && definition?.countsFindings === true ? " --findings <指摘の件数> --adopted <反映した件数>" : "";
+  return `${CLI} step report ${opened.phase} ${step}${cycleArg(opened.ctx)}${skillArg(opened)} --result ${result}${extra}${peak}${findings}${risk}${pr}`;
+}
+
+function progressOf(evaluation: Evaluation): { complete: number; total: number } {
+  const counted = evaluation.steps.filter((step) => step.status !== "off");
+  return {
+    complete: counted.filter((step) => step.status === "complete" || step.status === "skipped").length,
+    total: counted.length,
+  };
+}
+
+function checkContext(opened: Opened, checkpoint: CheckpointKey, measured: CurrentContext): ContextCheck {
+  const { ctx } = opened;
+  return {
+    checkpoint,
+    label: CHECKPOINT_LABELS[checkpoint],
+    limit: ctx.config.context.limit,
+    tokens: measured.tokens ?? null,
+    forecast: measured.tokens === undefined ? null : forecastFor(ctx.config, ctx.unitDirectory, ctx.events, checkpoint, measured.tokens),
+    unavailable: measured.tokens === undefined ? (measured.reason ?? "理由不明") : null,
+  };
+}
+
+export interface BuildOptions {
+  /**
+   * 区切りでコンテキストを測るか。測るのは step next / report だけで、手順の位置だけを
+   * 読む側（Stop フック・step where・conductor parse）は測らない。測るとホストの記録を
+   * 読みに行くので遅く、読む側のセッションを測ってしまうため
+   */
+  measure?: boolean;
+  /**
+   * 期限が来た・過ぎた未決事項（decisions.jsonl）を notices に載せるか（既定 true）。手順の位置だけを
+   * 読む側（Stop フック・step where・conductor parse）は読まない。壊れた記録でフックが止まらないように
+   */
+  notices?: boolean;
+}
+
+/**
+ * 期限が来た・過ぎた未決事項の行。自分の単位の現在のステップは、この評価で上書きする（内部スキルの
+ * 評価は呼び出し元の単位の現在地ではないので上書きしない）。記録を読めなくても手順は止めない
+ * （step report は進捗を書いたあとにこれを組み立てるので、ここで失敗すると報告の失敗に見える）
+ */
+function ledgerNotices(opened: Opened, evaluation: Evaluation): string[] {
+  const cycle = opened.ctx.cycle;
+  if (cycle === undefined) return [];
+  try {
+    const ledger = readLedger(cycle.directory);
+    // 未決の事項が無ければ、全単位の評価をしない（notices に載るのは未決の事項だけ）
+    if (!ledger.items.some((item) => item.latest === undefined)) return [];
+    const timeline = cycleTimeline(opened.ctx.config, cycle);
+    if (opened.skill.internal !== true) timeline.current.set(opened.phase, evaluation.sequential?.definition.id ?? null);
+    return noticeLines(summarize(ledger, timeline));
+  } catch (error) {
+    return [`未決事項の記録を読めません: ${error instanceof Error ? error.message : String(error)}（hikyaku ledger list で確かめてください）`];
+  }
+}
+
+export function buildDirective(opened: Opened, evaluation: Evaluation, options: BuildOptions = {}): Directive {
+  const { ctx, skill } = opened;
+  const base = { skill: skill.skill, cycle: ctx.cycle?.name ?? null, unit: opened.phase, notices: [] as string[], progress: progressOf(evaluation) };
+
+  const legacy = legacyCycleMessage(ctx.cycle);
+  if (legacy !== undefined) return { ...base, kind: "stop", message: legacy };
+  const retired = retiredConfigMessage(ctx);
+  if (retired !== undefined) return { ...base, kind: "stop", message: retired };
+
+  const stopped = skill.stop?.(ctx);
+  if (stopped !== undefined) return { ...base, kind: "stop", message: stopped };
+
+  if (evaluation.orphans.length > 0) {
+    const current = evaluation.current?.definition.id ?? "（なし）";
+    return {
+      ...base,
+      kind: "stop",
+      message: [
+        `現在地は ${current} ですが、その後のステップの成果物が先にあります: ${evaluation.orphans.map((step) => step.definition.id).join(", ")}`,
+        "推測で補わずに止まります。どちらに当たるかで続け方が変わります:",
+        `- このセッションが ${current} を終える前に、後ろの成果物を先に書いた（待ち時間に handoff.md を書いたなど）:`,
+        `  成果物は消さずにそのまま残し、${current} を終えて報告してから step next で続けてください。`,
+        "  後ろのステップに来たら、先に書いた成果物をそのステップの指示に照らして直します",
+        "- 手順の外で実施した（記録を付け忘れた）: ユーザーに経緯を確認し、実施済みなら現在地のステップから順に記録してください:",
+        `  ${CLI} step report ${opened.phase} <ステップ>${cycleArg(ctx)}${skillArg(opened)} --result done --reason "手で実施"`,
+      ].join("\n"),
+    };
+  }
+
+  if (options.notices !== false) {
+    base.notices.push(...ledgerNotices(opened, evaluation));
+    // 事後同意を選んだのに有効でない理由は、有効になるまで出し続ける（手順の位置だけを読む経路では git を読まない）。
+    // planner は G1 で値を提示して合意する場なので出さない（G1 の承認の前は、必ず「記録が無い」で有効でないため）
+    const deferred = skill.skill === "planner" ? undefined : deferredConsentNotice(ctx.config, ctx.cycle?.directory);
+    if (deferred !== undefined) base.notices.push(deferred);
+  }
+
+  const current = evaluation.current;
+  // 区切りは builder にしか無い。記録を読み集めるので、手順の位置だけを読む経路（measure: false）では求めない
+  const reportsOverruns = skill.skill === "builder" && options.measure !== false && (current === undefined || current.definition.id === "review");
+  const overruns = reportsOverruns ? overrunsOf(ctx.config, ctx.unitDirectory, ctx.events) : [];
+  if (current === undefined) {
+    return overruns.length > 0 ? { ...base, kind: "done", overruns } : { ...base, kind: "done" };
+  }
+
+  const definition = current.definition;
+  const directive: Directive = {
+    ...base,
+    kind: definition.kind,
+    step: definition.id,
+    title: definition.title,
+    read: instructionPath(skill.skill, definition.id),
+    report: Object.fromEntries(allowedResults(definition).map((result) => [result, reportCommand(opened, definition.id, result)])),
+  };
+  // 手順の位置だけを読む側は、args と承認の種類を同じ positionOnly の ctx で評価する（directiveOf の評価とそろえる）
+  const viewCtx = options.notices === false ? { ...ctx, positionOnly: true } : ctx;
+  if (definition.args !== undefined) directive.args = definition.args(viewCtx);
+  if (definition.notices !== undefined && options.notices !== false) directive.notices.push(...definition.notices(ctx));
+  if (current.note !== undefined) directive.note = current.note;
+  if (current.revise !== undefined) directive.revise = current.revise;
+  if (definition.kind === "gate") {
+    directive.ask = definition.ask ?? definition.id;
+    const consent = consentOf(definition, viewCtx);
+    const now = consent !== false && consent.timing === "now";
+    directive.approval = now ? "consent" : "confirm";
+    directive.approvalReason = now ? consent.reason : null;
+    // 手順の位置だけを読む側（Stop フック・step where・conductor parse）には要らないので組み立てない
+    if (ctx.cycle !== undefined && options.notices !== false) directive.objection = objectionGuide(opened, ctx.cycle);
+  }
+  if (definition.kind === "call") {
+    directive.call = definition.call ?? "";
+    directive.reason = definition.reason?.(ctx) ?? "";
+    if (stepsOf(directive.call)?.internal === true) {
+      directive.callNext = `${CLI} step next ${opened.phase}${cycleArg(ctx)} --skill ${directive.call}`;
+    }
+  }
+  if (definition.checkpoint !== undefined && options.measure !== false) {
+    const measured = measureCurrent(process.env);
+    directive.context = checkContext(opened, definition.checkpoint, measured);
+  }
+  if (definition.id === "review" && overruns.length > 0) directive.overruns = overruns;
+  return directive;
+}
+
+export function renderDirective(directive: Directive): string {
+  const head = `[${directive.progress.complete}/${directive.progress.total}] ${directive.skill} ${directive.unit}`;
+  if (directive.kind === "stop") return `${head}\n\nstop: ${directive.message ?? ""}`;
+  const lines: string[] = [];
+  if (directive.kind === "done") {
+    lines.push(head, "", "done: 手順をすべて終えました。");
+    appendOverruns(lines, directive.overruns, "まだ伝えていない超過があれば、完了の案内で伝えてください");
+    return lines.join("\n");
+  }
+
+  lines.push(head, "", `${directive.kind}: ${directive.step}（${directive.title}）`, `指示: ${directive.read} を読んで行う`);
+  if (directive.kind === "gate") {
+    lines.push(`問いの ID: ${directive.ask}`);
+    lines.push(directive.approval === "consent" ? `承認: 同意（${directive.approvalReason ?? ""}）` : "承認: 確認");
+    if (directive.objection !== undefined) {
+      lines.push("異議:");
+      for (const line of directive.objection.guide) lines.push(`  - ${line}`);
+      lines.push("  照合に使える宣言・記録:");
+      for (const pointer of directive.objection.pointers) lines.push(`    ${pointer}`);
+      lines.push(`  記録: ${directive.objection.command}`);
+    }
+  }
+  if (directive.kind === "call") {
+    lines.push(`呼ぶスキル: /hikyaku:${directive.call}`, `理由: ${directive.reason}`);
+    if (directive.callNext !== undefined) lines.push(`呼ばれたスキルの手順: ${directive.callNext}`);
+  }
+  if (directive.args !== undefined) {
+    // 配列・オブジェクトは JSON で出す（String では [object Object] になり、LLM が中身を読めない）
+    const show = (value: unknown): string => (typeof value === "object" && value !== null ? JSON.stringify(value) : String(value));
+    lines.push(`値: ${Object.entries(directive.args).map(([key, value]) => `${key}=${show(value)}`).join(" ")}`);
+  }
+  if (directive.note !== undefined) lines.push(`注意: ${directive.note}`);
+  if (directive.revise !== undefined) lines.push(`差し戻しの答え: ${directive.revise === "" ? "（記録なし）" : directive.revise}`);
+  if (directive.context !== undefined) appendContext(lines, directive.context);
+  appendOverruns(lines, directive.overruns, "レビュー結果の提示で伝えてください。指摘が0件なら完了の案内で伝えます");
+  for (const notice of directive.notices) lines.push(`注意: ${notice}`);
+  lines.push("", "報告:");
+  for (const [result, command] of Object.entries(directive.report ?? {})) lines.push(`  ${result.padEnd(8)}${command}`);
+  return lines.join("\n");
+}
+
+const RECOMMENDATION_LABELS: Record<Forecast["recommendation"], string> = {
+  continue: "継続",
+  switch: "切り替え（G8 の承認を記録したセッションを終え、新しいセッションで implement から続ける）",
+  split: "分割（build-manager。切り替えても上限に収まる見込みが無い）",
+};
+
+function appendContext(lines: string[], c: ContextCheck): void {
+  if (c.forecast === null) {
+    lines.push(`コンテキスト（${c.label}）: 計測不可（${c.unavailable}）。見積もりだけで進めてください`);
+    return;
+  }
+  const f = c.forecast;
+  const pct = (value: number): string => `${Math.round(value * 1000) / 10}%`;
+  const basis = f.model.samples === 0 ? "既定の係数" : `実績 ${f.model.samples} 件から求めた係数`;
+  lines.push(
+    `コンテキスト（${c.label}）: ${formatTokens(f.tokens)} / 上限 ${formatTokens(f.limit)}`,
+    `  続けた場合の完了時点の見込み: ${formatTokens(f.continueAt)}（誤差 ${pct(f.model.error)} を足して ${formatTokens(f.continueHigh)}）${f.over ? " — 上限を超える見込みです" : ""}`,
+  );
+  if (f.switchAt !== null && f.switchHigh !== null) {
+    lines.push(`  切り替えた場合の完了時点の見込み: ${formatTokens(f.switchAt)}（誤差を足して ${formatTokens(f.switchHigh)}）`);
+  }
+  lines.push(
+    `  残りの見込み ${formatTokens(f.remaining)}（予測ピーク ${formatTokens(f.peak)}${f.peakAssumed ? "。報告が無いので見積もりの上限で代えた" : ""}、${basis}）`,
+    `  推奨: ${RECOMMENDATION_LABELS[f.recommendation]}`,
+  );
+}
+
+function appendOverruns(lines: string[], overruns: Forecast[] | undefined, how: string): void {
+  if (overruns === undefined || overruns.length === 0) return;
+  lines.push(`上限を超える見込みのまま継続した区切り（${how}）:`);
+  for (const entry of overruns) {
+    lines.push(`  ${entry.label}: ${formatTokens(entry.tokens)}（完了時点の見込み ${formatTokens(entry.continueHigh)} / 上限 ${formatTokens(entry.limit)}）`);
+  }
+}

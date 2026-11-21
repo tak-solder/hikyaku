@@ -6,109 +6,286 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 各エントリには「何が変わったか」と「利用者に必要な対応」を書きます。設計判断の経緯は issue と `docs/` を参照してください。
 
-## [2.12.0]
-
-### Changed
-
-- **builder の PR 作成後の push を1回にまとめた**: 振り返り（旧 Step 9）を PR 作成の前に移して Step 8 とし、`retrospective.md` までコミットしてから push する。PR 作成後の push は `tasklist done` の1回だけになり、ビルドあたりの CI 実行が3回から2回に減る。PR レビュー指摘への対応でも、振り返りの追記を済ませてからまとめて1回 push する
-- **PR を Draft で作り、フェーズの完了時に Ready にする**: planner・architect・builder・close-cycle の PR と conductor の最後の PR は、常に `gh pr create --draft` で作成する。builder は `tasklist done` を push してから切り替える。完了時に `gh pr ready` で Ready for Review にするかは新しい設定キー `[pr] auto_ready`（既定 true）で決まり、false なら Draft のまま残す。レビュアーのアサインは Ready の後に移した。Draft PR に対応していないリポジトリでは通常の PR で作成し、完了時にその旨を伝える
-- **conductor が子の Draft PR を Ready にする**: 子セッションは非対話規約で `gh pr ready` を禁じられ、builder の PR は Draft のまま監督に渡る。監督は `check-pr` の前に `gh pr ready` で Ready for Review にする。`check-pr` で Draft と判定された場合（確認の途中で Draft に戻された場合）は、従来どおり Ready にし直さず人間に上げる
-
-### Migration
-
-- 設定変更は不要。既定ではビルドの完了時に Ready for Review になる。自分で確認してから Ready にしたい場合は `[pr] auto_ready = false` を設定する。conductor の子が作るフェーズの PR にはこの設定は効かず、監督が取り込む前に Ready にする。Draft の PR で CI を走らせるかどうかは、各リポジトリの CI の設定のまま変わらない
-- Ready への切り替えに失敗した PR は Draft のまま残る。完了の案内に従って `gh pr ready <PR>` を実行する
-
-## [2.11.0]
-
-### Changed
-
-- **builder のレビュー指摘への対応**: `max_rounds = 1` では妥当な指摘を自動修正し、検証後は対応確認・再レビューなしで PR 作成へ進む。`max_rounds` が2以上なら途中の指摘は自動修正し、最終回に未解決の指摘がある場合だけ対応を確認する。同じ指摘の繰り返しによる途中の確認も省く。Claude Code と Codex の両方に適用する
-
-### Migration
-
-- 設定変更は不要。`max_rounds` が1以上の場合は `auto_fix` の値に関わらず妥当な指摘が自動修正される。`auto_fix` は `max_rounds = 0`（無制限）での2回目以降の確認にだけ適用する。無制限の確認・打ち切り方針は従来どおり
-
-## [2.10.0]
+## [Unreleased]
 
 ### Added
 
-- **conductor のプロバイダ別モデル設定**: `[conductor.claude]` / `[conductor.codex]` の `model` と、その配下の `[models]` によるフェーズ別モデルを追加した。選択したプロバイダの設定だけを初回起動・再開に使い、`conductor asks` に解決済みモデルを表示する。プロバイダ別のフェーズ設定、プロバイダ別の既定、旧形式のフェーズ設定、旧形式の既定の順に優先する（[#59](https://github.com/tak-solder/hikyaku/issues/59)）
-
-### Fixed
-
-- クラウド判定で子のプロバイダが切り替わったとき、旧形式のモデル名が別の CLI に渡る問題を修正した
-
-### Migration
-
-- 同じプロバイダで使う既存の `[conductor] model` / `[conductor.models]` はそのまま使える。旧形式は明示した `provider`（未指定なら `claude`）に属する。クラウド判定で別のプロバイダに切り替わった場合は、その CLI の既定モデルを使うため、固定したいモデルは `[conductor.claude]` / `[conductor.codex]` とその配下の `[models]` に移す
-
-## [2.9.3]
-
-### Fixed
-
-- **planner スキル**: `context plan` が返す候補の説明を、`repo` 管理の独自ドキュメントも含む実装に合わせた。概要欄から今回のスコープに関係するものを選んで読むよう明記した
-
-## [2.9.2]
+- Codex 用の `.codex-plugin/plugin.json`、`.agents/plugins/marketplace.json`、`codex/skills/*/SKILL.md` を追加した。Codex では専用入口から従来の Hikyaku 手順を読み、パス・引数・内部スキル・エージェント委任の表記を Codex の機能に読み替える
+- `codex/compatibility.md` に Codex での実行規約を追加し、`docs/getting-started-codex.md` に導入と起動方法を記載した
 
 ### Changed
 
-- **SKILL.md の短縮**: planner / architect / builder / close-cycle / build-manager / create-cycle / init / conductor / retrospective の SKILL.md を短くした（合計 3,341 → 2,995 行）。手順・承認ゲート・問いのタグは変えていない。フェーズ間で重複していたサイクル解決・ブランチ確認・状態確認・セッション名・doc-reviewer 起動の記述を縮め、各ゲートに併記していた profile 名を外して `config --json` の `gates` / `reviews` を正にした。builder のセキュリティ判定基準の固定値も外し、`security.triggers` を参照する。設計の経緯や CLI の内部挙動の説明は `docs/` と `hikyaku help` に任せた。retrospective のテンプレートは `skills/retrospective/references/templates.md` に、builder の test-spec.md のフォーマットは `skills/builder/references/templates.md` に移した（[#77](https://github.com/tak-solder/hikyaku/pull/77)）
+- 共通手順の 2.4.1 を取り込み、差し戻し・受け入れ基準の追跡・PR レビュアー割り当て・指摘からの追加設計に対応した
+- Codex 実行規約に architect の引数の読み替えと、conductor が Claude Code 専用であることを明記した
+- Codex 向けの CI を `check-codex-plugin.yml` に分離し、`codex-plugin` ブランチ向け PR でマニフェストのバージョン形式・更新と入口の参照先を検証するようにした。更新検出の対象は Codex 固有のファイルに加え、共通の `skills/`・`agents/`・`scripts/` も含む。スクリプトの型チェック・テストも `codex-plugin` 向け PR で実行する
+- Claude Code 用の全10スキルから `disable-model-invocation` を削除し、モデル（AI 自身）がスキルを呼び出せるようにした。代わりに各スキルの `description` に「モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。」を追記し、ワークフロー外での誤呼び出しを防ぐ。Claude Code 用マニフェストを 2.5.0 に更新した
+- Claude Code 用の全10スキルと Codex 用の全9スキルから、フロントマターの `metadata`（`repository` / `version`）を削除した。バージョンは各プラグインのマニフェストに集約し、Claude Code 用・Codex 用の両マニフェストを 2.4.2 に更新した。開発ルールと CI もスキル内のバージョンを要求しない形に揃えた
 
 ### Migration
 
-- 対応は不要。成果物の形式（retrospective.md・test-spec.md を含む）は変わらない
+- `SKILL.md` の `metadata.version` を参照する独自ツールは、対象ホストの `.claude-plugin/plugin.json` または `.codex-plugin/plugin.json` の `version` を参照するよう変更する
+- 対応は不要。`/hikyaku:...` での起動は従来どおり使える。Hikyaku ワークフローの実行中は、AI が次のスキルを自分で呼び出すことがある
+- Claude Code 利用者の操作は変わらない。従来の `/hikyaku:...` と `skills/`・`agents/` の手順は維持する
+- Codex 利用者は `codex plugin marketplace add tak-solder/hikyaku@codex-plugin` でマーケットプレイスを追加し、プラグインをインストールする。`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要。Codex では各フェーズを個別に実行し、conductor は Claude Code で使う
 
-## [2.9.1]
-
-### Changed
-
-- **document-guide.md の論理名**: 既定に無い論理名を、管理が `repo` の行で使えるようにした。運用手順書や PRD など、リポジトリ固有の永続ドキュメントを登録できる。`hikyaku validate` / `docs validate` はパスの実在を確かめ、`hikyaku context` は plan・architect・build-NN の候補に含める（理由欄は「リポジトリ固有の永続ドキュメント」、要否は概要欄で判断する）。管理が `hikyaku` / `未作成` / `対象外` の行で既定に無い論理名を使った場合は、従来どおり `validate` がエラーにする。init スキルとドキュメントガイドの記述を合わせた（[#74](https://github.com/tak-solder/hikyaku/issues/74)）
-
-### Fixed
-
-- **`hikyaku tasklist`**: `read` / `add` / `update` / `done` / `link` が、受け付けないオプションと余分な位置引数を黙って無視していたのを、終了コード 1 のエラーにして書き込まないようにした。`--deps 1,2` が空白を含む1つの引数で渡った場合は、`--deps=1,2` の形を案内する。`add` / `update` は出力の見出しに、追加・更新したビルドの BP と依存を表示する（[#75](https://github.com/tak-solder/hikyaku/issues/75)）
-- **conductor / bp-guide スキル**: SKILL.md で省略形の `hikyaku <command>` と書いていた CLI 呼び出し（`pr title` / `external ref` / `config` / `help bp guide`）を、ほかの箇所と同じ `node "${CLAUDE_PLUGIN_ROOT}/scripts/hikyaku.mts" <command>` の形に揃えた。省略形は利用者のシェル関数が前提で、エージェントがそのまま実行すると失敗するため（[#78](https://github.com/tak-solder/hikyaku/pull/78)）
-
-### Migration
-
-- 既定に無い論理名を `repo` 管理で登録していたリポジトリでは、`validate` のエラーが消える。対応は不要
-- `tasklist` のコマンドに未知のオプションや余分な引数を渡していたスクリプトは、エラーになるため修正する。シェルの関数から呼ぶ場合は `--deps=1,2` の形で渡すと、単語分割の有無に左右されない
-
-## [2.9.0]
+## [3.0.0]
 
 ### Added
 
-- Codex 用の conductor / navigator 入口を追加した。Codex を監督にして子セッションを進める手順と、状態を読んで選択したスキルを実行する案内に対応する
-- conductor の子セッションを `[conductor] provider = "codex"` で Codex CLI に切り替え可能にした。非対話規約、JSONL の結果解析と thread_id による再開に対応する。クラウドではレビューと同じ環境判定で、明示指定より優先して同じプロバイダーに固定する。クラウドでない環境の既定は Claude のまま。Codex では `allowed_tools` は空配列、`budget_per_run` は 0 のみ受け付ける
+- **中間レビューの指摘の件数を記録する**: planner の `review`・architect の `architecture-review`・build-manager の `tasklist-review`・builder の `plan-review` と `test-spec-review` の `done` に、`step report` の `--findings <指摘の件数> --adopted <反映した件数>` を必須にした。値は `progress.jsonl` に残る。`--adopted` が `--findings` を超える報告や、ほかのステップへの添付は受け付けない。ステップの定義に `countsFindings` を足し、`step lint` はゲートでの指定を拒む。tasklist-review は、反映するときも先に件数つきで `done` を報告してから `scope` を報告し直す手順にした
+- **`hikyaku review findings [<cycle>]`（読み取り専用）**: 上の件数をステップごとに集計し、回数・件数なしの回数・指摘のあった回・指摘・反映・採用率を返す。件数の無い記録（この版より前の報告）は採用率に入れない
+
+- **アプリケーションの状況と境界の宣言（`[app]`・`[[app.areas]]`・`[boundaries]`）**: 公開範囲・扱うデータの重さ・壊れたときの影響の3軸と `merge_gate`、名前つきの重い領域のパス、外との境界・内部の境界のパスを、ルート設定に書ける。サイクル設定に書くと、不正な値・知らないキー・重い領域の名前の重複と同じくエラー。`hikyaku config` に宣言と、作業ツリーの宣言から求めた AI に任せてよい害の上限を表示する。上限は、作業ツリーと、base_branch・デフォルトブランチとの merge-base にある宣言のうち最も厳しいもので決める（ユーザーがマージしていない宣言で緩めない）。`[app]`・`[[app.areas]]` の上限は G3・G4 の判定に使う（次項）。`[boundaries]` は G4 の外との境界の同意と提示に使う（`gate brief` の項）
+- **G3・G4 を宣言の上限で同意にする**: architect の options の done に `--harm 高|中`（G3 に提示する案のうち最も重い害）と `--paths <glob,...>`（全案が触れるパス。波括弧の外のカンマで区切る）を添え、`progress.jsonl` に残す。欠けていても報告は受け付ける。`[app]` を宣言したワークスペースでは、申告の害が上限を超える・申告したパスが重い領域に当たる・申告が欠ける回の G3 が同意（プロファイル・`design_choice_gate` で外れない）。G4 は申告の裏取りで、`design-delta.md` とこのサイクルの ADR が触れるパスが G3 の申告に無い重い領域に当たれば同意になり、当たった領域を `args.undeclaredAreas` で示す。基準の宣言を読めない回（`incomplete`）は G3・G4 とも同意にし、読めなかった理由を directive の notices に出す。宣言が無ければ従来どおりプロファイルで決まる。`conductor asks` の `consentWhen`・`hikyaku config` の G3・G4 の説明も改めた
+- **G4 と G8 の提示（`hikyaku gate brief G4|G8 <phase> [<cycle>] [--full]`、読み取り専用）**: G4 は、`design-delta.md` とこのサイクルの ADR が触れるパスを `[boundaries]` の `external` / `internal` と照合し、外との境界の変更（同意が要る）と内部の境界の変更（確かめる）に分けて示す。G3 の申告に無い重い領域も並べる。境界は、作業ツリーと基準のブランチ（merge-base）の `[boundaries]` の和で照合する（作業中のブランチで消しても効く）。外との境界の変更がある回、境界を照合できない回（ADR を読めない）、作業ツリーだけが境界を宣言していて基準を1つも読めない回の G4 は同意（`now`。事後同意には回さない）で、`args.boundaries` に照合の結果が載る。`[boundaries]` を宣言していなければ従来どおりの提示。G8 は、`test-spec.md` の見出しに「（解釈）」の印が付いたシナリオと、どのシナリオの `- 対応:` にも無い受け入れ基準だけを示す（番号で追跡できないサイクルでは `issue.md` の受け入れ基準の節、`test-spec.md` が無いビルドでは `plan.md` の提示を案内する）。`--full` で全文を出す。architect の G4・builder の G8 の手順はこの出力を提示し、test-spec の書式に「（解釈）」の印と `- 解釈:` の行を足した
+- 設定ファイルの TOML でテーブル配列（`[[x]]`）を書けるようになった
+- **差分の事実（`hikyaku diff facts <build-NN> [<cycle>] [--format text|json|pr]`、読み取り専用）**: PR のマージ先との merge-base から作業ツリーまで（未コミットの変更と未追跡のファイルを含む）を比べ、変更ファイルと種類、テストファイルの削除（リネームでテストの分類から外れたものを含む）、削除されたテストの宣言、追加されたスキップの印、アサーションの行の変更、設定の宣言（`[app]`・`[[app.areas]]`・`[boundaries]`・`[consent]`。`[[app.areas]]` は項目の追加・削除と `paths` の外した・足したパス）の変更、`issue.md` の変更、G8 の承認より後の `plan.md`・`test-spec.md` の書き換えを並べる。スコープの内外や、緩和かどうかは判定しない。このビルドの成果物（`progress.jsonl`・`plan.md` など）は一覧から除く。`--format pr` は変更ファイルの一覧を写さず、事実と `agreement.md` の「返した理由」を PR 本文の節に組み立てる。基準を解決できないときも止めず、注意に理由を出す
+- **builder の `agreement-review` ステップ**: verify の後・review の前に、どのプロファイルでも入る。`diff facts` の事実を、doc-reviewer の新しい context `agreement` が issue.md・test-spec.md・plan.md の「マージ時点のデータ安全」と突き合わせ、合意に無い変更・スコープ外の変更・データ安全の不備を指摘する。指摘は `hikyaku review action doc --context agreement` で解決し（`max_rounds` に関わらず1回で終わり、`confirm` を返さない）、builder は直すか理由を返す。ユーザーの判断を待って止まらない。結果は `build-NN/agreement.md` に残し、無ければ完了にならない
+- `[diff]` に `test_declarations` / `skip_markers` / `assertion_markers`（差分の事実の印）。主要な枠組みの書き方を既定に持ち、書いた印は **既定に追加される**（既定は消せない）。英数字で始まる印は、直前が英数字でない位置だけに当たる
+- **未決事項と決定の記録（`decisions.jsonl`）と `hikyaku ledger open / decide / list / show`**: 決めずに先へ進めたこと・暫定の決定・異議・受け入れたリスクを、いつ（`now` / `phase:` / `gate:` / `merge` / `close` だけ。存在しないゲートやビルドはエラー）・誰が（`user` / `ai:<フェーズ>` / `supervisor`）決めるかとともに、作業単位ごとの `decisions.jsonl` に追記する。決定は決めた作業単位のファイルに書くので、並行するビルドの決定がマージで衝突しない。決まったかと期限は記録から導き、状態の欄は持たない。ユーザーが決める事項はユーザーしか決められない（`--input` 必須）。期限が来た・過ぎた事項は `step next` の注意と `cycle status`（JSON の `ledger`）に、決まるまで示される。Stop フック・`step where` は読まない（builder の `delegation` のきっかけを見るための、その作業単位の `decisions.jsonl` 1つを除く）
+- **異議の記録（`hikyaku ledger object`）とゲートの承認の検査**: ユーザーの選択がその人自身の宣言・記録と食い違うときに唱えた異議（根拠・失うもの・害の重さ）と、ユーザーの決定を対で記録する。害が高で選択どおりに進めるなら、ユーザーの言葉の `--accepts` と `--premises` が必須。どの場合もユーザーの答え（`--input`）が必須。そのステップに片づいていない高の異議があると、`step report` はゲートの承認を受け付けない（記録を読めないときも受け付けない）。中の異議は記録だけで進む。サイクルに属す作業単位の gate の directive（`objection`）に、異を唱える範囲の固定の指示・照合に使える宣言と記録のポインタ・`ledger object` の呼び方が載る
+- **`hikyaku ledger premises [--changed-from <ref>] [--format pr]`**: ルートの `.hikyaku.config` の `[app]`・`[[app.areas]]` を基準と HEAD で比べ、変わった参照（`app.<key>` / `area:<name>`）と、それを拠り所にした受け入れを並べる。受け入れは、作業ツリーにある全サイクルの `decisions.jsonl`（退け・解決されていない risk と、ユーザーが受け入れた objection のうち `premises` を持つもの）と、`decisions`・`constraints` の「受け入れたこと」の行（`（拠り所: \`<参照>\`）` で終わる行）。基準は上限の判定と同じ（base_branch・デフォルトブランチとの merge-base、origin とローカルの両方）。基準を読めないときは、宣言されている参照をすべて変わったものとして扱う。`-` で始まる ref は受け付けない。終了コードは常に 0
+- planner・architect・builder・close-cycle の `pr` と、patch の `publish`（patch は実装の前に PR を作るため）の directive に `args.declarationChanged`（変わった参照をカンマ区切り。無ければ `false`）が載り、宣言が変わっていれば `ledger premises --format pr` の出力を PR 本文に貼る。conductor の最後の PR の本文にも貼る。覆された ADR（`status: superseded`）の受け入れは並べない
+- **`validate` の警告の段階**: 終了コードを変えない警告を JSON の `warnings` とテキストの `!` 行で返す。永続ドキュメント（glossary を除く）と進行中のサイクル（引数があればそのサイクル）の文書で、ポインタに添えた ID の範囲（`AD-1〜AD-5`・`US-15.1〜15.3` の形）と、`decisions`・`constraints` の「受け入れたこと」の節にあって読めない行（箇条書きでない、拠り所の書式が合わない）を示す。`--base <ref>` を付けると、宣言の変更と拠り所にした受け入れも示す（CI 向け。[CI](docs/operations/ci.md)）
+- **constraints のテンプレート**（`skills/close-cycle/references/constraints-template.md`）: 制約 / 外の前提（事実か仮定か・確かめた日）/ 受け入れたこと（拠り所）/ 再評価条件 / 領域（任意）。close-cycle の write が `hikyaku` 管理の `constraints` をこの形で書く
+- **`delegation` ゲート（`（ask: delegation）`）**: 委任の前提が崩れた出来事のあと、委任を続けるかをユーザーに尋ねる同意ゲート。architect では差し戻しからの再設計の回の先頭、builder では設計と要件の衝突（`ledger open --ask design-conflict`）を記録した直後に、どのステップの最中でも返る。conductor でもユーザーに固定で、`[conductor] delegate` に書けない。builder は、自分のビルドの `decisions.jsonl` を読めないと、このゲートを見落とさないよう手順に入らずに止まる。害が高の異議を `ledger open --type objection` で記録するときは `--premises` が必須
+- **事後同意の同意ゲート（`consent`、`（ask: deferred-consent）`）**: architect・builder は `pr` の直前、サイクルに属す patch は `publish` の直前に、`when=merge@<その作業単位>` の、ユーザーが決める `risk`・`objection` の事項（記録した作業単位は問わない）があるときだけ現れる同意ゲート。どのプロファイルでも省かず、conductor でもユーザーに固定。一覧の全項目にユーザーの決定（`consented` / `decided` / `resolved`。害が高の異議は受け入れの言葉つき）があるまで承認を受け付けず、最新が `rejected` の項目があっても受け付けない。承認のあとに決定の無い対象が足されると戻る。手順に入るかはその作業単位の `decisions.jsonl` 1つだけで判定し、読めなければ手順に入れる。conductor の子では、事後同意が有効なサイクルの最後のビルドだけに現れる（下の conductor での事後同意）
+- planner・architect・builder・close-cycle の `pr` と patch の `publish` は、その作業単位の同意の対象に決定の無い項目があると `done` を受け付けない（サイクル全体の記録を読む。conductor の子でも外れない）。`step report` は gate の `approved` でもステップ定義の `accepts` を確かめる
+- **`hikyaku ledger consent-list <phase>`**: 同意ゲートの一覧を1項目3行（受け入れたリスク・拠り所の前提・失うもの）と決定の状態で出す。`--full` で根拠・害・いつ・決定の記録まで、`--json` で項目と決定
+- **同意ゲートで退けた項目の作り直しの経路**（US-20.11）。最新の決定が `rejected` の項目を、記録した作業単位で分ける。同じ作業単位の項目は、同意ゲートの directive の `args.reworkFrom`（項目ごとは `args.rework`）が戻り先のステップを示す。戻り先は、ゲートで記録した項目なら対応する run ステップ（architect: G3→options・G4→design-delta、builder: G7・G8→plan、patch: P1→scope、それ以外はそのゲートより前で最も近い run）、内部スキル（build-manager の G6 など）のステップならそれを呼ぶ call ステップ、同意ゲートより後ろ（pr・publish）ならゲートより前で最も近い run。ゲートの戻り先はステップ定義の `reworks`（gate だけ。`step lint` がそのゲートより前の run かを検査する）に書く。戻り先を退けの決定の後に `done` で報告し直していれば、同意ゲートの承認と `pr`（patch は `publish`）の `done` を `resolved` の前でも受け付ける。前のフェーズで記録した項目（`args.returns`）は、`resolved` を記録するまで受け付けない。退けのあとに作業を再開した（差し戻しの再設計を経た）項目は `args.resumed` に出し、もう一度差し戻さずに作り直しが済んだかを尋ねる案内にする。戻り先を作り直しで `skipped` にした回も作り直しに数える。どちらも `resolved` までは「未解決の退け」として PR 本文と `cycle status` に出続ける
+- **`hikyaku ledger return-draft <phase> --items <id,...>`**: 同意ゲートで前のフェーズの判断を退けたときの `return.md` の下書き（「退けた項目」「試したこと」をそろえ、「問題を変える選択肢」「推奨」は置き場所のまま）を出す。書き込まない。builder の `references/return.md` に退けからの差し戻しの手順（下書き → 選択肢と推奨 → handoff.md の削除 → architect の案内）を、`references/templates.md` の return.md に「退けた項目」の節を、architect・builder・patch の `steps/consent.md` に退けたときの戻り方と `resolved` の記録を、patch の `steps/pr.md` に作り直しの回は既存の Draft PR を使うことを足した
+- **`hikyaku ledger pr-section <phase>`**: PR 本文に貼る「受け入れたリスク（事後同意）」（決定の無い項目は分けて出す）「未解決の退け」「マージの前に決める事項」「期限を過ぎた事項」の節を、中身のあるものだけ出す。各フェーズの `pr`（patch は `publish`）の手順が本文に貼る
+- ステップの定義に `interrupt`（割り込みのゲート）を足した。きっかけの時刻を返す回だけ手順に入り、その後の承認が無ければ並びの位置に関わらず現在地になる。承認しても後ろのステップはやり直しにならない
+- planner: G1 の提示に、サイクルのプロファイルのままでよいかの確認を1行出す（directive の `args.profile`）
+- 各スキルの手順が未決事項を記録するようになった: planner（未回答の質問）、architect（暫定の設計判断）、build-manager（G6 で受け入れたリスク）、builder（handoff の「残したこと」は事項の ID だけを書く。「確度: 要確認」の懸念も事項にし、PR 本文には ID と要点）、サイクルに属す patch（persist）、close-cycle（期限の来た事項を G10 で示し、ユーザーの決定を記録）、conductor の子（監督の判断。記録先を questions.md・コミットメッセージから `decisions.jsonl` に改めた）
+- **patch スキル（`/hikyaku:patch [--cycle {cycle}] {依頼}`）**: サイクルを作らずに、小さな変更（バグ修正・軽い仕様変更・改善、QA のフィードバックを複数件まとめてでもよい）を、依頼のすり合わせから実装・検証・コードレビュー・PR まで1セッションで進める。手順は start → survey → scope（予測ピークの見積もり）→ fit（patch で進めるかの判定）→ P1（対応方針の合意）→ pr（Draft PR に依頼と合意を書く）→ implement → verify → review → persist（知見の仕分け）→ P2 / write（永続ドキュメントの承認と書き込み）→ publish。作業管理の文書は作らず、依頼・合意・検証結果は PR の本文に集める。`disable-model-invocation: true` で、明示的に起動したときだけ動く（[#93](https://github.com/tak-solder/hikyaku/issues/93)）
+- **patch の作業単位**: フェーズ `patch-YYYYMM-slug`、ブランチ `{prefix}/patch/{YYYYMM}/{slug}`、記録 `patches/{YYYYMM}/{slug}/progress.jsonl`。サイクルに属さなければ HIKYAKU_ROOT の下、進行中のサイクルに属せばそのサイクルのディレクトリの下に置く
+- **承認ゲート P1 / P2**: patch の対応方針の合意と、永続ドキュメントの更新の承認。どちらもプロファイルの管轄外
+- **`hikyaku patch resolve [<slug>] [--cycle <cycle>]`**: patch の作業単位・ブランチ・切る元（統合ブランチとローカルで解決できる ref）・記録の場所・PR 列が空のビルド・名前の重複（記録・ローカル・追跡参照・origin）を返す。サイクルは推測せず、`--cycle` のときだけ属す。patch のブランチに居れば再開として扱い、記録の場所を正とする（記録がまだ無ければ `recordMissing`）。統合ブランチは、conductor ブランチで完了したビルドがデフォルトブランチに無いうちだけ conductor ブランチとする（squash merge で取り込んだあとも誤らない）
+- **`hikyaku patch prune --before <YYYYMM>`**: サイクルに属さない patch のうち、PR を作った古い月の記録を消す（いま居るブランチの patch は残す）
+- **`--no-cycle`**（`config` / `tokens guide` / `tokens estimate`）: 選択済みのサイクルを参照せず、ルート設定で動く。`config` で `--require-cycle` と同時に指定するとエラー
+- `[pr] reviewers_skip` に `patch` を指定できる
+- **`hikyaku step next / report / status / lint`**: フェーズの中の手順を、設定と進捗から1手ずつ返す。`step next` は `run`（ステップを行う）・`gate`（承認を求める）・`call`（内部スキルを呼ぶ）・`done`・`stop` のどれか1つを、読むべき指示ファイルと報告のコマンドを添えて返す。`step report` は結果を記録して次の1手を返す。現在地は保存せず、作業単位のディレクトリの `progress.jsonl` と成果物から毎回導出する（[#50](https://github.com/tak-solder/hikyaku/issues/50)）
+- **`hikyaku step restart`**: 同じ作業単位で、スキルの手順を最初から回し直す区切りを記録する。これより前の記録は現在地の導出に使わない（architect の追加設計、内部スキルの呼び直し）。`--round` で回の種類（スキルが定義した値だけ）を記録でき、スキルの定義はその値で手順を変える
+- ステップの定義に `requires`（記録の欠けの判定には使わない完了の条件）を足した。前から存在しうるファイルの検査を、完了の条件としてスクリプトで確かめられる
+- **`progress.jsonl`**: 作業単位のディレクトリに追記される手順の記録。結果・理由・ユーザーの答え・見積もり直した予測ピーク・作った PR・報告した時点のコンテキスト・セッション ID・Hikyaku の版が入る。成果物と一緒にコミットする
+- **区切りでの完了時点の見込み**: G8 の提示・実装開始前・レビュー前で、`step next` がメインセッションのコンテキストを測り、完了時点の見込み（残りの見込みは `base + perPeak × 予測ピーク`。係数は同じセッションで完了まで進んだビルドの `progress.jsonl` から求め、5件に満たないうちは既定値）に誤差（実績の上振れの p90。既定は G8・実装開始前で 10%、レビュー前で 5%）を足して `[context] limit` と比べ、継続（`continue`）・セッションの切り替え（`switch`）・分割（`split`）のどれかを推奨する。切り替えた場合の見込みは `plan.md` の内訳の固定費 + 読み込みから求める。レビュー前の推奨は常に継続。directive の `context` に `forecast` が載り、上限を超える見込みのまま継続した区切りは `overruns` で次のゲートの報告・完了の案内に出る（[#68](https://github.com/tak-solder/hikyaku/issues/68)）
+- **`[context]` 設定**: `limit`（1セッションのピークの上限。既定 `"600k"`。整数か、単位を付けた文字列）と、`estimate_ratio`（見積もりの上限 = limit × この割合。既定 `"90%"`）・`merge_ratio`（統合の目安。既定は 2/3）。割合は `"90%"` か `0.9` で書き、`merge_ratio` は `estimate_ratio` より小さくなければならない。`hikyaku config --json` の `context` と `peakBands`（`mergeHint` / `estimateLimit`）に出る
+- `docs/migration/v2-to-v3.md`
+- **Stop フック**（`hooks/hooks.json` → `hikyaku step hook stop`）: スキルの手順の途中でセッションが止まろうとしたら、1回だけ続きを促す。止めるのは、そのセッションが手順を進めていて（`progress.jsonl` にそのセッションの ID がある）、次の1手が `run` か `call` のときだけ。内部スキルを呼んでいる最中は、呼ばれたスキルの1手で判定する（`call` のほか、`run` のステップの中から呼んだときや、手順を終えたあとに呼び直したときも含む）。`cycle close` で終えたサイクルも、CLOSE の手順が PR まで残っていれば見る。`gate` / `done` / `stop`、同じターンの2回目（`stop_hook_active`）、非対話規約のブロックで終えた出力、バックグラウンドの作業（Stop の入力の `background_tasks`）が残っているとき、そのセッションの最後の記録がセッションの切り替え（`handover`）のときは止めない。判定できないときも止めず、終了コードは常に 0（[#50](https://github.com/tak-solder/hikyaku/issues/50)）
+- **`hikyaku step where [<cycle>]`**: このチェックアウトの作業ツリーにある `progress.jsonl` を読み、記録のある作業単位ごとに `step next` と同じ1手を返す。指定したサイクルの作業単位だけを並べ（init / token-guide は混ぜない）、終えたサイクルも読む。close-cycle の最初の振り返りの途中も、close-cycle の作業単位として並べる。v2 で作成したサイクルでは `legacy` に案内を返す
+- **予測ピーク**: ビルドの大きさを、BP ではなくメインセッションのコンテキストのピークの予測（トークン）で判定する。予測は固定費・読み込み・実装・テスト・未知の領域の5成分の和で、build-manager と builder が見積もりのガイドに沿って成分ごとにトークンと根拠を出し、CLI が合計・判定・記録を行う。判定は `[context] limit` に割合を掛けた帯で、既定では統合の目安（400k）未満が統合を検討（推奨のみ）、400k〜540k が狙い、見積もりの上限（540k）超が分割を検討（原則として分割）。BP は表が外れると見積もりと実績が同じように外れ、校正できなかったため（[#68](https://github.com/tak-solder/hikyaku/issues/68)）
+- **`hikyaku tokens estimate [<cycle>] --fixed --reading --implementation --tests --unknown`**: 成分の予測を合計し、予測ピークと判定を返す。表と tasklist の値は k 単位で書くが丸めない（`450.4k`）ので、そのまま `--peak` に渡しても判定は変わらない。5成分すべてが必須（該当しなければ 0）。`--<成分>-basis` で根拠を添える。`--markdown` の表の最後の行に、見積もりに使ったガイドの版とハッシュが入る
+- **`hikyaku tokens guide [<cycle>]`**: 有効なガイド（プロジェクトの `{HIKYAKU_ROOT}/token-guide/guide.md` か、標準の `skills/build-manager/references/token-guide.md`）と、その版・ハッシュ・判定の帯を返す
+- **`hikyaku tokens stamp`**: プロジェクトのガイドの版を上げる。無ければ標準の本文をコピーして version 1・`based_on` 付きで作り、本文が変わっていれば version を上げて hash を合わせる。`--dry-run` あり
+- **見積もりのガイドの版**: ガイドの先頭に `version`・`based_on`・`hash`（本文のハッシュ）を持つ。hash が本文と合わないガイドは `validate`・`doctor`・ガイドを書き込むステップ（token-guide の `write` / `pr`）が止める
+- **token-guide スキル（`/hikyaku:token-guide [show|tune]`）**: サイクルをまたいでガイドを校正する（ブランチ → 収集 → 変更案 → 承認 → 書き込み → PR）。`step next token-guide` で進み、進捗は `token-guide/progress.jsonl` に記録する。Codex 用入口 `$hikyaku:token-guide`
+- **知見の置き場**: 実装や振り返りで得た知見を、重要度（害が成果物に残るなら高、セッションのコストなら中、すぐ直せるなら低）で絞り、読み込まれ方で置き場を選ぶ。機械で防げるものはコード、一部のファイルにしか効かないものはパス指定の rule（`.claude/rules/`）、決まった手順はスキル、全体に効く取り決めは `conventions`、設計を縛る条件は `constraints`。低はどこにも書かない。基準は `skills/close-cycle/references/persistence.md` にあり、builder・retrospective・close-cycle・doc-triager が同じものを読む（[知見の置き場](docs/configuration/persistence.md)）
+- **`hikyaku promotions [<cycle>]`**: サイクルの `design-delta.md`・各ビルドの `handoff.md`・各フェーズの `retrospective.md` から、「永続化すること」と「役に立たなかった記述」を集め、宛先・場所ごとに束ねて返す。書式どおりに読めなかった行も捨てずに返す
+- **`hikyaku rules check`**: パス指定の rule ごとに、`paths` に一致する追跡ファイルの数・一致率・本文の文字数と、掛け合わせた読み込み量を返す。読み込み量が 2000 を超えた rule を知らせ、どのファイルにも一致しない rule があれば終了コード 2 で終わる。生成物（`[diff] exclude`）は分母から除く
+- **doc-triager エージェント**: 既存の文書を項目ごとに読み、コードと突き合わせて、重要度と置き場を判定する。init の移行の回から起動する
+- init: 移行の回（`hikyaku step restart init --round migrate`）を加えた。初期化済みのワークスペースで、v3 で廃止した論理名の文書を doc-triager が振り分け、承認を得て書き込み、PR にする（振り分け → 承認 → 書き込み → 索引 → PR）。廃止した論理名が残っていると、初期化済みで止まるときのメッセージが移行を案内する
+- close-cycle: 記述の削除と置き換えを提案できるようにした。範囲は、そのサイクルの記録（handoff・振り返り）に根拠があるものと、そのサイクルのビルドが書いた rule に限る。G10 では追加（`+`）・置き換え（`~`）・削除（`-`）を分けて提示し、PR の本文にも分けて書く
+- close-cycle: スキル（`.claude/skills/`）を置き場に加えた。同じ手順が2回以上出たときに候補にし、G10 の承認後に作る
+- close-cycle: PR を作ったあとの `followups` ステップを加えた。そのサイクルで予測ピークが同じ向きに 20% を超えて外れたビルドが2件以上あれば `/hikyaku:token-guide` を呼び、G10 でフックにすると決まった知見があれば動作を確かめてフックを書く（サイクルの記録にフックの候補があるときは、G10 の直後の `hooks` ステップで採るかを記録し、その記録で決める）。どちらも別のブランチの PR にし、採否はマージで決める。未マージの token-guide の PR があれば見送る。ほかに走行中のサイクルがあっても見直しは止めない（残りのビルドは補正後の版で見積もられ、予測の表に版が残るので比較は版ごとに分けられる）
+- `hikyaku tokens history <cycle>`: サイクルを指定すると、見積もりのガイドの見直しを勧めるか（`review`）を返す。実測の無いビルドと、ガイドの版が記録に無いビルドは判定から外す
+- token-guide: close-cycle から呼ばれる回（`--round auto`）を加えた。承認のゲートを置かず、採否を判断できる根拠（ビルドごとの予測・実測・比率、変更前後の文面）を PR の本文に載せる
+- **セッションの切り替え（`step report build-NN implement --result handover --reason <理由>`）**: 区切りの推奨が切り替えのとき、G8 を承認したセッションが implement の手前で切り替えを記録して終える。implement は完了にならず、新しいセッションが implement から続ける。Stop フックは切り替えを記録したセッションを引き止めない。conductor の子は本文の行頭に `handover: implement` を置いた blocked で終え、`conductor parse` は子のセッションの記録で裏取りできたときだけ `handover` を返して行き詰まりの報告の検査を外す。監督は同じビルドを新しい session で起動し直す
+- **`hikyaku tokens session [<phase> [<cycle>]]`**: セッションのコンテキストを、Claude Code のトランスクリプトから実測する。ピーク・開始時の固定分・最新の値・API 呼び出し回数・出力トークンの合計・コンパクション回数・モデル・ホストとその版を返す。引数なしでは `CLAUDE_CODE_SESSION_ID` で現在のセッションを測り、`<phase>` を渡すとそのブランチのセッションから、そのブランチでの API 呼び出しが最も多いものを本体として選ぶ（候補も出力する）。`--transcript <path>` で記録を直接指定できる。読めない・見つからないときは推測せず「計測不可」とその理由を返す。予測ピークと突き合わせる実測（[#68](https://github.com/tak-solder/hikyaku/issues/68)）
+- **`[diff]` 設定**: `exclude`（生成物として数えないパスの glob）と `tests`（テストとして分けるパスの glob）。`tokens history build-NN` の差分の集計に使う。既定値はロックファイル・スナップショット・生成コードと、一般的なテストのパス。書いた配列は既定値を置き換える
+- **`hikyaku tokens history [<cycle>] [--group-by model|hikyaku|host|guide]`**: 各ビルドの retrospective.md の「予測ピークの振り返り」から、予測（architect / builder 段階）・実測のピーク・乖離・比率・開始時の固定分・区切りでのコンテキスト（`progress.jsonl` から）・呼び出し回数・コンパクション・追加行数・モデル・ガイドの版・Hikyaku の版を並べる。`--group-by` は群ごとに件数・予測と実測の平均・実測の範囲・乖離と比率の平均を添える
+- **`hikyaku tokens history build-NN [<cycle>]`**: PR の base からの差分を数える（v2 の `bp actual` の後継）。`[diff] exclude` に当たる生成物は数えず、追加行数などを実装とテストに分けて返す。`--markdown` は retrospective.md の「差分の集計」に貼る表。起点を解決できないときは推測せず「計測不可」とその理由を返す
+- doctor: `token-guide/guide.md` の版の宣言の不備と、v2 の `bp-guide/` が残っていることを知らせる
+- **知見の置き場の「なくす」（宛先 `refactor`）**: `persistence.md` の置き場の順の先頭に、リファクタで知見そのものを不要にする置き場を足した。builder はそのビルドで直し、直せなければ「永続化すること」に `refactor` で書く。close-cycle は文書に書かず、リファクタの提案として G10 で示し、PR の本文に並べる
+- **基準の理由**: rule の frontmatter に `prevents`（何を防ぐか）・`basis`（何に立っているか）・`importance`（`高` / `中`）を書く。「永続化すること」の行と文書に書く基準には、行末に `（防ぐ: … / 立つ: … / 重要度: 高|中）` を付ける。`hikyaku promotions` が理由を読み、行の `[高|中]` と食い違えば読めなかった行にする。理由の無い既存の行は今までどおり読める
+- **handoff.md の「レビューの記録」**: コードレビューの指摘ごとに `- [重|軽] \`rule:<パス>\`: 要約`（rule に当たらなければ `` `-` ``）を書く。builder の review で控え、handoff で書く
+- **`hikyaku rules candidates`**: 全サイクル（closed を含む）の「レビューの記録」から、`[rules] hit_threshold`（既定 3）以上引かれた rule を移す候補として、どのファイルにも一致しない rule と、記録に挙がったが無い rule と一緒に並べる。各行に最終変更からの日数（paths に当たる追跡ファイルの最終コミット。paths が無い・一致しない rule は rule ファイル自身）と理由を添える。移すか消すかは決めず、終了コードは常に 0。builder の handoff と close-cycle の collect から呼ぶ
+- **`hikyaku areas dormant --paths <glob,...>`**: 渡した glob に当たる追跡ファイルの最終コミットが `[areas] dormant_days`（既定 180）を超えていれば休眠とし、重なる rule・ADR（「領域」の行。superseded は読まない）・constraints の項目（見出しごとの「領域」の行）を返す。当たるファイルが無いパスは休眠とみなさない。architect の survey の後と builder の plan から呼び、文書には休眠の事実と基準の所在だけを書く
+- `[rules] hit_threshold`・`[areas] dormant_days` 設定（正の整数。サイクル設定で上書きできる）
+- **G10 を同意と確認に分けた。** `promotions.mts` の1つの判定が、宛先が `decisions`・`constraints` の候補と、作業ツリーの `decisions`・`constraints` の差分（close-cycle の最初の記録の時刻より前の、first-parent で辿った最後のコミットと比べる。追跡外のファイルも追加に数える）を同意が要る変更とする。サイクルの文書に名前が現れる ADR の `accepted → implemented` だけの書き換えは除く。同意が要る変更が無ければ G10 は確認で、新しい `promotion_gate`（express だけ false）で省ける。G10 の `consent`・write の `accepts` が同じ判定を使い、省いた回や確認として承認した回に同意が要る差分が出ると、`step next` が G10 を同意として返し、write の done を受け付けない。サイクルが closed になり、close-cycle の記録をコミットしたあとは差分を見ない（記録が未コミットのあいだは見る）。`promotions --json` は宛先と候補ごとに `approval`（`consent` / `confirm`）を返す
+- `step report` はゲートの承認に `approval`（`consent` / `confirm`）を記録する。ステップ定義に `reopens`（承認では足りないときに現在地へ戻す。gate だけ）と `recordsPr: "optional"`・`prHint` を足した。テキストの directive は、配列・オブジェクトの値を JSON で出す
+- **基準を試しに消す候補と、消した PR のマージ前後の指標の比較。** `hikyaku rules candidates [<cycle>]` が、試しに消す候補（JSON の `removals`）として、一致しない rule・frontmatter の `prevents` か `basis` が欠けた rule・そのサイクルの「役に立たなかった記述」に挙がった記述（rule か文書の箇条書きの1行）を並べる。重要度が高の基準と、重要度を読めない基準（理由の欄が崩れた行、importance が不正な rule）は入らない。close-cycle の followups の args に `ruleRemovals`・`g10Input`・`metricsComparison` を足し、G10 で試しに消すと決まった基準を `{close のブランチ}-criteria` の別の PR にする（ゲートは無い。PR は followups の done の `--pr` に任意で残す）。新しい `scripts/lib/quality-metrics.mts` が、closed のサイクルの followups の PR と、ベースブランチ（`origin/<base>` を優先）の first-parent の履歴で、件名が `Merge pull request #N ` か末尾が `(#N)` の最も古いコミット（revert は除く）をマージの時点とし、そのコミットと第1親の差分から消した基準（消えた rule のファイルと、登録された文書から削除だけの hunk で消えた箇条書きの行）を導く。マージの日はローカルの日付に直して cycles.md の日付と比べる。比較するのは、マージ前後それぞれ直近 `[metrics] window`（既定 2）の closed のサイクルの、差し戻し・rejected の決定・重要度が高の落とし穴・重い指摘の数。揃わなければ「比較できない」
+- `[metrics] window` 設定（正の整数。サイクル設定で上書きできる）
+- **`hikyaku feedback export [--dry-run]`**: `{HIKYAKU_ROOT}/feedback/{YYYYMMDD}.md` に、Hikyaku へのフィードバックを書き出す。progress.jsonl から読むのは `at` / `skill` / `step` / `result` / `hikyaku` の欄だけで（サイクルに属さない patch の記録は読まない）、スキルとステップの単位で「止まった手順」（failed の件数）と「ゲートにかかった時間」（ゲートの記録と直前の記録の差の中央値）を集計する。あわせて、「永続化すること」の宛先 `upstream` の本文と、起票の下書きの枠も書き出す。ユーザーの答え・理由・PR・セッション・サイクル名・ビルド番号・patch の slug は含めない。外部に送る処理は持たない。書き出し先が git の追跡対象なら書き出さずに止まる
+- **事後同意の有効の判定と、上限を超える受け入れの積み上げ**（ADR 20261116-deferred-consent）。サイクル設定でだけ書ける `[consent] deferred` を足した（ルートに書くとエラー）。新しい `scripts/lib/deferred-consent.mts` が有効かを判定する。有効になるのは、`[app] merge_gate = "user"` が作業ツリーと基準の両方にあり、基準を読めない回でなく、かつ planner の G1 の承認の記録の値が true か、基準（デフォルトブランチと base_branch、`origin/` とローカル）のすべての merge-base のサイクル設定に true があるときだけ。有効でない理由は `config`（`--json` の `deferredConsent`）と各 directive の `notices` に出す。planner の G1 の args に `deferredConsent` を足し、`step report` が承認の記録（`planning/progress.jsonl` の `deferredConsent`）に設定から読んだ値を残す（サイクル設定に未コミットの変更がある、または最後のコミットが G1 の直前のステップより後なら false）。有効なとき、architect の options（G3）と design-delta（G4）の done が上限を超える受け入れになる回は、`step report` が `--loses` を必須にし、`risk` の事項（`who=user`・`when=merge@architect`・`premises`・`source: "step-report"`）を書く。G3・G4 はその事項が判定の前提をすべて覆うときだけ `deferred`（確認として評価）になる。外との境界・差し戻しの回・基準を読めない回・申告の欠けは `now` のまま。ステップ定義に `defers`（gate は持てない）を足した
+- **上限を超える異議と、事後同意の同意ゲートの範囲**（US-13.3）。`ledger object` と `ledger open --type objection` が異議の害を `[app]` の上限（宣言の軸に、`--premises` に挙げた `area:<name>` の重い領域を重ねたもの。基準の宣言を読めない回は超えるとみなす）と比べ、超えれば `exceedsCeiling: true` を記録する。上限を超える異議は害が中でも高と同じに扱い、`consented` には `--accepts` と `--premises` が要り、ゲートの承認・同意ゲート・`pr` の検査も受け入れの言葉の無い決定を数えない。`ledger object --defer` を足した: 事後同意が有効なサイクルで、上限を超える異議を決定なしで `when=merge@<phase>` の事項として記録し、同意ゲートの一覧に載せる（前提は `app.*`・`area:*` だけ。今の回に同意ゲートが現れない plan・close・create・差し戻しの回・PR を作った後は拒む）。`ledger open --type objection` は `--when merge…` を拒む。事後同意を選んだサイクル（`[consent] deferred = true`）では、同意ゲートの対象をサイクル全体の記録から探し、ほかの作業単位で記録した事項だけでもゲートが現れる。手順の位置だけを読む経路（Stop フック・`step where`・`conductor parse`）は、そのサイクルでは記録を読まずにゲートを手順に入れる。位置だけを読む経路は評価全体を `positionOnly` でそろえた。gate の directive の異議の指示に、上限を超える異議と `--defer` の扱いを足した
+- **conductor の走りきりと、監督は安全側にだけ倒すこと**（ADR 20261116-conductor-runs-to-end）。`conductor launch` に答えの出どころを足した: 再開の `--message` には `--from user|supervisor` か `--notice`（答えではない知らせ）が必須。`--from supervisor` は `--ask` と、値の表がある問いでは `--choice` が要り、handler が user の問い（同意の回・`escalate`・中止。回で同意になるゲートは子の位置を確かめられなければ同意に倒す）・安全側でない値（`conductor asks` / `parse` の `ask.safe`。G3 の推奨以外の案、`design-conflict` の `conform` / `adjust` など）を拒む。リスクを受け入れうる答え（`questions`、`review-findings` の `proceed`）は `--harm 高|中 --premises <ref,...>` か `--no-risk` が要り、`[app]` の上限を超える申告は拒む（事後同意が有効なサイクルの例外は下の conductor での事後同意）。`--from user` は `--closes <ID,...>`（作業ツリーにある未決の question・who=user・when=now）が要り、回答の先頭にその ID を閉じる固定文を足す。`--from` を添えれば初回の起動にも `--message` を渡せる。`--escalate --ask <id>` は、ユーザーに上げる問いを子に記録させ（`ledger open --type question --who user --when now`）、本文に `waiting: <ID>` を置いた blocked で終えさせる固定文で再開する。`--from` の起動は子のコマンドの前に `HIKYAKU_ANSWER_FROM`・`_ITEMS`・`_ASK`・`_CHOICE`・`_RISK`・`_TOKEN` を置き、JSON に `answerToken` を返す
+- `ledger decide` / `ledger object` が、conductor の子（`HIKYAKU_CONDUCTOR_CHILD=1`）の中で答えの出どころを確かめる。`--by user` は `HIKYAKU_ANSWER_FROM=user` で `HIKYAKU_ANSWER_ITEMS` にある ID の事項だけ、`--by supervisor` は `HIKYAKU_ANSWER_FROM=supervisor` のときだけ書け、決定に `from`・`ask`・`choice`・`risk`・`token` を環境変数から残す（申告の要る答えで申告が無ければ拒む）。`ledger object` の決定つきの記録は、子では `--answers <ID>` が必須。子でないセッションの振る舞いは変えない
+- `conductor parse` は blocked の本文の行頭 `waiting: <ID>` が作業ツリーの記録の未決のユーザーの問いを指せば、行き詰まりの報告の検査を外して `waiting` を返す（答えを待つ blocked）。`--expect-answer <token>` で、監督の答えを記録した決定が無ければ `stepProblems` に入れる。gate の `ask` に `safe`（監督が選べる値と既定）と `declaresRisk` が付く
+- **`hikyaku conductor waiting [<cycle>]`** と `next --json` の `waiting`: 作業ツリーと architect・各ビルドの origin のブランチの `decisions.jsonl` から、決定の無いユーザーの問いと、それを待つビルド（問いを出したビルドと推移的に依存するビルド。ARCHITECT の問いは全ビルド）を導く。`next` のテキストは待ちがあれば「答えを待っているビルド」の節を足す。`conductor asks` に `queueing`（問いを積む方針）が付く
+- **conductor での事後同意**（ADR 20261116-deferred-consent・US-15.4・US-20.6・US-20.9・US-21.1）。事後同意の有効の判定から「conductor の子でない」の条件を外し、子でも同じ判定をする（キャッシュの鍵からも外した）。これで architect の子の G3・G4 の `deferred` と、`step report` の risk の自動の積み上げも子で動く。子の同意の扱いを `steps/consent.mts` の `conductorConsentMode` が決める: 事後同意が有効なサイクルでは、最後のビルド（作業ツリーの tasklist で、ほかの全ビルドの PR 列が埋まっている。読めなければ最後とみなす）の子だけが同意ゲートを持ち、対象はサイクル全体の `who=user`・`when=merge@<どこでも>` の risk・objection（新しい `cycleConsentItems`）。手順の位置だけを読む経路（監督の `conductor parse`）でもこの子は記録を読み、子と監督の現在地をそろえる。承認のあとにほかの単位へ足された対象でも取り直す。architect と最後以外のビルドの子は同意ゲートを持たず、`pr` も決定の無い項目では止めない（退けの作り直しの検査は残る）。`ledger object --defer` は、その子が差し戻しの回でなく、PR を作る前（PR 列も空）なら受け付ける。有効でないサイクルの子と close-cycle の子は従来どおり。`ledger consent-list`・`ledger pr-section`・`ledger return-draft` も同じ対象を使い、`--all`（consent-list と pr-section）でサイクル全体（`merge@architect`・`merge@build-NN`）の受け入れを、pr-section はそれらの question・provisional も出す。全ビルドの PR 列が埋まった後の architect の子（指摘からの追加設計など）は、後ろに同意ゲートが無いので従来どおり。決定の行に答えの出どころ（`出どころ: user` など）を添える
+- `conductor launch --from supervisor` は、上限を超える申告でも、事後同意が有効で、`--resume` の子に同意ゲートの置き場があり（PR を作る前の architect・最後以外のビルドの子と、同意ゲートの手前の最後のビルドの子。差し戻しの回は除く）、前提が宣言の参照（`app.*`・宣言にある `area:*`）だけなら受け付け、`HIKYAKU_ANSWER_DEFER=1` と `--loses` を求める固定文を足す。子の `ledger decide --by supervisor` は DEFER なら `--loses` を必須にし、決定と同時に risk の事項（`who=user`・`when=merge@<phase>`・`source: "supervisor-answer"`・`token`）を書く（G3・G4 の `deferred` の根拠には数えない）。前提の検査は `ledger object --defer` と共通の `deferrablePremisesProblem` にした。`--from user --closes` は再開する子の同意ゲートの項目も受け付け、項目ごとに決定を選ぶひな形を回答の先頭に足す。`conductor asks` の JSON に `deferredConsent`（`requested`・`effective`・`reason`）、テキストに「事後同意」の行を足した。conductor スキルは Step 0 の確認に事後同意の行を足し、`deferred-consent` の待ちでは `ledger consent-list --full` を要約せずに示して項目ごとの決定を受け取り、最後の PR の本文に `ledger pr-section --all` と `ledger premises --changed-from <ベースブランチ>` の出力を貼る（`undecided` が残れば PR を作らずにユーザーに上げる）
+- **`hikyaku ledger answers [<cycle>] [--format pr]`**: サイクル全体で監督が答えた問い（`by: supervisor` の決定）を、問い・答え・リスクの申告（`--no-risk` は「リスクなしと申告」）つきで並べる。conductor の最後の PR の本文の「監督が答えた問い」はこの出力を貼る
+- **document-guide.md のパスにアンカーを付けられる**（`docs/concepts.md#用語`）。`DocEntry` は `path`（アンカーを除く）と `anchor` を分けて持つ。`context`・`docs list`・AGENTS.md の索引・異議の照合先のポインタはアンカー付きで示し、存在の確認と自動読み込みの判定はアンカーを除いたパスで行う。`validate` / `docs validate` は、見出しから GitHub 式に作ったアンカーと照らして、節が消えたことを検出する
+
+- **`hikyaku start <plan|architect|build-NN|close> [<cycle>]`**: planner・architect・builder・close-cycle が冒頭で毎回行っていた準備（`cycle use`・`branch verify`・`cycle status`・ブランチを決めたあとの `next`・`session title`）を1回で行い、次にすること（`outcome`: `continue` / `ask` / `stop` / `return`）を返す。デフォルトブランチに居れば期待する名前のブランチを作って切り替える。待機中のビルドや企画の無い architect のように止まるときは作らない。デフォルトブランチではない作業ブランチに居れば何もせず終了コード 2 で返し、ユーザーが続けると決めたら `--keep-branch` で実行し直す。architect を差し戻し元のビルドのブランチで起動したら、ブランチに触らずに `return` を返す。`--dry-run` で書き込まない。build-NN では tasklist.md のタイトルをセッション名に入れる
+- **`hikyaku pr body <phase> [<cycle>]`（読み取り専用）**: PR 本文に貼る事実の節（`diff facts --format pr`・宣言が変わったときの `ledger premises --format pr`・`ledger pr-section`・`external ref`）をまとめて出す。マージの前にユーザーが同意する項目に決定が足りなければ、本文を出さずに、PR を作るステップの `done` と同じ判定と文面で終了コード 2 で止まる
+- **`hikyaku ledger conductor-answer <phase> [<cycle>] --input`**: 監督の答えで再開された conductor の子が、その答えを暫定の決定と監督の決定の2行で decisions.jsonl に記録する（同じ起動の答えは二重に書かない。事後同意に回る答えは `--loses` が必要で、受け入れたリスクの事項も同時に書く）。`conductor launch --from supervisor` が回答の先頭に完成したコマンドを置き、監督の答えで再開された子の `step report <gate> approved|rejected` は、記録が無ければ拒まれる。G8 のように `step report` だけで完了するゲートでも監督の答えが記録に残る
+- `skills/close-cycle/references/rule-writing.md`: パス指定の rule の書き方を `persistence.md` から分けた
+- **`hikyaku pr create` と `hikyaku pr update-body`**: フェーズの Draft PR の作成と本文の差し替えを、GitHub の REST（`gh api`）だけで行う。`pr create` はタイトルを `pr title` と同じ規則で付け、同じ向きで開いている PR があれば作らずに返し、Draft に対応していないリポジトリでは Draft を外して作る。planner・architect・builder・close-cycle・patch・init・create-cycle・token-guide の PR の手順と、conductor の最後の PR（開いている PR の確かめ・本文への追記）は `gh pr create`・`gh pr list`・`gh pr edit` の代わりにこれを使う（#142）
 
 ### Changed
 
-- Codex 実行規約に architect の引数の読み替え、conductor の委任と子の完了待ち、navigator から選択したスキルを実行する手順を明記した
+- **`pr title conductor` と `session title conductor` の `{title}` にサイクルの要約が入るようにした（[#142](https://github.com/tak-solder/hikyaku/issues/142)）。** `--build-title` が無い conductor は、これまで `{title}` が空で `[hikyaku] 001-test: conductor` のようになっていた。`--build-title` を渡せばそちらが優先で、要約が空なら従来どおり区切りごと詰める。他のフェーズには入れない。Migration: 不要。
+- **build-manager の tasklist-review を1回の呼び出しで1回だけにした（[#139](https://github.com/tak-solder/hikyaku/issues/139)）。** 指摘を反映して `scope` を報告し直すと、指摘が無くなるまでレビューが回り続けていた。ほかのドキュメントのレビューと同じく1回だけにする。終えたあとに `scope` からやり直すと、tasklist-review は手順から外れ（`off`）、見積もりと `--dry-run` を取り直して G6 へ進む。G6 の directive に `args.revisedAfterReview` を足し、true の回はレビューのあとに変えたところを、レビューを経ていない変更として分けて示す。呼び直し（`step restart`）で回を区切れば、レビューはもう一度回る。`[review] max_rounds` はコードとセキュリティのレビューだけに効き、doc には効かないことを `docs/configuration/config-file.md` の例に書いた
+- **conductor の子を auto モードで起動するようにした。** `conductor launch` が組み立てるコマンドの `--permission-mode` を `acceptEdits` から `auto` にした（設定では変えられない）。既定の許可から `git` のサブコマンドと `gh pr create` / `gh pr view` を外し、許可の一覧に当たらない操作と同じく Claude Code の安全判定にかける。conductor の Step 0 は、テストのコマンドが許可されていなくても終了せず、判定にかかることを確認の提示に添える
+- **コーディングエージェントを操作する人を「ユーザー」と書く**: docs/・スキル（conductor の description・非対話規約を含む）・エージェント定義・CLI の出力（`conductor`・`cycle`・`branch verify` の help やエラー）とコメントで、操作する人を指していた「人間」を「ユーザー」に改めた。doc-reviewer と security-review の見出し「確度が低い懸念（要人間判断）」は「（要ユーザー判断）」になった。Bot と対比するレビュアー、Hikyaku が書いた部分と対比する手で書いた部分、人間可読の「人間」は改めていない
+- builder の review から、スコープ準拠とマージ時点のデータ安全の自己確認を削った（agreement-review に移した）。pr は `diff facts build-NN --format pr` の出力を PR 本文に貼る
+- doc-triager: 重要度と置き場の要点の写しを消し、`persistence.md` だけを読んで判定する。出力の置き場に「なくす」を加えた
+- close-cycle の write・init の triage-write: rule の frontmatter に `paths` だけでなく理由を書く。文書に書く基準に行末の理由を残す
+- **ADR のテンプレート**（architect の `references/templates.md` と `steps/adr.md`）の欄を、決定 / 文脈 / 外の前提 / 検討した案 / 推奨 / 採用理由 / 受け入れたこと / トレードオフ / 再評価条件 / 退けた推奨で失う利点 / 影響範囲 / 領域（任意。`- **領域**: \`<glob>\`, \`<glob>\``）にした。「受け入れたこと」は1件1行で、外の前提を拠り所にする行は `（拠り所: \`<前提の参照>\`）` で終える
+- **design-questions.md のテンプレート**に、各案の欠点・推奨・回答と、推奨を退けたときに失う利点の欄を足した（architect の `steps/questions.md` も同じ）
+- ポインタに件数や範囲を添えさせていた指示を直した（close-cycle の G10 の提示例と collect、init の pr と triage-approval、conductor の最後の PR の CI の結果、token-guide の propose、build-manager と builder の templates）。予測ピークの根拠のファイル数・行数は、見積もりの根拠として残す
+- **`tasklist.md` を、並行するビルドの PR がコンフリクトしにくい形で書くようにした。** 依存グラフはビルドごとのブロックに分け、`hikyaku tasklist done` で変わるのは完了したビルドのブロックだけになった。全ビルドの状態を1行にまとめていた `class b01,b02 ready` と `linkStyle 0,1,2` は書かない。完了はそのビルドのノードの行（`:::merged`）、待機中は未完了の先行ビルドから出る線（`-.-> b04:::blocked`）、着手可能は何も付いていない未完了ビルドの既定の色（`classDef default`）で表す。色分け（紫・緑・グレー）は変わらず、点線の色だけが実線と同じになる。表は `PR` 列の幅をそろえなくなった（1つのビルドが `PR` 列を埋めると全行の空白が変わっていたため）
+- **ビルドの完了を、`tasklist.md` の `PR` 列ではなく各ビルドの完了の記録から導くようにした。** 完了の記録は builder の pr の `done`（`step report build-NN pr --result done --pr <URL>`）で、`build-NN/progress.jsonl` に残る。`next`・`cycle status`・`cycle list`・`pr base`・同意ゲートの「最後のビルド」の判定は、`HEAD`・デフォルトブランチ・conductor ブランチの断面でこの記録を読む（ref ごとに `git cat-file --batch` を1回）。`PR` 列が埋まっていれば、それも完了として読む。表は行のあいだに空行を挟めないので、buildID が隣り合うビルドを並行して完了させると、表の隣り合う行を両方が書き換えて必ずコンフリクトしていた。記録はビルドごとのファイルにあるので、並行するビルドの PR を続けてマージしてもぶつからない
+  - `hikyaku tasklist done` は `--id` だけを受け取り、完了の記録から依存グラフ（そのビルドのブロック）を描き直す。`PR` 列には書かない。記録が無ければ書かずに終了コード 1。`--pr` を渡すと廃止の案内を返す
+  - `hikyaku cycle close` が、完了の記録から `PR` 列をまとめて埋める（`--json` の `prColumn` に埋めたビルド）。close-cycle の PR に `tasklist.md` が入る
+  - builder の pr の手順は「PR 作成 → pr の `done`（`--pr`）→ `tasklist done --id` → コミット」になった。pr ステップの完了の条件から `PR` 列を外した（`--pr` 付きの `done` が完了の記録そのもの）
+- `hikyaku tasklist read / add / update / done` の一覧の「状態」を、完了 / 未完了から、完了 / 着手可能 / 待機中にした
+- **永続ドキュメントを書けるスキルの例外に、サイクルに属さない patch を加えた。** コードと同じ PR で、P2 の承認を得て永続ドキュメント・`instructions.md`・スキルを直す（同じ PR でマージされるので、マージ時点で as-is が保たれる）。進行中のサイクルに属す patch は書かず、`patches/{YYYYMM}/{slug}/handoff.md` の「永続化すること」に残す
+- close-cycle: `hikyaku promotions` が、サイクルに属す patch の handoff.md も候補として集める
+- create-cycle: patch から引き継いだときは `planning/intake.md` に依頼・調べたこと・合意したことを書く。planner と `context plan` はこれを企画の入力として読む
+- `branch verify` / `pr base` / `pr title` / `session title` / `context` / `review resolve` / `review run` / `review action` / `step` が patch のフェーズを受け付ける。サイクルに属す patch を統合ブランチ（未マージの conductor ブランチ）から切れば、`pr base` はそこを返す。`branch verify` は patch の切る元を `startPoint` / `startPointRef` で返し、作成コマンドも切る元から作る形で案内する
+- Stop フックは、patch については現在のブランチの patch の記録だけを読む（サイクルに属さない patch の記録が増えても、走査の量が増えない）
+- code-explorer: patch の現状の確認でも委任される
+- `config` と `tokens` の任意の設定参照は、ブランチ・栞で未選択ならルート設定を使う。サイクルを省略した `--profile` の確認には既存サイクルの上書きを混ぜず、既存サイクルの what-if は引数で明示する。フェーズの作業開始は `config --require-cycle` を使い、`resolveCycle` の選択規則・未作成時の作成案内を維持した
+- 有限回のレビューで修正対象がなく懸念だけが残るとき、同じ差分の再レビューを省く。残る懸念は handoff の「残したこと」に置き、PR 本文・完了案内にはその節へのリンクと要点を示す（監督の統合 PR でも引き継ぐ）
+- `publicationStep` は呼び出し元がスキル名を明示し、そのスキルの最後の restart より後の PR だけを参照する
+- main から依存グラフの推移的簡約・状態の色分け、tasklist の厳密な引数検査、CLI 呼び出しと重複した指示文の整理を取り込んだ。tasklist の入力と表示は BP ではなく `--peak` / 予測ピークを使う
+- `review action` がレビュー回数に応じた自動修正・対応確認・再レビューの要否を返す。指摘の妥当性と重複は LLM が判断する
+- builder の振り返りを PR 作成前に移し、成果物の push をまとめた。planner / architect / builder / close-cycle は Draft PR を作り、作成後の `publish` ステップで公開とレビュアー依頼を終える。close-cycle の別 PR を作る followups は公開後に維持する
+- `pr ready` が `[pr] auto_ready`（既定 true）と実行元から Ready への切り替えを決める。conductor の子は Draft のまま返し、監督が取り込む前に `--for-merge` で公開する。公開の失敗は手順の完了として扱わない。PR の URL は状態確認・公開・再実行の案内まで保持し、既定リポジトリの同番号の PR に操作対象が変わらないようにした
+
+
+- builder: Step 3 以降（plan → レビュー → G8 → 実装 → 検証 → コードレビュー → handoff → PR → 振り返り）を `step next` の転送ループに置き換えた。手順の順序・ゲート・承認は変えていない。各ステップの指示は `skills/builder/steps/<step>.md` に分け、実行するステップの指示だけを読む。SKILL.md は約 35KB から約 16KB になった。差し戻しと PR レビュー対応の手順は `references/return.md` / `references/pr-feedback.md` に移した
+- builder: G7 / G8 の承認は、差し戻すか前のステップを報告し直すまで有効。承認後の成果物の変更では自動で無効にならず、変更は Git の履歴で追う。前のステップを報告し直すと、そこから後ろはやり直しになる
+- builder: `plan` の `done` には見積もり直した予測ピーク（`--peak`。`380k` のように書ける）が、`pr` の `done` には PR の URL か番号（`--pr`）が必須。`step next` が `stop` を返す状態（差し戻し中など）では、`step report` も受け付けない
+- builder: 各ステップの指示から、転送ループと定義が決めること（報告の仕方、有効になる条件、CLI が確かめる完了の条件）を除き、作業内容と判断基準に絞った。doc-reviewer の起動方法は SKILL.md にまとめた
+- builder: 設定で無効なステップ（plan / test-spec のレビュー、G7、振り返り）は手順に含まれない。スキップできるのは test-spec だけで、理由が記録に残る
+- planner: Step 2 以降（インプットの読み込み → スコープのすり合わせ → user-stories → レビュー → G1 → 振り返り → PR）を `step next plan` の転送ループに置き換えた。進捗は `planning/progress.jsonl` に入る。G1 の承認は差し戻しと報告し直しでだけ取り直しになる。PR の `done` には `--pr` が必須。init / create-cycle の代行とブランチの確認は SKILL.md に残した
+- architect: Step 1 以降（並行サイクルの確認 → 既存コードの調査 → G2 → 質問 → 設計案 → G3 → ADR → design-delta → レビュー → G4 → ビルド分割 → 検証 → 振り返り → PR）を `step next architect` の転送ループに置き換えた。手順の順序・ゲート・承認は変えていない。各ステップの指示は `skills/architect/steps/<step>.md` に分けた。並行サイクルの確認は他に進行中のサイクルがあるときだけ返り、スキップできるのは既存コードの調査（新規開発）と設計案（分岐する判断が無いとき）だけで、理由が記録に残る。G2 / G4 の承認は差し戻しと報告し直しでだけ取り直しになる。PR の `done` には `--pr` が必須。進捗は `design/progress.jsonl` に記録する
+- architect: 差し戻しからの再設計（`build-NN`）と指摘からの追加設計（`add`）も `step next` で進める。どちらも `step restart architect {cycle} --round return` / `--round add` で回を区切ってから始める（architect の定義は `rounds: ["return", "add"]` を宣言し、回の種類を `currentRound` で読む）。再設計の回は PR の代わりに差し戻しの解決（`resolve-return`）を返し、追加設計の回は並行サイクルの確認と調査を返さず、最初の `design-change` で設計の変更が要らないと判断すればビルドの追加へ進む。差し戻し中なのに回を区切っていなければ、`step next` は区切りのコマンドを示して止まる。再設計の回で差し戻しを解決したあとに同じブランチで差し戻されたときも、新しい回を区切るまで止まる。追加設計の回のビルド分割は、報告の時点で未完了のビルドがあることを確かめ（ステップの定義の `accepts`）、完了したあとは build-manager の書き込みの記録で判定する（足したビルドが PR まで進んでも巻き戻らない）準備（ブランチ・入力・区切り方）は `references/return.md` / `references/add.md` に置いた
+- build-manager: 手順（読み込み → 変更の整理 → 予測ピークの見積もり → `--dry-run` → レビュー → G6 → 書き込み）を `step next {phase} --skill build-manager` の転送ループに置き換えた。呼び出し元（architect の `design/`、builder の `build-NN/`）の `progress.jsonl` に記録し、呼ばれるたびに最初の手順から始まる。呼び出し元が報告しないまま呼び直すときは `step restart {phase} --skill build-manager` で区切る。builder の分割の検討（`split`）の指示も、呼ばれた側がこのコマンドから始める形に直した
+- architect / build-manager: 各ステップの指示から、転送ループと定義が決めること（報告の仕方、有効になる条件、CLI が確かめる完了の条件）を除き、作業内容と判断基準に絞った。`call` の行は、指示ファイルを読み、呼んだスキルが `stop` で止まったら報告しない形にした。build-manager の `estimate` は、ガイドに沿って成分を見積もり、`tokens estimate` の表を issue.md の「予測ピーク」に貼り、判定に応じて分割（450k 超）か統合（300k 未満、推奨のみ）を検討する。450k 超で分割せずに済ませてよいのは、コンフリクトが避けられないときと、分割の一方がビルドとして成立しないときだけ
+- init: 雛形の生成（`hikyaku init`）より後の手順（警告と旧名ファイルの後始末 → 既存ドキュメントの登録 → AGENTS.md への索引の承認 → 書き込み → PR）を `step next init` の転送ループに置き換えた。doctor・HIKYAKU_ROOT の決定・v1 の移行・雛形の生成は、設定がまだ無いので SKILL.md に残した。v1 の移行の手順は `references/v1.md` に移した。進捗は `{HIKYAKU_ROOT}/progress.jsonl` に記録する。旧名のファイルが残っている、`document-guide.md` が検証を通らない、AGENTS.md の索引が guide と一致しない、のいずれかなら、該当するステップの完了を受け付けない。初期化済みかどうかは `step next init` が判定し（PR を添えて `pr` まで終えた、または init の記録が無く guide に登録がある）、雛形を生成した直後に中断した場合は続きから再開できる
+- close-cycle: Step 1 以降（候補の収集 → 整理と G10 → 書き込み → サイクルの終了 → PR → 別の PR にするもの）を `step next close` の転送ループに置き換えた。進捗はサイクルのディレクトリ直下の `progress.jsonl` に入る。サイクルの終了は、`cycles.md` の status が `active` でなくなるまで完了にならない。候補の収集はサブエージェントによる抽出ではなく `hikyaku promotions` が行い、整理は G10 に統合した
+- retrospective: `step next <phase> <cycle> --skill retrospective` で進む内部スキルにした（確認 → 予測ピークの実測の収集 → 分析と仕分け → 書き込み）。確認は `prompt` のとき、予測ピークの実測の収集（`peak-actual`）は `build-NN` のときだけ返る。`prompt` で実施しないと答えると、残りは対象外になって呼び出し元に戻る。書き込みは retrospective.md が無いと完了にならない。予測ピークの実測の収集では、`tokens session` でセッションのピークを、`tokens history build-NN` で差分と区切りでのコンテキストを測る
+- builder: 振り返りの指示（`steps/retrospective.md`）を、呼ばれた retrospective が `step next --skill retrospective` で進む形にした。PR レビュー対応で振り返るときは、`step restart build-NN <cycle> --skill retrospective` で区切ってから呼ぶ
+- planner / close-cycle / retrospective: 各ステップの指示から、転送ループと定義が決めること（報告の仕方、有効になる条件、CLI が確かめる完了の条件）を除き、作業内容と判断基準に絞った。呼んだ retrospective が `stop` で止まったら、呼び出し元は振り返りのステップを報告せずに止まる。close-cycle の PR の `done` には `--pr` が必須
+- create-cycle: `cycle new` より後の手順（PLAN へ進むかの確認 → plan のブランチで planner へ、または単独で PR）を `step next create <cycle>` の転送ループに置き換えた。PLAN へ進まないときは `to-plan` を理由付きでスキップし、そのときだけ PR のステップが手順に入る。進捗はサイクルのディレクトリの `progress.jsonl` に記録する。サイクルを作るまでの手順と、planner から代行されたときの流れは変えていない
+- token-guide（v2 の bp-guide の後継）: 前提の確認（`show` での表示を含む）より後の手順を `step next token-guide` の転送ループにした。収集か変更案を理由付きでスキップすると、承認と書き込みを行わずに PR へ進む。書き込みはガイドがあり版の宣言が本文と合うまで、PR は版の宣言が本文と合うまで完了にしない。前の回の記録が残っていて `step next` が `done` を返したら、`step restart token-guide` で区切って新しい回を始める
+- `conductor lint` が `skills/<skill>/steps/` のタグも読むようにした
+- create-cycle: 既存のサイクル（`NNN` / `NNN-slug`）を引数に渡すと、作成済みのサイクルの手順（PLAN へ進むかの確認、単独で終える PR）を再開する
+- navigator: 作業中のサイクルについて `step where` を呼び、フェーズの中の位置（「build-02 の G8 の承認待ち」など）を示すようにした。途中の手順がある作業単位は、その作業単位のスキルの再開を提案する（内部スキルの途中なら、`directive.unit` から呼び出し元のスキルを引く）。v2 で作成したサイクルは、v2 のまま終えるよう案内してスキルを勧めない
+- `conductor parse`: 子の手順の位置（`step`）を返すようにした。子のセッション ID で `progress.jsonl` を引き、子が最後に進めた作業単位の次の1手（ゲートなら問いの ID・承認に結びつくファイル・指示ファイル）を返す。done なのに手順が終わっていない、子の記録が無い、ゲートの ID で止まったのに手順がそのゲートに居ない、のいずれかなら `stepProblems` に理由が入る
+- conductor: `stepProblems` があれば子を1回だけ再開して `step next` から続けさせ、2回目は人間に上げるようにした。`conductor parse` は終えたサイクルの記録も読み（close-cycle の `cycle close` のあと）、子の記録が無いのに `G\d+` のゲートで止まったときも食い違いとして挙げる。ゲートの判断では `step.read` の指示ファイルと、そこに書かれた成果物を読む。非対話規約に、ゲートでの `id` の書き方と、ブロックを出さずに終えると Stop フックが引き止めることを足した
+- CI（check-scripts）で `step lint` を実行する
+- retrospective: 「BP見積もりの振り返り」を「予測ピークの振り返り」に置き換えた。段階表（architect / builder 段階の予測ピーク）・セッション行・乖離（実測 − builder 段階）・成分ごとの乖離の要因・builder 段階の内訳表・セッションの実測表（`tokens session --markdown`）・差分の集計表（`tokens history build-NN --markdown`）を記録する。実績 BP（実測と申告からの算出）は廃止した
+- tasklist.md: `BP` 列を `予測ピーク` 列（`380k` の形）にした。`tasklist add / update` は `--bp` の代わりに `--peak <トークン数>` を受け取る。v2 の見出し（`BP` 列）の tasklist.md は読めるが、書き込みは止める
+- builder: plan で予測ピークを見積もり直し、`--peak` が見積もりの上限（`[context] limit × estimate_ratio`）を超えたら分割の検討（split）を返す。plan.md の「BP見積もり」は「予測ピーク」（読むファイル・作成するファイルの列挙と内訳表）になった
+- doc-reviewer: `context: tasklist` / `plan` の BP 入力値の乖離の観点を、予測ピークの成分の乖離（読み込みと未知の領域の取りこぼしを優先して見る）に置き換えた
+- init: `bp-guide/` を生成しなくなった。生成する `.hikyaku.config` の雛形から `bp_max` を外し、`[context]` の雛形を加えた
+- validate: `bp-guide/` の検査を、`token-guide/guide.md` の版の宣言の検査に置き換えた
+- **永続ドキュメントの論理名を5つに絞った**: `overview` / `decisions` / `constraints` / `conventions`（必須）と `glossary`（任意）
+- **BUILD は `overview` / `decisions` / `constraints` を `issue.md` が指す節だけ読む**: `hikyaku context build-NN` はこの3つを候補に出さない。`conventions` は、AGENTS.md / CLAUDE.md 以外のファイルに登録されているときだけ候補に出す（自動では読み込まれないため）。architect（build-manager）が `issue.md` の「参照する設計ドキュメント」に、そのビルドに効く節へのポインタと理由を書く。ビルドを分割したときはポインタを引き継ぐ。選び漏れは、plan のレビューで doc-reviewer が `overview` / `decisions` / `constraints` の全文と突き合わせて拾う
+- builder: 機械で防げる知見（テスト・共通ヘルパー・設定・その場のコメント）はそのビルドの実装に含め、パス指定の rule もそのビルドの PR で書く。後続のビルドに間に合わせるため
+- **handoff.md を3節にした**: 「後続ビルドが前提にすること」「残したこと」「永続化すること」。実装内容の要約・公開インターフェース・環境変更の節は無くした（PR 本文・コード・diff が正）。昇格素材の4節は「永続化すること」にまとめ、宛先・重要度・文面を1件1行で書く
+- **retrospective.md の形式を変えた**: 改善提案（R-N）の6項目とリポジトリ固有の学び（L-N）を、handoff と同じ行の形の「永続化すること」に置き換えた。読み込まれた記述のうち役に立たなかったものを、理由（古い・自明・無関係）を付けて「役に立たなかった記述」に書く
+- `document-guide.md` の `repo` 管理: 「追記のみ」から、「形式には手を出さない。内容の追加・置き換え・削除は close-cycle が承認を得て行う」に改めた
+- 見積もりのガイドを書き換えるのは `/hikyaku:token-guide` だけにした。close-cycle は補正を昇格の候補にせず、乖離が大きいサイクルで token-guide を呼ぶ
+- 標準の見積もりのガイドを version 2 にした（「このリポジトリでの補正」の説明から close-cycle の昇格を外した。見積もり方は変えていない）
+- conductor: G10 の検証で、削除と置き換えの根拠がそのサイクルの記録にあることを確かめる。見積もりのガイドの見直しとフックの提案の PR は取り込まない
+- **外部連携はサイクルごとの GitHub issue だけになった。** planner が PLAN の PR の直前に1回だけ起票し（`external sync`）、各フェーズの PR は `Refs`、close-cycle の PR は `Closes` で参照する。本文は要約・profile・チケット・サイクルのディレクトリへのリンクで、ビルドの一覧と進捗は載せない（正は `tasklist.md`）。リンクは `origin` のリポジトリから作る（`github_repo` は起票先で、サイクルのファイルがあるリポジトリとは限らないため）。conductor の最後の PR も `Refs` を入れるだけで、ビルドの issue をまとめて閉じる処理は無くなった
+- **`tasklist.md` の列から `issue` を外した**（`buildID` / `title` / `予測ピーク` / `dependencies` / `PR`）。`issue` 列のある既存の tasklist.md も読め、`tasklist` のコマンドで書き込むと列が落ちる
+- review: メインのセッションは常に Claude Code として扱う。`provider = "auto"` は `claude` と同じ。Claude Code のクラウド環境（`CLAUDE_CODE_REMOTE=true`）では引き続き `claude` に固定する
+- `hikyaku config --json` の `review.<種類>.providers`（優先順の規則の列）を `provider`（決まった値と出所）にした。`hikyaku config` の表示も、使われるプロバイダだけを出す
+- 進行中のサイクルの設定に廃止したキー（`provider_for`・`target = "asana"`）が残っていると、`review resolve` / `review run`・`external sync` / `external ref` も止まる。黙ってルートの設定に戻って動かさないため
+- `hikyaku tokens session` の出力と retrospective.md の「セッションの実測」表から「ウィンドウ」を外した（記録していたのは Codex だけだった）。表に「ウィンドウ」の行がある既存の retrospective.md も `tokens history` で読める
+- **承認を確認と同意に分け、同意はどの設定でも省かない。** ステップ定義の gate が `consent`（その回が同意か）と `enabled`（確認としてのプロファイル・個別キーのオン・オフ）を持ち、同意の回は `*_gate = false` や express でも手順から外れない。G1・patch の P1 / P2 は同意、G10 は decisions・constraints の変更を含む回だけ同意、G3・G4 は差し戻しからの再設計の回（`step restart architect --round return`）だけ同意、それ以外は確認。`step next` の directive に `approval`（`confirm` / `consent`）と `approvalReason` が付き、テキストには「承認: 確認 / 同意（理由）」の行が出る。`step lint` は承認の種類を持たない gate を検出する
+- architect の options・adr・pr の `designChoiceGate` は、設定の値ではなく「その回に G3 が手順に入るか」になった（express でも再設計の回は true）
+- **行き詰まりの報告の形式を CLI が確かめる。** 新しい `scripts/lib/escalation.mts` が、試したこと（1項目以上）・問題を変える選択肢（各項目に `失うもの:`）・推奨がそろっているかだけを判定する。差し戻しの `return.md` が欠けていれば builder は欠けを示して止まり、`step restart architect --round return` は回を区切らない。builder・patch の implement・verify の `failed --reason` は欠けていれば受け付けない（ステップ定義の `escalates`。`step lint` は gate に付いたものを検出する）。`conductor parse` は欠けた `<hikyaku-blocked>` を `violation` にし、`reason` に欠けを出す。return.md・retry-policy・headless-protocol のテンプレートをこの3つの節にそろえた。`cycle status --json` などの `returned` に `problems` が付く
+- **`pr request-reviewers` と `pr ready` は `gh` が使えなくても手順を止めない。** `gh` の失敗（無い・認証・GraphQL・`gh pr edit` / `gh pr ready`）では、`applied: false`・`reason`（`gh-unavailable` / `gh-failed`）・`stage`・`manual`（ユーザーが代わりに行うこと）を返し、終了コード 0 で終わる（`external sync` にそろえた）。`pr request-reviewers` はアサインがオフか一覧が空なら `gh` を呼ばない。`pr ready` は conductor の子では `gh` を呼ばずに Draft のまま返す。監督の `pr ready --for-merge` と、`gh pr view` の応答の形が想定外のときは、従来どおり終了コード 1（`gh api graphql` の失敗は応答の形によるものも `gh-failed`）
+- conductor: ユーザーに上げる問いはその場で尋ねず、子に記録させて（`--escalate`）依存しないビルドを先に進め、着手できるビルドが無くなったら `conductor waiting` の問いをまとめて尋ねる。答えは待っているビルドのブランチへ conductor ブランチを取り込んでから `--from user --closes` で渡す（session-id が無ければ新しく起動する）。監督の答えは `--from supervisor` で渡し、拒まれたらユーザーに上げる。ユーザーが「監督に任せる」と答えても監督は判断しない。障害・2回目の violation・stepProblems・`check-pr` の不合格は従来どおりその場で上げる。非対話規約に、ユーザーに上げる問いの記録と `waiting:` の blocked、`--by user` の縛りを足した
+- conductor: 同意ゲートは常にユーザーに上がり、`escalate` / `delegate` で変えられない。G6・G8 は確認に分類を改め、既定で監督が答える。`conductor parse` は子の手順のゲートの `approval` で振り分け（`step.approval` / `step.approvalReason` を返す）、`conductor asks` の JSON に `consentWhen` が付く。`ask.handler` の値 `human` は `user` になった。conductor スキルは Step 0 で同意ゲートを監督に委任しなくなり、G10 を監督が承認する手順を除いた
+
+- conductor: 子を `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` で起動する。非対話の子は、バックグラウンドのサブエージェント（doc-reviewer・test-spec）やレビューの完了を待てずに止まっていたため。非対話規約（`headless-protocol.md`）に、サブエージェントとレビューを前景で完了まで待つこと、ブロックの本文と成果物をワークスペースの言語で書くこと、ゲートの承認の前に後ろの作業（G8 の前の実装、handoff.md など）を始めないこと、Bash を単一のコマンドで呼び書き換えは Edit で行うこと、`gh` で PR を作れないときは本文を `.tmp/hikyaku-pr-{phase}.md` に書いて blocked で監督に代行を頼むこと、セッションの切り替えの終え方を足した。conductor スキルの blocked の扱いに、`handover` と PR の作成の代行を足した
+- `step next` が「後ろのステップの成果物が先にある」で止まるときの案内を直した。現在地を終える前に後ろの成果物を先に書いた場合は、成果物を消さずに現在地を終えて報告してから続けるよう示す（手順の外で実施した場合の記録の仕方は従来どおり）
+- builder: G8・implement・review の指示を、区切りの推奨（継続・切り替え・分割）に従う形に改めた。推奨と違う手を選ぶときは、次のゲートの報告で見込みの値と理由を伝える。review の `review run` は、conductor の子では1つずつ前景で実行する
+- build-manager・builder・patch・conductor・doc-reviewer の directive の値と指示の `mergeBelow` / `splitAbove` を `mergeHint` / `estimateLimit`（見積もりの上限）に、patch の fit の `overSplit` を `overEstimate` に改名した
+
+- **スキルの実行時に読む指示を減らした。** `persistence.md` から rule の書き方（`rule-writing.md` へ）と close-cycle での扱い（G10 の手順と重複していた）を外し、振り返り（retrospective）が毎フェーズ読む量を減らした。振り返りは、同じセッションで読んだ基準（builder の handoff など）を読み直さない。builder・retrospective・close-cycle の SKILL.md にあった基準の写しと、close-cycle の「なぜ独立したフェーズなのか」を消した
+- planner・architect・builder・close-cycle の Step 0 を `hikyaku start` に置き換えた。ブランチの3択の問い（ask: branch）は残し、答えに従って `start` をやり直す。コミットの直前の確かめは `branch verify` のまま
+- planner・architect・builder・close-cycle の pr と patch の publish は、本文の事実の節を `hikyaku pr body` の出力で貼る。PR を作る前の `ledger consent-list` による決定の不足の確かめは `pr body` に寄せた
+- conductor: 子に渡す非対話規約（`headless-protocol.md`）を、起動の場面ごとに組み立てて一時ディレクトリに書く。セッションの切り替え（builder の子）・ユーザーに上げる問い（`--escalate`）・ユーザーの答えの記録（`--from user`）・監督の判断の記録（`--from supervisor`）・事後同意（有効なサイクル）の節は、その場面の起動にだけ入る
+- builder: セキュリティレビューを起動するかの問い（recommended で判定基準に該当したとき）に `（ask: security-review）` を付け、conductor の問いの表（ASKS）と監督の答えの表（`run` のみ安全側）に足した。conductor の子では監督が答える
+- GitHub の GraphQL が使えない環境（Claude Code のクラウドのセッションなど）: `gh` が「GraphQL is not available」で拒まれたときだけ、`conductor check-pr`・`pr ready`・`pr request-reviewers`・`external sync` が REST と CCR のルート（`pulls/{n}/ccr/review_threads`・`ccr/ready_for_review`）に切り替える。`check-pr` は出力に `source`（`graphql` / `rest`）と `warnings` を足し、REST で見えない `@copilot` の依頼は Bot のレビューが付くまで待ち、コミットのステータスを読めなければ check-runs だけで判定する。`pr request-reviewers` は `@copilot` に依頼できないので `reason: graphql-unavailable` と `manual` で返す（#142）
+
+- デフォルトブランチの自動検出: ローカルに `origin/HEAD` の参照が無いクローン（新しく clone したクラウドのセッションなど）では、`git ls-remote --symref origin HEAD` で origin に問い合わせる（参照は書かない）。サイクルのフェーズの `branch verify` は、それでもデフォルトブランチを決められなければ、ブランチ名が合っていても `baseResolved: false` を返して終了コード 2 で止まる（`prBase` が null のまま `ok: true` で先へ進まないため）。`/security-review` を使えるかの判定は、従来どおりローカルの参照だけで行う（#142）
+### Removed
+
+- BP（ビルドポイント）と `bp_max` 設定。リポジトリルートの `.hikyaku.config` に `bp_max` があるとエラーになる。サイクルの設定では、v3 の作業に使うときだけエラーになる
+- `hikyaku bp guide / estimate / render / test / actual / history`（`hikyaku tokens` に置き換え）と、`{HIKYAKU_ROOT}/bp-guide/` の基準表（`rules.toml` / `README.md` / `cases.toml`）。CI の `bp test --builtin` も外した
+- `/hikyaku:bp-guide`（`/hikyaku:token-guide` に置き換え）。ブランチのフェーズ名 `bp-guide` と、`[pr] reviewers_skip` の `bp-guide` も `token-guide` になった
+- `step report` / `tasklist add` / `tasklist update` の `--bp`（`--peak` に置き換え）
+- 論理名 `learnings` / `test-strategy` / `security-model` / `tech-stack` / `db-schema` / `interfaces`。`document-guide.md` に行が残っていると `validate` がエラーにする
+- close-cycle 自身の振り返り（`close/retrospective.md`）と、close-cycle の `organize` ステップ（G10 に統合）
+- close-cycle による見積もりのガイドの補正（昇格先としての token-guide）
+- **Codex のホスト対応を廃止した。** Codex 用マニフェスト（`.codex-plugin/`・`.agents/plugins/`）、Codex 用の入口（`codex/skills/`）と実行規約（`codex/compatibility.md`）、`codex-plugin` ブランチへの同期と検査のワークフロー、開発用スキル `sync-codex-plugin`、`docs/getting-started-codex.md` を削除した。Codex はレビューの実行先（`[review] provider = "codex"`）としてだけ使う
+- `[review.provider_for]` と `[review.<種類>.provider_for]`、`review resolve` / `review run` の `--self` を廃止した。メインのセッションのプロバイダで実行先を切り替える仕組みで、メインが Claude Code に限られたため
+- Codex のクラウド環境（`CODEX_ENVIRONMENT_ID`）でのプロバイダの固定、`tokens session` の Codex の rollout の計測と `--host`、区切りでの小さいウィンドウの注意を削除した
+- **ビルドごとの外部起票を廃止した。** 子 issue の作成・更新、build-manager の `external-sync` ステップ、builder の PR 作成後の同期、`hikyaku tasklist link`、`tasklist add --issue` を削除した
+- **Asana への投影を廃止した。** `[external] target` は `none` / `github` だけになり、`asana_project_gid` と `cycle new --external-project` も無くなった
+- `user_stories_gate`。G1 は常に同意で外せない。`hikyaku config --json` の `gates.userStories` も無くなった
+- v2 の `[conductor]` の `provider`・`[conductor.claude]`・`[conductor.codex]`（`model` / `models`）。ルートの `.hikyaku.config` に残っていると移行先を示してエラーになり、サイクルの設定では v3 の作業に使うときだけエラーになる。`[conductor]` の知らないキーもエラーになる。移行は `hikyaku config migrate`（`--dry-run` / `--drop`）と `/hikyaku:init` が行う
 
 ### Migration
 
-- Codex を子に使う場合は CLI のインストールと認証を済ませ、`provider = "codex"` を設定する。`workspace-write`・承認なしでテストや git・gh を実行できる環境が必要。監督は Claude Code / Codex のどちらでも実行できる
-- Codex でも `$hikyaku:conductor` と `$hikyaku:navigator` を利用できる
+- conductor には auto モードを使える環境が要る（Anthropic API なら Opus 4.6 以上・Sonnet 4.6 以上などのモデルと、auto モードを無効にしていない組織の設定）。使えない環境では Claude Code が子を Manual で起動し、子は `git` も `gh` も実行できずに止まる。判定のぶんトークンと待ち時間が増える。`[conductor] allowed_tools` に `git` や `gh` を足すと、その操作は判定を通らなくなる
+- 中間レビューの件数の記録に伴い、進行中の作業単位で planner の review・architecture-review・tasklist-review・plan-review・test-spec-review を `done` で報告するときは `--findings` と `--adopted` が要る（足りなければ `step report` がエラーで案内する。`step next` の報告のコマンドにも出る）。既存の `progress.jsonl` はそのまま読める。この版より前の報告は `review findings` で「件数なし」として数える
+- tasklist-review の回数の変更に対応は不要。進行中の build-manager の呼び出しで、すでにレビューを終えて `scope` から整理し直していれば、次の1手は G6 になる
+- agreement-review の導入に対応は不要。進行中のビルドで verify を終えていれば、次の1手が agreement-review になる。`[diff]` の印のキーは省略すれば既定を使う。テストの書き方が既定の印で拾えない枠組みなら、`[diff]` の `test_declarations` / `skip_markers` / `assertion_markers` に足す
+- 既存の `tasklist.md` は、次に `tasklist` のコマンドで書き込んだときに新しい形へ書き直される。進行中のサイクルで並行するビルドがあると、最初の `tasklist done` 同士が一度だけコンフリクトしうる。ベースブランチ側の `tasklist.md` を採ってから `hikyaku tasklist done --id <n>` を実行し直せば解消する（`docs/operations/troubleshooting.md#tasklistmd-がコンフリクトする`）
+- `tasklist done --id <n> --pr <URL>` を呼んでいる独自の手順は、`step report build-NN pr --result done --pr <URL>` で完了を記録してから `tasklist done --id <n>` を呼ぶ形に改める。既に `PR` 列が埋まっているビルドは、そのまま完了として読める。進行中のサイクルで旧い builder が `PR` 列を埋めたブランチと新しい builder のブランチが混ざると、表の行で一度だけコンフリクトしうる。ベースブランチ側を採ってから `tasklist done --id <n>` を実行し直せば解消する
+- patch の導入に対応は不要。サイクルに属さない patch の記録は `{HIKYAKU_ROOT}/patches/` にコミットされ、マージのたびに増えるので、ときどき `hikyaku patch prune --before <YYYYMM>` で古い月を消して PR にする
+- 永続ドキュメントを独自の仕組みで「close-cycle だけが書く」と検査している場合は、patch の PR（`{prefix}/patch/...` のブランチ）を例外に加える
+- サイクルを省略する設定参照では、active が1件だけという理由でサイクル設定を重ねない。既存サイクルの設定を使う場合は、サイクルを明示するか、ブランチ・`cycle use` で選択する
+- 自分で確認してから Ready にする場合は `[pr] auto_ready = false` にする。conductor が取り込むフェーズの PR は、監督が設定に関わらず Ready にする。公開は再実行でき、既に Ready の PR に重ねて切り替えない
+- 異議と `delegation` の導入に対応は不要。既存の `decisions.jsonl` と `progress.jsonl` はそのまま読める。design-conflict の事項が無いビルドと、差し戻しでない設計の回では `delegation` は手順に入らない。`[conductor] delegate` に `delegation` を書くとエラーになる
+- conductor での事後同意に対応は不要。事後同意を選んでいない、または有効でないサイクルでは conductor の挙動は変わらない。有効なサイクルでは、上限を超える受け入れの同意は最後のビルドの同意ゲートでまとめて尋ねられる。`decisions.jsonl` の事項に任意の欄（`source: "supervisor-answer"`・`token`）が増えたが、既存の記録はそのまま読める
+- 事後同意の同意ゲートの導入に対応は不要。`when=merge@` の `risk`・`objection`（ユーザーが決める）の事項が無ければ、ゲートは現れず PR の作成も従来どおり完了する。ある場合は、PR を作る前にユーザーの決定を `hikyaku ledger decide` で記録する
+- 差し戻し中のブランチの `return.md` が旧テンプレート（「architect で決め直すこと」）のままだと、builder が止まり再設計の回を始められない。「試したこと」「問題を変える選択肢」（各項目に `失うもの:`）「推奨」を書き足す。conductor の監督が子に独自の blocked の書式を指示している場合も、この3つの節を含める（欠けると violation）
+- `pr request-reviewers` / `pr ready` の終了コード 1 で `gh` の失敗を判定していた独自のスクリプトは、出力の `applied: false` を読むよう直す
 
-## [2.8.2]
-### Changed
 
-- **tasklist.md の依存グラフ**: `hikyaku tasklist` が生成する Mermaid グラフを、ビルドの状態で色分けするようにした。`PR` 列が埋まったビルドは紫（完了）、着手可能なビルドは緑、先行ビルドに未完了があるビルドはグレー（待機中）で、配色は GitHub の PR（Merged / Open）に合わせた。先行ビルドが未完了の依存線は点線にする。`tasklist.md` のグラフの下に凡例を1行加えた。build-manager のスキルとテンプレート、docs の記述を合わせた
-
-### Migration
-
-- 対応は不要。既存の tasklist.md は、次に `hikyaku tasklist add / update / done` で書き込まれたときに色分けされたグラフへ再生成される。グラフに手で書いた `class` / `linkStyle` は上書きされる
-
-## [2.8.1]
-
-### Changed
-
-- **tasklist.md の依存グラフ**: `hikyaku tasklist` が生成する Mermaid グラフに推移的簡約をかけ、他の依存を経由して到達できる線（`b01 → b02 → b03` があるときの `b01 → b03`）を描かないようにした。到達可能性は変わらず、線だけが減る。`dependencies` 列、着手可否の判定、handoff の参照は従来どおり宣言された直接の依存を使う。循環があるあいだは簡約せず、宣言された線をそのまま描く（`validate` が循環を報告する）。build-manager のスキルとテンプレートの記述を合わせた
-
-### Migration
-
-- 対応は不要。既存の tasklist.md は、次に `hikyaku tasklist add / update / done` で書き込まれたときにグラフが簡約された形へ再生成される
+- **BP は予測ピークに置き換わり、換算できないので自動では移行しない。** リポジトリルートの `.hikyaku.config` の `bp_max` を削除する（閉じたサイクルの `.hikyaku.config` に残った `bp_max` / `[bp_actual]` は履歴として読み飛ばす。進行中のサイクルに残っていると、そのサイクルの `step`・`tokens estimate`・`tasklist` の書き込みが止まり、`validate` も知らせる）（分割の境目は見積もりの上限で、`[context] limit`（既定 600k）の 90%）。`{HIKYAKU_ROOT}/bp-guide/README.md` にリポジトリ固有の数え方を書いていたら、`/hikyaku:token-guide` で見積もりのガイドに書き直してから `bp-guide/` を削除する。`[pr] reviewers_skip` の `bp-guide` は `token-guide` に直す（`docs/migration/v2-to-v3.md`）
+- 見積もりのガイドは、無ければ標準で動くので、置かなくてよい。`/hikyaku:token-guide` が補正するときに作られる
+- **廃止した論理名の行が `document-guide.md` に残っていると `hikyaku validate` が失敗する。** 行を消すだけにせず、`/hikyaku:init` を実行して中身を振り分ける。落とし穴集には、再発しても気づけない知見（テストが通ってしまう類）が混ざっているため。手順は [v2 → v3 移行ガイド](docs/migration/v2-to-v3.md#永続ドキュメントの論理名の整理)
+- handoff.md と retrospective.md の形式が変わった。v2 の形式からは `hikyaku promotions` が候補を集められないが、進行中のサイクルを v2 のまま終えていれば対応は不要
+- フックは Hikyaku が直接は有効にしない。close-cycle が別のブランチの PR にするので、採るならマージする
+- **v2 で作成したサイクルは、v3 の各フェーズ（planner / architect / builder / close-cycle）では扱わない。** `step next` が止まり、v2 のまま終えるよう案内する。進行中のサイクルは v2 のプラグインで終えてから上げる（`docs/migration/v2-to-v3.md`）
+- `progress.jsonl` はコミット対象。`.gitignore` で除外しない。置き場所は `planning/`・`design/`・`build-NN/`、サイクルのディレクトリ直下（create-cycle・close-cycle）、HIKYAKU_ROOT 直下（init）、`token-guide/`（token-guide）
+- `[context]` は既定値のままで動くので、設定の変更は不要。v3 の途中の版で使っていた `[context]` の `merge_below`・`split_above`・`approval`・`implement`・`review` は廃止し、書いてあるとエラーになる。`split_above` を変えていたなら `limit` を `split_above ÷ 0.9` を目安に書き換え、ほかのキーは削除する。既定の見積もりの上限は 540k（v3 の途中の版の `split_above` の既定 450k より高い）になったので、これまでの境目で分割したいなら `limit = "500k"` を書く
+- Stop フックは、プラグインを有効にすると全てのセッションで動くが、Hikyaku の手順を進めていないセッションでは何もしない。対応は不要
+- v2 の retrospective.md（「BP見積もりの振り返り」）は `tokens history` に並ばない。変更は不要
+- 差分の集計（`tokens history build-NN`）は、ロックファイル・スナップショット・生成コードを数えない。数えたいときは `[diff] exclude = []` を、テストの判定を変えたいときは `[diff] tests` を書く（既定値を置き換える）
+- **Codex で Hikyaku を使っていた場合**: v3 には Codex 用のプラグインが無い。進行中のサイクルは v2 のまま終える。レビューを Codex で行いたいときは `[review] provider = "codex"`（種類ごとなら `[review.<種類>] provider`）を書き、codex の CLI を PATH に入れてログインしておく（`docs/migration/v2-to-v3.md#codex-のホスト対応の廃止`）
+- `[review.provider_for]` / `[review.<種類>.provider_for]` はエラーになる。`claude = "codex"` は `provider = "codex"` に書き換え、`codex` の行だけなら削除する。閉じたサイクルの設定に残っているものは読み飛ばす
+- `review resolve` / `review run` の `--self` と `tokens session` の `--host` はエラーになる。独自のスクリプトから呼んでいれば外す
+- `hikyaku config --json` の `review.<種類>.providers` を読んでいる独自のツールは、`review.<種類>.provider`（`{ source, provider }`）を読むよう直す
+- `[external] target = "asana"` と `asana_project_gid` はエラーになる。`"github"` か `"none"` にし、`asana_project_gid` を削除する。閉じたサイクルの設定に残っているものは読み飛ばす
+- `user_stories_gate` はエラーになる（値に関わらず）。ルートの設定では読んだ時点で、サイクルの設定では v3 の作業に使うときに止まるので、削除する
+- `[conductor] delegate` に `G10` を書けるようになった（確認の回だけ監督が答え、`decisions`・`constraints` の変更を含む回はユーザーに上がる）。`delegate` に `G3` / `G4` / `G10` を書いていても、同意の回はユーザーに上がる
+- express では、`decisions`・`constraints` の変更を含まない G10 が省かれる。これまでどおり止めたいなら `promotion_gate = true` を書く。進行中の close-cycle の G10 の承認（`approval` の無い記録）は同意として扱うので、巻き戻らない
+- `conductor asks` / `parse` の `handler` の `human` を読んでいる独自のツールは `user` を読むよう直す
+- `validate` に警告が加わったが、終了コードは変わらない。`--json` の出力に `warnings` が増える。`validate` は知らないオプションをエラーにするようになった（受け付けるのは `--base` とグローバルオプション）。既存の ADR・`constraints` を新しいテンプレートに書き直す必要はない（「受け入れたこと」の節が無ければ何も読まない）。節がある文書で警告が出たら、1件1行の箇条書きにし、拠り所を `（拠り所: \`<参照>\`）` の形で行末に書く
+- `init` は `{HIKYAKU_ROOT}/.gitignore` に `feedback/` も足す（既存の `.gitignore` には無い行だけを追記する）。既存のワークスペースで `feedback export` を使うときは、`hikyaku init --root <HIKYAKU_ROOT>` を再実行するか、`feedback/` の1行を手で足す
+- ルート設定に `[consent]` を書いているとエラーになる。事後同意を使うサイクルのサイクル設定へ移す。`[consent]` を書かなければ挙動は変わらない
+- `[app]` を宣言したワークスペースでは、上限を超える異議を `consented` で記録するのに、害が中でも `--accepts` と `--premises` が要る。`ledger open --type objection` に `--when merge…` を渡していたら、`ledger object --defer` に置き換える
+- `conductor launch --resume <id> --message <file>` は `--from user|supervisor` か `--notice` が無いと拒まれる。独自に監督を動かしているなら、答えには `--from`、中断からの再開などには `--notice` を添える。`decisions.jsonl` の決定に任意の欄（`from`・`ask`・`choice`・`risk`・`token`・`answers`）が増えたが、既存の記録はそのまま読める
+- 起票済みのビルドの issue（子 issue）は Hikyaku からは閉じなくなる。不要なら GitHub 側で閉じる。`tasklist.md` の `issue` 列は、次に `tasklist` のコマンドで書き込んだときに落ちる（`docs/migration/v2-to-v3.md#ビルドごとの外部起票の廃止`）
+- 監督の答えの記録は `ledger conductor-answer` に一本化した。対応は不要（進行中の子は、再開時に回答の先頭に置かれるコマンドを実行する）
+- `start`・`pr body`・規約の組み立ての導入に対応は不要。進行中の作業単位はそのまま続けられる。`skills/close-cycle/references/persistence.md` の「rule の書き方」「close-cycle での扱い」の節を参照している独自の指示があれば、`rule-writing.md` と close-cycle の `steps/G10.md` を参照するよう直す
+- v2 の conductor の設定（`[conductor] provider`・`[conductor.claude]`・`[conductor.codex]`）を書いていたら、`/hikyaku:init` の移行の回か `hikyaku config migrate` で移す（`[conductor.claude] model` は `[conductor] model` に、`[conductor.claude.models]` は `[conductor.models]` に。codex の分と `provider` は消える）。取り込まないなら `hikyaku config migrate --drop`。残っていると設定を読むコマンドが止まる（`docs/migration/v2-to-v3.md#conductor-のモデル設定`）
 
 ## [2.8.0]
 
@@ -174,35 +351,6 @@ builder のコードレビューとセキュリティレビューを、Claude Co
 - `/security-review` は origin リモートを使う。origin/HEAD が無いリポジトリでは自動で指示文の形に切り替わる
 - エージェント `hikyaku:code-reviewer` / `hikyaku:security-reviewer` を直接呼んでいた独自の手順は、`hikyaku review run` に置き換える
 - サブエージェントの既定のモデルが Sonnet 固定からメインのセッションのモデルに変わる。従来どおり Sonnet で動かしたい場合は、Claude Code を起動する環境で `CLAUDE_CODE_SUBAGENT_MODEL=sonnet` を設定する
-
-## [2.5.0]
-
-### Changed
-
-- Claude Code 用の全10スキルから `disable-model-invocation` を削除し、モデル（AI 自身）がスキルを呼び出せるようにした。代わりに各スキルの `description` に「モデルによる Hikyaku ワークフロー以外からの呼び出しは禁止です。」を追記し、ワークフロー外での誤呼び出しを防ぐ
-
-### Migration
-
-- 対応は不要。`/hikyaku:...` での起動は従来どおり使える。Hikyaku ワークフローの実行中は、AI が次のスキルを自分で呼び出すことがある
-
-## [2.4.2]
-
-### Added
-
-- Codex 用の `.codex-plugin/plugin.json`、`.agents/plugins/marketplace.json`、`codex/skills/*/SKILL.md` を追加した。Codex では専用入口から従来の Hikyaku 手順を読み、パス・引数・内部スキル・エージェント委任の表記を Codex の機能に読み替える
-- `codex/compatibility.md` に Codex での実行規約を追加し、`docs/getting-started-codex.md` に導入と起動方法を記載した
-
-### Changed
-
-- 共通手順の 2.4.1 を取り込み、差し戻し・受け入れ基準の追跡・PR レビュアー割り当て・指摘からの追加設計に対応した
-- Codex 向けの CI を `check-codex-plugin.yml` に分離し、`codex-plugin` ブランチ向け PR でマニフェストのバージョン形式・更新と入口の参照先を検証するようにした。更新検出の対象は Codex 固有のファイルに加え、共通の `skills/`・`agents/`・`scripts/` も含む。スクリプトの型チェック・テストも `codex-plugin` 向け PR で実行する
-- Claude Code 用の全10スキルと Codex 用の全9スキルから、フロントマターの `metadata`（`repository` / `version`）を削除した。バージョンは各プラグインのマニフェストに集約した。開発ルールと CI もスキル内のバージョンを要求しない形に揃えた
-
-### Migration
-
-- `SKILL.md` の `metadata.version` を参照する独自ツールは、対象ホストの `.claude-plugin/plugin.json` または `.codex-plugin/plugin.json` の `version` を参照するよう変更する
-- Claude Code 利用者の操作は変わらない。従来の `/hikyaku:...` と `skills/`・`agents/` の手順は維持する
-- Codex 利用者は `codex plugin marketplace add tak-solder/hikyaku@codex-plugin` でマーケットプレイスを追加し、プラグインをインストールする。`$hikyaku:init` などの Codex 用スキルを選ぶ。Node.js v22.18.0 以上が必要
 
 ## [2.4.1]
 

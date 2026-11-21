@@ -4,7 +4,7 @@ on:
   pull_request:
     branches:
       - main
-      - codex-plugin
+      - "beta/*"
     paths:
       - "scripts/**"
       - "tests/**"
@@ -33,20 +33,35 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
-      - name: Unit and CLI integration tests
-        run: npm test
-
       - name: Smoke test (CLI が起動するか)
         run: |
           node scripts/hikyaku.mts version
           node scripts/hikyaku.mts help > /dev/null
           node scripts/hikyaku.mts doctor --json > /dev/null || true
 
-      # 組み込みの BP 既定値が、組み込みの期待値ケースを壊していないか。
-      # ワークスペースの bp-guide/ はこの検証の対象外（利用者側の validate が見る）
-      - name: BP built-in cases
-        run: node scripts/hikyaku.mts bp test --builtin
-
       # スキルに付けた問いの ID（（G8）/（ask: branch））と、conductor の ID の表の突き合わせ
       - name: Conductor ask tags
         run: node scripts/hikyaku.mts conductor lint
+
+      # ステップの定義（scripts/lib/steps/）と、スキルの指示ファイル（skills/<skill>/steps/）の対応
+      - name: Step definitions
+        run: node scripts/hikyaku.mts step lint
+
+  # テストは時間がかかるので、ファイル単位で分けて並列に流す（npm test と同じテストを、分けて実行するだけ）
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    name: test (${{ matrix.shard }}/4)
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: "22.18.0"
+
+      # テストは実行時依存も devDependencies も使わないので npm ci は要らない
+      - name: Unit and CLI integration tests
+        run: node --test --test-shard=${{ matrix.shard }}/4 "tests/*.test.mts"

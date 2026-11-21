@@ -6,7 +6,7 @@
 
 ## 実行方法
 
-Claude Code のスキル内ではプラグインの位置が解決されます。Codex のスキルは読み込まれたスキルの実パスから解決します。自分のシェルから Claude Code のインストール済みプラグインを叩く場合はパスが必要です。次の関数を `~/.zshrc` や `~/.bashrc` に入れてください。
+Claude Code のスキル内ではプラグインの位置が解決されます。自分のシェルから Claude Code のインストール済みプラグインを叩く場合はパスが必要です。次の関数を `~/.zshrc` や `~/.bashrc` に入れてください。
 
 ```bash
 hikyaku() {
@@ -56,17 +56,21 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 |---|---|
 | `next [<cycle>]` | 次に着手できるビルドを知りたいとき。複数返れば並行実行できる。判定は**いま居るブランチの `HEAD`** が基準 |
 | `cycle list [--active]` | 走行中のサイクルを見渡したいとき。ビルド列は「マージ済み / 全体」で、手元で完了しマージ待ちのものは (+n) が付く |
-| `cycle status <cycle>` | 中断からの再開点を知りたいとき。ブランチを切り替えてから実行する。中断点は `HEAD` 基準。作業ツリーに `return.md` があれば「差し戻し中」と表示し、architect を案内する |
+| `cycle status <cycle>` | 中断からの再開点を知りたいとき。ブランチを切り替えてから実行する。中断点は `HEAD` 基準。作業ツリーに `return.md` があれば「差し戻し中」と表示し、architect を案内する。期限が来た・過ぎた未決事項と未解決の退けも示す |
 | `tasklist read [<cycle>]` | ビルドの一覧と完了状況を見たいとき |
-| `config [<cycle>]` | 設定のマージ結果とプロファイルの展開結果を確認したいとき |
+| `config migrate` | v2 の conductor の設定（`provider`・`[conductor.claude]`・`[conductor.codex]`）をルートの `.hikyaku.config` から v3 の形（`[conductor] model`・`[conductor.models]`）へ移すとき。`--dry-run` で変換案だけ見られ、`--drop` は取り込まずに旧キーを消す。移し先に別の値があれば止まる |
+| `config [<cycle>]` | 設定のマージ結果とプロファイルの展開結果を確認したいとき。`--no-cycle` で、選択済みのサイクルを参照せずルート設定だけを返す（サイクルに属さない patch 用） |
 
 ## 検証する
 
 | コマンド | いつ使うか |
 |---|---|
 | `doctor` | 環境が動く状態かを確認したいとき。導入直後と、動かないとき |
-| `validate [<cycle>]` | ファイルの整合性を確認したいとき。[CI](../operations/ci.md) から呼ぶと効く。`bp-guide/` の構文・README の表の古さ・期待値の不一致、受け入れ基準の割り当て漏れ、「マージ時点で残る危険」の記録の不備も見る |
-| `docs validate` | ドキュメントガイドのパスだけを確認したいとき |
+| `validate [<cycle>]` | ファイルの整合性を確認したいとき。[CI](../operations/ci.md) から呼ぶと効く。`token-guide/guide.md` の版の宣言と本文の食い違い、受け入れ基準の割り当て漏れ、「マージ時点で残る危険」の記録の不備も見る。ポインタに添えた ID の範囲と、「受け入れたこと」の読めない行は警告（終了コードは 0 のまま）。`--base <ref>` で宣言の変更も警告する |
+| `docs validate` | ドキュメントガイドのパス（アンカー付きなら、その節）だけを確認したいとき |
+| `rules check` | パス指定の rule（`.claude/rules/`）を足したり直したりしたあと。glob が広すぎて本文が長い rule と、どのファイルにも一致しなくなった rule を見つける |
+| `rules candidates` | 知見の置き場を決めるときと、rule を整理するとき（builder の handoff、close-cycle の collect）。レビューの記録で何度も引かれた rule（機械の検査やリファクタへ移す候補）と、一致しない rule を、最終変更からの日数と理由とともに並べる。試しに消す候補（一致しない rule、理由の欠けた rule、役に立たなかった記述。重要度が高は除く）も並べる。移すか消すかは決めない |
+| `areas dormant --paths <glob,...>` | 設計の前（architect の survey の後、builder の plan）。変えるパスのうち長く触られていなかった領域と、結び付いた rule・ADR・constraints の項目を示す |
 
 ## ドキュメント
 
@@ -79,7 +83,21 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 
 `context` はフェーズ→論理名の対応の唯一の正です。各 SKILL.md に「何を読むか」を書くと4箇所に同じ表が載って必ず食い違うため、ここに集約しています。返すのは候補と理由までで、絞り込みはしません。どれが今回のスコープに関係するかは概要欄を読んで判断することで、それはスキル（LLM）の仕事です。
 
-`build-NN` では `tasklist.md` の依存グラフから先行ビルドの `handoff.md` も辿ります（手で辿ると漏れるため）。
+`build-NN` では `overview` / `decisions` / `constraints` を候補に出しません。そのビルドに効く節は、全文を読んで設計した architect が `issue.md` の「参照する設計ドキュメント」で指すためです。`conventions` は、AGENTS.md や CLAUDE.md 以外のファイルに登録されているときだけ候補に出します。自動では読み込まれないためです。`tasklist.md` の依存グラフから先行ビルドの `handoff.md` は辿ります（手で辿ると漏れるため）。
+
+| コマンド | いつ使うか |
+|---|---|
+| `promotions [<cycle>]` | サイクルを締めるとき。各ビルドの `handoff.md` と各フェーズの `retrospective.md` から、永続化の候補と「役に立たなかった記述」を集めて束ねる |
+
+`promotions` は集めて束ねるだけで、取捨選択はしません。重複の判定、マージ済みのコードとの照合、重要度の見直しは close-cycle が行います。書式どおりに読めなかった行も捨てずに返すので、候補を落としたまま気づかないことはありません。考え方は [知見の置き場](../configuration/persistence.md) にあります。
+
+| コマンド | いつ使うか |
+|---|---|
+| `feedback export` | Hikyaku 自体への要望や不具合を伝えたいとき。`{HIKYAKU_ROOT}/feedback/{YYYYMMDD}.md` に、止まった手順・ゲートにかかった時間・`upstream` 宛ての記録と、起票の下書きの枠を書き出す |
+
+`feedback export` は、作業の記録（progress.jsonl）のうち中身を含まない欄（日時・スキル・ステップ・結果・版）だけを読み、スキルとステップの単位で集計します。サイクルに属さない patch の記録（`{HIKYAKU_ROOT}/patches/`）は、マージのたびに増えるので読みません。ユーザーの答え・理由・PR・サイクル名・ビルド番号・patch の名前は書き出しに含めません。ただし `upstream` 宛ての記録は自由文をそのまま載せるので、リポジトリの中身が混ざっていることがあります。外部に送る処理は持たないので、送る前に全文を読み、送るかどうかを決めて起票するのはユーザーです。下書きの文面を整えたいときは、このファイルを AI に読ませて頼めます。
+
+書き出し先が git の追跡対象だと、書き出さずに止まります。コミットされると、送るかを決める前にリポジトリの中で共有されてしまうためです。`init` は `{HIKYAKU_ROOT}/.gitignore` に `feedback/` を足すので、既存のワークスペースでは `hikyaku init` を再実行するか、1行を手で足してください。
 
 ## サイクル
 
@@ -88,91 +106,171 @@ node /path/to/hikyaku/scripts/hikyaku.mts <command>
 | `cycle new <slug> --profile <name>` | サイクルを作るとき（通常は `create-cycle` が呼ぶ） |
 | `cycle use <cycle>` | このチェックアウトの作業サイクルを記録するとき |
 | `cycle close <cycle>` | サイクルを `closed` にするとき（通常は `close-cycle` が呼ぶ） |
-| `cycle link <cycle> --external <url>` | 外部システムの親 issue の参照を手で記録するとき |
+| `cycle link <cycle> --external <url>` | サイクルの GitHub issue の参照を手で記録するとき |
 
 ## ビルド
 
 | コマンド | いつ使うか |
 |---|---|
 | `tasklist add` | ビルドを追加するとき（通常は `build-manager` が呼ぶ） |
-| `tasklist update` | 既存ビルドのタイトル・BP・依存を変えるとき |
-| `tasklist done --id <n> --pr <url>` | ビルドの完了を記録するとき。当該ビルドの PR に同梱する |
-| `tasklist link --id <n> --issue <url>` | 子 issue の参照を手で記録するとき |
+| `tasklist update` | 既存ビルドのタイトル・予測ピーク・依存を変えるとき |
+| `tasklist done --id <n>` | builder が pr の `done`（`--pr`）で完了を記録したあと、依存グラフを描き直すとき。当該ビルドの PR に同梱する。`PR` 列は `cycle close` がまとめて埋める |
 
 ビルドの分割に専用コマンドはありません。「元ビルドの `update` + 新ビルドの `add`」で表現します。
 
-`tasklist` のコマンドは、受け付けないオプションと余分な位置引数をエラー（終了コード 1）にして書き込みません。シェルの関数から `--deps 1,2` が1つの引数で渡ったときや、オプション名のタイプミスで依存が黙って落ちると、依存グラフが壊れたまま着手可能なビルドが増えるためです。`add` と `update` は、追加・更新したビルドの BP と依存を出力の見出しにも表示します。
+`tasklist` のコマンドは、受け付けないオプションと余分な位置引数をエラー（終了コード 1）にして書き込みません。シェルの関数から `--deps 1,2` が1つの引数で渡ったときや、オプション名のタイプミスで依存が黙って落ちると、依存グラフが壊れたまま着手可能なビルドが増えるためです。`add` と `update` は、追加・更新したビルドの予測ピークと依存を出力の見出しにも表示します。
 
-## BP
+
+## 手順
 
 | コマンド | いつ使うか |
 |---|---|
-| `bp guide [<cycle>]` | 現在有効な基準表と、`bp estimate` に渡すオプション名を確認したいとき |
-| `bp estimate [<cycle>] --new-files <n> ...` | 見積もった入力値を BP にするとき（build-manager / builder が呼ぶ）。振り返りで実績 BP を出すときも同じ |
-| `bp actual <phase> [<cycle>]` | 振り返りで、差分から新規ファイル数と追加行数を測るとき |
-| `bp render` | `bp-guide/rules.toml` を変えたあと、`README.md` の表を再生成するとき |
-| `bp test` | `bp-guide/cases.toml` の期待値が基準表と一致するか確かめるとき。`--builtin` はワークスペースを見ず、組み込みの既定値と既定ケースだけを照合する（プラグイン自身の CI 用） |
-| `bp history [<cycle>]` | 基準表を調整する前に、ビルドごとの見積もりと実績を見渡したいとき |
+| `step next <phase> [<cycle>]` | フェーズの中の次の1手を知りたいとき（スキルの転送ループが呼ぶ） |
+| `step report <phase> <step> [<cycle>] --result <結果>` | 1手の結果を記録するとき。記録したあと次の1手を返す |
+| `step status <phase> [<cycle>]` | 手順の一覧と、それぞれが完了・スキップ・未完了・対象外のどれかを見たいとき |
+| `step restart <phase> [<cycle>] [--round <回の種類>] --reason <理由>` | 同じ作業単位で手順を最初から回し直すとき（architect の再設計・追加設計、token-guide の新しい回、内部スキルの呼び直し） |
+| `step where [<cycle>]` | このチェックアウトで、どの作業単位の手順が途中かを知りたいとき（navigator が呼ぶ） |
+| `step hook stop` | Claude Code の Stop フックとして呼ばれる。手で実行するものではない |
+| `step lint` | ステップの定義と指示ファイルの対応を確かめるとき（プラグイン自身の CI 用） |
 
-`bp estimate` が返すのは、指標と加算要素の値を基準表に当てた BP と内訳です。基準表への当てはめをコマンドに寄せているのは、見積もりが外れたときに入力値の読み違えと基準表の不適合を切り分けるためです。基準表に無いオプションはエラーになります。タイプミスで加算要素が黙って落ちると、そのまま過小見積もりになります。
+`step next` は、作業単位のディレクトリの `progress.jsonl` と成果物から現在地を導き、次の1手を返します。返る1手は5種類です。`run` はステップを行うもので、読むべき指示ファイルと報告のコマンドが付きます。`gate` はユーザーに承認を求めるもの、`call` は build-manager などの内部スキルを呼ぶものです。`done` は手順をすべて終えたこと、`stop` は止まる理由を表します。止まるのは、v2 で作成したサイクル、builder で architect への差し戻し中のとき、記録が欠けている（成果物はあるのに一度も記録が無い）とき、それにスキルが定めた条件（init で初期化済みのときなど）です。何度呼んでも、同じ状態なら同じ1手が返ります。いま `step` に移っているのは init（`init`）・create-cycle（`create`）・planner（`plan`）・architect（`architect`）・builder（`build-NN`）・close-cycle（`close`）・token-guide（`token-guide`）・patch（`patch-YYYYMM-slug`）と、内部スキルの build-manager と retrospective です。navigator と conductor は手順を持たず、`step where` と `conductor parse` で手順の位置を読む側です。
 
-`bp actual` が返すのは実測値だけで、BP の値そのものは返しません。差分から機械的に数えられるのは新規ファイル数と追加行数だけで、影響ファイル数や外部 API の該当は実装したセッションが申告するしかないためです。実績 BP は、実測値に申告を添えて `bp estimate` に渡して求めます。比較の起点は `pr base` と同じ導出なので、PR に含まれる差分と、測る差分が一致します。起点を別に持つと、先行ビルドの差分まで数えたり、逆に PR の一部を数え落としたりします。
+作業単位のディレクトリはフェーズで決まります。PLAN は `planning/`、ARCHITECT は `design/`、ビルドは `build-NN/`、CLOSE と create-cycle はサイクルのディレクトリ自身、init は HIKYAKU_ROOT 自身、token-guide は `token-guide/` です。`step` は `.hikyaku.config` から HIKYAKU_ROOT を解決するので、init の雛形を生成する前は使えません。create-cycle も同じで、`cycle new` でサイクルを作るまでは使えません。
 
-ワークスペース配下は数えません。`plan.md` や `handoff.md` が実装行数に混ざると、見積もりの指標（実装コードの規模）と比較する意味が無くなるためです。起点を解決できないときはエラーになります。推測値を返さないのは、実測できなかったことを実測できたように記録させないためです。
+build-manager や retrospective のような内部スキルは、`--skill` を付けて呼び出し元のフェーズで進めます。architect から build-manager が呼ばれたら `step next architect --skill build-manager`、builder の振り返りなら `step next build-NN --skill retrospective` で、記録は呼び出し元と同じ `progress.jsonl` に入ります。呼び出し元が最後に報告したあとの記録だけがその呼び出しの分として数えられるので、呼ばれるたびに最初の手順から始まります。呼び出し元が報告しないまま呼び直すとき（builder の PR レビュー対応での振り返りなど）は、`step restart <phase> [<cycle>] --skill <内部スキル> --reason <理由>` で区切ってから始めます。`call` の1手には、呼ばれた側が最初に実行する `step next` のコマンドが添えられます。
 
-基準表の構成と調整の手順は [BP の基準表](../configuration/bp-guide.md) にあります。
+同じ作業単位で手順を回し直すときも `step restart` を使います。token-guide は何度も回すので、前の回の記録が残っていると `step next` は `done` を返します。新しい回は `step restart token-guide --reason <理由>` で始めます。前の回の記録はそのまま残り、区切りより後の記録だけが今回の回として数えられます。`--round` は回の種類で、スキルが受け付ける値だけを指定できます。architect では `return` が差し戻しからの再設計、`add` が指摘からの追加設計で、それぞれ返る手順が変わります。`--reason` は自由な理由として記録に残るだけです。
+
+`step report` が記録できるのは、現在地のステップと、完了したステップの報告し直しだけです。`step next` が `stop` を返す状態（差し戻し中など）では、前に受け取った報告のコマンドも受け付けません。成果物が要るステップは、成果物が無ければ `done` を受け付けません。`skipped` と `failed` には理由が、ゲートの `rejected` にはユーザーの答えが必須です。builder の `implement` だけは、区切りの推奨に従ってセッションを切り替えるときに `handover`（理由が必須）を報告できます。`implement` は完了にならず、新しいセッションが同じステップから続けます。builder の `plan` の `done` には見積もり直した予測ピーク（`--peak`）が、PR を作るステップの `done` には PR の URL か番号（`--pr`）が必須です。中間レビュー（planner の `review`・architect の `architecture-review`・build-manager の `tasklist-review`・builder の `plan-review` と `test-spec-review`）の `done` には、レビューが返した指摘の件数（`--findings`）と、そのうち反映した件数（`--adopted`）が必須です。採らなかった指摘は記録に残らないので、件数を添えさせないと、レビューが役に立っているかを後から数えられないためです。事後同意（`[consent] deferred`）が有効なサイクルで、architect の設計案の生成（`options`）や `design-delta` の `done` が上限を超えるリスクの受け入れになるときは、退けた安全側の案の利点（`--loses`）が必須で、`step report` がその受け入れを未決事項の記録に積みます（`--dry-run` では積みません）。planner の G1 の承認では、提示した事後同意の値を設定から読んで記録に残します。報告には、その時点のコンテキスト・セッション ID・Hikyaku の版も入ります。
+
+ゲートの承認は、差し戻すか、前のステップを報告し直すまで有効です。承認したあとに成果物を直しても、自動では無効になりません。変更は Git の履歴で追い、承認を取り直すかは変更の中身を見て決めます。取り直すときは、作り直したステップを `done` で報告し直すと、そこから後ろがやり直しになります。
+
+`step where` は、作業ツリーにある `progress.jsonl` を読み、記録のある作業単位ごとに `step next` と同じ1手を返します。フェーズを指定しなくてよいので、どこから再開すればよいかが分からないときの手がかりになります。並ぶのは指定したサイクルの作業単位だけで、init と token-guide の記録は混ざりません。`cycle close` で終えたサイクルも読みます。内部スキル（build-manager / retrospective）を呼んでいる最中の作業単位は、呼ばれたスキルの1手を返します。記録は各フェーズのブランチにコミットされるため、別のブランチで進めた作業単位は見えません。v2 で作成したサイクルでは作業単位を読まず、v2 のまま終える案内を返します。
+
+`step hook stop` は、プラグインが Claude Code の Stop フックとして登録しているコマンドです。スキルの転送ループの途中でセッションが止まろうとしたときに、1回だけ続きを促します。止めるのは、そのセッションが手順を進めていて（`progress.jsonl` にそのセッションの ID がある）、次の1手が `run` か `call` のときだけです。ゲートで承認を待つとき、手順を終えたとき、`stop` が返ったときは止めません。同じターンの2回目も止めないので、ステップの途中でユーザーに尋ねたり、ユーザーが中断を指示したりしたときは、そのまま終えられます。Hikyaku を使っていないリポジトリや、記録を読めないときも何もしません。
+
+## 未決事項
+
+| コマンド | いつ使うか |
+|---|---|
+| `ledger open <phase> [<cycle>] --type --when --who --summary` | 決めずに先へ進めること・暫定で決めたこと・異議・受け入れたリスクを、いつ・誰が決めるかとともに残すとき（各スキルの手順が呼ぶ） |
+| `ledger decide <phase> <id> [<cycle>] --decision --by` | 未決事項への決定を残すとき。`<phase>` は決めた作業単位 |
+| `ledger conductor-answer <phase> [<cycle>] --input` | 監督の答えで再開された conductor の子が、その答えを暫定の決定と監督の決定の2行で残すとき。`conductor launch --from supervisor` が回答の先頭にこのコマンドを置くので、子は実行するだけ。同じ起動の答えは二重に書かない。事後同意に回る答えは `--loses` が要り、受け入れたリスクの事項も同時に書く |
+| `ledger object <phase> [<cycle>] --summary --basis --loses --harm --decision --input` | ゲートで、ユーザーの選択がその人自身の宣言・記録と食い違うと異を唱えたとき、異議とユーザーの決定を対で残す（ゲートの指示に呼び方が載る）。上限を超える異議は、害が中でも高と同じく受け入れの言葉を残す |
+| `ledger object <phase> [<cycle>] --defer` | 事後同意が有効なサイクルで、上限を超える異議の同意を、ユーザーの選択でマージの前の同意ゲートへ回すとき |
+| `ledger list [<cycle>]` | 未決事項と、期限が来た・過ぎたもの、未解決の退けを見渡したいとき |
+| `ledger consent-list <phase> [<cycle>]` | PR を作る直前の同意ゲートで、マージの前にユーザーが同意する項目（`merge@<phase>` の受け入れたリスク・異議）を1項目3行で示すとき。全文は `--full`。事後同意が有効なサイクルの conductor の最後のビルドの子では、サイクル全体の項目を並べる |
+| `ledger return-draft <phase> [<cycle>] --items <id,...>` | 同意ゲートで前のフェーズの判断を退け、builder が architect へ差し戻すとき。退けた項目と試したことをそろえた `return.md` の下書きを出す（書き込まない。問題を変える選択肢と推奨は builder が書く） |
+| `ledger answers [<cycle>]` | conductor の最後の PR の本文に、監督が答えた問い（答えとリスクの申告）の一覧を貼るとき（`--format pr`） |
+| `ledger pr-section <phase> [<cycle>]` | PR 本文に、受け入れたリスク（事後同意）・未解決の退け・マージの前に決める事項・期限を過ぎた事項の節を貼るとき（各フェーズの PR の手順は `pr body` を通して使う。中身が無ければ空）。conductor の最後の PR では `--all` でサイクル全体を出す |
+| `ledger show <id> [<cycle>]` | 1件の事項の前提・失うもの・決定の経緯を読みたいとき |
+| `ledger premises [--changed-from <ref>]` | アプリケーションの状況の宣言を変えたとき、それを拠り所にして受け入れたリスク（未決事項の記録と、ADR・`constraints` の「受け入れたこと」の行）を見直す対象として並べる。各フェーズの PR の手順が、宣言が変わっていれば `--format pr` の出力を PR 本文に貼る |
+
+「いつ」に書けるのはサイクルの中の出来事（フェーズやゲートに来たとき、PR のマージの前、サイクルを締めるとき）だけで、日付や自由文、存在しないゲートやビルドはエラーになります。書ける値は `hikyaku help ledger open` にあります。ユーザーが決める事項はユーザーしか決められず、決める人を付け替える手順はありません。
+
+害が高（害が成果物に残る）の異議は、ユーザーが選択どおりに進めるなら、何を受け入れるかをユーザーの言葉で `--accepts` に書き、拠り所にした前提を `--premises` に添えます。そのステップに片づいていない高の異議があるあいだ、`step report` はゲートの承認を受け付けません。ユーザーが選択を改めたとき（`--decision decided`）は受け入れの言葉は要りませんが、ユーザーの答え（`--input`）はどの場合も必須です。害が中の異議は記録だけで進みます。
+
+期限が来たかどうかは、手順の記録（`progress.jsonl`）から導かれます。期限が来た事項と過ぎた事項は、`step next` が返す1手の注意（`notices`）と `cycle status` に、決まるまで示され続けます。PR のマージの前（`merge`）に決める事項は、同意ゲートか PR を作る手前に来たときに期限が来たとみなし、ビルドがベースブランチへマージされると期限を過ぎたとみなします（マージ済みかは `cycle status` が導きます）。Stop フックと `step where` は期限を判定しません。ただし builder の作業単位では、設計と要件の衝突のあとに委任を続けるかを尋ねるゲート（`delegation`）を出すために、そのビルドの `decisions.jsonl` だけを読みます。それが壊れて読めないと、builder の手順はどの経路でも止まります（`step where` には止まった理由が並び、Stop フックは引き止めません）。
+
+## patch
+
+| コマンド | いつ使うか |
+|---|---|
+| `patch resolve [<slug>] [--cycle <cycle>]` | patch を始めるとき・再開するとき（patch が最初に呼ぶ）。作業単位の名前・ブランチ・切る元・記録の場所と、サイクルに属すなら完了していないビルドを返す |
+| `patch prune --before <YYYYMM>` | サイクルに属さない patch の、PR を作った古い月の記録をまとめて消すとき |
+
+`patch resolve` はサイクルを推測しません。`--cycle` を渡したときだけそのサイクルに属し、現在のブランチや `.hikyaku.local` からは選びません。サイクルに属さない patch が、たまたま近くにあったサイクルの設定や統合ブランチで動くのを防ぐためです。現在のブランチが patch のブランチなら（ルートとサイクルのどちらの `[branch]` で名付けられていても）、その patch の再開として扱います。再開では記録の場所が正で、記録がまだ無ければ（記録を始める前に中断した）推測せずに `recordMissing` を返します。名前の重複は、記録・ローカルのブランチ・追跡参照・origin のブランチで確かめ、origin に届かなければそのことを返します。
+
+`patch prune` が消すのは `{HIKYAKU_ROOT}/patches/` の下だけで、サイクルに属す patch の記録はサイクルと一緒に残ります。PR を作った記録が無いものと、いま居るブランチの patch は消さずに一覧に出します。消したあとのコミットと PR は自分で行います。
+
+## 予測ピーク
+
+| コマンド | いつ使うか |
+|---|---|
+| `tokens guide [<cycle>]` | 見積もりに使うガイド（プロジェクトか標準か）と、その版を確認したいとき |
+| `tokens estimate [<cycle>] --fixed <n> --reading <n> ...` | 成分ごとに見積もったトークンを合計し、予測ピークと判定を出すとき（build-manager / builder / patch が呼ぶ）。サイクルに属さない patch は `--no-cycle` を付ける |
+| `tokens stamp` | ガイドの本文を変えたあと、版を上げるとき。ガイドが無ければ標準から作る |
+| `tokens session [<phase> [<cycle>]]` | 振り返りで、セッションのコンテキストのピークを実測するとき。過去のビルドのセッションを測るときも使う |
+| `tokens history [<cycle>]` | ガイドを補正する前に、ビルドごとの予測・実測・乖離・区切りでのコンテキストを見渡したいとき。`--group-by` でモデル・版・ホスト・ガイドの版ごとに分ける |
+| `tokens history build-NN [<cycle>]` | 振り返りで、そのビルドの差分（新規ファイル数・追加行数とその実装とテストの内訳）を数えるとき |
+
+`tokens estimate` が返すのは、5つの成分（固定費・読み込み・実装・テスト・未知の領域）の合計と、`[context]` の帯に対する判定と、記録に貼る内訳表です。成分の値はガイドに沿って LLM が見積もり、コマンドは足し算と判定だけを行います。5つの成分はすべて必須で、該当しない成分は 0 を渡します。省いた成分を黙って 0 にすると、考えなかったのか無いと判断したのかが記録から分からなくなるためです。内訳表の最後の行には、見積もりに使ったガイドの版とハッシュが入ります。
+
+`tokens history build-NN` は、PR の base からの差分を数えます。比較の起点は `pr base` と同じ導出なので、PR に含まれる差分と、測る差分が一致します。起点を別に持つと、先行ビルドの差分まで数えたり、逆に PR の一部を数え落としたりします。ワークスペース配下と、ロックファイル・スナップショット・生成コードは書いた量ではないので数えず、除いたファイルを一覧で出します。生成物とテストのパスは `[diff]` で変えられます（[設定](../configuration/config-file.md#diff)）。起点を解決できないときは、推測せず「計測不可」とその理由を返します。実測できなかったことを実測できたように記録させないためです。
+
+`tokens session` は、Claude Code が残すトランスクリプトからコンテキストの大きさを実測します。引数なしでは現在のセッションを測り、`CLAUDE_CODE_SESSION_ID` で記録を特定します。`<phase> [<cycle>]` を渡すと、そのフェーズのブランチに対応付くセッションを集め、そのブランチでの API 呼び出しが最も多いものを本体として測ります。サブエージェントは対象外です。記録のファイルは `--transcript <path>` で直接指定することもできます。記録が見つからないときは、終了コード 0 で「計測不可」とその理由を返します。`--markdown` は `retrospective.md` に貼る表を出します。
+
+ガイドの構成と補正の手順は [予測ピークと見積もりのガイド](../configuration/token-guide.md) にあります。
 
 ## 命名
 
 | コマンド | いつ使うか |
 |---|---|
-| `branch verify <phase> [<cycle>]` | 今いるブランチが規則どおりか確認するとき。各フェーズの冒頭とコミット直前 |
+| `start <plan\|architect\|build-NN\|close> [<cycle>]` | フェーズの冒頭（通常は各スキルが呼ぶ）。作業サイクルの記録・ブランチの確認と作成・状態の確認・セッション名をまとめて行い、次にすることを返す |
+| `branch verify <phase> [<cycle>]` | 今いるブランチが規則どおりか確認するとき。コミットの直前。サイクルのフェーズでデフォルトブランチを決められなければ（`baseResolved: false`）、ブランチ名が合っていても終了コード 2 で止まる |
 | `pr title <phase> [<cycle>]` | PR タイトルを生成するとき |
 | `pr base <phase> [<cycle>]` | PR のマージ先を決めるとき。PR を作る直前。`--ref` でローカルに解決できる ref（レビューの差分基準）を返す |
 | `session title <phase> [<cycle>]` | セッション名を生成するとき |
-| `pr request-reviewers <phase> [<cycle>] --pr <PR>` | PR を作った直後に、設定のレビュアーをアサインするとき（通常は各スキルが呼ぶ） |
+| `pr body <phase> [<cycle>]` | PR を作る直前（通常は各スキルが呼ぶ）。本文にそのまま貼る節（差分の事実・宣言の変更・未決事項・サイクルの issue への参照）をまとめて出す。マージの前にユーザーが同意する項目に決定が足りなければ、本文を出さずに終了コード 2 で止まる |
+| `pr create <phase> [<cycle>] --base <branch> --body-file <path>` | フェーズの Draft PR を作るとき（通常は各スキルが呼ぶ）。タイトルは `pr title` と同じ規則で付く。同じ向きで開いている PR があれば作らずに返す。Draft に対応していないリポジトリでは Draft を外して作る。REST だけを使うので、GraphQL が使えない環境でも動く |
+| `pr update-body --pr <PR> --body-file <path>` | PR の本文を丸ごと差し替えるとき（conductor の最後の PR の一覧への追記など）。REST だけを使う |
+| `pr ready` | 設定と実行元に従って Draft PR を公開するとき。conductor は取り込み前の公開にも使う。`gh` が使えなくても止めず、代わりに行うことを示す（取り込み前の `--for-merge` だけは止める）（GraphQL が使えない環境では REST に切り替える。[トラブルシューティング](../operations/troubleshooting.md#github-の-graphql-が使えないclaude-code-のクラウドのセッションなど)） |
+| `pr request-reviewers <phase> [<cycle>] --pr <PR>` | PR を作った直後に、設定のレビュアーをアサインするとき（通常は各スキルが呼ぶ）。`gh` が使えなくても止めず、代わりに依頼するレビュアーを示す（GraphQL が使えない環境では REST に切り替える。[トラブルシューティング](../operations/troubleshooting.md#github-の-graphql-が使えないclaude-code-のクラウドのセッションなど)） |
 
 `branch verify` は生成と検証を兼ねています。名前を生成するだけのコマンドを別に持つと、生成しただけで確認しないまま作業する余地が残るためです。
 
-`pr base` は通常デフォルトブランチを返しますが、先行フェーズのブランチから積んでいる（スタックしている）場合はそのブランチを返します。[conductor](../workflow/conductor.md) の統合ブランチ（`{cycle}/conductor`）から切ったフェーズでは、conductor ブランチを返します。conductor ブランチはデフォルトブランチから切った直後だとデフォルトブランチの履歴に含まれますが、デフォルトブランチの `PR` 列にビルドが記録される（conductor ブランチの PR がマージされる）までは、取り込み済みとみなしません。conductor ブランチ自身の PR は常にデフォルトブランチへ向きます。スタックしているかどうかは状態として保存せず、同じサイクルの Hikyaku ブランチのうち「HEAD の履歴に含まれていて、まだデフォルトブランチに取り込まれていない、最も近いもの」として導出します。積んだままデフォルトブランチへ PR を作ると先行ビルドの差分まで含んだ PR になるため、PR の作成直前とレビューの差分基準にこの値を使います。
+`start` は、各スキルが冒頭で毎回行う準備（`cycle use`・`branch verify`・`cycle status`・`session title`）を1回で済ませます。手順と判定をスクリプトに寄せて、セッションが読む指示を減らすためです。デフォルトブランチに居れば、期待する名前のブランチを作って切り替えます。ただし、ビルドが待機中のように止まるときは作りません。残ったブランチが着手中の印に見えるためです。デフォルトブランチではない作業ブランチに居るときは、何もせずに終了コード 2 を返します。実行環境が割り当てたブランチなのか、別の作業のブランチに紛れ込んだのかを外から区別できないので、どのブランチで作業するかはユーザーが決めます。いまのブランチで続けると決めたら `--keep-branch` を付けて実行し直します。
 
-取り込み済みかどうかは、祖先関係とデフォルトブランチの `PR` 列の両方で判定します。squash merge や rebase merge ではマージ済みでもブランチの先端が祖先になりません。祖先関係だけに頼ると、マージ済みのブランチをスタック元と誤判定して、存在しないブランチへ PR を向けることになります。
+`pr base` は通常デフォルトブランチを返しますが、先行フェーズのブランチから積んでいる（スタックしている）場合はそのブランチを返します。[conductor](../workflow/conductor.md) の統合ブランチ（`{cycle}/conductor`）から切ったフェーズでは、conductor ブランチを返します。conductor ブランチはデフォルトブランチから切った直後だとデフォルトブランチの履歴に含まれますが、デフォルトブランチにビルドの完了の記録が届く（conductor ブランチの PR がマージされる）までは、取り込み済みとみなしません。conductor ブランチ自身の PR は常にデフォルトブランチへ向きます。スタックしているかどうかは状態として保存せず、同じサイクルの Hikyaku ブランチのうち「HEAD の履歴に含まれていて、まだデフォルトブランチに取り込まれていない、最も近いもの」として導出します。積んだままデフォルトブランチへ PR を作ると先行ビルドの差分まで含んだ PR になるため、PR の作成直前とレビューの差分基準にこの値を使います。
 
-`branch verify` / `pr title` / `session title` は対象サイクルの設定でテンプレートを展開します。`[branch]` / `[pr]` / `[session]` は[サイクルごとに変えられる](../configuration/config-file.md#サイクルごとに変える)ため、サイクルに属さない `init` と `bp-guide` を除いてサイクルの特定が必要です。ID や slug で渡してもディレクトリ名に解決されるので、`002` からも `hikyaku/002-billing/plan` が返ります。
+取り込み済みかどうかは、祖先関係とデフォルトブランチにある完了の記録の両方で判定します。squash merge や rebase merge ではマージ済みでもブランチの先端が祖先になりません。祖先関係だけに頼ると、マージ済みのブランチをスタック元と誤判定して、存在しないブランチへ PR を向けることになります。
+
+patch（`patch-YYYYMM-slug`）は、サイクルに属さなければ `<cycle>` を省き、ルートの設定でテンプレートを展開します。サイクルを渡しても推測はせず、渡されなければ記録（`patches/{YYYYMM}/{slug}/`）のある進行中のサイクルに属すとみなします。ブランチは `{prefix}/patch/{YYYYMM}/{slug}` です。サイクルに属す patch を統合ブランチから切っていれば、`pr base` は conductor ブランチを返します。PR タイトルとセッション名の `{phase}` は `patch` になり、`--build-title` が `{title}` に入ります。
+
+conductor（`pr title conductor`・`session title conductor`）は `--build-title` が無ければ、`{title}` にサイクルの要約（`cycles.md` の要約）が入ります。要約が空なら、空の変数として前後の区切りごと詰められます。`--build-title` を渡せばそちらが優先です。他のフェーズは、ユーザーが題を判断していないため要約を入れません。
+
+`branch verify` / `pr title` / `session title` は対象サイクルの設定でテンプレートを展開します。`[branch]` / `[pr]` / `[session]` は[サイクルごとに変えられる](../configuration/config-file.md#サイクルごとに変える)ため、サイクルに属さない `init` と `token-guide` を除いてサイクルの特定が必要です。ID や slug で渡してもディレクトリ名に解決されるので、`002` からも `hikyaku/002-billing/plan` が返ります。
 
 ## レビュー
 
 | コマンド | いつ使うか |
 |---|---|
-| `review resolve <kind> <phase> [<cycle>] --self <provider>` | レビューをどのプロバイダ・モデル・回数で、どう起動するか確かめるとき |
-| `review run <kind> <phase> [<cycle>] --self <provider>` | コードやセキュリティのレビューを別プロセスで実行するとき（builder が呼ぶ）。別プロバイダの doc-reviewer も同じ |
+| `review action` | コード・セキュリティの指摘の妥当性を判断したあと、対応確認と再レビューの要否を設定から決めるとき。合意との突き合わせ（`doc --context agreement`）の指摘にも使い、こちらは1回で終わって止まらない |
+| `gate brief G4\|G8 <phase> [<cycle>]` | G4・G8 でユーザーに示す中身を組み立てるとき。G4 は境界（`[boundaries]`）の変更と G3 の申告に無い重い領域、G8 は「（解釈）」のシナリオと未対応の受け入れ基準だけを出す。全文は `--full`（architect の G4・builder の G8 の手順が使う） |
+| `diff facts <build-NN> [<cycle>]` | 合意との突き合わせの前に、テストの削除・スキップ・アサーションの変更・設定の宣言の変更・合意の文書の書き換えを差分から事実として並べるとき。`--format pr` は PR 本文の節を組み立てる（builder の PR の手順が貼る） |
+| `review resolve <kind> <phase> [<cycle>]` | レビューをどのプロバイダ・モデル・回数で、どう起動するか確かめるとき |
+| `review run <kind> <phase> [<cycle>]` | コードやセキュリティのレビューを別プロセスで実行するとき（builder と patch が呼ぶ）。Codex で動かす doc-reviewer も同じ |
+| `review findings [<cycle>]` | プロファイルで中間レビューを外すかを決める前に、ステップごとの指摘の件数・反映した件数・採用率を見るとき |
 
-`<kind>` は `code` / `security` / `doc` です。`--self` にはメインのセッションのプロバイダ（`claude` / `codex`）を渡します。`[review]` の `provider = "auto"` と `provider_for` をこれで解決します（[.hikyaku.config](../configuration/config-file.md#review)）。
+`<kind>` は `code` / `security` / `doc` です。プロバイダは `[review]` の設定で決まり、`provider = "auto"` はメインのセッションと同じ `claude` です（[.hikyaku.config](../configuration/config-file.md#review)）。
 
 `review run` は `claude -p` や `codex exec` を起動し、生の出力を `.git` の中（`git rev-parse --git-path hikyaku/reviews` の下）に保存して返します。出力の解析や指摘の統合はしません。自由な文章なので、判断は呼び出したセッションが行います。空の結果、エラー、タイムアウトは終了コード 1 になります。origin/HEAD が無いときの `/security-review` のように、失敗が空の結果として返る場合があり、それを指摘0件と取り違えないためです。`max_rounds` を超える `--round` もエラーになります。
 
-環境変数 `HIKYAKU_REVIEW_PROVIDER` を設定すると、設定ファイルの `provider` より優先されます。設定したプロバイダの CLI が使えない環境のためのものです。Claude Code と Codex のクラウド環境では、環境変数からそれを判定し、そこで動いているプロバイダに自動で固定します。詳しくは [.hikyaku.config](../configuration/config-file.md#review) を参照してください。
+`review findings` は、各作業単位の `progress.jsonl` から、中間レビューの `done` に添えた件数を集めます。件数を添える前に記録した回は「件数なし」として回数にだけ数え、採用率には入れません。0件だった回と区別できなくなるためです。指摘1件の数え方はレビューの観点ごとに違うので、比べるのは同じステップの中だけにしてください。agreement-review はプロファイルで外せないので、対象にしていません（指摘は `agreement.md` に残ります）。
+
+環境変数 `HIKYAKU_REVIEW_PROVIDER` を設定すると、設定ファイルの `provider` より優先されます。設定したプロバイダの CLI が使えない環境のためのものです。Claude Code のクラウド環境では codex の CLI が無いので、環境変数からそれを判定し、`claude` に自動で固定します。詳しくは [.hikyaku.config](../configuration/config-file.md#review) を参照してください。
 
 ## 外部連携
 
 | コマンド | いつ使うか |
 |---|---|
-| `external sync [<target>] [<cycle>]` | 投影が抜けたときに同期し直すとき |
-| `external ref <phase> [<cycle>]` | PR 本文に入れる参照行を生成するとき |
+| `external sync [<target>] [<cycle>]` | サイクルの issue の起票が抜けたときに起票し直すとき |
+| `external ref <phase> [<cycle>]` | PR 本文に入れる、サイクルの issue への参照行を生成するとき |
 
 ## conductor
 
 | コマンド | いつ使うか |
 |---|---|
-| `conductor asks [<cycle>]` | 子の問いのうち、どれを監督が答え、どれを人間に上げるかを確認するとき |
-| `conductor launch <phase> [<cycle>] [<build>\|add]` | 子セッションの起動・再開コマンドを組み立てるとき（通常は `/hikyaku:conductor` が呼ぶ） |
+| `conductor asks [<cycle>]` | 子の問いのうち、どれを監督が答え、どれをユーザーに上げるかを確認するとき |
+| `conductor launch <phase> [<cycle>] [<build>\|add]` | 子セッションの起動・再開コマンドを組み立てるとき（通常は `/hikyaku:conductor` が呼ぶ）（GraphQL が使えない環境では REST に切り替える。[トラブルシューティング](../operations/troubleshooting.md#github-の-graphql-が使えないclaude-code-のクラウドのセッションなど)） |
 | `conductor parse <result.json> [<cycle>]` | 子の結果から gate / done / blocked を取り出すとき（同上） |
+| `conductor waiting [<cycle>]` | ユーザーの答えを待っている問いと、それを待っているビルドを確かめるとき（監督が、着手できるビルドが無くなったときに呼ぶ） |
 | `conductor check-pr <pr> [<cycle>]` | フェーズの PR を conductor ブランチに取り込む前に、マージ先・Draft・レビューの依頼・未解決の指摘・CI（と、設定すれば承認）を確かめるとき。`--wait` で待てる問題が解消するまで確かめ直す（通常は `/hikyaku:conductor` が呼ぶ） |
 | `conductor lint` | プラグイン本体の開発用。スキルに付けた問いの ID と、CLI の ID の表の食い違いを検出する |
 
-`asks` は、子に許可するツールの一覧と、設定のダイジェスト（profile と `.hikyaku.config` の内容から作る）も返します。監督は起動時に人間と合意したときのダイジェストを、以後の `launch` / `parse` に渡します。設定が変わっていれば両者はエラーで止まります。子が `.hikyaku.config` を書き換えて、合意していない権限や振り分けが効くのを防ぐためです。
+`asks` は、子に許可するツールの一覧と、設定のダイジェスト（profile と `.hikyaku.config` の内容から作る）も返します。監督は起動時にユーザーと合意したときのダイジェストを、以後の `launch` / `parse` に渡します。設定が変わっていれば両者はエラーで止まります。子が `.hikyaku.config` を書き換えて、合意していない権限や振り分けが効くのを防ぐためです。
 
-`launch` はコマンドを組み立てるだけで、自分では起動しません。起動を監督のセッションの Bash に置くことで、子に権限を渡す操作が人間の許可ルール（`Bash(claude -p:*)`）の下で起きるようにしています。`parse` を CLI に置くのは、監督が子の自由文から問いを読み違えると判断の前提が崩れるためです。規約どおりのブロックが無ければ `violation` を返し、監督は推測で進めません。
+`launch` はコマンドを組み立てるだけで、自分では起動しません。起動を監督のセッションの Bash に置くことで、子に権限を渡す操作がユーザーの許可ルール（`Bash(claude -p:*)`）の下で起きるようにしています。`parse` を CLI に置くのは、監督が子の自由文から問いを読み違えると判断の前提が崩れるためです。規約どおりのブロックが無ければ `violation` を返し、監督は推測で進めません。`parse` は子の手順の位置も返します。子の `progress.jsonl` の記録をセッション ID で引き、子が最後に進めた作業単位の次の1手を出すので、監督はゲートで読むべき成果物を知り、子のブロックが手順と合っているかを確かめられます。done なのに手順が終わっていない、G8 で止まったのに手順がそのゲートに居ない、といった食い違いは `stepProblems` に入ります。
 
 ## セットアップ
 

@@ -24,6 +24,15 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import {
+  type DiffPatterns,
+  DEFAULT_ASSERTION_MARKERS,
+  DEFAULT_DIFF_EXCLUDE,
+  DEFAULT_DIFF_TESTS,
+  DEFAULT_SKIP_MARKERS,
+  DEFAULT_TEST_DECLARATIONS,
+} from "./diff-stats.mts";
+import type { PeakBands } from "./tokens.mts";
 import type { BranchNaming } from "./branch.mts";
 import {
   checkConductorAsks,
@@ -40,30 +49,35 @@ export type ProfileName = "express" | "economy" | "standard" | "thorough";
 export type SecurityReviewMode = "off" | "recommended" | "on";
 export type RetrospectiveMode = "skip" | "prompt" | "auto";
 export type ValidateMode = "manual" | "phase" | "step";
-export type ExternalTarget = "none" | "github" | "asana";
+export const EXTERNAL_TARGETS = ["none", "github"] as const;
+export type ExternalTarget = (typeof EXTERNAL_TARGETS)[number];
+
+/** [external] target・--external に値が渡されたときの検査。Asana は廃止を伝える */
+export function checkExternalTarget(value: string, where: string): ExternalTarget {
+  const hint = `使用できる値: ${EXTERNAL_TARGETS.join(" | ")}`;
+  if (value === "asana") throw new HikyakuError(`${where}: Asana への投影は v3 で廃止しました`, hint);
+  if (!(EXTERNAL_TARGETS as readonly string[]).includes(value)) throw new HikyakuError(`${where} の値が不正です: ${value}`, hint);
+  return value as ExternalTarget;
+}
 
 export const PROFILE_NAMES: ProfileName[] = ["express", "economy", "standard", "thorough"];
 
 /**
- * 承認ゲート。ここに無いゲートは profile の管轄外で、常に有効:
+ * 確認ゲートのオン・オフ。ここに無いゲートは profile の管轄外で、常に有効:
+ *   G1  user-stories 承認（planner。要件の合意なので常に同意で、設定で外せない）
  *   G6  tasklist / issue 変更承認（build-manager）
  *   G8  plan + test-spec 承認（builder）
  *   G10 永続ドキュメント昇格の承認（close-cycle）
- * profile で外せるのは「確認」であって「同意」ではない。
+ * profile で外せるのは「確認」であって「同意」ではない。同意の回（差し戻しからの再設計の
+ * G3・G4 など）は、ここが false でもステップ定義の consent が手順に残す。
  */
 export interface Gates {
-  /**
-   * G1 planner: user-stories 承認。
-   * どのプロファイルでも on。要件の合意は後段の承認では代替できない
-   * （設計も plan も「その要件で正しいか」を前提に置くため）。
-   */
-  userStories: boolean;
   /** G2 architect: codebase-survey 確認 */
   codebaseSurvey: boolean;
   /**
    * G3 architect: 設計案の選択。
    * off にすると AI が推奨案をそのまま採用する。express だけが off で、
-   * 要件（G1）を人間が握っているなら、その先の trade-off は推奨に委ねても
+   * 要件（G1）をユーザーが握っているなら、その先の trade-off は推奨に委ねても
    * 引き返せる、という判断による。採用理由と退けた案は ADR に残る。
    */
   designChoice: boolean;
@@ -71,6 +85,11 @@ export interface Gates {
   architecture: boolean;
   /** G7 builder: plan 単独の承認（thorough のみ。他は G8 に統合） */
   plan: boolean;
+  /**
+   * G10 close-cycle: 永続ドキュメントへの昇格の承認のうち、確認の回（同意が要る変更が無い回）。
+   * express だけ off。decisions・constraints の変更を含む回は同意で、ここに関わらず手順に残る
+   */
+  promotion: boolean;
 }
 
 export interface Reviews {
@@ -85,8 +104,12 @@ export interface Reviews {
   validate: ValidateMode;
 }
 
-/** レビューを実行するプロバイダ。auto はメインのセッションと同じものを使う */
+/**
+ * レビューを実行するプロバイダ。auto はメインのセッションと同じもの（claude）を使う。
+ * メインのセッションは常に Claude Code で、Codex はレビューの実行先としてだけ使う
+ */
 export type ReviewProvider = "claude" | "codex";
+export const MAIN_PROVIDER: ReviewProvider = "claude";
 export const REVIEW_PROVIDERS: ReviewProvider[] = ["claude", "codex"];
 export type ReviewProviderChoice = "auto" | ReviewProvider;
 
@@ -104,34 +127,21 @@ export interface ReviewModelSettings {
 }
 
 /** provider の値がどこから来たか。設定ファイルと違う結果になったときに理由を示すため */
-export type ReviewProviderSource =
-  | "cloud"
-  | "env"
-  | "kind.provider_for"
-  | "kind"
-  | "review.provider_for"
-  | "review"
-  | "default";
+export type ReviewProviderSource = "cloud" | "env" | "kind" | "review" | "default";
 
 /**
- * provider を決める規則の1段。
- *   provider     その値をそのまま使う
- *   providerFor  メインのプロバイダの行があればその値を使い、無ければ次の段へ進む
- *
- * provider_for はメインのプロバイダが分からないと決まらないので、設定の段階では規則の列のまま持ち、
- * --self を受け取る review resolve / run で解決する（resolveReviewProvider）
+ * 設定から決まった provider と、その出所。
+ * クラウド環境 → 環境変数 → [review.<kind>] → [review] → 既定（auto）の順に、最初に値があったもの
  */
-export type ReviewProviderRule =
+export type ReviewProviderSetting =
   | { source: "cloud"; provider: ReviewProvider }
-  | { source: "env" | "kind" | "review" | "default"; provider: ReviewProviderChoice }
-  | { source: "kind.provider_for" | "review.provider_for"; providerFor: Partial<Record<ReviewProvider, ReviewProvider>> };
+  | { source: "env" | "kind" | "review" | "default"; provider: ReviewProviderChoice };
 
 export interface ReviewKindSettings {
-  /** 優先順に並んだ規則。最後は必ず default（auto） */
-  providers: ReviewProviderRule[];
+  provider: ReviewProviderSetting;
   /** 1 = 1回だけ / n = パスするまで最大 n 回 / 0 = 無制限 */
   maxRounds: number;
-  /** maxRounds = 0（無制限）の2ラウンド目以降、指摘への対応を確認せずに直すか */
+  /** 無制限の2ラウンド目以降、指摘への対応を確認せずに直すか */
   autoFix: boolean;
   /** [review.<kind>.<provider>] → [review.<provider>] の順に重ねた値 */
   models: Record<ReviewProvider, ReviewModelSettings>;
@@ -154,14 +164,11 @@ export const DEFAULT_REVIEW_TIMEOUT_MINUTES = 30;
 export const REVIEW_PROVIDER_ENV = "HIKYAKU_REVIEW_PROVIDER";
 
 /**
- * 各プロバイダのクラウド環境を示す環境変数。クラウド環境では相手のプロバイダの CLI が無いので、
- * そこで動いているプロバイダに固定する。レビューと conductor で共用し、設定ファイルより優先する。
- * レビューでは HIKYAKU_REVIEW_PROVIDER よりも優先する。
- * 両方が立っていれば並びの先（claude）を使う
+ * クラウド環境を示す環境変数。Claude Code のクラウド環境には codex の CLI が無いので、
+ * claude に固定する。HIKYAKU_REVIEW_PROVIDER と設定ファイルより優先する
  */
 export const REVIEW_CLOUD_ENVS: { provider: ReviewProvider; variable: string; matches: (value: string) => boolean }[] = [
   { provider: "claude", variable: "CLAUDE_CODE_REMOTE", matches: (value) => value === "true" },
-  { provider: "codex", variable: "CODEX_ENVIRONMENT_ID", matches: (value) => value !== "" },
 ];
 
 /** いま動いているクラウド環境。クラウド環境でなければ undefined */
@@ -186,16 +193,16 @@ interface ProfileDefinition {
 }
 
 const PROFILES: Record<ProfileName, ProfileDefinition> = {
-  // 人間の時間を節約する。承認は減らすが AI には見させる。
-  // 人間が握るのは要件（G1）だけで、その先の設計判断は AI の推奨に委ねる。
+  // ユーザーの時間を節約する。承認は減らすが AI には見させる。
+  // ユーザーが握るのは要件（G1）だけで、その先の設計判断は AI の推奨に委ねる。
   // 委ねるぶん、security と retrospective は AI 側で回して担保を戻す
   express: {
     gates: {
-      userStories: true,
       codebaseSurvey: false,
       designChoice: false,
       architecture: false,
       plan: false,
+      promotion: false,
     },
     reviews: {
       userStories: true,
@@ -210,16 +217,16 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
     },
     reviewRounds: 1,
   },
-  // AI 実行コストを節約する。中間成果物のレビューを起動しないが人間は見る。
+  // AI 実行コストを節約する。中間成果物のレビューを起動しないがユーザーは見る。
   // code だけは全プロファイルで残す（コードの差分は承認ゲートが拾える粒度を超えるため）。
   // security も落とさない（節約の対象にしてよい観点ではないため、既定は recommended）
   economy: {
     gates: {
-      userStories: true,
       codebaseSurvey: false,
       designChoice: true,
       architecture: true,
       plan: false,
+      promotion: true,
     },
     reviews: {
       userStories: false,
@@ -234,14 +241,14 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
     },
     reviewRounds: 1,
   },
-  // 完成した成果物の単位で、人間も AI も見る
+  // 完成した成果物の単位で、ユーザーも AI も見る
   standard: {
     gates: {
-      userStories: true,
       codebaseSurvey: false,
       designChoice: true,
       architecture: true,
       plan: false,
+      promotion: true,
     },
     reviews: {
       userStories: true,
@@ -261,11 +268,11 @@ const PROFILES: Record<ProfileName, ProfileDefinition> = {
   // 条件付きの security も該当判定を挟まず常に実行する
   thorough: {
     gates: {
-      userStories: true,
       codebaseSurvey: true,
       designChoice: true,
       architecture: true,
       plan: true,
+      promotion: true,
     },
     reviews: {
       userStories: true,
@@ -293,13 +300,12 @@ export const DEFAULT_PR_TITLE = "[hikyaku] {cycle}: {phase} {title}";
  * レビュアーのアサインをオフにできる単位。PR を作るスキルに対応する。
  * build は build-NN の全て、conductor は監督が作る最後の PR
  */
-export const REVIEWER_SKIP_TARGETS = ["init", "bp-guide", "create", "plan", "architect", "build", "close", "conductor"] as const;
+export const REVIEWER_SKIP_TARGETS = ["init", "token-guide", "create", "plan", "architect", "build", "close", "conductor", "patch"] as const;
 export type ReviewerSkipTarget = (typeof REVIEWER_SKIP_TARGETS)[number];
 /** セッション名の既定。空文字にするとセッション名を変更しない */
 export const DEFAULT_SESSION_TITLE = "{cycle} {phase} {title}";
 export const DEFAULT_BRANCH_PREFIX = "hikyaku";
 export const DEFAULT_BRANCH_SEPARATOR = "/";
-export const DEFAULT_BP_MAX = 8;
 
 const DEFAULT_NAMING: BranchNaming = {
   prefix: DEFAULT_BRANCH_PREFIX,
@@ -337,21 +343,37 @@ export interface ResolvedConfig {
   profile: ProfileName;
   /** 未設定ならリポジトリのデフォルトブランチを自動検出する（スキル側の責務） */
   baseBranch: string | undefined;
-  bpMax: number;
   gates: Gates;
   reviews: Reviews;
   branch: BranchNaming;
-  /** autoReady: planner / architect / builder / close-cycle / conductor が Draft で作った PR を、フェーズの完了時に Ready for Review に切り替えるか */
   pr: { title: string; reviewers: string[]; reviewersSkip: ReviewerSkipTarget[]; autoReady: boolean };
   /** セッション名のテンプレート。空文字なら変更しない */
   session: { title: string };
   security: { triggers: string };
   /** [review] — 各レビューのプロバイダ・モデル・回数 */
   review: ReviewSettings;
-  external: { target: ExternalTarget; githubRepo?: string; asanaProjectGid?: string };
+  external: { target: ExternalTarget; githubRepo?: string };
   conductor: ConductorConfig;
   /** [data_integrity] — ビルドのマージで本番データを壊さないための宣言 */
   dataIntegrity: DataIntegrityConfig;
+  /** [app] と [[app.areas]]（作業ツリーの宣言）。無ければ undefined（上限を設けない）。基準側との比較は risk.mts */
+  app: AppDeclaration | undefined;
+  /** [boundaries]。照合は gate brief（build-12） */
+  boundaries: Boundaries;
+  /** [consent]（サイクル設定の素の値）。有効の判定は deferred-consent.mts（git を読むのでここでは計算しない） */
+  consent: ConsentConfig;
+  /** [diff] — ビルドの差分の集計（tokens history build-NN）が数えない生成物と、テストとして分けるパス */
+  diff: DiffPatterns;
+  /** [context] — メインセッションのコンテキストの上限と割合 */
+  context: ContextLimits;
+  /** [context] から求めた予測ピークの判定の帯（見積もりの上限・統合の目安） */
+  peakBands: PeakBands;
+  /** [rules] — rule を機械の検査やリファクタへ移す候補を出す感度 */
+  rules: RulesConfig;
+  /** [areas] — 領域が休眠しているとみなす期間 */
+  areas: AreasConfig;
+  /** [metrics] — 基準を消した PR のマージ前後の指標の比較 */
+  metrics: MetricsConfig;
   /**
    * ルート設定の ask に並んでいて、まだ答えが記録されていないキー。
    * create-cycle が尋ねる対象。サイクルを重ねた結果ここに残っていれば、
@@ -360,7 +382,56 @@ export interface ResolvedConfig {
   askAtCreate: AskKey[];
   /** 読み込んだ設定ファイルのパス（デバッグ用） */
   sources: string[];
+  /**
+   * サイクル設定に残っている v3 で廃止したキーのエラー。読むだけの操作では無視し、
+   * v3 の作業に使うときに assertCurrentConfig で止める
+   */
+  retired: HikyakuError[];
 }
+
+/**
+ * [context] — メインセッションのコンテキストの上限と、そこから求める予測ピークの判定の帯。
+ *
+ * ユーザーが決めるのは上限（limit）だけで、見積もりの上限（plan と build-manager の予測ピークと比べる）と
+ * 統合の目安は上限に対する割合で求める。割合は見積もりの誤差のための余裕なので、ほとんどの人は変えない。
+ * ビルドの途中の区切り（G8・実装開始前・レビュー前）は、完了までの見込みを上限と比べる（forecast.mts）。
+ * 既定値は 1M のウィンドウを前提にした値
+ */
+export interface ContextLimits {
+  /** 1セッションのピークの上限（トークン） */
+  limit: number;
+  /** 見積もりの上限 = limit × この割合 */
+  estimateRatio: number;
+  /** 統合の目安 = limit × この割合 */
+  mergeRatio: number;
+}
+
+export const DEFAULT_CONTEXT_LIMITS: ContextLimits = { limit: 600_000, estimateRatio: 0.9, mergeRatio: 2 / 3 };
+
+/** 上限と割合から、予測ピークの判定の帯を求める */
+export function peakBandsOf(limits: ContextLimits): PeakBands {
+  return { mergeHint: Math.round(limits.limit * limits.mergeRatio), estimateLimit: Math.round(limits.limit * limits.estimateRatio) };
+}
+
+export interface RulesConfig {
+  /** レビューの記録で、同じ rule がこの回数以上引かれたら移す候補にする（サイクルをまたいで数える） */
+  hitThreshold: number;
+}
+
+export interface AreasConfig {
+  /** 最終変更からこの日数を超えた領域を休眠とみなす */
+  dormantDays: number;
+}
+
+export const DEFAULT_RULES: RulesConfig = { hitThreshold: 3 };
+export const DEFAULT_AREAS: AreasConfig = { dormantDays: 180 };
+
+export interface MetricsConfig {
+  /** 基準を消した PR のマージ前後で、それぞれ何サイクルを比べるか */
+  window: number;
+}
+
+export const DEFAULT_METRICS: MetricsConfig = { window: 2 };
 
 export interface DataIntegrityConfig {
   /**
@@ -370,6 +441,47 @@ export interface DataIntegrityConfig {
   releaseBranches: string[];
   /** マージ時点で本番データの安全を保てないビルド分割を許すか。既定は false */
   allowUnsafeSplit: boolean;
+}
+
+/** アプリケーションの状況の3軸（ADR risk-ceiling-table）。並びは軽い段から重い段 */
+export const EXPOSURES = ["personal", "internal", "public"] as const;
+export const DATA_WEIGHTS = ["none", "internal", "personal-or-secret"] as const;
+export const IMPACTS = ["low", "medium", "high"] as const;
+export type Exposure = (typeof EXPOSURES)[number];
+export type DataWeight = (typeof DATA_WEIGHTS)[number];
+export type Impact = (typeof IMPACTS)[number];
+
+export interface AppAxes {
+  exposure: Exposure;
+  data: DataWeight;
+  impact: Impact;
+}
+
+/**
+ * 重い領域（[[app.areas]]）。name は前提の参照 `area:<name>` に使う。軸は省略でき、
+ * 省略した軸はアプリケーションの値になる（重い領域に触れる受け入れは害の重さに関わらず
+ * 上限を超えるので、軸はゲートの判定には効かない）
+ */
+export interface AppArea {
+  name: string;
+  paths: string[];
+  exposure?: Exposure;
+  data?: DataWeight;
+  impact?: Impact;
+}
+
+/** [app] — AI に任せてよい害の上限を決める宣言。ルート設定でのみ書ける */
+export interface AppDeclaration {
+  axes: AppAxes;
+  /** マージがユーザーの関門である前提（事後同意の前提。"user" だけを受け付ける） */
+  mergeGate: "user" | undefined;
+  areas: AppArea[];
+}
+
+/** [boundaries] — 外との境界・内部の境界のパス（glob）。ルート設定でのみ書ける */
+export interface Boundaries {
+  external: string[];
+  internal: string[];
 }
 
 export interface LoadOptions {
@@ -428,6 +540,25 @@ function readInteger(table: TomlTable | undefined, key: string, where: string): 
   return value;
 }
 
+function readPositiveInteger(table: TomlTable | undefined, key: string, where: string, fallback: number): number {
+  const value = readInteger(table, key, where);
+  if (value === undefined) return fallback;
+  if (value <= 0) throw new HikyakuError(`${where}.${key} は正の整数で指定してください（現在: ${value}）`);
+  return value;
+}
+
+function readRulesConfig(table: TomlTable | undefined): RulesConfig {
+  return { hitThreshold: readPositiveInteger(table, "hit_threshold", "[rules]", DEFAULT_RULES.hitThreshold) };
+}
+
+function readAreasConfig(table: TomlTable | undefined): AreasConfig {
+  return { dormantDays: readPositiveInteger(table, "dormant_days", "[areas]", DEFAULT_AREAS.dormantDays) };
+}
+
+function readMetricsConfig(table: TomlTable | undefined): MetricsConfig {
+  return { window: readPositiveInteger(table, "window", "[metrics]", DEFAULT_METRICS.window) };
+}
+
 function readNumber(table: TomlTable | undefined, key: string, where: string): number | undefined {
   const value = table?.[key];
   if (value === undefined) return undefined;
@@ -446,31 +577,45 @@ function readStringArray(table: TomlTable | undefined, key: string, where: strin
   return value as string[];
 }
 
+/** [conductor] に書けるキー。タイプミスを黙って捨てると、設定したつもりの値が効かない */
+const CONDUCTOR_KEYS = [
+  "escalate",
+  "delegate",
+  "allowed_tools",
+  "budget_per_run",
+  "require_approval",
+  "phase_reviewers",
+  "review_timeout",
+  "model",
+  "models",
+];
+
+/**
+ * v2 の [conductor] にあって、v3 で廃止したキー。プロバイダごとに分けていたモデルの設定
+ * （[conductor.claude] / [conductor.codex]）と、プロバイダの指定。メインのセッションが常に Claude Code
+ * になったので、claude の設定は [conductor] の model / [conductor.models] に統合し、codex の分は使い道が無い
+ */
+export const RETIRED_CONDUCTOR_KEYS = ["provider", "claude", "codex"] as const;
+
+/** table に残っている、v2 の [conductor] の廃止キー */
+export function retiredConductorKeys(table: TomlTable): string[] {
+  const conductor = table["conductor"];
+  if (!isTable(conductor)) return [];
+  return RETIRED_CONDUCTOR_KEYS.filter((key) => conductor[key] !== undefined);
+}
+
 /**
  * [conductor] を読む。配列はキー単位のマージなので、サイクル設定に書くと
  * ルート設定の配列を置き換える（足し合わせない）
  */
-export function readConductor(table: TomlTable | undefined, env: NodeJS.ProcessEnv = process.env): ConductorConfig {
+function readConductor(table: TomlTable | undefined): ConductorConfig {
   const where = "[conductor]";
+  assertKnownKeys(table, CONDUCTOR_KEYS, where);
   const budget = readNumber(table, "budget_per_run", where) ?? DEFAULT_CONDUCTOR.budgetPerRun;
   if (budget < 0) {
     throw new HikyakuError(`${where}.budget_per_run は 0 以上で指定してください（0 は上限なし）`);
   }
-  const configured = checkEnum(readString(table, "provider", where), ["claude", "codex"] as const, `${where}.provider`);
-  const cloud = detectCloudEnv(env);
-  const provider = cloud?.provider ?? configured ?? DEFAULT_CONDUCTOR.provider;
-  // 旧モデル設定は、環境判定前のプロバイダに属する。クラウドで切り替わっても持ち越さない。
-  const legacy = readConductorModelSettings(table, where);
-  const scoped = Object.fromEntries(REVIEW_PROVIDERS.map((name) => {
-    const providerTable = requireTable(table, name, where);
-    assertKnownKeys(providerTable, ["model", "models"], `[conductor.${name}]`);
-    return [name, readConductorModelSettings(providerTable, `[conductor.${name}]`)];
-  })) as Record<ReviewProvider, Pick<ConductorConfig, "model" | "models">>;
-  const fallback = provider === (configured ?? DEFAULT_CONDUCTOR.provider) ? legacy : DEFAULT_CONDUCTOR;
-  const selected = scoped[provider];
   const conductor: ConductorConfig = {
-    provider,
-    providerSource: cloud !== undefined ? "cloud" : configured !== undefined ? "config" : "default",
     escalate: readStringArray(table, "escalate", where) ?? DEFAULT_CONDUCTOR.escalate,
     delegate: readStringArray(table, "delegate", where) ?? DEFAULT_CONDUCTOR.delegate,
     allowedTools: readStringArray(table, "allowed_tools", where) ?? DEFAULT_CONDUCTOR.allowedTools,
@@ -478,13 +623,9 @@ export function readConductor(table: TomlTable | undefined, env: NodeJS.ProcessE
     requireApproval: readBoolean(table, "require_approval", where) ?? DEFAULT_CONDUCTOR.requireApproval,
     phaseReviewers: readReviewers(table, "phase_reviewers", where),
     reviewTimeoutMinutes: readTimeout(table, where),
-    model: selected.model ?? fallback.model,
-    // プロバイダ別の既定モデルは、旧形式のフェーズ別モデルよりも優先する。
-    models: { ...(selected.model === undefined ? fallback.models : {}), ...selected.models },
+    model: readModel(table, "model", where),
+    models: readConductorModels(readConductorModelsTable(table, where)),
   };
-  if (provider === "codex" && (conductor.allowedTools.length > 0 || budget > 0)) {
-    throw new HikyakuError(`${where}: codex では allowed_tools と budget_per_run は使えません（空配列・0 にしてください）`);
-  }
   checkConductorAsks(conductor, where);
   return conductor;
 }
@@ -534,26 +675,37 @@ function readModel(table: TomlTable | undefined, key: string, where: string): st
   return value;
 }
 
-/** 旧形式とプロバイダ別のモデル設定を同じ規則で検査する。未選択のプロバイダも検査する。 */
-function readConductorModelSettings(table: TomlTable | undefined, where: string): Pick<ConductorConfig, "model" | "models"> {
-  const model = readModel(table, "model", where);
-  if (table?.["models"] !== undefined && readTable(table, "models") === undefined) {
-    throw new HikyakuError(`${where}.models はテーブルで指定してください`);
+/**
+ * [conductor.models] を読む。フェーズ名のタイプミスを黙って捨てると、指定したつもりの
+ * モデルが効かないまま既定のモデルで動くので、未知のキーはエラーにする
+ */
+/** [conductor.models] を取り出す。models = "opus" のようにテーブル以外で書かれたら、黙って無視せず止める */
+function readConductorModelsTable(table: TomlTable | undefined, where: string): TomlTable | undefined {
+  if (table?.["models"] === undefined) return undefined;
+  const models = readTable(table, "models");
+  if (models === undefined) {
+    throw new HikyakuError(
+      `${where}.models はテーブルで指定してください`,
+      "全フェーズの既定は [conductor] の model に、フェーズごとの上書きは [conductor.models] の下に build = \"opus\" の形で書きます。",
+    );
   }
-  const modelsTable = table === undefined ? undefined : readTable(table, "models");
-  const modelsWhere = `${where.slice(0, -1)}.models]`;
+  return models;
+}
+
+function readConductorModels(table: TomlTable | undefined): Partial<Record<ConductorPhase, string>> {
+  const where = "[conductor.models]";
   const models: Partial<Record<ConductorPhase, string>> = {};
-  for (const key of Object.keys(modelsTable ?? {})) {
+  for (const key of Object.keys(table ?? {})) {
     if (!(CONDUCTOR_PHASES as readonly string[]).includes(key)) {
       throw new HikyakuError(
-        `${modelsWhere} に指定できないキーです: ${key}`,
+        `${where} に指定できないキーです: ${key}`,
         `使用できるキー: ${CONDUCTOR_PHASES.join(" | ")}`,
       );
     }
-    const phaseModel = readModel(modelsTable, key, modelsWhere);
-    if (phaseModel !== undefined) models[key as ConductorPhase] = phaseModel;
+    const model = readModel(table, key, where);
+    if (model !== undefined) models[key as ConductorPhase] = model;
   }
-  return { model, models };
+  return models;
 }
 
 /** テーブルに許可していないキーが無いか。タイプミスを黙って捨てると、設定したつもりの値が効かない */
@@ -625,7 +777,7 @@ function readReview(
   const where = "[review]";
   assertKnownKeys(
     table,
-    ["provider", "provider_for", "max_rounds", "auto_fix", "timeout", ...REVIEW_PROVIDERS, ...REVIEW_KINDS],
+    ["provider", "max_rounds", "auto_fix", "timeout", ...REVIEW_PROVIDERS, ...REVIEW_KINDS],
     where,
   );
 
@@ -634,7 +786,6 @@ function readReview(
 
   const providers: ReviewProviderChoice[] = ["auto", ...REVIEW_PROVIDERS];
   const configured = readEnum(table, "provider", providers, where);
-  const configuredFor = readProviderFor(requireTable(table, "provider_for", where), "[review.provider_for]");
   const rawEnv = env[REVIEW_PROVIDER_ENV]?.trim();
   // 不正な値を黙って捨てると、設定ファイルのプロバイダに戻って同じように失敗する
   const envProvider =
@@ -655,10 +806,9 @@ function readReview(
     // doc は1回だけのレビューで、回数の設定は持たない（指摘への対応は各フェーズの承認で決める）
     const allowed =
       name === "doc"
-        ? ["provider", "provider_for", ...REVIEW_PROVIDERS]
+        ? ["provider", ...REVIEW_PROVIDERS]
         : [
             "provider",
-            "provider_for",
             "max_rounds",
             "auto_fix",
             ...REVIEW_PROVIDERS,
@@ -671,13 +821,11 @@ function readReview(
       name === "doc" ? `使用できるキー: ${allowed.join(" | ")}（ドキュメントのレビューは1回だけで、回数は設定できません）` : undefined,
     );
     return {
-      providers: providerRules([
+      provider: firstProvider([
         cloud === undefined ? undefined : { source: "cloud", provider: cloud.provider },
         envProvider === undefined ? undefined : { source: "env", provider: envProvider },
-        ruleFor("kind.provider_for", readProviderFor(requireTable(kindTable, "provider_for", kindWhere), `[review.${name}.provider_for]`)),
-        ruleOf("kind", readEnum(kindTable, "provider", providers, kindWhere)),
-        ruleFor("review.provider_for", configuredFor),
-        ruleOf("review", configured),
+        settingOf("kind", readEnum(kindTable, "provider", providers, kindWhere)),
+        settingOf("review", configured),
       ]),
       maxRounds: name === "doc" ? 1 : (readMaxRounds(kindTable, kindWhere) ?? baseRounds),
       autoFix: name === "doc" ? false : (readBoolean(kindTable, "auto_fix", kindWhere) ?? baseAutoFix),
@@ -698,76 +846,30 @@ function readReview(
   return { timeoutMinutes: timeout, code: kind("code"), security: kind("security"), doc: kind("doc") };
 }
 
-/**
- * [review.provider_for] を読む。キーはメインのプロバイダ、値はレビューの実行先。
- * 「もう一方」のような相対の指定にしないのは、プロバイダが増えたときに意味が決まらなくなるため
- */
-function readProviderFor(
-  table: TomlTable | undefined,
-  where: string,
-): Partial<Record<ReviewProvider, ReviewProvider>> | undefined {
-  if (table === undefined) return undefined;
-  assertKnownKeys(table, REVIEW_PROVIDERS, where, `キーにはメインのセッションのプロバイダ（${REVIEW_PROVIDERS.join(" | ")}）を書きます`);
-  const map: Partial<Record<ReviewProvider, ReviewProvider>> = {};
-  for (const key of REVIEW_PROVIDERS) {
-    const value = readEnum(table, key, REVIEW_PROVIDERS, where);
-    if (value !== undefined) map[key] = value;
-  }
-  return map;
-}
-
-function ruleOf(source: "kind" | "review", provider: ReviewProviderChoice | undefined): ReviewProviderRule | undefined {
+function settingOf(source: "kind" | "review", provider: ReviewProviderChoice | undefined): ReviewProviderSetting | undefined {
   return provider === undefined ? undefined : { source, provider };
 }
 
-function ruleFor(
-  source: "kind.provider_for" | "review.provider_for",
-  providerFor: Partial<Record<ReviewProvider, ReviewProvider>> | undefined,
-): ReviewProviderRule | undefined {
-  return providerFor === undefined ? undefined : { source, providerFor };
+/** 優先順に並べた候補のうち、最初に値があったもの。どれも無ければ既定の auto */
+function firstProvider(candidates: (ReviewProviderSetting | undefined)[]): ReviewProviderSetting {
+  return candidates.find((candidate) => candidate !== undefined) ?? { source: "default", provider: "auto" };
 }
 
-function providerRules(rules: (ReviewProviderRule | undefined)[]): ReviewProviderRule[] {
-  return [...rules.filter((rule): rule is ReviewProviderRule => rule !== undefined), { source: "default", provider: "auto" }];
-}
-
-/** 規則の列を1行で表す（config の表示用）。左ほど優先 */
-export function describeProviderRules(rules: ReviewProviderRule[]): string {
-  // provider の段で必ず決まるので、それより後ろの段は表示しない
-  const end = rules.findIndex((rule) => !("providerFor" in rule));
-  return rules
-    .slice(0, end + 1)
-    .map((rule) => {
-      if ("providerFor" in rule) {
-        const pairs = REVIEW_PROVIDERS.filter((key) => rule.providerFor[key] !== undefined).map(
-          (key) => `${key}→${rule.providerFor[key]}`,
-        );
-        return `provider_for（${pairs.length === 0 ? "空" : pairs.join(", ")}）`;
-      }
-      if (rule.source === "cloud") return `${rule.provider}（${cloudEnvLabel(rule.provider)}）`;
-      return rule.source === "env" ? `${rule.provider}（環境変数 ${REVIEW_PROVIDER_ENV}）` : rule.provider;
-    })
-    .join(" > ");
+/** provider を1行で表す（config の表示用）。設定ファイル以外から来たときは出所を添える */
+export function describeProvider(setting: ReviewProviderSetting): string {
+  if (setting.source === "cloud") return `${setting.provider}（${cloudEnvLabel(setting.provider)}）`;
+  return setting.source === "env" ? `${setting.provider}（環境変数 ${REVIEW_PROVIDER_ENV}）` : setting.provider;
 }
 
 export interface ResolvedReviewProvider {
   provider: ReviewProvider;
   source: ReviewProviderSource;
-  /** provider_for で決まったとき、使った行のキー（メインのプロバイダ） */
-  key: ReviewProvider | undefined;
 }
 
-/** 規則の列を、メインのプロバイダ（--self）で解決する。auto はメインと同じ */
-export function resolveReviewProvider(settings: ReviewKindSettings, self: ReviewProvider): ResolvedReviewProvider {
-  for (const rule of settings.providers) {
-    if ("providerFor" in rule) {
-      const target = rule.providerFor[self];
-      if (target !== undefined) return { provider: target, source: rule.source, key: self };
-      continue;
-    }
-    return { provider: rule.provider === "auto" ? self : rule.provider, source: rule.source, key: undefined };
-  }
-  return { provider: self, source: "default", key: undefined };
+/** auto をメインのセッションのプロバイダ（claude）に解決する */
+export function resolveReviewProvider(settings: ReviewKindSettings): ResolvedReviewProvider {
+  const { provider, source } = settings.provider;
+  return { provider: provider === "auto" ? MAIN_PROVIDER : provider, source };
 }
 
 function checkEnum<T extends string>(
@@ -906,6 +1008,228 @@ function mergeTables(base: TomlTable, override: TomlTable): TomlTable {
   return out;
 }
 
+/**
+ * [diff] を読む。exclude / tests は既定値を置き換える（足し合わせない）。
+ * 既定値に足したいときは、既定値（hikyaku config --json の diff）を写してから足す。
+ * 差分の事実の印（test_declarations / skip_markers / assertion_markers）は既定に追加される。
+ * 既定を消せると、テストの後退を設定で見えなくできてしまう
+ */
+function readDiffPatterns(table: TomlTable | undefined): DiffPatterns {
+  const where = "[diff]";
+  const read = (key: string, fallback: string[]): string[] => {
+    const values = readStringArray(table, key, where) ?? fallback;
+    if (values.some((pattern) => pattern.trim() === "")) {
+      throw new HikyakuError(`${where}.${key} に空のパターンがあります`);
+    }
+    return values;
+  };
+  const extend = (key: string, defaults: string[]): string[] => [...new Set([...defaults, ...read(key, [])])];
+  return {
+    exclude: read("exclude", DEFAULT_DIFF_EXCLUDE),
+    tests: read("tests", DEFAULT_DIFF_TESTS),
+    testDeclarations: extend("test_declarations", DEFAULT_TEST_DECLARATIONS),
+    skipMarkers: extend("skip_markers", DEFAULT_SKIP_MARKERS),
+    assertionMarkers: extend("assertion_markers", DEFAULT_ASSERTION_MARKERS),
+  };
+}
+
+/**
+ * トークン数の指定。整数（250000）か、k / m の単位を付けた文字列（"250k"・"1.2m"）で書ける。
+ * 引用符の無い 250k は TOML として不正なので、単位を付けるときは文字列にする
+ */
+export function parseTokenCount(value: unknown): number | undefined {
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : undefined;
+  if (typeof value !== "string") return undefined;
+  const match = /^\s*(\d+(?:\.\d+)?)\s*([kKmM]?)\s*$/.exec(value);
+  if (match === null) return undefined;
+  const unit = (match[2] ?? "").toLowerCase();
+  const scale = unit === "k" ? 1_000 : unit === "m" ? 1_000_000 : 1;
+  const tokens = Number(match[1]) * scale;
+  return Number.isInteger(tokens) && tokens > 0 ? tokens : undefined;
+}
+
+/** 割合の指定。"90%" か 0〜1 の小数（0.9）で書ける */
+export function parseRatio(value: unknown): number | undefined {
+  let ratio: number | undefined;
+  if (typeof value === "number") ratio = value;
+  else if (typeof value === "string") {
+    const match = /^\s*(\d+(?:\.\d+)?)\s*%\s*$/.exec(value);
+    if (match !== null) ratio = Number(match[1]) / 100;
+  }
+  return ratio !== undefined && ratio > 0 && ratio < 1 ? ratio : undefined;
+}
+
+function readContextLimits(table: TomlTable | undefined): ContextLimits {
+  const where = "[context]";
+  let limit = DEFAULT_CONTEXT_LIMITS.limit;
+  const rawLimit = table?.["limit"];
+  if (rawLimit !== undefined) {
+    const value = parseTokenCount(rawLimit);
+    if (value === undefined) {
+      throw new HikyakuError(
+        `${where}.limit はトークン数で指定してください（現在: ${JSON.stringify(rawLimit)}）`,
+        '正の整数（600000）か、k / m の単位を付けた文字列（"600k"）で書いてください。',
+      );
+    }
+    limit = value;
+  }
+  const ratio = (key: "estimate_ratio" | "merge_ratio", fallback: number): number => {
+    const raw = table?.[key];
+    if (raw === undefined) return fallback;
+    const value = parseRatio(raw);
+    if (value === undefined) {
+      throw new HikyakuError(
+        `${where}.${key} は 0 より大きく 1 より小さい割合で指定してください（現在: ${JSON.stringify(raw)}）`,
+        '"90%" か 0.9 のように書いてください。',
+      );
+    }
+    return value;
+  };
+  const limits = {
+    limit,
+    estimateRatio: ratio("estimate_ratio", DEFAULT_CONTEXT_LIMITS.estimateRatio),
+    mergeRatio: ratio("merge_ratio", DEFAULT_CONTEXT_LIMITS.mergeRatio),
+  };
+  if (limits.mergeRatio >= limits.estimateRatio) {
+    throw new HikyakuError(
+      `${where}.merge_ratio（${limits.mergeRatio}）は estimate_ratio（${limits.estimateRatio}）より小さくしてください`,
+      "予測ピークが limit × merge_ratio 未満なら統合を検討、limit × estimate_ratio（見積もりの上限）超なら分割を検討します。",
+    );
+  }
+  return limits;
+}
+
+/** v3 で廃止したキー */
+const RETIRED_KEYS = ["bp_max", "bp_actual", "user_stories_gate"] as const;
+
+/** v3 で廃止した [context] のキー（limit と割合に置き換えた） */
+const RETIRED_CONTEXT_KEYS = ["merge_below", "split_above", "approval", "implement", "review"] as const;
+
+/**
+ * v3 で廃止したキーの、移行先を示すエラー。黙って無視すると「設定したのに効かない」になるので、
+ * v3 の作業に使う設定からは必ず止める（ルート設定は読んだ時点、サイクル設定は assertCurrentConfig で）
+ */
+function retiredKeyErrors(table: TomlTable, where: string): HikyakuError[] {
+  const errors: HikyakuError[] = [];
+  if (table["bp_max"] !== undefined) {
+    errors.push(new HikyakuError(
+      `${where}: bp_max は v3 で廃止しました`,
+      [
+        "ビルドの大きさは BP ではなく、メインセッションのコンテキストの予測ピーク（トークン）で判定します。",
+        '上限は [context] limit（既定 "600k"）で、予測ピークが見積もりの上限（limit の 90%）を超えたら分割を検討します。',
+        "bp_max を削除してください（docs/migration/v2-to-v3.md）。",
+      ].join("\n"),
+    ));
+  }
+  if (table["bp_actual"] !== undefined) {
+    errors.push(new HikyakuError(
+      `${where}: [bp_actual] は [diff] に改名しました`,
+      "exclude / tests の書き方は同じです。テーブル名を [diff] に変えてください。",
+    ));
+  }
+  if (table["user_stories_gate"] !== undefined) {
+    errors.push(new HikyakuError(
+      `${where}: user_stories_gate は v3 で廃止しました`,
+      [
+        "G1（user-stories の承認）は要件の合意なので同意として扱い、どのプロファイル・設定でも外せません。",
+        "user_stories_gate を削除してください（docs/configuration/profiles.md）。",
+      ].join("\n"),
+    ));
+  }
+  const context = table["context"];
+  const retiredContext = isTable(context) ? RETIRED_CONTEXT_KEYS.filter((key) => context[key] !== undefined) : [];
+  if (retiredContext.length > 0) {
+    errors.push(new HikyakuError(
+      `${where}: [context] ${retiredContext.join(" / ")} は v3 で廃止しました`,
+      [
+        "[context] は上限（limit、既定 \"600k\"）だけを決める形になりました。",
+        "見積もりの上限（分割を検討する境目）は limit × estimate_ratio（既定 90%）、統合の目安は limit × merge_ratio（既定 2/3）で求めます。",
+        "区切り（G8・実装開始前・レビュー前）の目安は、完了までの見込みを limit と比べる判定に置き換わりました。",
+        "split_above を変えていたなら limit = split_above ÷ 0.9 を目安に書き換え、ほかのキーは削除してください（docs/migration/v2-to-v3.md）。",
+      ].join("\n"),
+    ));
+  }
+  const review = table["review"];
+  if (isTable(review) && hasProviderFor(review)) {
+    errors.push(new HikyakuError(
+      `${where}: [review] provider_for は v3 で廃止しました`,
+      [
+        "メインのセッションは常に Claude Code になったので、メインのプロバイダごとに実行先を分ける必要がなくなりました。",
+        'claude = "codex" と書いていたなら、[review] provider = "codex"（種類ごとなら [review.<種類>] provider）に書き換えてください。',
+        "codex の行だけなら削除してください（docs/migration/v2-to-v3.md）。",
+      ].join("\n"),
+    ));
+  }
+  const external = table["external"];
+  if (isTable(external) && (external["target"] === "asana" || external["asana_project_gid"] !== undefined)) {
+    errors.push(new HikyakuError(
+      `${where}: Asana への投影は v3 で廃止しました`,
+      [
+        "外部システムへの投影は、サイクルごとの GitHub issue の作成とクローズだけになりました。",
+        `[external] target を ${EXTERNAL_TARGETS.map((target) => `"${target}"`).join(" か ")} にし、asana_project_gid を削除してください（docs/migration/v2-to-v3.md）。`,
+      ].join("\n"),
+    ));
+  }
+  const retiredConductor = retiredConductorKeys(table);
+  if (retiredConductor.length > 0) {
+    errors.push(new HikyakuError(
+      `${where}: [conductor] ${retiredConductor.join(" / ")} は v3 で廃止しました`,
+      [
+        "メインのセッションは常に Claude Code になったので、conductor のモデルの設定はプロバイダごとに分けません。",
+        "[conductor.claude] model は [conductor] model に、[conductor.claude.models] は [conductor.models] に移します。",
+        "provider と [conductor.codex]（model / models）は削除してください（Codex はレビューの実行先としてだけ使います）。",
+        "ルートの .hikyaku.config なら、hikyaku config migrate --dry-run で変換案を確かめ、hikyaku config migrate で移せます",
+        "（取り込まずに旧キーを消すだけなら hikyaku config migrate --drop）。/hikyaku:init の移行の回でも案内します（docs/migration/v2-to-v3.md）。",
+      ].join("\n"),
+    ));
+  }
+  return errors;
+}
+
+function isTable(value: unknown): value is TomlTable {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** [review] と [review.<種類>] のどこかに provider_for があるか */
+function hasProviderFor(review: TomlTable): boolean {
+  return review["provider_for"] !== undefined || REVIEW_KINDS.some((kind) => {
+    const table = review[kind];
+    return isTable(table) && table["provider_for"] !== undefined;
+  });
+}
+
+/** 廃止したキーを取り除く。閉じたサイクルの設定に残っていても、読むだけの操作は止めない */
+function stripRetiredKeys(table: TomlTable): void {
+  for (const key of RETIRED_KEYS) delete table[key];
+  const context = table["context"];
+  if (isTable(context)) for (const key of RETIRED_CONTEXT_KEYS) delete context[key];
+  const review = table["review"];
+  if (isTable(review)) {
+    delete review["provider_for"];
+    for (const kind of REVIEW_KINDS) {
+      const kindTable = review[kind];
+      if (isTable(kindTable)) delete kindTable["provider_for"];
+    }
+  }
+  const conductor = table["conductor"];
+  if (isTable(conductor)) for (const key of RETIRED_CONDUCTOR_KEYS) delete conductor[key];
+  const external = table["external"];
+  if (isTable(external)) {
+    if (external["target"] === "asana") delete external["target"];
+    delete external["asana_project_gid"];
+  }
+}
+
+/**
+ * サイクル設定に残った廃止キーを、v3 の作業（step の手順・予測ピークの見積もり・tasklist の書き込み）に
+ * 使う前に止める。読むだけの操作（cycle list / status、validate の閉じたサイクル）では止めない。
+ * 閉じた v2 のサイクルの設定には bp_max が残っていてよく、それで全体の操作が止まらないようにするため
+ */
+export function assertCurrentConfig(config: ResolvedConfig): void {
+  const [first] = config.retired;
+  if (first !== undefined) throw first;
+}
+
 function readDataIntegrity(table: TomlTable | undefined): DataIntegrityConfig {
   const where = "[data_integrity]";
   const releaseBranches = readStringArray(table, "release_branches", where) ?? [];
@@ -916,6 +1240,109 @@ function readDataIntegrity(table: TomlTable | undefined): DataIntegrityConfig {
     releaseBranches,
     allowUnsafeSplit: readBoolean(table, "allow_unsafe_split", where) ?? false,
   };
+}
+
+function readAxis<T extends string>(table: TomlTable, key: string, values: readonly T[], where: string): T | undefined {
+  const value = table[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !(values as readonly string[]).includes(value)) {
+    throw new HikyakuError(`${where}.${key} の値が不正です: ${JSON.stringify(value)}`, `使用できる値: ${values.join(" | ")}`);
+  }
+  return value as T;
+}
+
+function readPaths(table: TomlTable, key: string, where: string, required: boolean): string[] {
+  const paths = readStringArray(table, key, where);
+  if (paths === undefined) {
+    if (required) throw new HikyakuError(`${where}.${key} がありません`, "パス（glob）の配列で書いてください。");
+    return [];
+  }
+  if (paths.some((path) => path.trim() === "")) throw new HikyakuError(`${where}.${key} に空のパスがあります`);
+  if (required && paths.length === 0) throw new HikyakuError(`${where}.${key} が空です`);
+  return paths;
+}
+
+/**
+ * [app] を読む。作業ツリーのルート設定と、基準（merge-base）のルート設定の両方で使う。
+ * 宣言は上限を決めるので、不正な値・知らないキーは黙って捨てずにエラーにする
+ */
+export function readAppDeclaration(table: TomlTable | undefined, where = "[app]"): AppDeclaration | undefined {
+  if (table === undefined) return undefined;
+  assertKnownKeys(table, ["exposure", "data", "impact", "merge_gate", "areas"], where);
+  const exposure = readAxis(table, "exposure", EXPOSURES, where);
+  const data = readAxis(table, "data", DATA_WEIGHTS, where);
+  const impact = readAxis(table, "impact", IMPACTS, where);
+  if (exposure === undefined || data === undefined || impact === undefined) {
+    throw new HikyakuError(
+      `${where} には exposure・data・impact の3つが必要です`,
+      "どれかを省くと上限を決められません。3軸すべてを書いてください（docs/configuration/config-file.md）。",
+    );
+  }
+  const mergeGate = readAxis(table, "merge_gate", ["user"] as const, where);
+
+  const rawAreas = table["areas"];
+  const areas: AppArea[] = [];
+  if (rawAreas !== undefined) {
+    if (!Array.isArray(rawAreas) || rawAreas.some((item) => !isTable(item))) {
+      throw new HikyakuError(`${where}.areas は [[app.areas]] のテーブル配列で書いてください`);
+    }
+    rawAreas.forEach((item, index) => {
+      const area = item as TomlTable;
+      const at = `[[app.areas]] の ${index + 1} 件目`;
+      assertKnownKeys(area, ["name", "paths", "exposure", "data", "impact"], at);
+      const name = readString(area, "name", at);
+      if (name === undefined || name.trim() === "") throw new HikyakuError(`${at} に name がありません`, "前提の参照 area:<name> に使う名前を書いてください。");
+      if (areas.some((entry) => entry.name === name)) throw new HikyakuError(`[[app.areas]] の name が重複しています: ${name}`);
+      const entry: AppArea = { name, paths: readPaths(area, "paths", at, true) };
+      const areaExposure = readAxis(area, "exposure", EXPOSURES, at);
+      const areaData = readAxis(area, "data", DATA_WEIGHTS, at);
+      const areaImpact = readAxis(area, "impact", IMPACTS, at);
+      if (areaExposure !== undefined) entry.exposure = areaExposure;
+      if (areaData !== undefined) entry.data = areaData;
+      if (areaImpact !== undefined) entry.impact = areaImpact;
+      areas.push(entry);
+    });
+  }
+  return { axes: { exposure, data, impact }, mergeGate, areas };
+}
+
+/** [consent]（サイクル設定でだけ書ける）。deferred は書いた素の値で、有効かは deferred-consent.mts が判定する */
+export interface ConsentConfig {
+  deferred: boolean | undefined;
+}
+
+/**
+ * [consent] を読む。作業ツリーのサイクル設定と、基準（merge-base）のサイクル設定の両方で使う。
+ * 事後同意は緩める向きの設定なので、知らないキー・真偽値でない値は黙って捨てずにエラーにする
+ */
+export function readConsent(table: TomlTable | undefined, where = "[consent]"): ConsentConfig {
+  if (table === undefined) return { deferred: undefined };
+  assertKnownKeys(table, ["deferred"], where);
+  return { deferred: readBoolean(table, "deferred", where) };
+}
+
+/** サイクル設定でだけ書けるテーブル（ルートに書くと全サイクルに効き、G1 の合意を経ずに緩められる） */
+const CYCLE_ONLY_TABLES = ["consent"] as const;
+
+/** ルート設定に、サイクル設定でだけ書けるテーブルが無いか検査する */
+function assertNotCycleOnly(table: TomlTable, path: string): void {
+  const found = CYCLE_ONLY_TABLES.filter((key) => table[key] !== undefined);
+  if (found.length === 0) return;
+  throw new HikyakuError(
+    `${path}: ${found.map((key) => `[${key}]`).join("・")} はリポジトリルートの設定では指定できません`,
+    [
+      "事後同意（[consent] deferred）はサイクルごとに G1 でユーザーが合意して選ぶ設定なので、",
+      "サイクルの .hikyaku.config にだけ書けます（docs/configuration/config-file.md）。",
+    ].join("\n"),
+  );
+}
+
+/** [boundaries] を読む。作業ツリーのルート設定と、基準（merge-base）のルート設定の両方で使う */
+export function readBoundaries(table: TomlTable | undefined): Boundaries {
+  if (table === undefined) return { external: [], internal: [] };
+  const where = "[boundaries]";
+  assertKnownKeys(table, ["external", "internal"], where);
+  return { external: readPaths(table, "external", where, false), internal: readPaths(table, "internal", where, false) };
 }
 
 /**
@@ -960,6 +1387,19 @@ function assertCycleOverridable(table: TomlTable, path: string): void {
     );
   }
 
+  // アプリケーションの状況と境界はリポジトリの宣言。サイクルが自分の上限を緩められると、
+  // 害の受け入れを AI に任せてよいかの判断をサイクル自身が下せてしまう
+  const declared = ["app", "boundaries"].filter((key) => table[key] !== undefined);
+  if (declared.length > 0) {
+    throw new HikyakuError(
+      `${path}: ${declared.map((key) => `[${key}]`).join("・")} はサイクル設定では指定できません`,
+      [
+        "アプリケーションの状況（[app]・[[app.areas]]）と境界（[boundaries]）はリポジトリの宣言なので、",
+        "リポジトリルートの .hikyaku.config でのみ書けます。",
+      ].join("\n"),
+    );
+  }
+
   const locked = CYCLE_LOCKED_KEYS.filter((key) => table[key] !== undefined);
   if (locked.length > 0) {
     throw new HikyakuError(
@@ -991,7 +1431,11 @@ export function loadConfig(options: LoadOptions = {}): ResolvedConfig {
       ].join("\n"),
     );
   }
+  if (repoConfig) assertNotCycleOnly(repoConfig, repoConfigPath);
   const legacy = repoConfig ? checkLegacyKeys(repoConfig, repoConfigPath) : {};
+  // ルート設定は全サイクルに効くので、読んだ時点で止める
+  const [retiredAtRoot] = repoConfig ? retiredKeyErrors(repoConfig, repoConfigPath) : [];
+  if (retiredAtRoot !== undefined) throw retiredAtRoot;
   const askDeclared = readAskKeys(repoConfig, repoConfigPath);
 
   // HIKYAKU_ROOT: --root → config の hikyaku_root（旧 doc_root）
@@ -1041,19 +1485,23 @@ export function loadConfig(options: LoadOptions = {}): ResolvedConfig {
   // 宣言されたキーのうち、そのサイクルがまだ答えていないもの。
   // サイクルが決まっていない（create-cycle 前）なら宣言そのまま
   let askAtCreate = askDeclared;
+  let retired: HikyakuError[] = [];
   if (options.cycleDir !== undefined) {
     const cycleConfigPath = join(options.cycleDir, ".hikyaku.config");
     const cycleConfig = loadFile(cycleConfigPath);
     if (cycleConfig) {
       sources.push(cycleConfigPath);
       checkLegacyKeys(cycleConfig, cycleConfigPath);
+      // 閉じた v2 のサイクルにも残りうるので、ここでは止めずに記録し、v3 の作業に使うときに止める
+      retired = retiredKeyErrors(cycleConfig, cycleConfigPath);
+      stripRetiredKeys(cycleConfig);
       assertCycleOverridable(cycleConfig, cycleConfigPath);
       askAtCreate = askDeclared.filter((key) => readDotted(cycleConfig, key) === undefined);
       merged = mergeTables(merged, cycleConfig);
     }
   }
 
-  return finalize(merged, root, hikyakuRoot, sources, options.profileOverride, askAtCreate);
+  return { ...finalize(merged, root, hikyakuRoot, sources, options.profileOverride, askAtCreate), retired };
 }
 
 /**
@@ -1084,12 +1532,12 @@ function finalize(
   const preset = PROFILES[profile];
 
   const gates: Gates = {
-    userStories: readBoolean(merged, "user_stories_gate", "config") ?? preset.gates.userStories,
     codebaseSurvey:
       readBoolean(merged, "codebase_survey_gate", "config") ?? preset.gates.codebaseSurvey,
     designChoice: readBoolean(merged, "design_choice_gate", "config") ?? preset.gates.designChoice,
     architecture: readBoolean(merged, "architecture_gate", "config") ?? preset.gates.architecture,
     plan: readBoolean(merged, "plan_gate", "config") ?? preset.gates.plan,
+    promotion: readBoolean(merged, "promotion_gate", "config") ?? preset.gates.promotion,
   };
 
   const reviews: Reviews = {
@@ -1111,6 +1559,7 @@ function finalize(
   };
 
   const reviewTable = requireTable(merged, "review", "config");
+  const contextLimits = readContextLimits(readTable(merged, "context"));
   const securityTable = readTable(reviewTable ?? {}, "security");
   const externalTable = readTable(merged, "external");
 
@@ -1119,7 +1568,6 @@ function finalize(
     hikyakuRoot,
     profile,
     baseBranch: readString(merged, "base_branch", "config"),
-    bpMax: readInteger(merged, "bp_max", "config") ?? DEFAULT_BP_MAX,
     gates,
     reviews,
     branch: readBranchNaming(readTable(merged, "branch"), DEFAULT_NAMING),
@@ -1138,13 +1586,22 @@ function finalize(
     },
     review: readReview(reviewTable, preset.reviewRounds),
     external: {
-      target: readEnum(externalTable, "target", ["none", "github", "asana"], "[external]") ?? "none",
+      target: readEnum(externalTable, "target", [...EXTERNAL_TARGETS], "[external]") ?? "none",
       githubRepo: readString(externalTable, "github_repo", "[external]"),
-      asanaProjectGid: readString(externalTable, "asana_project_gid", "[external]"),
     },
     conductor: readConductor(readTable(merged, "conductor")),
     dataIntegrity: readDataIntegrity(readTable(merged, "data_integrity")),
+    app: readAppDeclaration(requireTable(merged, "app", "config")),
+    boundaries: readBoundaries(requireTable(merged, "boundaries", "config")),
+    consent: readConsent(requireTable(merged, "consent", "config")),
+    diff: readDiffPatterns(readTable(merged, "diff")),
+    context: contextLimits,
+    peakBands: peakBandsOf(contextLimits),
+    rules: readRulesConfig(readTable(merged, "rules")),
+    areas: readAreasConfig(readTable(merged, "areas")),
+    metrics: readMetricsConfig(readTable(merged, "metrics")),
     askAtCreate,
     sources,
+    retired: [],
   };
 }

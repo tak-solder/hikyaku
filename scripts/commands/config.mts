@@ -1,28 +1,39 @@
 /** config — 解決済みの設定を出力する */
 
-import { flagString } from "../lib/args.mts";
-import { describeProviderRules, loadConfig } from "../lib/config.mts";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { flagBoolean, flagString } from "../lib/args.mts";
+import { migrateConductor } from "../lib/config-migrate.mts";
+import { repoRoot } from "../lib/paths.mts";
+import { describeProvider, loadConfig, type AppDeclaration, type ResolvedConfig } from "../lib/config.mts";
+import { ceilingOf, effectiveDeclaration } from "../lib/risk.mts";
+import { deferredConsent } from "../lib/deferred-consent.mts";
 import { DEFAULT_BRANCH_MARK, resolveUnsafeSplit } from "../lib/integrity.mts";
-import { emit } from "../lib/output.mts";
+import { HikyakuError } from "../lib/errors.mts";
+import { emit, warn } from "../lib/output.mts";
 import { register } from "../lib/registry.mts";
-import { describeSource, openCycleIfAny } from "../lib/workspace.mts";
+import { describeSource, openCycle, openCycleIfAny } from "../lib/workspace.mts";
 
 register({
   name: "config",
   summary: "設定をマージし、対象サイクルの profile を展開して表示する",
-  usage: "hikyaku config [<cycle>] [--root <path>] [--profile <name>] [--json]",
+  usage: "hikyaku config [<cycle>] [--root <path>] [--profile <name>] [--require-cycle | --no-cycle] [--json]",
   details: [
     "設定は次の順にキー単位でマージされます:",
     "  1. リポジトリルート/.hikyaku.config（必須）",
     "  2. {HIKYAKU_ROOT}/cycles/{NNN}-{slug}/.hikyaku.config（任意）",
     "",
-    "サイクル側で上書きできないのは hikyaku_root と profile だけです",
-    "（前者はワークスペースの所在そのもの、後者は cycles.md が唯一の正）。",
+    "サイクル側で上書きできないのは hikyaku_root・profile・data_integrity.release_branches・[app]・[boundaries] です",
+    "（理由は docs/configuration/config-file.md の「サイクル側で上書きできないキー」）。",
     "",
-    "サイクルを省略した場合は、現在のブランチ → .hikyaku.local → 唯一の進行中サイクル",
-    "の順に対象を決めます。決められなければ候補を挙げてエラーにするので、",
-    "ユーザーに尋ねてから指定し直してください。サイクルがまだ1つも無いときは",
-    "リポジトリルートの設定だけを返します（init / create-cycle 用）。",
+    "サイクルを省略した場合は、現在のブランチ → .hikyaku.local の順で選択済みのサイクルを使い、",
+    "未選択ならリポジトリルートの設定を返します。進行中サイクルの件数からは選びません。",
+    "サイクルを省略して --profile を指定すると、選択済みのサイクルも参照せず、",
+    "ルート設定に profile を当てた結果を返します（新しいサイクルの profile 確認用）。",
+    "既存サイクルでの what-if は config <cycle> --profile <name> と明示してください。",
+    "--require-cycle は作業開始用です。引数 → ブランチ → 栞 → 唯一の active の順で対象を必須解決し、",
+    "未作成や未選択で複数候補があればエラーにします。--profile は解決したサイクルに適用します。",
+    "--no-cycle はサイクルに属さない patch 用です。選択済みのサイクルも参照せず、ルート設定を返します。",
     "",
     "profile は承認ゲートとレビューの既定値をまとめて与えます。",
     "個別キー（architecture_gate, plan_review, test_spec_review など）で上書きできます。",
@@ -35,9 +46,19 @@ register({
     "[data_integrity] allow_unsafe_split が true で、base_branch がリリースされるブランチ",
     "（release_branches とデフォルトブランチ）に一致しないときだけ allowed: true になります。",
     "デフォルトブランチ（origin/HEAD）が分からなければ allowed: false に倒します。",
+    "",
+    "[app]・[[app.areas]]・[boundaries] はアプリケーションの状況と境界の宣言で、ルート設定でのみ書けます。",
+    "上限は、作業ツリーの宣言からのものと、base_branch・デフォルトブランチとの merge-base にある宣言",
+    "（ユーザーがマージした宣言）と比べた最も厳しいものを並べます。この版では宣言は検査と表示だけで、",
+    "ゲートの判定にはまだ使いません。",
   ].join("\n"),
   run: ({ args, operands }) => {
-    const opened = openCycleIfAny(args, operands[0]);
+    if (flagBoolean(args, "require-cycle") && flagBoolean(args, "no-cycle")) {
+      throw new HikyakuError("--require-cycle と --no-cycle は同時に指定できません");
+    }
+    const opened = flagBoolean(args, "require-cycle")
+      ? openCycle(args, operands[0])
+      : openCycleIfAny(args, operands[0]);
     const config = opened
       ? opened.config
       : loadConfig({
@@ -46,8 +67,13 @@ register({
         });
 
     const unsafeSplit = resolveUnsafeSplit(config);
+    // 事後同意の有効の判定（git を読むので loadConfig では計算しない）。サイクルが決まらなければ有効にならない
+    const deferred = deferredConsent(config, opened?.context.directory);
 
-    emit({ ...config, cycle: opened?.context.name, cycleSource: opened?.context.source, unsafeSplit }, () => {
+    const retired = config.retired.map((error) => error.message);
+    for (const error of config.retired) warn(`${error.message}（v3 の作業では止まります）`);
+
+    emit({ ...config, retired, cycle: opened?.context.name, cycleSource: opened?.context.source, unsafeSplit, deferredConsent: deferred }, () => {
       const lines: string[] = [];
       if (opened) {
         lines.push(
@@ -59,16 +85,15 @@ register({
         `hikyakuRoot  ${config.hikyakuRoot}`,
         `profile      ${config.profile}`,
         `baseBranch   ${config.baseBranch ?? "(自動検出)"}`,
-        `bpMax        ${config.bpMax}`,
         "",
         "承認ゲート（profile 管轄）:",
-        `  G1 user-stories      ${onOff(config.gates.userStories)}`,
+        "  G1 user-stories      常に有効（同意）",
         `  G2 codebase-survey   ${onOff(config.gates.codebaseSurvey)}`,
-        `  G3 設計案の選択      ${onOff(config.gates.designChoice)}`,
-        `  G4 architecture      ${onOff(config.gates.architecture)}`,
+        `  G3 設計案の選択      ${onOff(config.gates.designChoice)}（差し戻しからの再設計の回と、options の申告が上限を超える・重い領域に当たる・欠けている回は同意で常に有効）`,
+        `  G4 architecture      ${onOff(config.gates.architecture)}（差し戻しからの再設計の回と、設計が G3 の申告に無い重い領域・外との境界に触れる回は同意で常に有効）`,
         `  G7 plan（単独）      ${onOff(config.gates.plan)}`,
-        "  ※ G6 tasklist・issue 変更 / G8 plan+test-spec /",
-        "     G10 永続ドキュメント昇格 は profile の管轄外で常に有効",
+        `  G10 昇格             ${onOff(config.gates.promotion)}（decisions・constraints の変更を含む回は同意で常に有効）`,
+        "  ※ G6 tasklist・issue 変更 / G8 plan+test-spec は profile の管轄外で常に有効",
         "",
         "レビュー:",
         `  user_stories_review  ${onOff(config.reviews.userStories)}`,
@@ -91,7 +116,7 @@ register({
               return model === undefined && effort === undefined ? "" : `  ${provider}: ${[model, effort].filter(Boolean).join(" / ")}`;
             })
             .join("");
-          return `  ${kind.padEnd(9)}${describeProviderRules(settings.providers)}${rounds}${models}`;
+          return `  ${kind.padEnd(9)}${describeProvider(settings.provider)}${rounds}${models}`;
         }),
         "",
         `branch       ${config.branch.prefix}${config.branch.separator}{cycle}${config.branch.separator}{phase}`,
@@ -104,11 +129,21 @@ register({
         `  release_branches    ${[unsafeSplit.defaultBranch === null ? `${DEFAULT_BRANCH_MARK}不明` : `${unsafeSplit.defaultBranch}${DEFAULT_BRANCH_MARK}`, ...config.dataIntegrity.releaseBranches].join(", ")}`,
         `  allow_unsafe_split  ${config.dataIntegrity.allowUnsafeSplit}`,
         `  安全でない分割      ${unsafeSplit.allowed ? "許す" : "許さない"}（${unsafeSplit.message}）`,
+        "",
+        `[consent] deferred    ${deferred.requested ? (deferred.effective ? "有効" : "選んでいるが有効でない") : "選んでいない"}（${deferred.reason}）`,
+        "",
+        ...describeDeclaration(config),
+        "",
+        "[diff]（tokens history build-NN の差分の集計）:",
+        `  exclude  ${config.diff.exclude.join(", ")}`,
+        `  tests    ${config.diff.tests.join(", ")}`,
+        "",
+        "[context]（メインセッションのコンテキストの上限）:",
+        `  limit           ${config.context.limit.toLocaleString("en-US")}`,
+        `  estimate_ratio  ${percent(config.context.estimateRatio)}（見積もりの上限 ${config.peakBands.estimateLimit.toLocaleString("en-US")}）`,
+        `  merge_ratio     ${percent(config.context.mergeRatio)}（統合の目安 ${config.peakBands.mergeHint.toLocaleString("en-US")}）`,
       );
       if (config.external.githubRepo) lines.push(`  github_repo  ${config.external.githubRepo}`);
-      if (config.external.asanaProjectGid) {
-        lines.push(`  asana_project_gid  ${config.external.asanaProjectGid}`);
-      }
       if (config.askAtCreate.length > 0) {
         lines.push(
           "",
@@ -129,6 +164,97 @@ register({
   },
 });
 
+register({
+  name: "config migrate",
+  summary: "リポジトリルートの .hikyaku.config にある v2 の conductor の設定を、v3 の形に移す",
+  usage: "hikyaku config migrate [--drop] [--dry-run] [--json]",
+  writes: true,
+  options: ["drop"],
+  details: [
+    "v2 の [conductor] はプロバイダごとにモデルを分けていました。v3 は [conductor] model と [conductor.models] だけです。",
+    "  [conductor.claude] model          → [conductor] model",
+    "  [conductor.claude.models]         → [conductor.models]",
+    "  [conductor] provider・[conductor.codex]（model / models）→ 削除（移し先が無い）",
+    "",
+    "--drop は、変換せずに旧キーを消すだけにします（claude の値も取り込まない）。取り込まないと決めたときに使います。",
+    "旧キーが残っていると、ルートの設定を読む全てのコマンドが止まります。",
+    "",
+    "移し先（[conductor] model、[conductor.models] のキー）に別の値が既にあるときは、上書きせずに止めて衝突を示します。",
+    "何も書き込みません。どちらを残すか決めて片方を手で消すか、--drop を使ってください。",
+    "書き換えは行単位の最小限で、旧キーの行・テーブルを消し、移す値を足すだけです（コメントや他のテーブルは変えません）。",
+    "書き換えたあとの内容を解析し直し、旧キーが残っていないことと、移した値が合っていることを確かめてから書きます。",
+    "",
+    "対象はリポジトリルートの .hikyaku.config だけです。サイクルの .hikyaku.config に残った旧キーは、",
+    "閉じたサイクルなら読み飛ばされます。進行中のサイクルに残っていれば、同じ形に手で書き換えてください。",
+    "--dry-run は書かずに、変換の前後（どのキーをどうするか）だけを表示します。",
+  ].join("\n"),
+  run: ({ args }) => {
+    const path = join(repoRoot(), ".hikyaku.config");
+    if (!existsSync(path)) {
+      throw new HikyakuError(`リポジトリルートに .hikyaku.config がありません: ${path}`, "/hikyaku:init を実行して生成してください。");
+    }
+    const drop = flagBoolean(args, "drop");
+    const dryRun = flagBoolean(args, "dry-run");
+    const result = migrateConductor(readFileSync(path, "utf8"), { drop });
+    if (result.changed && !dryRun) writeFileSync(path, result.content, "utf8");
+    for (const note of result.notes) warn(note);
+    emit({ path, drop, changed: result.changed, written: result.changed && !dryRun, changes: result.changes, notes: result.notes }, () => {
+      if (!result.changed) return `${path} に、v2 の [conductor] の設定（provider / [conductor.claude] / [conductor.codex]）はありません。`;
+      const lines = [path, drop ? "旧キーを消します（取り込まない）:" : "v2 の [conductor] の設定を移します:"];
+      for (const change of result.changes) {
+        const value = change.value === undefined ? "" : ` = ${change.value}`;
+        lines.push(change.action === "move" ? `  ${change.from}${value} → ${change.to}` : `  ${change.from}${value} → 削除`);
+      }
+      lines.push(dryRun ? "(--dry-run のため書き込んでいません)" : "書き換えました。差分を確認してコミットしてください。");
+      return lines.join("\n");
+    });
+  },
+});
+
 function onOff(value: boolean): string {
   return value ? "on" : "off";
+}
+
+function describeCeiling(declaration: AppDeclaration | undefined): string {
+  if (declaration === undefined) return "上限を設けない（宣言なし）";
+  const ceiling = ceilingOf(declaration.axes);
+  return ceiling === "なし" ? "なし（何も任せない）" : `害「${ceiling}」まで`;
+}
+
+/**
+ * [app]・[[app.areas]]・[boundaries] の表示。宣言は作業ツリーのもの。上限は、作業ツリーの宣言からのものと、
+ * 基準（ユーザーがマージした宣言）と比べた最も厳しい宣言からのものを並べる
+ */
+function describeDeclaration(config: ResolvedConfig): string[] {
+  const { app, boundaries } = config;
+  const effective = effectiveDeclaration(config);
+  const lines = ["[app]（アプリケーションの状況。この版では検査と表示だけで、ゲートの判定にはまだ使わない）:"];
+  if (app === undefined) {
+    lines.push(effective.declaration === undefined ? "  宣言なし（上限を設けない）" : "  作業ツリーには宣言なし（基準の宣言で上限が決まる）");
+  } else {
+    lines.push(
+      `  exposure / data / impact  ${app.axes.exposure} / ${app.axes.data} / ${app.axes.impact}`,
+      `  merge_gate                ${app.mergeGate ?? "(未宣言)"}`,
+      `  上限（作業ツリーの宣言）  ${describeCeiling(app)}`,
+    );
+    for (const area of app.areas) {
+      const axes = (["exposure", "data", "impact"] as const).flatMap((axis) => (area[axis] === undefined ? [] : [`${axis}=${area[axis]}`]));
+      lines.push(`  重い領域 ${area.name}  ${area.paths.join(", ")}${axes.length > 0 ? `（${axes.join(" ")}）` : ""}`);
+    }
+  }
+  if (app !== undefined || effective.declaration !== undefined) {
+    lines.push(`  上限（基準と比べた最も厳しい宣言）  ${describeCeiling(effective.declaration)}${effective.incomplete ? "（読めない基準があるので、判定では同意に倒す）" : ""}`);
+  }
+  for (const notice of effective.notices) lines.push(`  注意: ${notice}`);
+  lines.push(
+    "[boundaries]:",
+    `  external  ${boundaries.external.length === 0 ? "(なし)" : boundaries.external.join(", ")}`,
+    `  internal  ${boundaries.internal.length === 0 ? "(なし)" : boundaries.internal.join(", ")}`,
+  );
+  return lines;
+}
+
+/** 割合を小数第1位までの百分率で表す（2/3 → 66.7%） */
+function percent(ratio: number): string {
+  return `${Math.round(ratio * 1000) / 10}%`;
 }

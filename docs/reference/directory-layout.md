@@ -4,21 +4,27 @@
 リポジトリルート/
 ├── .hikyaku.config            # 振る舞いの設定（必須）。ドキュメントの所在は含まない
 ├── AGENTS.md                  # 永続ドキュメントの索引ブロックが埋め込まれる
+├── .claude/
+│   ├── rules/                 # パス指定の rule（builder がビルドの PR で書く）
+│   └── skills/                # このリポジトリのスキル（close-cycle が作る）
 ├── docs/                      # 永続ドキュメント（所在はリポジトリ規約に従う）
 │   ├── overview.md
 │   ├── constraints.md
-│   ├── learnings.md
 │   └── adr/
 └── docs/hikyaku/              # HIKYAKU_ROOT
     ├── document-guide.md      # 永続ドキュメントの所在を宣言（必須）
     ├── cycles.md              # サイクル索引（必須）
     ├── instructions.md        # ワークフロー独自の指示（任意）
-    ├── bp-guide/              # BP の基準表（任意。無ければ既定値）
-    │   ├── rules.toml         #   正本
-    │   ├── README.md          #   人間向けの説明。表は rules.toml から生成
-    │   └── cases.toml         #   期待値テスト
+    ├── token-guide/           # 予測ピークの見積もりのガイド（任意。無ければ標準のガイド）
+    │   ├── guide.md           #   ガイド。先頭に版とハッシュ
+    │   └── progress.jsonl     #   token-guide の手順の進捗
     ├── .hikyaku.local         # 最後に作業したサイクル（git 管理対象外）
-    ├── .gitignore             # .hikyaku.local の1行だけ
+    ├── .gitignore             # .hikyaku.local と feedback/ の2行だけ
+    ├── feedback/              # feedback export の書き出し（git 管理対象外）
+    ├── progress.jsonl         # init の手順の進捗
+    ├── patches/               # サイクルに属さない patch の記録（patch prune で古い月を消せる）
+    │   └── {YYYYMM}/{slug}/
+    │       └── progress.jsonl #   patch の手順の進捗
     └── cycles/
         ├── 001-user-auth/
         │   ├── .hikyaku.config  # このサイクルだけの上書き（任意）
@@ -39,15 +45,17 @@
 | `document-guide.md` | 永続ドキュメントの所在と管理主体。無ければ Hikyaku は動かない | init / close-cycle |
 | `cycles.md` | サイクル索引。並行サイクル検出の起点 | create-cycle / close-cycle |
 | `instructions.md` | このリポジトリで Hikyaku を回すときの手順・前提（任意） | close-cycle |
-| `bp-guide/` | BP の基準表。`rules.toml` が正本で、`README.md` の表と `cases.toml` の期待値がそれに従う（任意。無ければ既定値） | init / bp-guide |
+| `token-guide/guide.md` | 予測ピークの見積もりのガイド。標準のガイドを置き換える（任意。無ければ標準） | token-guide |
 | `.hikyaku.local` | このチェックアウトで最後に作業したサイクル | `cycle use` |
-| `.gitignore` | `.hikyaku.local` の1行だけ | init |
+| `feedback/{YYYYMMDD}.md` | Hikyaku へのフィードバックの書き出し。中身を含まない記録の集計と起票の下書き。送るかはユーザーが決める | `feedback export` |
+| `.gitignore` | `.hikyaku.local` と `feedback/` の2行だけ | init |
+| `progress.jsonl` | init の手順の進捗。`token-guide/progress.jsonl` は token-guide の手順の進捗 | `hikyaku step report` |
 
-`.gitignore` に包括パターンを書かないでください。close-cycle は別セッションで `retrospective.md` を昇格素材として読むため、まとめて除外すると読めなくなります。
+`.gitignore` に包括パターンを書かないでください。close-cycle は別セッションで `handoff.md` と `retrospective.md` から候補を集めるため、まとめて除外すると読めなくなります。
 
-`instructions.md` はインストラクションの優先順位で SKILL.md より上位にあり、スキルの挙動を上書きするための正規の場所です。走行中の他サイクルも読むため、書き換えるのは close-cycle だけです。
+`instructions.md` はインストラクションの優先順位で SKILL.md より上位にあり、スキルの挙動を上書きするための正規の場所です。走行中の他サイクルも読むため、サイクルの中で書き換えるのは close-cycle だけです（サイクルに属さない patch は、コードと同じ PR で直します）。
 
-`bp-guide/` も同じ理由でワークフローの外からだけ書き換えます。基準表はワークスペース全体の見積もりに効くため、サイクルの途中で動かすとそのサイクルの中で見積もりの比較が成立しなくなります。構成と調整の手順は [BP の基準表](../configuration/bp-guide.md) にあります。
+`token-guide/guide.md` を書き換えるのは `/hikyaku:token-guide` だけです。乖離が大きいサイクルでは close-cycle がこのスキルを呼び、変更は別のブランチの PR になります。ガイドはワークスペース全体の見積もりに効き、走行中のほかのサイクルの残りのビルドも補正後の版で見積もられます。各予測には見積もりに使った版が残るので、比較は版ごとに分けられます。構成と補正の手順は [予測ピークと見積もりのガイド](../configuration/token-guide.md) にあります。
 
 ## サイクルディレクトリ
 
@@ -55,30 +63,45 @@
 cycles/{NNN}-{slug}/
 ├── .hikyaku.config           # このサイクルだけの上書き（任意）
 ├── planning/
+│   ├── intake.md             # patch から引き継いだサイクルのみ（依頼・調べたこと・合意したこと）
 │   ├── questions.md          # 質問が発生した場合のみ
 │   ├── user-stories.md
-│   └── retrospective.md
+│   ├── progress.jsonl        # planner の手順の進捗
+│   ├── decisions.jsonl       # 未決事項と決定の記録（あるときだけ。どの作業単位にも置かれる）
+│   └── retrospective.md      # 振り返り（永続化すること / 役に立たなかった記述）
 ├── design/
 │   ├── codebase-survey.md    # 既存コードがある場合
 │   ├── design-questions.md   # 質問が発生した場合のみ
 │   ├── design-delta.md
+│   ├── progress.jsonl        # 手順の進捗（architect と build-manager の記録）
 │   └── retrospective.md
 ├── tasklist.md
 ├── return.md                 # architect への差し戻し中のみ（差し戻し元のビルドのブランチだけにある）
+├── patches/{YYYYMM}/{slug}/  # このサイクルに属す patch
+│   ├── progress.jsonl        # patch の手順の進捗
+│   └── handoff.md            # 永続化すること（あるときだけ。close-cycle が昇格させる）
 └── build-{NN}/
     ├── issue.md              # architect が作成
     ├── questions.md          # 質問が発生した場合のみ
     ├── plan.md
     ├── test-spec.md          # テスト対象があるビルドのみ
+    ├── agreement.md          # 合意との突き合わせの結果（指摘が0件でも書く）
     ├── handoff.md
+    ├── progress.jsonl        # 手順の進捗（hikyaku step report が追記する）
     └── retrospective.md
 ```
 
 ディレクトリ名は `{NNN}-{slug}` です。slug は英数字とハイフンに正規化されます（ブランチ名の解析を壊さないため）。`closed` になったサイクルのディレクトリも残します。PR 履歴から辿れることに価値があるためです。
 
-`handoff.md` と `retrospective.md` は close-cycle の昇格素材になります。どちらもコミット対象です。
+`handoff.md` と `retrospective.md` は、close-cycle が永続化の候補を集める元になります。どちらもコミット対象です。サイクルに属す patch の `handoff.md` も同じく候補の元になります。
 
-`return.md` は、builder が architect に差し戻したときに書く記録です。差し戻し元のビルドのブランチにだけコミットされ、architect が再設計の最後に削除するので、デフォルトブランチには入りません。作業ツリーにこのファイルがあることが「差し戻し中」を意味し、1行目の見出し（`# 差し戻し: build-NN`）から差し戻し元のビルドが読まれます。
+`patches/{YYYYMM}/{slug}/` は [patch](../workflow/patch.md) の作業単位です。サイクルに属さない patch は HIKYAKU_ROOT の下に、進行中のサイクルに属す patch はそのサイクルのディレクトリの下に置きます。依頼・合意・検証結果は PR の本文にあり、ここに残るのは手順の記録と、サイクルに属す patch の `handoff.md` だけです。
+
+`progress.jsonl` は、フェーズの手順がどこまで進んだかの記録です。置き場所はフェーズで決まり、PLAN は `planning/`、ARCHITECT は `design/`、BUILD は `build-{NN}/`、CLOSE と create-cycle はサイクルのディレクトリ直下、init は HIKYAKU_ROOT 直下、token-guide は `token-guide/` です。CLOSE がサイクルの直下なのは、成果物がサイクルの外にあり、フェーズ専用のディレクトリを持たないためです。build-manager と振り返り（retrospective）の記録は、呼び出し元のフェーズと同じファイルに入ります。`hikyaku step report` が1手ごとに1行を追記し、成果物と一緒にコミットされます。現在地そのものは保存されず、`hikyaku step next` がこの記録と成果物から毎回導き直します。別のセッションや別のマシンから再開しても、同じ続きが返るのはこのためです。手で編集すると読めなくなるので、記録を直すときも `step report` を使います。
+
+`decisions.jsonl` は、決めずに先へ進めたことや暫定で決めたことを、いつ・誰が決めるかとともに残す記録です。どの作業単位（`planning/`・`design/`・`build-{NN}/`・サイクルのディレクトリ直下・`patches/{YYYYMM}/{slug}/`）にも置かれ、書くのは `hikyaku ledger open` と `ledger decide` だけです。事項は記録した作業単位のファイルに、決定は決めた作業単位のファイルに追記します。前のフェーズの事項に並行するビルドがそれぞれ決定を足しても、同じファイルへの追記にならないので、マージで衝突しません。事項と決定は ID で結ばれ、決まったか・期限が来たかはサイクルの全ファイルと `progress.jsonl` から毎回導きます。状態を表す欄はありません。`progress.jsonl` と同じく、手で編集すると読めなくなります。
+
+`return.md` は、builder が architect に差し戻したときに書く記録です。差し戻し元のビルドのブランチにだけコミットされ、architect が再設計の最後に削除するので、デフォルトブランチには入りません。作業ツリーにこのファイルがあることが「差し戻し中」を意味し、1行目の見出し（`# 差し戻し: build-NN`）から差し戻し元のビルドが読まれます。本文は、試したこと、問題を変える選択肢（各項目に `失うもの:`）、推奨がそろっているかだけが確かめられ、欠けていれば architect は再設計の回を始められません。
 
 ## cycles.md
 
@@ -90,7 +113,7 @@ cycles/{NNN}-{slug}/
 | `profile` | 作成時に選択したプロファイル。ここが唯一の正 |
 | `hikyaku` | 作成時の Hikyaku バージョン。ディレクトリ構造の解釈に使う。以後更新しない |
 | `チケット` | このサイクルの発端になった外部チケット（人が作ったもの） |
-| `外部` | Hikyaku が投影した親 issue / 親タスク。可視化のためのビューで、判定には使わない |
+| `外部` | Hikyaku が起票したサイクルの GitHub issue。可視化のためのビューで、判定には使わない |
 | `依存` | 依存するサイクルの ID。依存が満たされた = そのサイクルが `closed` |
 | `開始` / `完了` | 日付 |
 | `要約` | 一行要約 |
@@ -103,14 +126,19 @@ cycles/{NNN}-{slug}/
 |---|---|
 | `buildID` | ビルドの識別番号。`build-{NN}` ディレクトリに対応する |
 | `title` | ビルドのタイトル |
-| `BP` | ビルドポイントの見積もり |
-| `dependencies` | 依存する buildID。依存が満たされた = そのビルドの `PR` 列が非空 |
-| `issue` | `issue.md` へのリンク。外部へ投影したらその参照で置き換わる |
-| `PR` | 非空であることが完了を意味する |
+| `予測ピーク` | architect 段階で見積もった、そのビルドのメインセッションのコンテキストのピーク（例: `380k`） |
+| `dependencies` | 依存する buildID。依存が満たされた = そのビルドが完了している |
+| `PR` | サイクルを締めるとき（`cycle close`）に、完了の記録からまとめて埋まる。サイクルの途中は空 |
 
-`status` 列はありません。持たせると「status は done だが PR 列は空」という嘘の状態を作れてしまいます。
+`status` 列はありません。v3 のベータ版まであった `issue` 列も無くなりました（読めますが、書き込むと列が落ちます）。`status` 列を持たせると「status は done だが完了の記録が無い」という嘘の状態を作れてしまいます。
 
-依存グラフの Mermaid 表現が本文に併記され、`dependencies` 列から常に同じ内容になるようスクリプトが再生成します。グラフは推移的簡約をかけて描かれ、他の依存を経由して到達できる線（`b01 → b02 → b03` があるときの `b01 → b03`）は省かれます。`dependencies` 列は直接の依存をそのまま持ち、着手可否の判定と handoff の参照もこの列を使います。ノードは `PR` 列から決まる状態で色分けされます。`PR` 列が埋まったビルドは紫（完了）、依存するビルドがすべて完了していて着手できるものは緑（着手可能）、先行ビルドに未完了があるものはグレー（待機中）です。先行ビルドが未完了の依存線は点線になるため、まだ待っている依存だけが目立ちます。色は `hikyaku tasklist done` で `PR` 列を埋めるたびに再生成され、そのビルドの PR に含まれるので、マージと同時に切り替わります。循環依存の検証もスクリプトが行い、検出された場合は書き込まれません。
+ビルドの完了は、そのビルドの `build-NN/progress.jsonl` にある完了の記録（builder の pr の `done`。PR の URL が添えてある）で判定します。`PR` 列が埋まっていれば（close-cycle の後や、この形より前に書かれたサイクル）、それも完了として読みます。
+
+依存グラフの Mermaid 表現が本文に併記され、`dependencies` 列から常に同じ内容になるようスクリプトが再生成します。グラフは推移的簡約をかけて描かれ、他の依存を経由して到達できる線（`b01 → b02 → b03` があるときの `b01 → b03`）は省かれます。`dependencies` 列は直接の依存をそのまま持ち、着手可否の判定と handoff の参照もこの列を使います。ノードは完了の記録から決まる状態で色分けされます。完了したビルドは紫（完了）、依存するビルドがすべて完了していて着手できるものは緑（着手可能）、先行ビルドに未完了があるものはグレー（待機中）です。先行ビルドが未完了の依存線は点線になるため、まだ待っている依存だけが目立ちます。色は builder が完了を記録したあとの `hikyaku tasklist done` で再生成され、そのビルドの PR に含まれるので、マージと同時に切り替わります。
+
+図の更新は各ビルドの PR に入るので、並行するビルドは同じ `tasklist.md` をそれぞれ書き換えます。そこでコンフリクトしないよう、図はビルドごとのブロックに分けて書かれ、`tasklist done` で変わるのは完了したビルドのブロックだけです。完了の紫はそのビルド自身の行に、待機中のグレーは未完了の先行ビルドから出る線に付き、着手可能の緑は何も付いていない未完了ビルドの既定の色です。先行ビルドの線が1本ずつ実線に変わり、グレーを付ける線が無くなったビルドが緑になるので、先行ビルドが並行してマージされても図は正しく切り替わります。表は行のあいだに空行を挟めないので、隣り合う行を別々の PR が書き換えると必ずコンフリクトします。そのため、ビルドの PR は表に触れず、`PR` 列はサイクルを締めるときに close-cycle がまとめて埋めます。`PR` 列だけは幅をそろえないので、埋めても他の列の空白は変わりません。
+
+循環依存の検証もスクリプトが行い、検出された場合は書き込まれません。
 
 buildID の採番は `max(既存) + 1` で、リナンバリングは行いません。ディレクトリ名はゼロ埋め2桁です（buildID 3 → `build-03`）。
 
@@ -123,11 +151,14 @@ buildID の採番は `max(既存) + 1` で、リナンバリングは行いま�
 | フェーズ | 例 |
 |---|---|
 | `init` | `hikyaku/init`（サイクルに属さない） |
-| `bp-guide` | `hikyaku/bp-guide`（サイクルに属さない） |
+| `token-guide` | `hikyaku/token-guide`（サイクルに属さない） |
 | `create` | `hikyaku/002-billing/create` |
 | `plan` | `hikyaku/002-billing/plan` |
 | `architect` | `hikyaku/002-billing/architect` |
 | `build-NN` | `hikyaku/002-billing/build-01` |
 | `close` | `hikyaku/002-billing/close` |
+| `patch-YYYYMM-slug` | `hikyaku/patch/202611/list-sort`（サイクルの有無に関わらずこの形） |
+
+patch はサイクルより先に `patch{separator}` で見分けます。サイクル名は数字で始まるので重なりません。年月をブランチ名に含めるのは、ブランチ名から記録の場所（`patches/{YYYYMM}/{slug}/`）を一意に導くためです。
 
 フェーズは閉じた集合です。これがブランチ名の解析を成立させています（prefix を前から、フェーズを後ろから剥がせばサイクルが残るので、slug がハイフンを含んでいても破綻しません）。

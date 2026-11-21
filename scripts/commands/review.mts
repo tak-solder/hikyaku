@@ -7,17 +7,19 @@ import { flagBoolean, flagInteger, flagList, flagString, type ParsedArgs } from 
 import {
   REVIEW_KINDS,
   REVIEW_PROVIDER_ENV,
-  REVIEW_PROVIDERS,
+  assertCurrentConfig,
   cloudEnvLabel,
+  loadConfig,
   type ResolvedConfig,
   type ReviewKind,
-  type ReviewProvider,
   type ReviewProviderSource,
 } from "../lib/config.mts";
 import { shellQuote } from "../lib/conductor.mts";
 import { HikyakuError } from "../lib/errors.mts";
-import { defaultBranch, gitPath } from "../lib/git.mts";
-import { emit } from "../lib/output.mts";
+import { gitPath, originHeadRef } from "../lib/git.mts";
+import { emit, table } from "../lib/output.mts";
+import { cycleDirName, loadCycles } from "../lib/cycles.mts";
+import { collectFindingRuns, summarizeFindings } from "../lib/review-findings.mts";
 import { pluginRoot } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
 import {
@@ -27,6 +29,7 @@ import {
   parseClaudeResult,
   parseCodexResult,
   planReview,
+  reviewAction,
   securityPrompt,
   stripFrontmatter,
   type ReviewInvocation,
@@ -34,7 +37,7 @@ import {
   type ReviewPlan,
 } from "../lib/review.mts";
 import { requirePhase, resolvePrBase, scopeFor, type Scope } from "../lib/stack.mts";
-import type { Phase } from "../lib/branch.mts";
+import { isPatchPhase, type Phase } from "../lib/branch.mts";
 
 function requireKind(raw: string | undefined): ReviewKind {
   if (raw === undefined || !(REVIEW_KINDS as string[]).includes(raw)) {
@@ -46,15 +49,14 @@ function requireKind(raw: string | undefined): ReviewKind {
   return raw as ReviewKind;
 }
 
-function requireSelf(args: ParsedArgs): ReviewProvider {
-  const raw = flagString(args, "self");
-  if (raw === undefined || !(REVIEW_PROVIDERS as string[]).includes(raw)) {
+/** --self は v3 で廃止した。メインのセッションは常に Claude Code なので、渡す値が無い */
+function rejectSelf(args: ParsedArgs): void {
+  if (args.flags.has("self")) {
     throw new HikyakuError(
-      raw === undefined ? "--self にメインのセッションのプロバイダを指定してください" : `--self の値が不正です: ${raw}`,
-      `使用できる値: ${REVIEW_PROVIDERS.join(" | ")}（provider = "auto" の解決に使います）`,
+      "--self は v3 で廃止しました",
+      "メインのセッションは常に Claude Code です。--self を外して実行してください。",
     );
   }
-  return raw as ReviewProvider;
 }
 
 interface Resolved {
@@ -71,12 +73,14 @@ interface Resolved {
 async function resolve(args: ParsedArgs, operands: string[]): Promise<Resolved & { kind: ReviewKind }> {
   const kind = requireKind(operands[0]);
   const phase = requirePhase(operands[1]);
-  const self = requireSelf(args);
-  if (kind !== "doc" && !phase.startsWith("build-")) {
-    throw new HikyakuError(`${kind} のレビューはビルド（build-NN）でだけ実行します: ${phase}`);
+  rejectSelf(args);
+  if (kind !== "doc" && !phase.startsWith("build-") && !isPatchPhase(phase)) {
+    throw new HikyakuError(`${kind} のレビューはビルド（build-NN）と patch でだけ実行します: ${phase}`);
   }
   const scope = scopeFor(args, phase, operands[2]);
   const { config } = scope;
+  // サイクル設定に廃止したキー（provider_for など）が残っていれば、黙って別のプロバイダで動かさない
+  assertCurrentConfig(config);
 
   let base: Resolved["base"];
   let security: Resolved["security"];
@@ -85,7 +89,8 @@ async function resolve(args: ParsedArgs, operands: string[]): Promise<Resolved &
     base = { name: prBase.base, ref: prBase.ref, stacked: prBase.stacked?.name };
     if (kind === "security") {
       security = nativeSecurityReason({
-        originHead: defaultBranch(config.repoRoot),
+        // /security-review は origin/HEAD の参照を読むので、問い合わせで補った値では判定しない
+        originHead: originHeadRef(config.repoRoot),
         prBase: prBase.base,
         stacked: prBase.stacked !== undefined,
       });
@@ -94,7 +99,6 @@ async function resolve(args: ParsedArgs, operands: string[]): Promise<Resolved &
 
   const plan = planReview({
     kind,
-    self,
     settings: config.review[kind],
     baseRef: base?.ref,
     nativeSecurity: security?.native,
@@ -142,15 +146,13 @@ function describe(resolved: Resolved & { kind: ReviewKind }): string[] {
   return lines;
 }
 
-export function sourceLabel(plan: Pick<ReviewPlan, "kind" | "provider" | "providerSource" | "providerKey">): string {
+export function sourceLabel(plan: Pick<ReviewPlan, "kind" | "provider" | "providerSource">): string {
   const source: ReviewProviderSource = plan.providerSource;
   if (source === "cloud") return cloudEnvLabel(plan.provider);
   if (source === "env") return `環境変数 ${REVIEW_PROVIDER_ENV}`;
-  if (source === "kind.provider_for") return `[review.${plan.kind}.provider_for] の ${plan.providerKey}`;
   if (source === "kind") return `[review.${plan.kind}] の provider`;
-  if (source === "review.provider_for") return `[review.provider_for] の ${plan.providerKey}`;
   if (source === "review") return "[review] の provider";
-  return "既定（auto = メインのセッションと同じ）";
+  return "既定（auto = メインのセッションと同じ claude）";
 }
 
 function styleLabel(plan: ReviewPlan): string {
@@ -163,11 +165,10 @@ function styleLabel(plan: ReviewPlan): string {
 register({
   name: "review resolve",
   summary: "レビューを、どのプロバイダ・モデル・回数で、どう起動するかを返す",
-  usage: "hikyaku review resolve <code|security|doc> <phase> [<cycle>] --self <claude|codex> [--no-fetch] [--root <path>] [--json]",
+  usage: "hikyaku review resolve <code|security|doc> <phase> [<cycle>] [--no-fetch] [--root <path>] [--json]",
   details: [
     "[review] の設定を重ねて、レビューの起動方法を決めます。実行はしません。",
-    "",
-    "--self にはメインのセッションのプロバイダを渡します（provider = \"auto\" と provider_for の解決に使います）。",
+    "メインのセッションは Claude Code で、provider = \"auto\" は claude と同じです。",
     "",
     "  mode: agent    メインのセッションのサブエージェント（doc-reviewer）で実行する",
     "  mode: process  review run で別プロセスとして実行する",
@@ -204,7 +205,7 @@ register({
   name: "review run",
   summary: "レビューを別プロセス（claude -p / codex exec）で実行し、生の出力を保存する",
   usage:
-    "hikyaku review run <code|security|doc> <phase> [<cycle>] --self <claude|codex> [--round <n>] " +
+    "hikyaku review run <code|security|doc> <phase> [<cycle>] [--round <n>] " +
     "[--context <context> --files <path,...>] [--dry-run] [--no-fetch] [--root <path>] [--json]",
   details: [
     "review resolve と同じ解決をしたうえで、レビューを実行します。出力の解析や指摘の統合はしません。",
@@ -223,7 +224,7 @@ register({
     "  claude security  claude -p \"/security-review\"（使えないときは観点の指示文）",
     "  codex code       codex exec review --base <ref> -c sandbox_mode=\"read-only\" -o <file>",
     "  codex security   codex exec review -c sandbox_mode=\"read-only\" -o <file> \"<観点の指示文>\"",
-    "  doc（別プロバイダ） doc-reviewer の本文を指示文にして claude -p / codex exec に渡す",
+    "  doc（codex）      doc-reviewer の本文を指示文にして codex exec に渡す",
     "",
     "Claude では Edit / Write / NotebookEdit を禁じ、Codex は読み取り専用のサンドボックスで",
     "起動します。レビューは指摘を返すだけで、修正はメインのセッションが行います。",
@@ -238,9 +239,10 @@ register({
     const resolved = await resolve(args, operands);
     const { plan, scope, phase } = resolved;
     const { config } = scope;
-    const cycle = scope.cycle;
-    if (cycle === undefined || scope.context === undefined) {
-      throw new HikyakuError("レビューはサイクルの中で実行します");
+    // サイクルに属さない patch の出力は .git/hikyaku/reviews/patch/<phase>/ に置く
+    const cycle = scope.cycle ?? (isPatchPhase(phase) ? "patch" : undefined);
+    if (cycle === undefined) {
+      throw new HikyakuError("レビューはサイクルの中か patch で実行します");
     }
     if (plan.mode === "agent") {
       throw new HikyakuError(
@@ -316,6 +318,49 @@ register({
   },
 });
 
+register({
+  name: "review action",
+  summary: "レビュー指摘への対応確認と、再レビューの要否を返す",
+  usage: "hikyaku review action <code|security|doc> <phase> [<cycle>] --round <n> [--context agreement] [--has-findings] [--uncertain] [--repeated] [--json]",
+  options: ["round", "context", "has-findings", "uncertain", "repeated"],
+  maxOperands: 3,
+  details: [
+    "指摘の妥当性と重複は呼び出し元が判断し、妥当かつスコープ内の指摘があれば --has-findings を渡します。",
+    "自動修正できない懸念（スコープ外を含む）は --uncertain、繰り返した指摘は --repeated で渡します。",
+    "action は done / fix / confirm。nextRound が null なら、修正後の再レビューは行いません。",
+    "有限回で自動修正できる指摘が無ければ、懸念だけで同じ差分を再レビューしません。",
+    "deferUncertain が true なら懸念を保留し、nextRound が null なら PR・完了案内で参照先を伝えます。",
+    "",
+    "doc は --context agreement（builder の agreement-review の指摘）でだけ使えます。doc のレビューは",
+    "常に1回なので、agreement は confirm を返しません（指摘は直すか理由を返し、止めない）。",
+  ].join("\n"),
+  run: ({ args, operands }) => {
+    const kind = requireKind(operands[0]);
+    const agreement = kind === "doc";
+    if (agreement && flagString(args, "context") !== "agreement") {
+      throw new HikyakuError(
+        "review action doc は --context agreement でだけ使います",
+        "code / security の指摘への対応か、builder の agreement-review の指摘への対応に使います。",
+      );
+    }
+    if (!agreement && flagString(args, "context") !== undefined) {
+      throw new HikyakuError("--context は review action doc --context agreement でだけ指定できます");
+    }
+    const phase = requirePhase(operands[1]);
+    const { config } = scopeFor(args, phase, operands[2]);
+    // agreement は止めない（US-2.6）。doc の回数は設定が 1 に固定しているので、confirm にならない
+    const settings = config.review[kind];
+    const round = flagInteger(args, "round");
+    if (round === undefined || round < 1 || (settings.maxRounds > 0 && round > settings.maxRounds)) {
+      throw new HikyakuError("--round は 1 以上で max_rounds 以下の整数を指定してください（max_rounds = 0 は上限なし）");
+    }
+    const decision = reviewAction({ round, ...settings,
+      hasFindings: flagBoolean(args, "has-findings"), uncertain: flagBoolean(args, "uncertain"), repeated: flagBoolean(args, "repeated"),
+    });
+    emit(decision, () => `対応: ${decision.action} / 次のレビュー: ${decision.nextRound ?? "なし"} / 懸念を保留: ${decision.deferUncertain}`);
+  },
+});
+
 function buildPrompt(args: ParsedArgs, resolved: Resolved, config: ResolvedConfig): string | undefined {
   const { plan, scope, phase } = resolved;
   if (plan.style !== "prompt") return undefined;
@@ -337,7 +382,7 @@ function buildPrompt(args: ParsedArgs, resolved: Resolved, config: ResolvedConfi
   return securityPrompt({
     guide: readFileSync(guidePath, "utf8"),
     baseRef: resolved.base?.ref ?? resolved.base?.name ?? "",
-    buildDirectory: join(scope.context?.directory ?? "", phase),
+    buildDirectory: isPatchPhase(phase) ? undefined : join(scope.context?.directory ?? "", phase),
     triggers: config.security.triggers,
   });
 }
@@ -392,3 +437,44 @@ function execute(
     });
   });
 }
+
+register({
+  name: "review findings",
+  summary: "中間レビューの指摘の件数と、反映した件数（採用率）をステップごとに集計する",
+  usage: "hikyaku review findings [<cycle>] [--root <path>] [--json]",
+  options: ["root"],
+  maxOperands: 1,
+  details: [
+    "全サイクル（引数があればそのサイクル）の progress.jsonl から、中間レビュー（planner の review・",
+    "architecture-review・tasklist-review・plan-review・test-spec-review）の done に添えた",
+    "--findings / --adopted を集め、ステップごとに回数・指摘の件数・反映した件数・採用率を返します。",
+    "",
+    "件数の無い done（記録を始める前の報告）は「件数なし」として回数にだけ数え、採用率には入れません。",
+    "指摘1件の数え方はレビューごとに揺れるので、比べるのは同じステップどうしです。",
+    "プロファイルでレビューを外すかは、この数字を材料にユーザーが決めます（このコマンドは決めません）。",
+    "builder の agreement-review はプロファイルで外せないので対象外です（指摘は agreement.md に残ります）。",
+  ].join("\n"),
+  run: ({ args, operands }) => {
+    const config = loadConfig({ root: flagString(args, "root") });
+    const all = loadCycles(config.hikyakuRoot);
+    const filter = operands[0];
+    const cycles = filter === undefined ? all : all.filter((r) => filter === r.id || filter === r.slug || filter === cycleDirName(r));
+    if (filter !== undefined && cycles.length === 0) {
+      throw new HikyakuError(`サイクルが見つかりません: ${filter}`, "hikyaku cycle list で一覧を確認してください。");
+    }
+    const runs = collectFindingRuns(config.hikyakuRoot, cycles);
+    const summary = summarizeFindings(runs);
+    emit({ summary, runs }, () => {
+      const rows = summary.map((s) => [
+        `${s.skill} ${s.step}`,
+        String(s.runs),
+        String(s.uncounted),
+        String(s.withFindings),
+        String(s.findings),
+        String(s.adopted),
+        s.rate === null ? "—" : `${Math.round(s.rate * 100)}%`,
+      ]);
+      return table(rows, ["レビュー", "回数", "件数なし", "指摘のあった回", "指摘", "反映", "採用率"]);
+    });
+  },
+});

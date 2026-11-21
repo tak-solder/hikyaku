@@ -3,25 +3,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { flagBoolean, flagString } from "../lib/args.mts";
-import {
-  BP_CASES_FILE,
-  BP_GUIDE_DIR,
-  BP_README_FILE,
-  BP_RULES_FILE,
-  bpCasesPath,
-  bpReadmePath,
-  bpRulesPath,
-  renderCasesScaffold,
-  renderReadmeScaffold,
-  renderRulesScaffold,
-} from "../lib/bp.mts";
-import { ASK_KEYS, PROFILE_NAMES } from "../lib/config.mts";
+import { ASK_KEYS, EXTERNAL_TARGETS, PROFILE_NAMES } from "../lib/config.mts";
 import { LOCAL_FILE } from "../lib/local.mts";
 import { cyclesPath, renderCyclesFile } from "../lib/cycles.mts";
 import { guidePath } from "../lib/docs.mts";
 import { HikyakuError } from "../lib/errors.mts";
 import { emit } from "../lib/output.mts";
-import { pluginVersion, repoRelative, repoRoot } from "../lib/paths.mts";
+import { repoRelative, repoRoot } from "../lib/paths.mts";
 import { register } from "../lib/registry.mts";
 import { renderGuideScaffold } from "./docs.mts";
 
@@ -32,14 +20,14 @@ interface PlannedFile {
    * create 生成 / skip 既存のため何もしない / append 既存の末尾へ追記
    *
    * 既存ファイルの内容は決して書き換えない。append は .gitignore だけの例外で、
-   * 1行足すだけ（既存行の削除・整理はしない）。
+   * 無い行を足すだけ（既存行の削除・整理はしない）。
    */
   status: "create" | "skip" | "append";
 }
 
 register({
   name: "init",
-  summary: "HIKYAKU_ROOT の雛形（設定・cycles.md・document-guide.md・bp-guide/）を生成する",
+  summary: "HIKYAKU_ROOT の雛形（設定・cycles.md・document-guide.md）を生成する",
   usage: "hikyaku init --root <path> [--dry-run] [--json]",
   writes: true,
   details: [
@@ -48,21 +36,18 @@ register({
     "  リポジトリルート/.hikyaku.config   設定の唯一のベース。hikyaku_root を記録する",
     "  {HIKYAKU_ROOT}/cycles.md           サイクル索引",
     "  {HIKYAKU_ROOT}/document-guide.md   ドキュメントガイドの雛形（全て『未作成』）",
-    `  {HIKYAKU_ROOT}/${BP_GUIDE_DIR}/${BP_RULES_FILE}   BP の基準表（正本。Hikyaku の既定値から生成）`,
-    `  {HIKYAKU_ROOT}/${BP_GUIDE_DIR}/${BP_README_FILE}    基準表の人間向け説明（表は rules.toml から生成）`,
-    `  {HIKYAKU_ROOT}/${BP_GUIDE_DIR}/${BP_CASES_FILE}   基準表の期待値テスト`,
-    "  {HIKYAKU_ROOT}/.gitignore          .hikyaku.local だけを除外する（既存があれば追記）",
+    "  {HIKYAKU_ROOT}/.gitignore          .hikyaku.local と feedback/ を除外する（既存があれば無い行だけ追記）",
     "",
     "既存の設計ドキュメントを検出して document-guide.md へ登録するのは",
     "/hikyaku:init スキルの役割です（対話が必要なため）。",
     "",
-    `${BP_GUIDE_DIR}/ が無いワークスペースでは Hikyaku の既定値が使われます。v2.0 で初期化した`,
-    "ワークスペースに足すには init をもう一度実行してください（無いものだけを生成します）。",
+    "予測ピークの見積もりのガイド（token-guide/guide.md）は生成しません。無ければプラグインの",
+    "標準のガイドで見積もり、補正するとき（/hikyaku:token-guide）に作られます。",
     "",
     "設定を置ける場所はリポジトリルートとサイクルディレクトリの2箇所だけです。",
     "{HIKYAKU_ROOT}/.hikyaku.config は作りません（読み込まれません）。",
     "",
-    ".gitignore が除外するのは .hikyaku.local の1行だけです。サイクル文書はすべて",
+    ".gitignore が除外するのは .hikyaku.local と feedback/ の2行だけです。サイクル文書はすべて",
     "コミット対象にします。close-cycle が別セッションで retrospective.md を素材として",
     "読むため、まとめて除外すると読めなくなります。"
   ].join("\n"),
@@ -101,9 +86,6 @@ register({
       plan(repoConfigPath, renderRepoConfig(rel)),
       plan(cyclesPath(hikyakuRoot), renderCyclesFile([])),
       plan(guidePath(hikyakuRoot), renderGuideScaffold()),
-      plan(bpRulesPath(hikyakuRoot), renderRulesScaffold(pluginVersion())),
-      plan(bpReadmePath(hikyakuRoot), renderReadmeScaffold()),
-      plan(bpCasesPath(hikyakuRoot), renderCasesScaffold()),
       planGitignore(join(hikyakuRoot, ".gitignore")),
     ];
 
@@ -122,7 +104,7 @@ register({
             file.status === "create"
               ? "生成"
               : file.status === "append"
-                ? `${LOCAL_FILE} の除外を追記`
+                ? "足りない除外の行を追記"
                 : "既存のため変更しません";
           lines.push(`${mark} ${relative(root, file.path).padEnd(40)} ${note}`);
         }
@@ -155,28 +137,53 @@ function plan(path: string, content: string): PlannedFile {
   return { path, content, status: existsSync(path) ? "skip" : "create" };
 }
 
-/** .gitignore に .hikyaku.local が入っているか */
-function ignoresLocal(source: string): boolean {
+interface IgnoredEntry {
+  line: string;
+  comment: string;
+}
+
+/**
+ * HIKYAKU_ROOT の .gitignore が除外する行。どれもコミットされると困るローカルの書き出し。
+ *   .hikyaku.local — 作業の栞。コミットされると他メンバーの栞を掴む
+ *   feedback/      — hikyaku feedback export の書き出し。コミットされると、送るかをユーザーが決める前に共有される
+ */
+const IGNORED_ENTRIES: IgnoredEntry[] = [
+  { line: LOCAL_FILE, comment: "最後に作業したサイクルを記録するローカル専用ファイル" },
+  { line: "feedback/", comment: "hikyaku feedback export の書き出し（送るかはユーザーが決める。コミットしない）" },
+];
+
+/**
+ * .gitignore がその行を既に扱っているか。先頭の `/` の有無は問わない。末尾の `/` はディレクトリにだけ当たるので、
+ * ディレクトリの行（feedback/）だけ、有無を問わない（`.hikyaku.local/` はファイルの .hikyaku.local を除外しない）。
+ * 否定（`!feedback/`）は、ユーザーが追跡に戻すと決めた方針なので、扱い済みとみなして追記しない
+ * （後ろに足すと、gitignore は後の行が勝つので、ユーザーの規則を黙って覆す）
+ */
+function ignores(source: string, entry: IgnoredEntry): boolean {
+  const directory = entry.line.endsWith("/");
+  const bare = entry.line.replace(/\/$/, "");
   return source
     .split("\n")
-    .some((line) => line.trim() === LOCAL_FILE || line.trim() === `/${LOCAL_FILE}`);
+    .map((line) => line.trim().replace(/^!/, "").replace(/^\//, ""))
+    .map((line) => (directory ? line.replace(/\/$/, "") : line))
+    .some((line) => line === bare);
 }
 
 /**
  * .gitignore だけは既存があっても追記する。
  *
- * skip にすると、v1 から移行したリポジトリ（v1 は {DOC_ROOT}/.gitignore を生成していた）で
- * .hikyaku.local が永久に追跡対象のままになる。作業の栞がコミットされると、
- * 他メンバーの栞を掴む事故になる。追記するのは1行だけで、既存行には手を出さない。
+ * skip にすると、v1 から移行したリポジトリ（v1 は {DOC_ROOT}/.gitignore を生成していた）や、
+ * feedback/ が足される前に導入したワークスペースで、除外すべきファイルが追跡対象のままになる。
+ * 足すのは無い行だけで、既存行には手を出さない。
  */
 function planGitignore(path: string): PlannedFile {
   if (!existsSync(path)) return { path, content: renderGitignore(), status: "create" };
 
   const source = readFileSync(path, "utf8");
-  if (ignoresLocal(source)) return { path, content: source, status: "skip" };
+  const missing = IGNORED_ENTRIES.filter((entry) => !ignores(source, entry));
+  if (missing.length === 0) return { path, content: source, status: "skip" };
 
   const separator = source === "" || source.endsWith("\n") ? "" : "\n";
-  return { path, content: `${source}${separator}\n${renderGitignore()}`, status: "append" };
+  return { path, content: `${source}${separator}\n${renderGitignore(missing)}`, status: "append" };
 }
 
 /**
@@ -282,9 +289,6 @@ function renderRepoConfig(hikyakuRoot: string): string {
     "# PR のベースブランチ（未設定ならリポジトリのデフォルトブランチを自動検出）",
     '# base_branch = "main"',
     "",
-    "# ビルド分割の BP 上限",
-    "# bp_max = 8",
-    "",
     "# ブランチ名は {prefix}{separator}{cycle}{separator}{phase} で構成します。",
     "# 着手状態の導出にブランチ名を解析するため、構造は固定です。",
     "[branch]",
@@ -310,11 +314,18 @@ function renderRepoConfig(hikyakuRoot: string): string {
     "# - 決済",
     "# \"\"\"",
     "",
-    "# 外部システムへは冪等な片方向投影のみを行います。マスターは常にファイル側です。",
+    "# サイクルごとに GitHub issue を1つ起票し、CLOSE の PR で閉じます。マスターは常にファイル側です。",
     "[external]",
-    '# target = "none"        # none | github | asana',
+    `# target = "none"        # ${EXTERNAL_TARGETS.join(" | ")}`,
     '# github_repo = "owner/repo"',
-    '# asana_project_gid = "..."',
+    "",
+    "# メインセッションのコンテキストの上限です。予測ピークが見積もりの上限（limit × estimate_ratio）を",
+    "# 超えたら分割を検討し、limit × merge_ratio 未満なら統合を検討します。",
+    "# builder の区切り（G8・実装開始前・レビュー前）では、完了時点の見込みを limit と比べます。",
+    "[context]",
+    '# limit = "600k"',
+    '# estimate_ratio = "90%"',
+    '# merge_ratio = "66.7%"  # 既定は 2/3',
     "",
   ].join("\n");
 }
@@ -322,14 +333,10 @@ function renderRepoConfig(hikyakuRoot: string): string {
 /**
  * HIKYAKU_ROOT の .gitignore。
  *
- * 除外するのは作業の栞（.hikyaku.local）だけ。包括パターンは書かない。
+ * 除外するのは作業の栞（.hikyaku.local）とフィードバックの書き出し（feedback/）だけ。包括パターンは書かない。
  * サイクル文書はすべてコミット対象で、とくに retrospective.md は close-cycle が
  * 別セッションから昇格素材として読むため、除外すると読めなくなる。
  */
-function renderGitignore(): string {
-  return [
-    "# 最後に作業したサイクルを記録するローカル専用ファイル",
-    ".hikyaku.local",
-    "",
-  ].join("\n");
+function renderGitignore(entries: IgnoredEntry[] = IGNORED_ENTRIES): string {
+  return entries.flatMap((entry) => [`# ${entry.comment}`, entry.line, ""]).join("\n");
 }
